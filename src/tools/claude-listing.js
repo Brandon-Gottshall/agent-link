@@ -2,11 +2,13 @@
 //
 // Claude session listing tools: list_claude_sessions,
 // list_loaded_claude_sessions, get_claude_session, resolve_claude_session.
-// Registered on the Claude host only (host-neutral registration is a later
-// release, design doc section 1.6).
+// Registered on every host (design doc R1.16). Every session carries its
+// address, claude:<cliSessionId> (section 1.3); list_agents and resolve_agent
+// cover Claude sessions and Codex threads together.
 import { listClaudeSessions } from "../claude/session-index.js";
 import { resolveSession } from "../claude/session-resolver.js";
 import { claudeSessionMatches } from "../claude/identity.js";
+import { claudeAddress } from "../shared/identity.js";
 import { AgentLinkError } from "../shared/errors.js";
 import { CLAUDE_SURFACES, LIMITS, enumOf, bool, limit, out, str } from "../server/schemas.js";
 
@@ -15,7 +17,15 @@ import { CLAUDE_SURFACES, LIMITS, enumOf, bool, limit, out, str } from "../serve
 
 const surface = enumOf(CLAUDE_SURFACES, "Only sessions on this surface: desktop, code, or all. Defaults to all.");
 const READ_ONLY = { readOnlyHint: true };
-const sessionsOut = { sessions: out("array", "Normalized sessions: sessionId, cliSessionId, surface, title, cwd, loaded, isArchived, and supported receive surfaces.") };
+const sessionsOut = { sessions: out("array", "Normalized sessions: address (claude:<cliSessionId>), sessionId, cliSessionId, surface, title, cwd, loaded, isArchived, and supported receive surfaces.") };
+
+/**
+ * A session index entry with its address first (R1.2).
+ * @param {Record<string, any>} session
+ */
+export function withClaudeAddress(session) {
+  return { address: claudeAddress(session), ...session };
+}
 
 /** @type {ToolDefinition[]} */
 export const claudeListingTools = [
@@ -50,16 +60,16 @@ export const claudeListingTools = [
   },
   {
     name: "get_claude_session",
-    description: "Read one Claude Desktop or Claude Code session by sessionId or cliSessionId, archived sessions included. An unknown id is a not_found error.",
+    description: "Read one Claude Desktop or Claude Code session by address (claude:<id>), sessionId, or cliSessionId, archived sessions included. An unknown id is a not_found error.",
     inputSchema: {
       type: "object",
       properties: {
-        sessionId: str("Exact sessionId (local_<uuid>) or cliSessionId.")
+        sessionId: str("Exact address (claude:<cliSessionId>), sessionId (local_<uuid>), or cliSessionId.")
       },
       required: ["sessionId"],
       additionalProperties: false
     },
-    output: { session: out("object", "The session.") },
+    output: { session: out("object", "The session, with its address.") },
     annotations: READ_ONLY
   },
   {
@@ -78,8 +88,8 @@ export const claudeListingTools = [
     output: {
       status: enumOf(["resolved", "ambiguous", "not_found"], "Verdict: one best match, several tied, or none."),
       query: out("string", "The query as given."),
-      best: out(["object", "null"], "The top candidate, or null."),
-      candidates: out("array", "Ranked candidates with score and matchReasons."),
+      best: out(["object", "null"], "The top candidate (with its address), or null."),
+      candidates: out("array", "Ranked candidates with address, score and matchReasons."),
       selection: out("object", "{ambiguous, matchReasons} for the top candidate.")
     },
     annotations: READ_ONLY
@@ -102,32 +112,33 @@ export function makeClaudeListingHandlers() {
         includeArchived: args.includeArchived === true,
         surface: args.surface ?? "all"
       });
-      return { sessions: sessions.slice(0, limitOf(args, "list")) };
+      return { sessions: sessions.slice(0, limitOf(args, "list")).map(withClaudeAddress) };
     },
     /** @param {Record<string, any>} [args] */
     list_loaded_claude_sessions: async (args = {}) => {
       const sessions = listClaudeSessions({ surface: args.surface ?? "all" }).filter((s) => s.loaded);
-      return { sessions: sessions.slice(0, limitOf(args, "list")) };
+      return { sessions: sessions.slice(0, limitOf(args, "list")).map(withClaudeAddress) };
     },
     /** @param {Record<string, any>} [args] */
     get_claude_session: async ({ sessionId } = {}) => {
       const sessions = listClaudeSessions({ includeArchived: true });
-      const found = sessions.find((s) => claudeSessionMatches(s, sessionId));
+      const id = typeof sessionId === "string" ? sessionId.trim().replace(/^claude:/, "") : sessionId;
+      const found = sessions.find((s) => claudeSessionMatches(s, id));
       if (!found) {
         throw new AgentLinkError("not_found", `No Claude session matches ${JSON.stringify(String(sessionId))}.`, {
           details: { query: sessionId, candidates: [] },
           hint: "Call resolve_claude_session or list_claude_sessions to find the session id."
         });
       }
-      return { session: found };
+      return { session: withClaudeAddress(found) };
     },
     /** @param {Record<string, any>} [args] */
     resolve_claude_session: async (args = {}) => {
       const sessions = listClaudeSessions({ surface: args.surface ?? "all", includeArchived: true });
       const result = resolveSession({ query: args.query }, sessions);
-      const candidates = result.candidates.slice(0, limitOf(args, "resolve"));
+      const candidates = result.candidates.slice(0, limitOf(args, "resolve")).map(withClaudeAddress);
       const status = !result.best ? "not_found" : result.selection.ambiguous ? "ambiguous" : "resolved";
-      return { status, query: args.query, best: result.best ?? null, candidates, selection: result.selection };
+      return { status, query: args.query, best: result.best ? withClaudeAddress(result.best) : null, candidates, selection: result.selection };
     }
   };
 }

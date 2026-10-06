@@ -9,7 +9,9 @@ import {
   resolveCallerIdentity
 } from "../claude/identity.js";
 import { registerActiveWait } from "../claude/active-waits.js";
-import { assertPeerBodyWithinLimit, peerMessageFromMailbox, peerMessageResult } from "../shared/envelope.js";
+import { assertPeerBodyWithinLimit } from "../shared/envelope.js";
+import { claudeAddress } from "../shared/identity.js";
+import { mailboxRowResult } from "../registry/addresses.js";
 import { buildReceipt, normalizeReceiptInput, safeAppendReceipt } from "../shared/receipt-index.js";
 import { AgentLinkError } from "../shared/errors.js";
 import { applyAliases, deprecationWarning } from "../server/registry.js";
@@ -53,10 +55,10 @@ export const claudeSendTool = {
   output: {
     messageId: out("string", "Id of the queued message."),
     delivery: out("string", "queued-channel, queued-online, queued-offline, or queued-mailbox."),
-    target: out("object", "{sessionId, title, loaded, surface} of the target session."),
+    target: out("object", "{address, sessionId, title, loaded, surface} of the target session."),
     resolution: out("object", "How the target was found: {via: exact|fuzzy, query, matchReasons, candidates?}."),
     receipt: commonOut.receipt,
-    wait: out("object", "With waitForReply: {outcome: reply|timeout, waitedMs, target: {sessionId}, reply?} (section 3.4)."),
+    wait: out("object", "With waitForReply: {outcome: reply|timeout, waitedMs, target: {sessionId, address}, reply?} (section 3.4)."),
     replyConfirmation: out("object", "Deprecated duplicate of wait in the 0.4 shape ({received, replyMessageId?, reply?, error?}); removed in 0.6.0.")
   },
   annotations: { readOnlyHint: false, destructiveHint: false }
@@ -229,6 +231,7 @@ export function makeClaudeSendHandler({
 
         const delivery = classifyDelivery({ target, deliveryPreference });
         const targetSummary = {
+          address: claudeAddress(target),
           sessionId: target.sessionId,
           title: target.title,
           loaded: !!target.loaded,
@@ -247,6 +250,7 @@ export function makeClaudeSendHandler({
               // Map Claude session fields onto the existing receipt target shape.
               // `name` carries the human-readable title; `sessionId`, `loaded`,
               // and `kind` are additive fields the receipt index passes through.
+              address: claudeAddress(target),
               name: target.title,
               cwd: target.cwd,
               sessionId: target.sessionId,
@@ -280,7 +284,7 @@ export function makeClaudeSendHandler({
           result.wait = {
             outcome: confirmation.received ? "reply" : "timeout",
             waitedMs: Date.now() - startedAt,
-            target: { sessionId: target.sessionId },
+            target: { sessionId: target.sessionId, address: claudeAddress(target) },
             ...(confirmation.received ? { reply: confirmation.reply } : {})
           };
           result.replyConfirmation = confirmation;
@@ -336,6 +340,7 @@ function mailboxMetadata({ receipt, resolution, senderSource = null }) {
 /** @param {any} candidate */
 function candidateSummary(candidate) {
   return {
+    address: claudeAddress(candidate),
     sessionId: candidate.sessionId,
     title: candidate.title ?? null,
     surface: candidate.surface ?? null,
@@ -376,7 +381,7 @@ async function pollForReply(mb, { messageId, fromIds, toIds, timeoutMs }) {
       return {
         received: true,
         replyMessageId: replies[0].id,
-        reply: peerMessageResult(peerMessageFromMailbox(replies[0]))
+        reply: mailboxRowResult(replies[0])
       };
     }
     if (Date.now() >= deadline) {

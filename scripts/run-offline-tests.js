@@ -35,6 +35,7 @@ const groups = {
     "tests/claude/wait.test.js",
     "tests/shared/cross-host-receipt.test.js",
     "tests/shared/host-detect.test.js",
+    "tests/shared/identity.test.js",
     "tests/shared/runtime-context.test.js",
     "tests/shared/args.test.js",
     "tests/shared/env.test.js",
@@ -73,6 +74,7 @@ const groups = {
   server: [
     "tests/server/registry.test.js",
     "tests/server/server-modules.test.js",
+    "tests/server/session-registry.test.js",
     "tests/server/tools-contract.test.js"
   ],
   manifest: [

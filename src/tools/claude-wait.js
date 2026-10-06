@@ -27,7 +27,8 @@ import { openMailbox } from "../claude/mailbox.js";
 import { isClaudeSessionLoaded, listClaudeSessions } from "../claude/session-index.js";
 import { claudeSessionAliases, claudeSessionMatches, resolveCallerIdentity } from "../claude/identity.js";
 import { registerActiveWait } from "../claude/active-waits.js";
-import { peerMessageFromMailbox, peerMessageResult } from "../shared/envelope.js";
+import { claudeAddress } from "../shared/identity.js";
+import { mailboxRowResult } from "../registry/addresses.js";
 import { consumeReply } from "./claude-send.js";
 import { AgentLinkError } from "../shared/errors.js";
 import { applyAliases } from "../server/registry.js";
@@ -51,7 +52,7 @@ export const claudeWaitTool = {
   inputSchema: {
     type: "object",
     properties: {
-      sessionId: str("Exact sessionId (local_<uuid>) or cliSessionId of the session to wait on; archived sessions are included. Use resolve_claude_session first if you only have a fuzzy reference."),
+      sessionId: str("Exact address (claude:<id>), sessionId (local_<uuid>), or cliSessionId of the session to wait on; archived sessions are included. Use resolve_claude_session first if you only have a fuzzy reference."),
       replyToMessageId: str("Recommended. Only resolve on a reply to this message from the target addressed to the caller; a reply that arrived before the wait started also counts. If absent, resolve on any message from the target addressed to the caller and sent after the wait started."),
       timeoutMs: timeoutMsSchema("Polling timeout in milliseconds.")
     },
@@ -62,7 +63,7 @@ export const claudeWaitTool = {
   output: {
     outcome: enumOf(["reply", "idle", "timeout"], "How the wait ended (section 3.4)."),
     waitedMs: out("integer", "How long the wait lasted."),
-    target: out("object", "{sessionId, lastLoaded?} of the session waited on."),
+    target: out("object", "{sessionId, address, lastLoaded?} of the session waited on."),
     reply: out("object", "outcome reply: the message's validated fields plus its envelope."),
     result: out("string", "Deprecated duplicate of outcome; removed in 0.6.0."),
     message: out("object", "Deprecated duplicate of reply; removed in 0.6.0."),
@@ -146,6 +147,7 @@ export function makeWaitHandler({
         currentSession: resolveCurrentSession
       });
       const wasLoaded = !!target0.loaded;
+      const address = claudeAddress(target0);
       const deadline = waitStartedAt + timeoutMs;
       let nextLivenessCheckAt = waitStartedAt + livenessIntervalMs;
 
@@ -182,11 +184,11 @@ export function makeWaitHandler({
               consumeReply(mb, messages[0]);
               // Another agent's text: only the validated fields and the peer
               // envelope reach the caller, never the raw row.
-              const reply = peerMessageResult(peerMessageFromMailbox(messages[0]));
+              const reply = mailboxRowResult(messages[0]);
               return {
                 outcome: "reply",
                 waitedMs: waited(),
-                target: { sessionId },
+                target: { sessionId, address },
                 reply,
                 result: "reply",
                 message: reply,
@@ -206,7 +208,7 @@ export function makeWaitHandler({
               return {
                 outcome: "idle",
                 waitedMs: waited(),
-                target: { sessionId, lastLoaded: false },
+                target: { sessionId, address, lastLoaded: false },
                 result: "idle",
                 sessionId
               };
@@ -215,7 +217,7 @@ export function makeWaitHandler({
 
           // 3. Sleep until the next poll, or break out on timeout.
           if (now() >= deadline) {
-            return { outcome: "timeout", waitedMs: waited(), target: { sessionId }, result: "timeout", sessionId };
+            return { outcome: "timeout", waitedMs: waited(), target: { sessionId, address }, result: "timeout", sessionId };
           }
           const remaining = deadline - now();
           await sleep(Math.min(pollIntervalMs, Math.max(remaining, 10)));

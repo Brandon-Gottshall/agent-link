@@ -28,6 +28,7 @@ import {
   peerMessageResult,
   renderPeerEnvelope
 } from "../shared/envelope.js";
+import { codexAddress } from "../shared/identity.js";
 import { AgentLinkError } from "../shared/errors.js";
 import { buildReceipt, normalizeReceiptInput, safeAppendReceipt } from "../shared/receipt-index.js";
 import { LIMITS } from "../server/schemas.js";
@@ -201,18 +202,18 @@ export function waitOutcome(confirmation, { threadId, turnId, waitedMs }) {
     return {
       outcome: "unavailable",
       waitedMs: waitedMs ?? null,
-      target: { threadId },
+      target: { threadId, address: codexAddress(threadId) },
       error: confirmation.error,
       ...(confirmation.hint ? { hint: confirmation.hint } : {})
     };
   }
   if (confirmation.timedOut === true) {
-    return { outcome: "timeout", waitedMs: waitedMs ?? null, target: { threadId } };
+    return { outcome: "timeout", waitedMs: waitedMs ?? null, target: { threadId, address: codexAddress(threadId) } };
   }
   return {
     outcome: "turn_completed",
     waitedMs: waitedMs ?? null,
-    target: { threadId },
+    target: { threadId, address: codexAddress(threadId) },
     turn: {
       turnId,
       status: confirmation.turnStatus ?? null,
@@ -427,7 +428,7 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
         ok: true,
         messageId: peer.summary.messageId,
         deliveredVia: "turn/steer",
-        target: { threadId },
+        target: { threadId, address: codexAddress(threadId) },
         turn: { id: response.turnId },
         ...(wait ? { wait: waitOutcome(replyConfirmation, { threadId, turnId: response.turnId, waitedMs: wait.waitedMs }) } : {}),
         source: "app-server",
@@ -452,6 +453,7 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
         receipt: args.receipt,
         target: {
           threadId,
+          address: codexAddress(threadId),
           turnId: response.turnId,
           name: read.thread.name,
           cwd: read.thread.cwd,
@@ -506,7 +508,7 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
       ok: true,
       messageId: peer.summary.messageId,
       deliveredVia: "turn/start",
-      target: { threadId },
+      target: { threadId, address: codexAddress(threadId) },
       ...(wait ? { wait: waitOutcome(replyConfirmation, { threadId, turnId: summarizedTurn.id, waitedMs: wait.waitedMs }) } : {}),
       source: "app-server",
       action: actionName,
@@ -530,6 +532,7 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
       receipt: args.receipt,
       target: {
         threadId,
+        address: codexAddress(threadId),
         turnId: summarizedTurn.id,
         name: read.thread.name,
         cwd: read.thread.cwd,

@@ -88,7 +88,7 @@ function insertReply({ mailboxPath, fromSessionId, toSessionId, body, replyToMes
   // Section 3.4 shape; result/message/sessionId stay as deprecated duplicates.
   assert.equal(result.outcome, "reply");
   assert.ok(Number.isInteger(result.waitedMs));
-  assert.deepEqual(result.target, { sessionId: TARGET_SESSION_ID });
+  assert.deepEqual(result.target, { sessionId: TARGET_SESSION_ID, address: "claude:uuid-aaa" });
   assert.deepEqual(result.reply, result.message);
   assert.equal(result.result, "reply");
   assert.equal(result.sessionId, TARGET_SESSION_ID);

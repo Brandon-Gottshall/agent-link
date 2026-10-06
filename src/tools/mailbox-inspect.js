@@ -1,6 +1,7 @@
 import { openMailbox } from "../claude/mailbox.js";
 import { resolveCallerIdentity } from "../claude/identity.js";
-import { peerMessageFromMailbox, peerMessageResult } from "../shared/envelope.js";
+import { mailboxRowResult } from "../registry/addresses.js";
+import { hostIdentity } from "../shared/identity.js";
 import { AgentLinkError } from "../shared/errors.js";
 import { envFlag } from "../shared/env.js";
 import { LIMITS, bool, enumOf, limit, out, str } from "../server/schemas.js";
@@ -35,11 +36,22 @@ export const mailboxInspectTool = {
   output: {
     scope: out("string", "caller or all."),
     callerSessionId: out(["string", "null"], "The caller's session id (scope caller)."),
-    messages: out("array", "Rows: {id, from, fromHarness, fromVerified, to, sentAt, replyTo, deliveredAt, acknowledgedAt, bodyBytes, envelope?}."),
+    callerAddress: out(["string", "null"], "The caller's address (scope caller), from runtime identity."),
+    messages: out("array", "Rows: {id, from, fromHarness, fromVerified, to, sentAt, replyTo, fromAddress, toAddress, deliveredAt, acknowledgedAt, bodyBytes, envelope?}."),
     note: out("string", "Why no mail is shown, when the caller could not be identified.")
   },
   annotations: { readOnlyHint: true }
 };
+
+/**
+ * @param {string | undefined} host
+ * @param {{runtimeCallerContext?: any}} toolContext
+ * @param {(() => any) | null} resolveCurrentSession
+ */
+function callerAddressOf(host, toolContext, resolveCurrentSession) {
+  const identity = hostIdentity({ host, callerContext: toolContext.runtimeCallerContext ?? null, currentSession: resolveCurrentSession });
+  return identity.address === "external" ? null : identity.address;
+}
 
 const isoOrNull = (ms) => (Number.isFinite(ms) ? new Date(ms).toISOString() : null);
 
@@ -48,7 +60,7 @@ const isoOrNull = (ms) => (Number.isFinite(ms) ? new Date(ms).toISOString() : nu
 // the body appears only inside the peer envelope.
 function inspectRow(row, includeBodies) {
   return {
-    ...peerMessageResult(peerMessageFromMailbox(row), { includeEnvelope: includeBodies }),
+    ...mailboxRowResult(row, { includeEnvelope: includeBodies }),
     deliveredAt: isoOrNull(row.delivered_at),
     acknowledgedAt: isoOrNull(row.acknowledged_at),
     bodyBytes: Buffer.byteLength(String(row.body ?? ""), "utf8")
@@ -129,7 +141,7 @@ export function makeMailboxInspectHandler({ host, mailboxOpener, resolveCurrentS
         const messages = rows.map((row) => inspectRow(row, includeBodies === true));
         return all
           ? { scope: "all", messages }
-          : { scope: "caller", callerSessionId: caller.id, messages };
+          : { scope: "caller", callerSessionId: caller.id, callerAddress: callerAddressOf(host, toolContext, resolveCurrentSession), messages };
       } finally {
         mb.close();
       }

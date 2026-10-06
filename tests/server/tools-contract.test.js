@@ -31,10 +31,12 @@ const READ_ONLY = new Set([
   "get_codex_sidebar_state",
   "get_codex_thread",
   "list_agent_link_receipts",
+  "list_agents",
   "list_claude_sessions",
   "list_codex_threads",
   "list_loaded_claude_sessions",
   "list_loaded_codex_threads",
+  "resolve_agent",
   "resolve_claude_session",
   "resolve_codex_thread",
   "resolve_project_orchestrator",
@@ -84,6 +86,7 @@ function checkInputSchema(tool, schema, where, problems) {
   for (const option of schema.oneOf ?? []) checkInputSchema(tool, option, where, problems);
 }
 
+const listsByHost = {};
 for (const host of ["claude", "codex"]) {
   const client = await connect(host);
   try {
@@ -136,13 +139,17 @@ for (const host of ["claude", "codex"]) {
     const unknown = await client.callTool({ name: "no_such_tool", arguments: {} });
     assert.equal(unknown.isError, true);
     assert.equal(unknown.structuredContent.error.code, "unknown_tool");
-    const claudeOnly = await client.callTool({ name: "list_claude_sessions", arguments: {} });
-    if (host === "claude") {
-      assert.equal(claudeOnly.isError, false);
-      assert.ok(Array.isArray(claudeOnly.structuredContent.sessions));
-    } else {
-      assert.equal(claudeOnly.structuredContent.error.code, "unknown_tool", "Claude listing tools are not registered on the Codex host");
+    // R1.16: every tool on every host. The Claude listing tools and the
+    // host-neutral tools answer on the Codex host too.
+    for (const name of ["list_claude_sessions", "list_loaded_claude_sessions", "list_agents"]) {
+      const listed = await client.callTool({ name, arguments: {} });
+      assert.equal(listed.isError, false, `${host}: ${name} ${JSON.stringify(listed.structuredContent)}`);
+      assert.ok(Array.isArray(listed.structuredContent.sessions), `${host}: ${name}`);
     }
+    const resolved = await client.callTool({ name: "resolve_agent", arguments: { query: "nothing-matches-this-query" } });
+    assert.equal(resolved.isError, false, JSON.stringify(resolved.structuredContent));
+    assert.equal(resolved.structuredContent.status, "not_found");
+    listsByHost[host] = tools;
 
     // Review I1: nulls for optional properties are "not set" on the Claude tools too.
     const nulls = await client.callTool({ name: "message_claude_session", arguments: { sessionId: "local_no_such_session", message: "x", surface: null, replyToMessageId: null, timeoutMs: null } });
@@ -192,3 +199,9 @@ for (const host of ["claude", "codex"]) {
 }
 
 console.log("tools contract tests passed");
+
+// T-1.3: host gating is gone, so the Codex host lists exactly the Claude
+// host's tools (R1.16).
+assert.deepEqual(listsByHost.codex, listsByHost.claude, "tools/list is the same on both hosts");
+assert.equal(readFileSync(path.join(pluginRoot, "tests", "fixtures", "tools-list.codex.json"), "utf8"),
+  readFileSync(path.join(pluginRoot, "tests", "fixtures", "tools-list.claude.json"), "utf8"));

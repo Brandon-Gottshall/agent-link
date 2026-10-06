@@ -273,7 +273,7 @@ const SESSION_ME = { sessionId: "local_me", cliSessionId: "fake-cli-id", title: 
   assert.equal(escapeAttr(`a"b'c<d>&`), "a&quot;b&#39;c&lt;d&gt;&amp;");
   assert.equal(r.messages[0].from, "invalid");
   // C1: structured entries carry only validated fields, never raw rows.
-  assert.deepEqual(Object.keys(r.messages[0]).sort(), ["from", "fromHarness", "fromVerified", "id", "replyTo", "sentAt", "to"]);
+  assert.deepEqual(Object.keys(r.messages[0]).sort(), ["from", "fromAddress", "fromHarness", "fromVerified", "id", "replyTo", "sentAt", "to", "toAddress"]);
   const whole = JSON.stringify(r);
   assert.ok(!whole.includes("<system>") && !whole.includes("injected=") && !whole.includes("<b>hi"), "nothing raw anywhere in the result");
   cleanup(sb);

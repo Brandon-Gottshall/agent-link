@@ -25,6 +25,10 @@ import { claudeWaitEntries } from "../tools/claude-wait.js";
 import { mailboxInspectEntries } from "../tools/mailbox-inspect.js";
 import { readInboxEntries } from "../tools/read-inbox.js";
 import { replyAgentLinkMessageEntries } from "../tools/claude-reply.js";
+import { agentEntries } from "../tools/agents.js";
+import { createSessionRegistry } from "../registry/index.js";
+import { makeClaudeProvider } from "../registry/claude.js";
+import { makeCodexProvider } from "../registry/codex.js";
 import { CodexAppServerClient } from "../codex/app-server-client.js";
 import { makeDesktopRouting } from "../codex/desktop-routing.js";
 import { makeLoadedThreads } from "../codex/loaded-threads.js";
@@ -166,6 +170,11 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
     queries
   });
   const actions = makeThreadActions({ appServer: codexAppServer, messaging, desktop });
+  // The session registry (section 1.4): both providers on every host.
+  const sessionRegistry = createSessionRegistry({
+    claude: makeClaudeProvider(),
+    codex: makeCodexProvider({ appServer: codexAppServer, listThreads: queries.listThreads })
+  });
   const { health } = makeHealth({
     appServer: codexAppServer,
     hostInfo,
@@ -261,7 +270,10 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
     ...claudeWaitEntries(claudeDeps),
     ...readInboxEntries({ resolveCurrentSession: currentClaudeSession }),
     ...replyAgentLinkMessageEntries(claudeDeps),
-    ...(hostInfo.host === "claude" ? claudeListingEntries() : [])
+    // Every tool on every host (R1.16): the Claude listing tools are no
+    // longer limited to the Claude host.
+    ...claudeListingEntries(),
+    ...agentEntries({ registry: sessionRegistry, host: hostInfo.host, resolveCurrentSession: currentClaudeSession })
   ], { hintFor: appServerErrorHint });
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: registry.listTools() }));

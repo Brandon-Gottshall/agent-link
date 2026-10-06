@@ -174,7 +174,7 @@ try {
     assert.deepEqual(result.payload.wait.recentItems, result.payload.replyConfirmation.recentItems);
     assert.equal(result.payload.deliveredVia, "turn/start");
     assert.equal(result.payload.messageId, result.payload.peerMessage.messageId);
-    assert.deepEqual(result.payload.target, { threadId });
+    assert.deepEqual(result.payload.target, { threadId, address: `codex:${threadId}` });
 
     // W2B-06: get/wait slice items, not turns, under one key.
     result = await call("get_codex_thread", { threadId, includeTurns: true, recentItems: 3 });
@@ -185,7 +185,7 @@ try {
     result = await call("wait_for_codex_thread", { threadId, timeoutMs: 1000, pollIntervalMs: 250, recentItems: 1 });
     assert.deepEqual(result.payload.thread.recentItems.map((entry) => entry.id), ["i5"]);
     assert.equal(result.payload.outcome, "turn_completed");
-    assert.deepEqual(result.payload.target, { threadId });
+    assert.deepEqual(result.payload.target, { threadId, address: `codex:${threadId}` });
     assert.equal(result.payload.turn.turnId, "turn-2");
     assert.equal(result.payload.turn.finalResponse, "second answer");
     assert.ok(Number.isInteger(result.payload.waitedMs));

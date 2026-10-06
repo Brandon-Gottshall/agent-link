@@ -60,6 +60,23 @@ writeFileSync(localFile, [
 ].map((record) => JSON.stringify(record)).join("\n") + "\n");
 utimesSync(localFile, FIXED_SECONDS, FIXED_SECONDS);
 
+// Claude transcripts for the session registry steps (PR B6). Written by the
+// "__claude_fixture" step, after the steps recorded before B6, so their
+// Claude session counts are unchanged. CLAUDE_TWIN reuses ALPHA's id, so a
+// bare-id lookup of ALPHA names a Claude session and a Codex thread.
+const CLAUDE_SESSION = "0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b";
+const CLAUDE_TWIN = ALPHA;
+function writeClaudeFixture() {
+  const projects = path.join(tmp, ".claude", "projects", "-work-claude-project");
+  mkdirSync(projects, { recursive: true });
+  for (const [sessionId, title] of [[CLAUDE_SESSION, "Golden Claude planner"], [CLAUDE_TWIN, "Golden Claude twin"]]) {
+    const file = path.join(projects, `${sessionId}.jsonl`);
+    writeFileSync(file, `${JSON.stringify({ type: "summary", title, cwd: "/work/claude-project", timestamp: "2026-05-18T09:00:00.000Z" })}\n`);
+    utimesSync(file, FIXED_SECONDS + 30, FIXED_SECONDS + 30);
+  }
+}
+const SETUP_STEPS = { __claude_fixture: writeClaudeFixture };
+
 // ---------------------------------------------------------------- fake app-server
 const item = (type, itemId, extra = {}) => ({ type, id: itemId, ...extra });
 function makeThreads() {
@@ -368,7 +385,22 @@ const SCRIPT = [
   ["check_coordination_obligations", { text: `I'll resume once ${ALPHA} reports the schema is ready.` }, { meta: true }],
   ["check_coordination_obligations", { text: "I'll continue after the dependency is ready.", dependencyName: "schema v2" }, { meta: true }],
   ["check_coordination_obligations", { text: "All done, nothing pending." }],
-  ["agent_link_health", { startAppServer: false }]
+  ["agent_link_health", { startAppServer: false }],
+  // PR B6: the session registry and addresses, on the Codex host.
+  ["__claude_fixture", {}],
+  ["list_agents", {}, { meta: true }],
+  ["list_agents", { harness: "codex", includeArchived: true, limit: 10 }],
+  ["list_agents", { harness: "claude" }],
+  ["list_agents", { surface: "app", loaded: true }],
+  ["resolve_agent", { query: "Alpha" }],
+  ["resolve_agent", { query: `codex:${ALPHA}` }],
+  ["resolve_agent", { query: ALPHA }],
+  ["resolve_agent", { query: CLAUDE_SESSION }],
+  ["resolve_agent", { query: `codex:${MISSING}` }],
+  ["resolve_agent", { query: "Golden Claude", harness: "claude" }],
+  ["list_claude_sessions", {}],
+  ["get_claude_session", { sessionId: `claude:${CLAUDE_SESSION}` }],
+  ["list_agent_link_receipts", { target: `codex:${GAMMA}` }]
 ];
 
 function serverEnv(host) {
@@ -401,6 +433,10 @@ async function runScript(host, script) {
   const steps = [];
   try {
     for (const [name, args, options = {}] of script) {
+      if (SETUP_STEPS[name]) {
+        SETUP_STEPS[name]();
+        continue;
+      }
       calls = [];
       const result = await client.callTool({ name, arguments: args, ...(options.meta ? { _meta: callerMeta } : {}) });
       const payload = JSON.parse(result.content[0].text);
@@ -425,10 +461,15 @@ try {
   threads = makeThreads();
   const codex = await runScript("codex", SCRIPT);
   threads = makeThreads();
+  // Each host starts without the Claude fixture, as the pre-B6 recording did.
+  rmSync(path.join(tmp, ".claude"), { recursive: true, force: true });
   const claude = await runScript("claude", [
     ["agent_link_health", { startAppServer: false }],
     ["message_codex_thread", { threadId: ALPHA, message: "from claude" }],
-    ["launch_codex_thread", { name: "From Claude" }]
+    ["launch_codex_thread", { name: "From Claude" }],
+    ["__claude_fixture", {}],
+    ["list_agents", { limit: 5 }],
+    ["resolve_agent", { query: "Golden Claude planner" }]
   ]);
   recorded = { codex, claude };
 } finally {

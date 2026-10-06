@@ -28,6 +28,8 @@ export const healthTool = {
   output: {
     host: out("string", "claude, codex, or unknown."),
     hostDetection: out("string", "How the host was determined."),
+    address: out("string", "The caller's own address (claude:<id> or codex:<id>) from runtime identity, or 'external' when it cannot be identified."),
+    addressSource: out("string", "Where address came from: runtime_context, current_session, env, or fallback."),
     providers: out("object", "{claude: {available, reason, searched}, codex: {available, reason, searched}}."),
     stateDir: out("object", "{path, source, exists}: where Agent Link keeps its files."),
     env: out("object", "{deprecated: [{name, canonical}], conflicts: [{canonical, winner, ignored}]}: legacy environment variable names in use (names only, never values)."),

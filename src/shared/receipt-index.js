@@ -7,6 +7,8 @@ import { env, envFlag } from "./env.js";
 import { appendJsonl, parseJsonlLines } from "./jsonl.js";
 import { legacyReceiptPaths, receiptLogPath, stateDir } from "./paths.js";
 import { ensureStateDir } from "./state.js";
+import { receiptTargetAddress } from "../registry/addresses.js";
+import { claudeAddress, codexAddress, parseAddress } from "./identity.js";
 
 const RECEIPT_VERSION = 1;
 const DEFAULT_LIMIT = 20;
@@ -129,6 +131,9 @@ export function buildReceipt({
       runtime: input.runtimeCallerContext
     },
     target: {
+      // The canonical address (design doc section 1.3); the legacy id
+      // fields below stay.
+      address: cleanText(target?.address, 200) ?? receiptTargetAddress(target),
       threadId: cleanText(target?.threadId, 160),
       turnId: cleanText(target?.turnId, 160),
       name: cleanText(target?.name, 200),
@@ -219,6 +224,7 @@ export async function listReceipts(options = {}) {
     targetKind: cleanText(options.targetKind, 40),
     host: cleanText(options.host, 40),
     targetSessionId: cleanText(options.targetSessionId, 160),
+    targetAddress: targetAddressFilter(options),
     searchTerm: normalizeSearch(options.searchTerm)
   };
 
@@ -250,6 +256,30 @@ export async function listReceipts(options = {}) {
   };
 }
 
+/**
+ * The address filter (R1.7: compare canonical addresses): `target` as an
+ * address, or targetThreadId / targetSessionId given as an address.
+ * @param {Record<string, any>} options
+ * @returns {string | null}
+ */
+function targetAddressFilter(options) {
+  for (const value of [options.target, options.targetThreadId, options.targetSessionId]) {
+    const parsed = parseAddress(typeof value === "string" ? value.trim() : value);
+    if (parsed) return parsed.harness === "codex" ? codexAddress(parsed.id) : claudeAddress(parsed.address);
+  }
+  return null;
+}
+
+/**
+ * A stored target with its address first, derived at read time for receipts
+ * written before addresses existed (R1.6).
+ * @param {Record<string, any>} target
+ */
+function withTargetAddress(target) {
+  const { address: _stored, ...rest } = target;
+  return { address: receiptTargetAddress(target), ...rest };
+}
+
 export function receiptSummary(receipt) {
   return {
     id: receipt.id,
@@ -260,7 +290,7 @@ export function receiptSummary(receipt) {
     cleanupRecommendation: receipt.cleanupRecommendation ?? "unspecified",
     tags: Array.isArray(receipt.tags) ? receipt.tags : [],
     origin: receipt.origin ?? null,
-    target: receipt.target ?? null,
+    target: receipt.target ? withTargetAddress(receipt.target) : null,
     messagePreview: receipt.messagePreview ?? null,
     finalResponse: receipt.finalResponse ?? null,
     delivery: receipt.delivery ?? null,
@@ -294,7 +324,9 @@ function summarizeReplyConfirmation(replyConfirmation) {
 }
 
 function receiptMatches(receipt, filters) {
-  if (filters.targetThreadId && receipt.target?.threadId !== filters.targetThreadId) {
+  if (filters.targetAddress) {
+    if (receiptTargetAddress(receipt.target) !== filters.targetAddress) return false;
+  } else if (filters.targetThreadId && receipt.target?.threadId !== filters.targetThreadId) {
     return false;
   }
   if (filters.originThreadId && receipt.origin?.threadId !== filters.originThreadId) {
@@ -309,7 +341,7 @@ function receiptMatches(receipt, filters) {
   if (filters.host && receipt.host !== filters.host) {
     return false;
   }
-  if (filters.targetSessionId && receipt.target?.sessionId !== filters.targetSessionId) {
+  if (!filters.targetAddress && filters.targetSessionId && receipt.target?.sessionId !== filters.targetSessionId) {
     return false;
   }
   if (filters.searchTerm && !receiptSearchText(receipt).includes(filters.searchTerm)) {

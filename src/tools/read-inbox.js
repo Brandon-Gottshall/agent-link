@@ -10,7 +10,9 @@
 import { openMailbox } from "../claude/mailbox.js";
 import { claudeSessionAliases } from "../claude/identity.js";
 import { isHeldByActiveWait } from "../claude/active-waits.js";
-import { peerMessageFromMailbox, peerMessageResult, renderInbox } from "../shared/envelope.js";
+import { peerMessageFromMailbox, renderInbox } from "../shared/envelope.js";
+import { claudeAddress } from "../shared/identity.js";
+import { mailboxRowResult } from "../registry/addresses.js";
 import { AgentLinkError } from "../shared/errors.js";
 import { LIMITS, bool, limit, out } from "../server/schemas.js";
 
@@ -34,8 +36,9 @@ export const readInboxTool = {
   },
   output: {
     sessionId: out("string", "The session whose inbox was read."),
+    address: out(["string", "null"], "That session's address, claude:<cliSessionId>."),
     markedDelivered: out("boolean", "Whether the returned messages were marked delivered."),
-    messages: out("array", "Validated envelope fields per message: {id, from, fromHarness, fromVerified, to, sentAt, replyTo}. Bodies appear only in renderedBlock."),
+    messages: out("array", "Validated envelope fields per message: {id, from, fromHarness, fromVerified, to, sentAt, replyTo, fromAddress, toAddress}. fromAddress/toAddress are the canonical addresses of the stored ids. Bodies appear only in renderedBlock."),
     remainingCount: out("integer", "Pending messages not returned because of limit; they stay pending."),
     heldByActiveWait: out("integer", "Messages left for an in-process wait that will return them itself."),
     renderedBlock: out("string", "The <agent-link-inbox> block with one envelope per message.")
@@ -89,10 +92,11 @@ export function makeReadInboxHandler({ resolveCurrentSession, mailboxOpener } = 
         // Structured entries carry only the validated envelope fields. The
         // body reaches the model only inside renderedBlock's envelopes; raw
         // rows (body, metadata) never leave this function.
-        const messages = peers.map((peer) => peerMessageResult(peer, { includeEnvelope: false }));
+        const messages = rows.map((row) => mailboxRowResult(row, { includeEnvelope: false }));
         const held = all.length - pending.length;
         return {
           sessionId: session.sessionId,
+          address: claudeAddress(session),
           markedDelivered: markAsDelivered,
           messages,
           remainingCount: pending.length - rows.length,

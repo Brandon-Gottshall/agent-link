@@ -98,6 +98,14 @@
           "type": "string",
           "description": "How the host was determined."
         },
+        "address": {
+          "type": "string",
+          "description": "The caller's own address (claude:<id> or codex:<id>) from runtime identity, or 'external' when it cannot be identified."
+        },
+        "addressSource": {
+          "type": "string",
+          "description": "Where address came from: runtime_context, current_session, env, or fallback."
+        },
         "providers": {
           "type": "object",
           "description": "{claude: {available, reason, searched}, codex: {available, reason, searched}}."
@@ -1916,13 +1924,17 @@
   },
   {
     "name": "list_agent_link_receipts",
-    "description": "List local Agent Link launch/message/archive/Claude-session/reply receipts, newest first, by target thread, target session, origin thread, action, host, target kind, or search query.",
+    "description": "List local Agent Link launch/message/archive/Claude-session/reply receipts, newest first, by target address, target thread, target session, origin thread, action, host, target kind, or search query.",
     "inputSchema": {
       "type": "object",
       "properties": {
+        "target": {
+          "type": "string",
+          "description": "Only receipts whose target is this address (claude:<id> or codex:<id>). Receipts written before addresses existed are matched by their canonicalized target id."
+        },
         "targetThreadId": {
           "type": "string",
-          "description": "Only receipts whose target.threadId matches this thread."
+          "description": "Only receipts whose target.threadId matches this thread. A codex:<id> address is matched as target."
         },
         "originThreadId": {
           "type": "string",
@@ -1957,7 +1969,7 @@
         },
         "targetSessionId": {
           "type": "string",
-          "description": "Only receipts for this Claude target session id (e.g. local_<uuid>)."
+          "description": "Only receipts for this Claude target session id (e.g. local_<uuid>). A claude:<id> address is matched as target."
         },
         "query": {
           "type": "string",
@@ -2058,7 +2070,7 @@
         },
         "data": {
           "type": "array",
-          "description": "Receipt summaries."
+          "description": "Receipt summaries; each target carries its address (claude:<id> or codex:<id>, or null)."
         },
         "scannedReceipts": {
           "type": "integer",
@@ -3799,9 +3811,16 @@
           ],
           "description": "The caller's session id (scope caller)."
         },
+        "callerAddress": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The caller's address (scope caller), from runtime identity."
+        },
         "messages": {
           "type": "array",
-          "description": "Rows: {id, from, fromHarness, fromVerified, to, sentAt, replyTo, deliveredAt, acknowledgedAt, bodyBytes, envelope?}."
+          "description": "Rows: {id, from, fromHarness, fromVerified, to, sentAt, replyTo, fromAddress, toAddress, deliveredAt, acknowledgedAt, bodyBytes, envelope?}."
         },
         "note": {
           "type": "string",
@@ -4008,7 +4027,7 @@
         },
         "target": {
           "type": "object",
-          "description": "{sessionId, title, loaded, surface} of the target session."
+          "description": "{address, sessionId, title, loaded, surface} of the target session."
         },
         "resolution": {
           "type": "object",
@@ -4020,7 +4039,7 @@
         },
         "wait": {
           "type": "object",
-          "description": "With waitForReply: {outcome: reply|timeout, waitedMs, target: {sessionId}, reply?} (section 3.4)."
+          "description": "With waitForReply: {outcome: reply|timeout, waitedMs, target: {sessionId, address}, reply?} (section 3.4)."
         },
         "replyConfirmation": {
           "type": "object",
@@ -4046,7 +4065,7 @@
       "properties": {
         "sessionId": {
           "type": "string",
-          "description": "Exact sessionId (local_<uuid>) or cliSessionId of the session to wait on; archived sessions are included. Use resolve_claude_session first if you only have a fuzzy reference."
+          "description": "Exact address (claude:<id>), sessionId (local_<uuid>), or cliSessionId of the session to wait on; archived sessions are included. Use resolve_claude_session first if you only have a fuzzy reference."
         },
         "replyToMessageId": {
           "type": "string",
@@ -4159,7 +4178,7 @@
         },
         "target": {
           "type": "object",
-          "description": "{sessionId, lastLoaded?} of the session waited on."
+          "description": "{sessionId, address, lastLoaded?} of the session waited on."
         },
         "reply": {
           "type": "object",
@@ -4286,13 +4305,20 @@
           "type": "string",
           "description": "The session whose inbox was read."
         },
+        "address": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "That session's address, claude:<cliSessionId>."
+        },
         "markedDelivered": {
           "type": "boolean",
           "description": "Whether the returned messages were marked delivered."
         },
         "messages": {
           "type": "array",
-          "description": "Validated envelope fields per message: {id, from, fromHarness, fromVerified, to, sentAt, replyTo}. Bodies appear only in renderedBlock."
+          "description": "Validated envelope fields per message: {id, from, fromHarness, fromVerified, to, sentAt, replyTo, fromAddress, toAddress}. fromAddress/toAddress are the canonical addresses of the stored ids. Bodies appear only in renderedBlock."
         },
         "remainingCount": {
           "type": "integer",
@@ -4427,7 +4453,7 @@
         },
         "target": {
           "type": "object",
-          "description": "{sessionId, kind} of the original sender."
+          "description": "{address, sessionId, kind} of the original sender; address is null for an external sender."
         },
         "delivery": {
           "type": "string",
@@ -4554,7 +4580,7 @@
         },
         "sessions": {
           "type": "array",
-          "description": "Normalized sessions: sessionId, cliSessionId, surface, title, cwd, loaded, isArchived, and supported receive surfaces."
+          "description": "Normalized sessions: address (claude:<cliSessionId>), sessionId, cliSessionId, surface, title, cwd, loaded, isArchived, and supported receive surfaces."
         }
       },
       "required": [
@@ -4668,7 +4694,7 @@
         },
         "sessions": {
           "type": "array",
-          "description": "Normalized sessions: sessionId, cliSessionId, surface, title, cwd, loaded, isArchived, and supported receive surfaces."
+          "description": "Normalized sessions: address (claude:<cliSessionId>), sessionId, cliSessionId, surface, title, cwd, loaded, isArchived, and supported receive surfaces."
         }
       },
       "required": [
@@ -4683,13 +4709,13 @@
   },
   {
     "name": "get_claude_session",
-    "description": "Read one Claude Desktop or Claude Code session by sessionId or cliSessionId, archived sessions included. An unknown id is a not_found error.",
+    "description": "Read one Claude Desktop or Claude Code session by address (claude:<id>), sessionId, or cliSessionId, archived sessions included. An unknown id is a not_found error.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "sessionId": {
           "type": "string",
-          "description": "Exact sessionId (local_<uuid>) or cliSessionId."
+          "description": "Exact address (claude:<cliSessionId>), sessionId (local_<uuid>), or cliSessionId."
         }
       },
       "required": [
@@ -4773,7 +4799,7 @@
         },
         "session": {
           "type": "object",
-          "description": "The session."
+          "description": "The session, with its address."
         }
       },
       "required": [
@@ -4910,15 +4936,310 @@
             "object",
             "null"
           ],
-          "description": "The top candidate, or null."
+          "description": "The top candidate (with its address), or null."
         },
         "candidates": {
           "type": "array",
-          "description": "Ranked candidates with score and matchReasons."
+          "description": "Ranked candidates with address, score and matchReasons."
         },
         "selection": {
           "type": "object",
           "description": "{ambiguous, matchReasons} for the top candidate."
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "list_agents",
+    "description": "List Claude sessions (Claude Desktop, Claude Code) and Codex threads (Codex CLI, Codex desktop app) from either host, most recently active first. Each session is named by its address (claude:<cliSessionId> or codex:<threadId>), which every Agent Link tool accepts. Codex threads come from the Codex app-server when it is reachable, otherwise from local transcripts (then loaded is false). Also returns the caller's own address.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "harness": {
+          "type": "string",
+          "enum": [
+            "all",
+            "claude",
+            "codex"
+          ],
+          "description": "Only sessions of this harness: claude, codex, or all. Defaults to all."
+        },
+        "surface": {
+          "type": "string",
+          "enum": [
+            "desktop",
+            "code",
+            "cli",
+            "app"
+          ],
+          "description": "Only sessions on this surface: desktop or code (Claude), cli or app (Codex)."
+        },
+        "loaded": {
+          "type": "boolean",
+          "description": "Only sessions whose loaded state equals this value. Omit for both."
+        },
+        "includeArchived": {
+          "type": "boolean",
+          "description": "Include archived sessions. Defaults to false."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20,
+          "description": "Maximum sessions to return. Integer 1..200; defaults to 20."
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "true on success, false on failure; isError is set exactly when this is false."
+        },
+        "error": {
+          "type": "object",
+          "description": "Present only when ok is false.",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "invalid_arguments",
+                "unknown_tool",
+                "not_found",
+                "ambiguous",
+                "archived",
+                "wrong_recipient",
+                "no_current_session",
+                "body_too_large",
+                "permission_denied",
+                "active_turn_conflict",
+                "codex_unavailable",
+                "claude_unavailable",
+                "upstream_error",
+                "unsupported",
+                "state_io_error",
+                "internal_error"
+              ],
+              "description": "Stable error code (design doc section 3.2)."
+            },
+            "message": {
+              "type": "string",
+              "description": "Human-readable description of the failure."
+            },
+            "details": {
+              "type": "object",
+              "description": "Code-specific details, for example errors[] for invalid_arguments or limitBytes/actualBytes for body_too_large."
+            },
+            "hint": {
+              "type": "string",
+              "description": "Suggested next step, when there is one."
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "warnings": {
+          "type": "array",
+          "description": "Non-fatal notices, omitted when empty. Deprecated arguments add {code:'deprecated_argument', message, replacement}.",
+          "items": {
+            "type": "object",
+            "description": "One warning: at least code and message.",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Warning code."
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable warning."
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "sessions": {
+          "type": "array",
+          "description": "Sessions: {address, harness, id, title, cwd, surface[], loaded, archived, lastActivityAt, receive: {push, nudge, pull}}, plus sessionId/cliSessionId (Claude) or threadId/status/preview (Codex)."
+        },
+        "providers": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Per provider: {available, reason, source, count}. A provider that could not answer lists nothing and adds a warning."
+        },
+        "caller": {
+          "type": "object",
+          "description": "The calling session from runtime identity: {host, address, source}. address is 'external' when the caller cannot be identified."
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "resolve_agent",
+    "description": "Find one Claude session or Codex thread from an address, a bare id, or a fuzzy query (title, cwd, partial id), across both hosts. Archived sessions are included and marked. Returns ranked candidates and the verdict in status: resolved, ambiguous, or not_found (not an error). A bare id that names both a Claude session and a Codex thread is ambiguous; pass the address instead.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "An address (claude:<id> or codex:<id>), a bare session or thread id, or text matched against title, cwd and partial id."
+        },
+        "harness": {
+          "type": "string",
+          "enum": [
+            "all",
+            "claude",
+            "codex"
+          ],
+          "description": "Only consider this harness: claude, codex, or all. Defaults to all."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "default": 10,
+          "description": "Maximum candidates to return. Integer 1..50; defaults to 10."
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "true on success, false on failure; isError is set exactly when this is false."
+        },
+        "error": {
+          "type": "object",
+          "description": "Present only when ok is false.",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "invalid_arguments",
+                "unknown_tool",
+                "not_found",
+                "ambiguous",
+                "archived",
+                "wrong_recipient",
+                "no_current_session",
+                "body_too_large",
+                "permission_denied",
+                "active_turn_conflict",
+                "codex_unavailable",
+                "claude_unavailable",
+                "upstream_error",
+                "unsupported",
+                "state_io_error",
+                "internal_error"
+              ],
+              "description": "Stable error code (design doc section 3.2)."
+            },
+            "message": {
+              "type": "string",
+              "description": "Human-readable description of the failure."
+            },
+            "details": {
+              "type": "object",
+              "description": "Code-specific details, for example errors[] for invalid_arguments or limitBytes/actualBytes for body_too_large."
+            },
+            "hint": {
+              "type": "string",
+              "description": "Suggested next step, when there is one."
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "warnings": {
+          "type": "array",
+          "description": "Non-fatal notices, omitted when empty. Deprecated arguments add {code:'deprecated_argument', message, replacement}.",
+          "items": {
+            "type": "object",
+            "description": "One warning: at least code and message.",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Warning code."
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable warning."
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "resolved",
+            "ambiguous",
+            "not_found"
+          ],
+          "description": "Verdict: one best match, several tied, or none."
+        },
+        "query": {
+          "type": "string",
+          "description": "The query as given, trimmed."
+        },
+        "best": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "The top candidate, or null."
+        },
+        "candidates": {
+          "type": "array",
+          "description": "Ranked candidates ({address, harness, id, title, cwd, surface[], loaded, archived, lastActivityAt, receive: {push, nudge, pull}}, plus sessionId/cliSessionId (Claude) or threadId/status/preview (Codex)), each with score and matchReasons."
+        },
+        "selection": {
+          "type": "object",
+          "description": "{ambiguous, tiedCount, matchReasons} for the top score."
+        },
+        "providers": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Per provider: {available, reason, source, count}. A provider that could not answer lists nothing and adds a warning."
         }
       },
       "required": [

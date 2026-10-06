@@ -99,9 +99,11 @@ export function claudeSessionAliases(sessionOrId) {
   return [...out];
 }
 
+// `id` may also be an address, claude:<cliSessionId> (design doc section 1.3).
 export function claudeSessionMatches(session, id) {
   if (!session || typeof id !== "string" || !id.trim()) return false;
-  return claudeSessionAliases(session).includes(id.trim());
+  const value = id.trim().startsWith("claude:") ? id.trim().slice("claude:".length) : id.trim();
+  return Boolean(value) && claudeSessionAliases(session).includes(value);
 }
 
 // Who is calling a mailbox tool. `id` is the canonical address written as

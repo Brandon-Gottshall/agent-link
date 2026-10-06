@@ -77,6 +77,9 @@ approval_mode = "approve"
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.check_coordination_obligations]
 approval_mode = "approve"
 
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.get_claude_session]
+approval_mode = "approve"
+
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.get_codex_sidebar_state]
 approval_mode = "approve"
 
@@ -92,7 +95,16 @@ approval_mode = "approve"
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.list_agent_link_receipts]
 approval_mode = "approve"
 
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.list_agents]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.list_claude_sessions]
+approval_mode = "approve"
+
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.list_codex_threads]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.list_loaded_claude_sessions]
 approval_mode = "approve"
 
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.list_loaded_codex_threads]
@@ -114,6 +126,12 @@ approval_mode = "approve"
 approval_mode = "approve"
 
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.reply_agent_link_message]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.resolve_agent]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.resolve_claude_session]
 approval_mode = "approve"
 
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.resolve_codex_thread]
@@ -161,9 +179,13 @@ Then point either host at the folder instead of GitHub: `claude plugin marketpla
 
 ### Any host
 
+Every tool is registered on both hosts. Sessions are named by an address: `claude:<cliSessionId>` for a Claude Desktop or Claude Code session, `codex:<threadId>` for a Codex thread. Tools that name a session return its `address` beside the older id fields, and the exact-id arguments accept an address.
+
 | Tool | Purpose |
 | --- | --- |
-| `agent_link_health` | Report the app-server endpoint, autostart state, and caller context. |
+| `list_agents` | List Claude sessions and Codex threads together, newest first, with each one's address. Also returns the caller's own address. |
+| `resolve_agent` | Find one Claude session or Codex thread by address, bare id, or fuzzy query (title, cwd, partial id). |
+| `agent_link_health` | Report the app-server endpoint, autostart state, the caller's address, and caller context. |
 | `message_claude_session` | Send a message to a Claude Desktop or Claude Code session by session ID or alias. |
 | `reply_agent_link_message` | Reply to an incoming Agent Link message by its message ID. |
 | `read_agent_link_inbox` | Show pending messages for this Claude session as a visible tool result. |
@@ -193,7 +215,7 @@ Then point either host at the folder instead of GitHub: `claude plugin marketpla
 
 ### Claude sessions
 
-These tools are listed only when Agent Link runs inside Claude Code or Claude Desktop. Codex can still message a Claude session with `message_claude_session`, using a session ID or alias.
+These tools work on both hosts: a Codex thread can list and read Claude sessions too. `list_agents` and `resolve_agent` cover both harnesses at once.
 
 | Tool | Purpose |
 | --- | --- |

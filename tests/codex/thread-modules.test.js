@@ -125,8 +125,8 @@ test("envelopeReplyConfirmation envelopes the reply and strips raw text", () => 
 });
 
 test("waitOutcome maps confirmations to the section 3.4 wait shape", () => {
-  assert.deepEqual(waitOutcome({ unsupported: true, error: "e", hint: "h" }, { threadId: THREAD, turnId: "t", waitedMs: null }), { outcome: "unavailable", waitedMs: null, target: { threadId: THREAD }, error: "e", hint: "h" });
-  assert.deepEqual(waitOutcome({ timedOut: true }, { threadId: THREAD, turnId: "t", waitedMs: 9 }), { outcome: "timeout", waitedMs: 9, target: { threadId: THREAD } });
+  assert.deepEqual(waitOutcome({ unsupported: true, error: "e", hint: "h" }, { threadId: THREAD, turnId: "t", waitedMs: null }), { outcome: "unavailable", waitedMs: null, target: { threadId: THREAD, address: `codex:${THREAD}` }, error: "e", hint: "h" });
+  assert.deepEqual(waitOutcome({ timedOut: true }, { threadId: THREAD, turnId: "t", waitedMs: 9 }), { outcome: "timeout", waitedMs: 9, target: { threadId: THREAD, address: `codex:${THREAD}` } });
   const done = waitOutcome({ timedOut: false, turnStatus: "completed", finalResponse: "env", recentItems: [], recentItemsEnvelope: null }, { threadId: THREAD, turnId: "t", waitedMs: 3 });
   assert.equal(done.outcome, "turn_completed");
   assert.deepEqual(done.turn, { turnId: "t", status: "completed", finalResponse: "env", completedAt: null });

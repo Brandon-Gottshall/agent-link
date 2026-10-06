@@ -4,6 +4,7 @@
 // (moved from src/server.js in PR B5, unchanged). No I/O, no app-server.
 
 import { clampInt as clamp } from "../shared/args.js";
+import { codexAddress } from "../shared/identity.js";
 import { toIso, truncate } from "../shared/text.js";
 import { LIMITS } from "../server/schemas.js";
 import { inferArchiveState } from "./thread-utils.js";
@@ -51,9 +52,12 @@ import { inferArchiveState } from "./thread-utils.js";
  */
 
 /**
- * The thread summary every Codex thread tool returns.
+ * The thread summary every Codex thread tool returns. `address` is
+ * codex:<id> (design doc section 1.3), or null for an id that is not a valid
+ * address id.
  * @typedef {{
  *   id: string,
+ *   address: string | null,
  *   name: string | null,
  *   preview: string,
  *   status: any,
@@ -89,6 +93,7 @@ export function summarizeThread(thread, options = {}) {
   /** @type {ThreadSummary} */
   const summary = {
     id: thread.id,
+    address: codexAddress(thread.id),
     name: thread.name ?? null,
     preview: truncate(thread.preview ?? "", 700),
     status: thread.status,

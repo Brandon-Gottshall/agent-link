@@ -97,6 +97,8 @@
           "socket": null
         },
         "autoStartEnabled": true,
+        "address": "external",
+        "addressSource": "fallback",
         "providers": {
           "claude": {
             "available": false,
@@ -243,6 +245,8 @@
           "socket": null
         },
         "autoStartEnabled": true,
+        "address": "external",
+        "addressSource": "fallback",
         "providers": {
           "claude": {
             "available": false,
@@ -429,6 +433,8 @@
           "socket": null
         },
         "autoStartEnabled": true,
+        "address": "codex:019d3000-0000-7000-8000-000000000002",
+        "addressSource": "runtime_context",
         "providers": {
           "claude": {
             "available": false,
@@ -516,6 +522,7 @@
         "data": [
           {
             "id": "019d3000-0000-7000-8000-000000000001",
+            "address": "codex:019d3000-0000-7000-8000-000000000001",
             "name": "Alpha worker",
             "preview": "Alpha worker preview",
             "status": {
@@ -539,6 +546,7 @@
           },
           {
             "id": "019d3000-0000-7000-8000-000000000002",
+            "address": "codex:019d3000-0000-7000-8000-000000000002",
             "name": "Beta active",
             "preview": "Beta active preview",
             "status": {
@@ -563,6 +571,7 @@
           },
           {
             "id": "019d3000-0000-7000-8000-000000000003",
+            "address": "codex:019d3000-0000-7000-8000-000000000003",
             "name": "Gamma sleeping",
             "preview": "Gamma sleeping preview",
             "status": {
@@ -586,6 +595,7 @@
           },
           {
             "id": "019d3000-0000-7000-8000-000000000005",
+            "address": "codex:019d3000-0000-7000-8000-000000000005",
             "name": "Demo Project Orchestrator",
             "preview": "Demo Project Orchestrator preview",
             "status": {
@@ -672,6 +682,7 @@
         "data": [
           {
             "id": "019d3000-0000-7000-8000-000000000001",
+            "address": "codex:019d3000-0000-7000-8000-000000000001",
             "name": "Alpha worker",
             "preview": "Alpha worker preview",
             "status": {
@@ -779,6 +790,7 @@
         "data": [
           {
             "id": "019d3000-0000-7000-8000-000000000007",
+            "address": "codex:019d3000-0000-7000-8000-000000000007",
             "name": null,
             "preview": "Local Only Search Target",
             "status": {
@@ -887,6 +899,7 @@
         "data": [
           {
             "id": "019d3000-0000-7000-8000-000000000001",
+            "address": "codex:019d3000-0000-7000-8000-000000000001",
             "name": "Alpha worker",
             "preview": "Alpha worker preview",
             "status": {
@@ -910,6 +923,7 @@
           },
           {
             "id": "019d3000-0000-7000-8000-000000000002",
+            "address": "codex:019d3000-0000-7000-8000-000000000002",
             "name": "Beta active",
             "preview": "Beta active preview",
             "status": {
@@ -934,6 +948,7 @@
           },
           {
             "id": "019d3000-0000-7000-8000-000000000003",
+            "address": "codex:019d3000-0000-7000-8000-000000000003",
             "name": "Gamma sleeping",
             "preview": "Gamma sleeping preview",
             "status": {
@@ -957,6 +972,7 @@
           },
           {
             "id": "019d3000-0000-7000-8000-000000000005",
+            "address": "codex:019d3000-0000-7000-8000-000000000005",
             "name": "Demo Project Orchestrator",
             "preview": "Demo Project Orchestrator preview",
             "status": {
@@ -980,6 +996,7 @@
           },
           {
             "id": "019d3000-0000-7000-8000-000000000006",
+            "address": "codex:019d3000-0000-7000-8000-000000000006",
             "name": "Old archived",
             "preview": "Old archived preview",
             "status": {
@@ -1003,6 +1020,7 @@
           },
           {
             "id": "019d3000-0000-7000-8000-000000000004",
+            "address": "codex:019d3000-0000-7000-8000-000000000004",
             "name": "Scout subagent",
             "preview": "Scout subagent preview",
             "status": {
@@ -1129,6 +1147,7 @@
         "data": [
           {
             "id": "019d3000-0000-7000-8000-000000000006",
+            "address": "codex:019d3000-0000-7000-8000-000000000006",
             "name": "Old archived",
             "preview": "Old archived preview",
             "status": {
@@ -1180,6 +1199,7 @@
         "query": "Beta",
         "best": {
           "id": "019d3000-0000-7000-8000-000000000002",
+          "address": "codex:019d3000-0000-7000-8000-000000000002",
           "name": "Beta active",
           "preview": "Beta active preview",
           "status": {
@@ -1233,6 +1253,7 @@
         "candidates": [
           {
             "id": "019d3000-0000-7000-8000-000000000002",
+            "address": "codex:019d3000-0000-7000-8000-000000000002",
             "name": "Beta active",
             "preview": "Beta active preview",
             "status": {
@@ -1342,6 +1363,7 @@
         "query": "worker",
         "best": {
           "id": "019d3000-0000-7000-8000-000000000001",
+          "address": "codex:019d3000-0000-7000-8000-000000000001",
           "name": "Alpha worker",
           "preview": "Alpha worker preview",
           "status": {
@@ -1394,6 +1416,7 @@
         "candidates": [
           {
             "id": "019d3000-0000-7000-8000-000000000001",
+            "address": "codex:019d3000-0000-7000-8000-000000000001",
             "name": "Alpha worker",
             "preview": "Alpha worker preview",
             "status": {
@@ -1604,6 +1627,7 @@
         },
         "thread": {
           "id": "019d3000-0000-7000-8000-000000000001",
+          "address": "codex:019d3000-0000-7000-8000-000000000001",
           "name": "Alpha worker",
           "preview": "Alpha worker preview",
           "status": {
@@ -1680,6 +1704,7 @@
         },
         "thread": {
           "id": "019d3000-0000-7000-8000-000000000001",
+          "address": "codex:019d3000-0000-7000-8000-000000000001",
           "name": "Alpha worker",
           "preview": "Alpha worker preview",
           "status": {
@@ -1792,6 +1817,7 @@
             "targetKind": null,
             "host": null,
             "targetSessionId": null,
+            "targetAddress": null,
             "searchTerm": ""
           }
         }
@@ -1827,6 +1853,7 @@
         },
         "thread": {
           "id": "019d3000-0000-7000-8000-000000000007",
+          "address": "codex:019d3000-0000-7000-8000-000000000007",
           "name": null,
           "preview": "Local Only Search Target",
           "status": {
@@ -3069,13 +3096,15 @@
         "messageId": "<MSG#1>",
         "deliveredVia": "turn/start",
         "target": {
-          "threadId": "019d3000-0000-7000-8000-000000000001"
+          "threadId": "019d3000-0000-7000-8000-000000000001",
+          "address": "codex:019d3000-0000-7000-8000-000000000001"
         },
         "wait": {
           "outcome": "turn_completed",
           "waitedMs": "<N>",
           "target": {
-            "threadId": "019d3000-0000-7000-8000-000000000001"
+            "threadId": "019d3000-0000-7000-8000-000000000001",
+            "address": "codex:019d3000-0000-7000-8000-000000000001"
           },
           "turn": {
             "turnId": "turn-2-001",
@@ -3318,6 +3347,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000001",
               "threadId": "019d3000-0000-7000-8000-000000000001",
               "turnId": "turn-2-001",
               "name": "Alpha worker",
@@ -3433,7 +3463,8 @@
         "outcome": "timeout",
         "waitedMs": "<N>",
         "target": {
-          "threadId": "019d3000-0000-7000-8000-000000000002"
+          "threadId": "019d3000-0000-7000-8000-000000000002",
+          "address": "codex:019d3000-0000-7000-8000-000000000002"
         },
         "source": "app-server",
         "timedOut": true,
@@ -3476,6 +3507,7 @@
         },
         "thread": {
           "id": "019d3000-0000-7000-8000-000000000002",
+          "address": "codex:019d3000-0000-7000-8000-000000000002",
           "name": "Beta active",
           "preview": "Beta active preview",
           "status": {
@@ -3629,7 +3661,8 @@
         "messageId": "<MSG#4>",
         "deliveredVia": "turn/steer",
         "target": {
-          "threadId": "019d3000-0000-7000-8000-000000000002"
+          "threadId": "019d3000-0000-7000-8000-000000000002",
+          "address": "codex:019d3000-0000-7000-8000-000000000002"
         },
         "turn": {
           "id": "beta-live"
@@ -3638,7 +3671,8 @@
           "outcome": "turn_completed",
           "waitedMs": "<N>",
           "target": {
-            "threadId": "019d3000-0000-7000-8000-000000000002"
+            "threadId": "019d3000-0000-7000-8000-000000000002",
+            "address": "codex:019d3000-0000-7000-8000-000000000002"
           },
           "turn": {
             "turnId": "beta-live",
@@ -3864,6 +3898,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000002",
               "threadId": "019d3000-0000-7000-8000-000000000002",
               "turnId": "beta-live",
               "name": "Beta active",
@@ -3973,7 +4008,8 @@
         "messageId": "<MSG#7>",
         "deliveredVia": "turn/start",
         "target": {
-          "threadId": "019d3000-0000-7000-8000-000000000003"
+          "threadId": "019d3000-0000-7000-8000-000000000003",
+          "address": "codex:019d3000-0000-7000-8000-000000000003"
         },
         "source": "app-server",
         "action": "resumed+started_turn",
@@ -4101,6 +4137,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000003",
               "threadId": "019d3000-0000-7000-8000-000000000003",
               "turnId": "turn-2-003",
               "name": "Gamma sleeping",
@@ -4224,7 +4261,8 @@
         "messageId": "<MSG#8>",
         "deliveredVia": "turn/start",
         "target": {
-          "threadId": "019d3000-0000-7000-8000-000000000001"
+          "threadId": "019d3000-0000-7000-8000-000000000001",
+          "address": "codex:019d3000-0000-7000-8000-000000000001"
         },
         "source": "app-server",
         "action": "started_turn",
@@ -4352,6 +4390,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000001",
               "threadId": "019d3000-0000-7000-8000-000000000001",
               "turnId": "turn-3-001",
               "name": "Alpha worker",
@@ -4443,7 +4482,8 @@
         "messageId": "<MSG#9>",
         "deliveredVia": "turn/start",
         "target": {
-          "threadId": "019d3000-0000-7000-8000-000000000001"
+          "threadId": "019d3000-0000-7000-8000-000000000001",
+          "address": "codex:019d3000-0000-7000-8000-000000000001"
         },
         "source": "app-server",
         "action": "started_turn",
@@ -4627,7 +4667,8 @@
         "outcome": "turn_completed",
         "waitedMs": "<N>",
         "target": {
-          "threadId": "019d3000-0000-7000-8000-000000000001"
+          "threadId": "019d3000-0000-7000-8000-000000000001",
+          "address": "codex:019d3000-0000-7000-8000-000000000001"
         },
         "turn": {
           "turnId": "turn-4-001",
@@ -4670,6 +4711,7 @@
         },
         "thread": {
           "id": "019d3000-0000-7000-8000-000000000001",
+          "address": "codex:019d3000-0000-7000-8000-000000000001",
           "name": "Alpha worker",
           "preview": "Alpha worker preview",
           "status": {
@@ -4819,6 +4861,7 @@
         "action": "started_thread+named_thread",
         "thread": {
           "id": "019d3000-0000-7000-8000-000000000257",
+          "address": "codex:019d3000-0000-7000-8000-000000000257",
           "name": "New thread",
           "preview": "",
           "status": {
@@ -4921,6 +4964,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000257",
               "threadId": "019d3000-0000-7000-8000-000000000257",
               "turnId": null,
               "name": "New thread",
@@ -4981,6 +5025,7 @@
         "action": "started_thread+named_thread+started_turn",
         "thread": {
           "id": "019d3000-0000-7000-8000-000000000258",
+          "address": "codex:019d3000-0000-7000-8000-000000000258",
           "name": "Launched worker",
           "preview": "",
           "status": {
@@ -5111,6 +5156,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000258",
               "threadId": "019d3000-0000-7000-8000-000000000258",
               "turnId": "turn-1-258",
               "name": "Launched worker",
@@ -5187,6 +5233,7 @@
         "action": "started_thread+started_turn",
         "thread": {
           "id": "019d3000-0000-7000-8000-000000000259",
+          "address": "codex:019d3000-0000-7000-8000-000000000259",
           "name": null,
           "preview": "",
           "status": {
@@ -5301,6 +5348,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000259",
               "threadId": "019d3000-0000-7000-8000-000000000259",
               "turnId": "turn-1-259",
               "name": null,
@@ -5373,6 +5421,7 @@
         "action": "started_thread+named_thread",
         "thread": {
           "id": "019d3000-0000-7000-8000-000000000260",
+          "address": "codex:019d3000-0000-7000-8000-000000000260",
           "name": "GUI launch",
           "preview": "",
           "status": {
@@ -5478,6 +5527,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000260",
               "threadId": "019d3000-0000-7000-8000-000000000260",
               "turnId": null,
               "name": "GUI launch",
@@ -5579,6 +5629,7 @@
           "to": "/codex-home/archived_sessions/rollout-019d3000-0000-7000-8000-000000000003.jsonl",
           "thread": {
             "id": "019d3000-0000-7000-8000-000000000003",
+            "address": "codex:019d3000-0000-7000-8000-000000000003",
             "name": "Gamma sleeping",
             "preview": "Gamma sleeping preview",
             "status": {
@@ -5698,6 +5749,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000003",
               "threadId": "019d3000-0000-7000-8000-000000000003",
               "turnId": null,
               "name": "Gamma sleeping",
@@ -5876,6 +5928,7 @@
           "to": "/codex-home/archived_sessions/rollout-019d3000-0000-7000-8000-000000000003.jsonl",
           "thread": {
             "id": "019d3000-0000-7000-8000-000000000003",
+            "address": "codex:019d3000-0000-7000-8000-000000000003",
             "name": "Gamma sleeping",
             "preview": "Gamma sleeping preview",
             "status": {
@@ -5982,6 +6035,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000003",
               "threadId": "019d3000-0000-7000-8000-000000000003",
               "turnId": null,
               "name": "Gamma sleeping",
@@ -6345,6 +6399,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000001",
               "threadId": "019d3000-0000-7000-8000-000000000001",
               "turnId": "turn-2-001",
               "name": "Alpha worker",
@@ -6440,6 +6495,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000002",
               "threadId": "019d3000-0000-7000-8000-000000000002",
               "turnId": "beta-live",
               "name": "Beta active",
@@ -6523,6 +6579,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000003",
               "threadId": "019d3000-0000-7000-8000-000000000003",
               "turnId": "turn-2-003",
               "name": "Gamma sleeping",
@@ -6599,6 +6656,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000001",
               "threadId": "019d3000-0000-7000-8000-000000000001",
               "turnId": "turn-3-001",
               "name": "Alpha worker",
@@ -6675,6 +6733,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000257",
               "threadId": "019d3000-0000-7000-8000-000000000257",
               "turnId": null,
               "name": "New thread",
@@ -6754,6 +6813,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000258",
               "threadId": "019d3000-0000-7000-8000-000000000258",
               "turnId": "turn-1-258",
               "name": "Launched worker",
@@ -6820,6 +6880,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000259",
               "threadId": "019d3000-0000-7000-8000-000000000259",
               "turnId": "turn-1-259",
               "name": null,
@@ -6886,6 +6947,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000260",
               "threadId": "019d3000-0000-7000-8000-000000000260",
               "turnId": null,
               "name": "GUI launch",
@@ -6965,6 +7027,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000003",
               "threadId": "019d3000-0000-7000-8000-000000000003",
               "turnId": null,
               "name": "Gamma sleeping",
@@ -7094,6 +7157,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000003",
               "threadId": "019d3000-0000-7000-8000-000000000003",
               "turnId": null,
               "name": "Gamma sleeping",
@@ -7193,6 +7257,7 @@
           "targetKind": null,
           "host": null,
           "targetSessionId": null,
+          "targetAddress": null,
           "searchTerm": ""
         }
       },
@@ -7261,6 +7326,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000003",
               "threadId": "019d3000-0000-7000-8000-000000000003",
               "turnId": null,
               "name": "Gamma sleeping",
@@ -7390,6 +7456,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000003",
               "threadId": "019d3000-0000-7000-8000-000000000003",
               "turnId": null,
               "name": "Gamma sleeping",
@@ -7489,6 +7556,7 @@
           "targetKind": null,
           "host": null,
           "targetSessionId": null,
+          "targetAddress": null,
           "searchTerm": ""
         }
       },
@@ -7515,6 +7583,7 @@
           "threadId": "019d3000-0000-7000-8000-000000000005",
           "thread": {
             "id": "019d3000-0000-7000-8000-000000000005",
+            "address": "codex:019d3000-0000-7000-8000-000000000005",
             "name": "Demo Project Orchestrator",
             "preview": "Demo Project Orchestrator preview",
             "status": {
@@ -7577,6 +7646,7 @@
           "threadId": "019d3000-0000-7000-8000-000000000005",
           "thread": {
             "id": "019d3000-0000-7000-8000-000000000005",
+            "address": "codex:019d3000-0000-7000-8000-000000000005",
             "name": "Demo Project Orchestrator",
             "preview": "Demo Project Orchestrator preview",
             "status": {
@@ -7614,6 +7684,7 @@
         "candidates": [
           {
             "id": "019d3000-0000-7000-8000-000000000005",
+            "address": "codex:019d3000-0000-7000-8000-000000000005",
             "name": "Demo Project Orchestrator",
             "preview": "Demo Project Orchestrator preview",
             "status": {
@@ -7776,6 +7847,7 @@
             "threadId": "019d3000-0000-7000-8000-000000000005",
             "thread": {
               "id": "019d3000-0000-7000-8000-000000000005",
+              "address": "codex:019d3000-0000-7000-8000-000000000005",
               "name": "Demo Project Orchestrator",
               "preview": "Demo Project Orchestrator preview",
               "status": {
@@ -7811,7 +7883,8 @@
           "messageId": "<MSG#12>",
           "deliveredVia": "turn/start",
           "target": {
-            "threadId": "019d3000-0000-7000-8000-000000000005"
+            "threadId": "019d3000-0000-7000-8000-000000000005",
+            "address": "codex:019d3000-0000-7000-8000-000000000005"
           },
           "source": "app-server",
           "action": "started_turn",
@@ -7955,6 +8028,7 @@
                 }
               },
               "target": {
+                "address": "codex:019d3000-0000-7000-8000-000000000005",
                 "threadId": "019d3000-0000-7000-8000-000000000005",
                 "turnId": "turn-2-005",
                 "name": "Demo Project Orchestrator",
@@ -8052,6 +8126,7 @@
             "threadId": "019d3000-0000-7000-8000-000000000005",
             "thread": {
               "id": "019d3000-0000-7000-8000-000000000005",
+              "address": "codex:019d3000-0000-7000-8000-000000000005",
               "name": "Demo Project Orchestrator",
               "preview": "Demo Project Orchestrator preview",
               "status": {
@@ -8089,6 +8164,7 @@
           "action": "started_thread+named_thread+started_turn",
           "thread": {
             "id": "019d3000-0000-7000-8000-000000000261",
+            "address": "codex:019d3000-0000-7000-8000-000000000261",
             "name": "Project worker: tester",
             "preview": "",
             "status": {
@@ -8222,6 +8298,7 @@
                 }
               },
               "target": {
+                "address": "codex:019d3000-0000-7000-8000-000000000261",
                 "threadId": "019d3000-0000-7000-8000-000000000261",
                 "turnId": "turn-1-261",
                 "name": "Project worker: tester",
@@ -8320,6 +8397,7 @@
             "threadId": "019d3000-0000-7000-8000-000000000005",
             "thread": {
               "id": "019d3000-0000-7000-8000-000000000005",
+              "address": "codex:019d3000-0000-7000-8000-000000000005",
               "name": "Demo Project Orchestrator",
               "preview": "Demo Project Orchestrator preview",
               "status": {
@@ -8356,7 +8434,8 @@
           "messageId": "<MSG#14>",
           "deliveredVia": "turn/start",
           "target": {
-            "threadId": "019d3000-0000-7000-8000-000000000005"
+            "threadId": "019d3000-0000-7000-8000-000000000005",
+            "address": "codex:019d3000-0000-7000-8000-000000000005"
           },
           "source": "app-server",
           "action": "started_turn",
@@ -8500,6 +8579,7 @@
                 }
               },
               "target": {
+                "address": "codex:019d3000-0000-7000-8000-000000000005",
                 "threadId": "019d3000-0000-7000-8000-000000000005",
                 "turnId": "turn-3-005",
                 "name": "Demo Project Orchestrator",
@@ -8599,6 +8679,7 @@
             "threadId": "019d3000-0000-7000-8000-000000000005",
             "thread": {
               "id": "019d3000-0000-7000-8000-000000000005",
+              "address": "codex:019d3000-0000-7000-8000-000000000005",
               "name": "Demo Project Orchestrator",
               "preview": "Demo Project Orchestrator preview",
               "status": {
@@ -8635,7 +8716,8 @@
           "messageId": "<MSG#15>",
           "deliveredVia": "turn/start",
           "target": {
-            "threadId": "019d3000-0000-7000-8000-000000000005"
+            "threadId": "019d3000-0000-7000-8000-000000000005",
+            "address": "codex:019d3000-0000-7000-8000-000000000005"
           },
           "source": "app-server",
           "action": "started_turn",
@@ -8766,6 +8848,7 @@
                 }
               },
               "target": {
+                "address": "codex:019d3000-0000-7000-8000-000000000005",
                 "threadId": "019d3000-0000-7000-8000-000000000005",
                 "turnId": "turn-4-005",
                 "name": "Demo Project Orchestrator",
@@ -8875,6 +8958,7 @@
           "source": "app-server",
           "thread": {
             "id": "019d3000-0000-7000-8000-000000000001",
+            "address": "codex:019d3000-0000-7000-8000-000000000001",
             "name": "Alpha worker",
             "preview": "Alpha worker preview",
             "status": {
@@ -8904,7 +8988,8 @@
           "messageId": "<MSG#16>",
           "deliveredVia": "turn/start",
           "target": {
-            "threadId": "019d3000-0000-7000-8000-000000000001"
+            "threadId": "019d3000-0000-7000-8000-000000000001",
+            "address": "codex:019d3000-0000-7000-8000-000000000001"
           },
           "source": "app-server",
           "action": "started_turn",
@@ -9050,6 +9135,7 @@
                 }
               },
               "target": {
+                "address": "codex:019d3000-0000-7000-8000-000000000001",
                 "threadId": "019d3000-0000-7000-8000-000000000001",
                 "turnId": "turn-5-001",
                 "name": "Alpha worker",
@@ -9161,6 +9247,7 @@
           "source": "app-server",
           "thread": {
             "id": "019d3000-0000-7000-8000-000000000001",
+            "address": "codex:019d3000-0000-7000-8000-000000000001",
             "name": "Alpha worker",
             "preview": "Alpha worker preview",
             "status": {
@@ -9206,6 +9293,7 @@
             "query": "Alpha",
             "best": {
               "id": "019d3000-0000-7000-8000-000000000001",
+              "address": "codex:019d3000-0000-7000-8000-000000000001",
               "name": "Alpha worker",
               "preview": "Alpha worker preview",
               "status": {
@@ -9258,6 +9346,7 @@
             "candidates": [
               {
                 "id": "019d3000-0000-7000-8000-000000000001",
+                "address": "codex:019d3000-0000-7000-8000-000000000001",
                 "name": "Alpha worker",
                 "preview": "Alpha worker preview",
                 "status": {
@@ -9335,7 +9424,8 @@
           "messageId": "<MSG#17>",
           "deliveredVia": "turn/start",
           "target": {
-            "threadId": "019d3000-0000-7000-8000-000000000001"
+            "threadId": "019d3000-0000-7000-8000-000000000001",
+            "address": "codex:019d3000-0000-7000-8000-000000000001"
           },
           "source": "app-server",
           "action": "started_turn",
@@ -9468,6 +9558,7 @@
                 }
               },
               "target": {
+                "address": "codex:019d3000-0000-7000-8000-000000000001",
                 "threadId": "019d3000-0000-7000-8000-000000000001",
                 "turnId": "turn-6-001",
                 "name": "Alpha worker",
@@ -9683,6 +9774,7 @@
                 }
               },
               "target": {
+                "address": "codex:019d3000-0000-7000-8000-000000000001",
                 "threadId": "019d3000-0000-7000-8000-000000000001",
                 "turnId": "turn-5-001",
                 "name": "Alpha worker",
@@ -9841,6 +9933,7 @@
                 }
               },
               "target": {
+                "address": "codex:019d3000-0000-7000-8000-000000000001",
                 "threadId": "019d3000-0000-7000-8000-000000000001",
                 "turnId": "turn-5-001",
                 "name": "Alpha worker",
@@ -10016,6 +10109,8 @@
           "socket": null
         },
         "autoStartEnabled": true,
+        "address": "external",
+        "addressSource": "fallback",
         "providers": {
           "claude": {
             "available": false,
@@ -10049,6 +10144,1640 @@
           "warning": null
         },
         "recentEvents": []
+      },
+      "appServerRequests": []
+    },
+    {
+      "call": "list_agents",
+      "args": {},
+      "meta": true,
+      "isError": false,
+      "payload": {
+        "ok": true,
+        "sessions": [
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000001",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000001",
+            "title": "Alpha worker",
+            "cwd": "<TMP>/project",
+            "surface": [
+              "app"
+            ],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:41:00.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000001",
+            "status": "idle",
+            "preview": "Alpha worker preview"
+          },
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000002",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000002",
+            "title": "Beta active",
+            "cwd": "/work/project",
+            "surface": [
+              "app"
+            ],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:41:00.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000002",
+            "status": "idle",
+            "preview": "Beta active preview"
+          },
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000005",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000005",
+            "title": "Demo Project Orchestrator",
+            "cwd": "/work/demo",
+            "surface": [
+              "app"
+            ],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:41:00.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000005",
+            "status": "idle",
+            "preview": "Demo Project Orchestrator preview"
+          },
+          {
+            "address": "claude:019d3000-0000-7000-8000-000000000001",
+            "harness": "claude",
+            "id": "019d3000-0000-7000-8000-000000000001",
+            "title": "Golden Claude twin",
+            "cwd": "/work/claude-project",
+            "surface": [
+              "code"
+            ],
+            "loaded": false,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:40:30.000Z",
+            "receive": {
+              "push": "channel",
+              "nudge": "claude-hook",
+              "pull": true
+            },
+            "sessionId": "local_019d3000-0000-7000-8000-000000000001",
+            "cliSessionId": "019d3000-0000-7000-8000-000000000001"
+          },
+          {
+            "address": "claude:0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+            "harness": "claude",
+            "id": "0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+            "title": "Golden Claude planner",
+            "cwd": "/work/claude-project",
+            "surface": [
+              "code"
+            ],
+            "loaded": false,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:40:30.000Z",
+            "receive": {
+              "push": "channel",
+              "nudge": "claude-hook",
+              "pull": true
+            },
+            "sessionId": "local_0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+            "cliSessionId": "0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b"
+          },
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000261",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000261",
+            "title": "Project worker: tester",
+            "cwd": "/work/default",
+            "surface": [],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:40:05.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000261",
+            "status": "idle",
+            "preview": null
+          },
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000260",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000260",
+            "title": "GUI launch",
+            "cwd": "/work/default",
+            "surface": [],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:40:04.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000260",
+            "status": "idle",
+            "preview": null
+          },
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000259",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000259",
+            "title": null,
+            "cwd": "/work/default",
+            "surface": [],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:40:03.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000259",
+            "status": "idle",
+            "preview": null
+          },
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000258",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000258",
+            "title": "Launched worker",
+            "cwd": "<TMP>/project",
+            "surface": [],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:40:02.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000258",
+            "status": "idle",
+            "preview": null
+          },
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000257",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000257",
+            "title": "New thread",
+            "cwd": "/work/default",
+            "surface": [],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:40:01.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000257",
+            "status": "idle",
+            "preview": null
+          }
+        ],
+        "providers": {
+          "claude": {
+            "available": true,
+            "reason": null,
+            "source": "claude-session-index",
+            "count": 2
+          },
+          "codex": {
+            "available": true,
+            "reason": null,
+            "source": "app-server",
+            "count": 8
+          }
+        },
+        "caller": {
+          "host": "codex",
+          "address": "codex:019d3000-0000-7000-8000-000000000002",
+          "source": "runtime_context"
+        }
+      },
+      "appServerRequests": [
+        {
+          "method": "thread/list",
+          "params": {
+            "limit": 20,
+            "archived": false,
+            "searchTerm": null,
+            "cwd": null,
+            "sourceKinds": null
+          }
+        }
+      ]
+    },
+    {
+      "call": "list_agents",
+      "args": {
+        "harness": "codex",
+        "includeArchived": true,
+        "limit": 10
+      },
+      "meta": false,
+      "isError": false,
+      "payload": {
+        "ok": true,
+        "sessions": [
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000001",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000001",
+            "title": "Alpha worker",
+            "cwd": "<TMP>/project",
+            "surface": [
+              "app"
+            ],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:41:00.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000001",
+            "status": "idle",
+            "preview": "Alpha worker preview"
+          },
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000002",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000002",
+            "title": "Beta active",
+            "cwd": "/work/project",
+            "surface": [
+              "app"
+            ],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:41:00.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000002",
+            "status": "idle",
+            "preview": "Beta active preview"
+          },
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000003",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000003",
+            "title": "Gamma sleeping",
+            "cwd": "/work/project",
+            "surface": [
+              "app"
+            ],
+            "loaded": true,
+            "archived": true,
+            "lastActivityAt": "2026-05-18T06:41:00.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000003",
+            "status": "idle",
+            "preview": "Gamma sleeping preview"
+          },
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000005",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000005",
+            "title": "Demo Project Orchestrator",
+            "cwd": "/work/demo",
+            "surface": [
+              "app"
+            ],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:41:00.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000005",
+            "status": "idle",
+            "preview": "Demo Project Orchestrator preview"
+          },
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000006",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000006",
+            "title": "Old archived",
+            "cwd": "/work/project",
+            "surface": [
+              "app"
+            ],
+            "loaded": true,
+            "archived": true,
+            "lastActivityAt": "2026-05-18T06:41:00.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000006",
+            "status": "idle",
+            "preview": "Old archived preview"
+          },
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000261",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000261",
+            "title": "Project worker: tester",
+            "cwd": "/work/default",
+            "surface": [],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:40:05.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000261",
+            "status": "idle",
+            "preview": null
+          },
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000260",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000260",
+            "title": "GUI launch",
+            "cwd": "/work/default",
+            "surface": [],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:40:04.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000260",
+            "status": "idle",
+            "preview": null
+          },
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000259",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000259",
+            "title": null,
+            "cwd": "/work/default",
+            "surface": [],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:40:03.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000259",
+            "status": "idle",
+            "preview": null
+          },
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000258",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000258",
+            "title": "Launched worker",
+            "cwd": "<TMP>/project",
+            "surface": [],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:40:02.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000258",
+            "status": "idle",
+            "preview": null
+          },
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000257",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000257",
+            "title": "New thread",
+            "cwd": "/work/default",
+            "surface": [],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:40:01.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000257",
+            "status": "idle",
+            "preview": null
+          }
+        ],
+        "providers": {
+          "codex": {
+            "available": true,
+            "reason": null,
+            "source": "app-server",
+            "count": 10
+          }
+        },
+        "caller": {
+          "host": "codex",
+          "address": "external",
+          "source": "fallback"
+        }
+      },
+      "appServerRequests": [
+        {
+          "method": "thread/list",
+          "params": {
+            "limit": 10,
+            "archived": false,
+            "searchTerm": null,
+            "cwd": null,
+            "sourceKinds": null
+          }
+        },
+        {
+          "method": "thread/list",
+          "params": {
+            "limit": 10,
+            "archived": true,
+            "searchTerm": null,
+            "cwd": null,
+            "sourceKinds": null
+          }
+        }
+      ]
+    },
+    {
+      "call": "list_agents",
+      "args": {
+        "harness": "claude"
+      },
+      "meta": false,
+      "isError": false,
+      "payload": {
+        "ok": true,
+        "sessions": [
+          {
+            "address": "claude:019d3000-0000-7000-8000-000000000001",
+            "harness": "claude",
+            "id": "019d3000-0000-7000-8000-000000000001",
+            "title": "Golden Claude twin",
+            "cwd": "/work/claude-project",
+            "surface": [
+              "code"
+            ],
+            "loaded": false,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:40:30.000Z",
+            "receive": {
+              "push": "channel",
+              "nudge": "claude-hook",
+              "pull": true
+            },
+            "sessionId": "local_019d3000-0000-7000-8000-000000000001",
+            "cliSessionId": "019d3000-0000-7000-8000-000000000001"
+          },
+          {
+            "address": "claude:0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+            "harness": "claude",
+            "id": "0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+            "title": "Golden Claude planner",
+            "cwd": "/work/claude-project",
+            "surface": [
+              "code"
+            ],
+            "loaded": false,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:40:30.000Z",
+            "receive": {
+              "push": "channel",
+              "nudge": "claude-hook",
+              "pull": true
+            },
+            "sessionId": "local_0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+            "cliSessionId": "0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b"
+          }
+        ],
+        "providers": {
+          "claude": {
+            "available": true,
+            "reason": null,
+            "source": "claude-session-index",
+            "count": 2
+          }
+        },
+        "caller": {
+          "host": "codex",
+          "address": "external",
+          "source": "fallback"
+        }
+      },
+      "appServerRequests": []
+    },
+    {
+      "call": "list_agents",
+      "args": {
+        "surface": "app",
+        "loaded": true
+      },
+      "meta": false,
+      "isError": false,
+      "payload": {
+        "ok": true,
+        "sessions": [
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000001",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000001",
+            "title": "Alpha worker",
+            "cwd": "<TMP>/project",
+            "surface": [
+              "app"
+            ],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:41:00.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000001",
+            "status": "idle",
+            "preview": "Alpha worker preview"
+          },
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000002",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000002",
+            "title": "Beta active",
+            "cwd": "/work/project",
+            "surface": [
+              "app"
+            ],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:41:00.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000002",
+            "status": "idle",
+            "preview": "Beta active preview"
+          },
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000005",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000005",
+            "title": "Demo Project Orchestrator",
+            "cwd": "/work/demo",
+            "surface": [
+              "app"
+            ],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:41:00.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000005",
+            "status": "idle",
+            "preview": "Demo Project Orchestrator preview"
+          }
+        ],
+        "providers": {
+          "claude": {
+            "available": true,
+            "reason": null,
+            "source": "claude-session-index",
+            "count": 2
+          },
+          "codex": {
+            "available": true,
+            "reason": null,
+            "source": "app-server",
+            "count": 8
+          }
+        },
+        "caller": {
+          "host": "codex",
+          "address": "external",
+          "source": "fallback"
+        }
+      },
+      "appServerRequests": [
+        {
+          "method": "thread/list",
+          "params": {
+            "limit": 200,
+            "archived": false,
+            "searchTerm": null,
+            "cwd": null,
+            "sourceKinds": null
+          }
+        }
+      ]
+    },
+    {
+      "call": "resolve_agent",
+      "args": {
+        "query": "Alpha"
+      },
+      "meta": false,
+      "isError": false,
+      "payload": {
+        "ok": true,
+        "status": "resolved",
+        "query": "Alpha",
+        "best": {
+          "address": "codex:019d3000-0000-7000-8000-000000000001",
+          "harness": "codex",
+          "id": "019d3000-0000-7000-8000-000000000001",
+          "title": "Alpha worker",
+          "cwd": "<TMP>/project",
+          "surface": [
+            "app"
+          ],
+          "loaded": true,
+          "archived": false,
+          "lastActivityAt": "2026-05-18T06:41:00.000Z",
+          "receive": {
+            "push": "codex-turn",
+            "nudge": null,
+            "pull": false
+          },
+          "threadId": "019d3000-0000-7000-8000-000000000001",
+          "status": "idle",
+          "preview": "Alpha worker preview",
+          "score": 340,
+          "matchReasons": [
+            "title-prefix",
+            "preview-contains"
+          ]
+        },
+        "candidates": [
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000001",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000001",
+            "title": "Alpha worker",
+            "cwd": "<TMP>/project",
+            "surface": [
+              "app"
+            ],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:41:00.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000001",
+            "status": "idle",
+            "preview": "Alpha worker preview",
+            "score": 340,
+            "matchReasons": [
+              "title-prefix",
+              "preview-contains"
+            ]
+          }
+        ],
+        "selection": {
+          "ambiguous": false,
+          "tiedCount": 1,
+          "matchReasons": [
+            "title-prefix",
+            "preview-contains"
+          ]
+        },
+        "providers": {
+          "claude": {
+            "available": true,
+            "reason": null,
+            "source": "claude-session-index",
+            "count": 2
+          },
+          "codex": {
+            "available": true,
+            "reason": null,
+            "source": "app-server",
+            "count": 1
+          }
+        }
+      },
+      "appServerRequests": [
+        {
+          "method": "thread/list",
+          "params": {
+            "limit": 100,
+            "archived": false,
+            "searchTerm": null,
+            "cwd": null,
+            "sourceKinds": null
+          }
+        },
+        {
+          "method": "thread/list",
+          "params": {
+            "limit": 100,
+            "archived": true,
+            "searchTerm": null,
+            "cwd": null,
+            "sourceKinds": null
+          }
+        }
+      ]
+    },
+    {
+      "call": "resolve_agent",
+      "args": {
+        "query": "codex:019d3000-0000-7000-8000-000000000001"
+      },
+      "meta": false,
+      "isError": false,
+      "payload": {
+        "ok": true,
+        "status": "resolved",
+        "query": "codex:019d3000-0000-7000-8000-000000000001",
+        "best": {
+          "address": "codex:019d3000-0000-7000-8000-000000000001",
+          "harness": "codex",
+          "id": "019d3000-0000-7000-8000-000000000001",
+          "title": "Alpha worker",
+          "cwd": "<TMP>/project",
+          "surface": [
+            "app"
+          ],
+          "loaded": true,
+          "archived": false,
+          "lastActivityAt": "2026-05-18T06:41:00.000Z",
+          "receive": {
+            "push": "codex-turn",
+            "nudge": null,
+            "pull": false
+          },
+          "threadId": "019d3000-0000-7000-8000-000000000001",
+          "status": "idle",
+          "preview": "Alpha worker preview",
+          "score": 1000,
+          "matchReasons": [
+            "id-exact"
+          ]
+        },
+        "candidates": [
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000001",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000001",
+            "title": "Alpha worker",
+            "cwd": "<TMP>/project",
+            "surface": [
+              "app"
+            ],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:41:00.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000001",
+            "status": "idle",
+            "preview": "Alpha worker preview",
+            "score": 1000,
+            "matchReasons": [
+              "id-exact"
+            ]
+          }
+        ],
+        "selection": {
+          "ambiguous": false,
+          "tiedCount": 1,
+          "matchReasons": [
+            "id-exact"
+          ]
+        },
+        "providers": null
+      },
+      "appServerRequests": [
+        {
+          "method": "thread/read",
+          "params": {
+            "threadId": "019d3000-0000-7000-8000-000000000001",
+            "includeTurns": false
+          }
+        }
+      ]
+    },
+    {
+      "call": "resolve_agent",
+      "args": {
+        "query": "019d3000-0000-7000-8000-000000000001"
+      },
+      "meta": false,
+      "isError": false,
+      "payload": {
+        "ok": true,
+        "status": "ambiguous",
+        "query": "019d3000-0000-7000-8000-000000000001",
+        "best": {
+          "address": "claude:019d3000-0000-7000-8000-000000000001",
+          "harness": "claude",
+          "id": "019d3000-0000-7000-8000-000000000001",
+          "title": "Golden Claude twin",
+          "cwd": "/work/claude-project",
+          "surface": [
+            "code"
+          ],
+          "loaded": false,
+          "archived": false,
+          "lastActivityAt": "2026-05-18T06:40:30.000Z",
+          "receive": {
+            "push": "channel",
+            "nudge": "claude-hook",
+            "pull": true
+          },
+          "sessionId": "local_019d3000-0000-7000-8000-000000000001",
+          "cliSessionId": "019d3000-0000-7000-8000-000000000001",
+          "score": 1000,
+          "matchReasons": [
+            "id-exact"
+          ]
+        },
+        "candidates": [
+          {
+            "address": "claude:019d3000-0000-7000-8000-000000000001",
+            "harness": "claude",
+            "id": "019d3000-0000-7000-8000-000000000001",
+            "title": "Golden Claude twin",
+            "cwd": "/work/claude-project",
+            "surface": [
+              "code"
+            ],
+            "loaded": false,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:40:30.000Z",
+            "receive": {
+              "push": "channel",
+              "nudge": "claude-hook",
+              "pull": true
+            },
+            "sessionId": "local_019d3000-0000-7000-8000-000000000001",
+            "cliSessionId": "019d3000-0000-7000-8000-000000000001",
+            "score": 1000,
+            "matchReasons": [
+              "id-exact"
+            ]
+          },
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000001",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000001",
+            "title": "Alpha worker",
+            "cwd": "<TMP>/project",
+            "surface": [
+              "app"
+            ],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:41:00.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000001",
+            "status": "idle",
+            "preview": "Alpha worker preview",
+            "score": 1000,
+            "matchReasons": [
+              "id-exact"
+            ]
+          }
+        ],
+        "selection": {
+          "ambiguous": true,
+          "tiedCount": 2,
+          "matchReasons": [
+            "id-exact"
+          ]
+        },
+        "providers": null
+      },
+      "appServerRequests": [
+        {
+          "method": "thread/read",
+          "params": {
+            "threadId": "019d3000-0000-7000-8000-000000000001",
+            "includeTurns": false
+          }
+        }
+      ]
+    },
+    {
+      "call": "resolve_agent",
+      "args": {
+        "query": "0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b"
+      },
+      "meta": false,
+      "isError": false,
+      "payload": {
+        "ok": true,
+        "status": "resolved",
+        "query": "0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+        "best": {
+          "address": "claude:0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+          "harness": "claude",
+          "id": "0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+          "title": "Golden Claude planner",
+          "cwd": "/work/claude-project",
+          "surface": [
+            "code"
+          ],
+          "loaded": false,
+          "archived": false,
+          "lastActivityAt": "2026-05-18T06:40:30.000Z",
+          "receive": {
+            "push": "channel",
+            "nudge": "claude-hook",
+            "pull": true
+          },
+          "sessionId": "local_0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+          "cliSessionId": "0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+          "score": 1000,
+          "matchReasons": [
+            "id-exact"
+          ]
+        },
+        "candidates": [
+          {
+            "address": "claude:0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+            "harness": "claude",
+            "id": "0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+            "title": "Golden Claude planner",
+            "cwd": "/work/claude-project",
+            "surface": [
+              "code"
+            ],
+            "loaded": false,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:40:30.000Z",
+            "receive": {
+              "push": "channel",
+              "nudge": "claude-hook",
+              "pull": true
+            },
+            "sessionId": "local_0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+            "cliSessionId": "0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+            "score": 1000,
+            "matchReasons": [
+              "id-exact"
+            ]
+          }
+        ],
+        "selection": {
+          "ambiguous": false,
+          "tiedCount": 1,
+          "matchReasons": [
+            "id-exact"
+          ]
+        },
+        "providers": null
+      },
+      "appServerRequests": [
+        {
+          "method": "thread/read",
+          "params": {
+            "threadId": "0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+            "includeTurns": false
+          }
+        }
+      ]
+    },
+    {
+      "call": "resolve_agent",
+      "args": {
+        "query": "codex:019d3000-0000-7000-8000-000000004095"
+      },
+      "meta": false,
+      "isError": false,
+      "payload": {
+        "ok": true,
+        "status": "not_found",
+        "query": "codex:019d3000-0000-7000-8000-000000004095",
+        "best": null,
+        "candidates": [],
+        "selection": {
+          "ambiguous": false,
+          "tiedCount": 0,
+          "matchReasons": []
+        },
+        "providers": null
+      },
+      "appServerRequests": [
+        {
+          "method": "thread/read",
+          "params": {
+            "threadId": "019d3000-0000-7000-8000-000000004095",
+            "includeTurns": false
+          }
+        }
+      ]
+    },
+    {
+      "call": "resolve_agent",
+      "args": {
+        "query": "Golden Claude",
+        "harness": "claude"
+      },
+      "meta": false,
+      "isError": false,
+      "payload": {
+        "ok": true,
+        "status": "ambiguous",
+        "query": "Golden Claude",
+        "best": {
+          "address": "claude:019d3000-0000-7000-8000-000000000001",
+          "harness": "claude",
+          "id": "019d3000-0000-7000-8000-000000000001",
+          "title": "Golden Claude twin",
+          "cwd": "/work/claude-project",
+          "surface": [
+            "code"
+          ],
+          "loaded": false,
+          "archived": false,
+          "lastActivityAt": "2026-05-18T06:40:30.000Z",
+          "receive": {
+            "push": "channel",
+            "nudge": "claude-hook",
+            "pull": true
+          },
+          "sessionId": "local_019d3000-0000-7000-8000-000000000001",
+          "cliSessionId": "019d3000-0000-7000-8000-000000000001",
+          "score": 300,
+          "matchReasons": [
+            "title-prefix"
+          ]
+        },
+        "candidates": [
+          {
+            "address": "claude:019d3000-0000-7000-8000-000000000001",
+            "harness": "claude",
+            "id": "019d3000-0000-7000-8000-000000000001",
+            "title": "Golden Claude twin",
+            "cwd": "/work/claude-project",
+            "surface": [
+              "code"
+            ],
+            "loaded": false,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:40:30.000Z",
+            "receive": {
+              "push": "channel",
+              "nudge": "claude-hook",
+              "pull": true
+            },
+            "sessionId": "local_019d3000-0000-7000-8000-000000000001",
+            "cliSessionId": "019d3000-0000-7000-8000-000000000001",
+            "score": 300,
+            "matchReasons": [
+              "title-prefix"
+            ]
+          },
+          {
+            "address": "claude:0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+            "harness": "claude",
+            "id": "0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+            "title": "Golden Claude planner",
+            "cwd": "/work/claude-project",
+            "surface": [
+              "code"
+            ],
+            "loaded": false,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:40:30.000Z",
+            "receive": {
+              "push": "channel",
+              "nudge": "claude-hook",
+              "pull": true
+            },
+            "sessionId": "local_0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+            "cliSessionId": "0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+            "score": 300,
+            "matchReasons": [
+              "title-prefix"
+            ]
+          }
+        ],
+        "selection": {
+          "ambiguous": true,
+          "tiedCount": 2,
+          "matchReasons": [
+            "title-prefix"
+          ]
+        },
+        "providers": {
+          "claude": {
+            "available": true,
+            "reason": null,
+            "source": "claude-session-index",
+            "count": 2
+          }
+        }
+      },
+      "appServerRequests": []
+    },
+    {
+      "call": "list_claude_sessions",
+      "args": {},
+      "meta": false,
+      "isError": false,
+      "payload": {
+        "ok": true,
+        "sessions": [
+          {
+            "address": "claude:019d3000-0000-7000-8000-000000000001",
+            "sessionId": "local_019d3000-0000-7000-8000-000000000001",
+            "cliSessionId": "019d3000-0000-7000-8000-000000000001",
+            "processName": "-work-claude-project",
+            "cwd": "/work/claude-project",
+            "model": "unknown",
+            "title": "Golden Claude twin",
+            "isArchived": false,
+            "createdAt": 1779094800000,
+            "lastActivityAt": 1779086430000,
+            "sourceSidecar": null,
+            "transcriptPath": "<TMP>/.claude/projects/-work-claude-project/019d3000-0000-7000-8000-000000000001.jsonl",
+            "surface": "code",
+            "source": "transcript",
+            "loaded": false,
+            "supportsChannel": true,
+            "supportsHookInbox": true
+          },
+          {
+            "address": "claude:0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+            "sessionId": "local_0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+            "cliSessionId": "0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+            "processName": "-work-claude-project",
+            "cwd": "/work/claude-project",
+            "model": "unknown",
+            "title": "Golden Claude planner",
+            "isArchived": false,
+            "createdAt": 1779094800000,
+            "lastActivityAt": 1779086430000,
+            "sourceSidecar": null,
+            "transcriptPath": "<TMP>/.claude/projects/-work-claude-project/0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b.jsonl",
+            "surface": "code",
+            "source": "transcript",
+            "loaded": false,
+            "supportsChannel": true,
+            "supportsHookInbox": true
+          }
+        ]
+      },
+      "appServerRequests": []
+    },
+    {
+      "call": "get_claude_session",
+      "args": {
+        "sessionId": "claude:0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b"
+      },
+      "meta": false,
+      "isError": false,
+      "payload": {
+        "ok": true,
+        "session": {
+          "address": "claude:0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+          "sessionId": "local_0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+          "cliSessionId": "0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+          "processName": "-work-claude-project",
+          "cwd": "/work/claude-project",
+          "model": "unknown",
+          "title": "Golden Claude planner",
+          "isArchived": false,
+          "createdAt": 1779094800000,
+          "lastActivityAt": 1779086430000,
+          "sourceSidecar": null,
+          "transcriptPath": "<TMP>/.claude/projects/-work-claude-project/0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b.jsonl",
+          "surface": "code",
+          "source": "transcript",
+          "loaded": false,
+          "supportsChannel": true,
+          "supportsHookInbox": true
+        }
+      },
+      "appServerRequests": []
+    },
+    {
+      "call": "list_agent_link_receipts",
+      "args": {
+        "target": "codex:019d3000-0000-7000-8000-000000000003"
+      },
+      "meta": false,
+      "isError": false,
+      "payload": {
+        "ok": true,
+        "path": "<TMP>/receipts.jsonl",
+        "data": [
+          {
+            "id": "<RECEIPT#3>",
+            "createdAt": "<NOW>",
+            "action": "message_thread",
+            "host": "codex",
+            "purpose": null,
+            "cleanupRecommendation": "unspecified",
+            "tags": [],
+            "origin": {
+              "threadId": null,
+              "turnId": null,
+              "toolCallId": null,
+              "note": null,
+              "source": "not_supplied",
+              "sources": {
+                "threadId": null,
+                "turnId": null,
+                "toolCallId": null
+              },
+              "runtime": {
+                "available": false,
+                "threadId": null,
+                "turnId": null,
+                "toolCallId": null,
+                "source": "not_supplied",
+                "sources": {
+                  "threadId": null,
+                  "turnId": null,
+                  "toolCallId": null
+                },
+                "requestId": "27",
+                "sessionId": null,
+                "metaKeys": {
+                  "requestParams": [],
+                  "extra": []
+                }
+              }
+            },
+            "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000003",
+              "threadId": "019d3000-0000-7000-8000-000000000003",
+              "turnId": "turn-2-003",
+              "name": "Gamma sleeping",
+              "cwd": "/work/project",
+              "archiveState": {
+                "scope": "active",
+                "inferredFrom": "path",
+                "path": "/codex-home/sessions/2026/05/18/rollout-019d3000-0000-7000-8000-000000000003.jsonl"
+              },
+              "status": {
+                "type": "idle"
+              },
+              "deepLink": "codex://threads/019d3000-0000-7000-8000-000000000003",
+              "sessionId": null,
+              "loaded": null,
+              "kind": "codex"
+            },
+            "messagePreview": "wake gamma",
+            "finalResponse": null,
+            "delivery": {
+              "state": "accepted_by_app_server",
+              "action": "resumed+started_turn",
+              "turnId": "turn-2-003"
+            },
+            "evidence": null,
+            "replyConfirmation": {
+              "waited": false,
+              "ok": null,
+              "timedOut": null,
+              "turnStatus": null,
+              "finalResponse": null,
+              "finalResponseItem": null,
+              "error": null,
+              "unsupported": null,
+              "hint": null
+            }
+          },
+          {
+            "id": "<RECEIPT#9>",
+            "createdAt": "<NOW>",
+            "action": "archive_thread",
+            "host": "codex",
+            "purpose": null,
+            "cleanupRecommendation": "unspecified",
+            "tags": [],
+            "origin": {
+              "threadId": "019d3000-0000-7000-8000-000000000002",
+              "turnId": "beta-live",
+              "toolCallId": "call_golden",
+              "note": null,
+              "source": "runtime_context",
+              "sources": {
+                "threadId": "runtime_context",
+                "turnId": "runtime_context",
+                "toolCallId": "runtime_context"
+              },
+              "runtime": {
+                "available": true,
+                "threadId": "019d3000-0000-7000-8000-000000000002",
+                "turnId": "beta-live",
+                "toolCallId": "call_golden",
+                "source": "request.params._meta",
+                "sources": {
+                  "threadId": {
+                    "source": "request.params._meta",
+                    "path": "openai/codex.caller.thread.id"
+                  },
+                  "turnId": {
+                    "source": "request.params._meta",
+                    "path": "openai/codex.caller.turn.id"
+                  },
+                  "toolCallId": {
+                    "source": "request.params._meta",
+                    "path": "openai/codex.toolCallId"
+                  }
+                },
+                "requestId": "39",
+                "sessionId": null,
+                "metaKeys": {
+                  "requestParams": [
+                    "openai/codex"
+                  ],
+                  "extra": [
+                    "openai/codex"
+                  ]
+                }
+              }
+            },
+            "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000003",
+              "threadId": "019d3000-0000-7000-8000-000000000003",
+              "turnId": null,
+              "name": "Gamma sleeping",
+              "cwd": "/work/project",
+              "archiveState": {
+                "scope": "archived",
+                "inferredFrom": "path",
+                "path": "/codex-home/archived_sessions/rollout-019d3000-0000-7000-8000-000000000003.jsonl"
+              },
+              "status": {
+                "type": "idle"
+              },
+              "deepLink": "codex://threads/019d3000-0000-7000-8000-000000000003",
+              "sessionId": null,
+              "loaded": null,
+              "kind": "codex"
+            },
+            "messagePreview": "finished",
+            "finalResponse": null,
+            "delivery": {
+              "state": "app_server_archive",
+              "action": "archive_thread",
+              "from": "/codex-home/sessions/2026/05/18/rollout-019d3000-0000-7000-8000-000000000003.jsonl",
+              "to": "/codex-home/archived_sessions/rollout-019d3000-0000-7000-8000-000000000003.jsonl",
+              "loadedCheck": {
+                "ok": true,
+                "source": "app-server",
+                "checked": true,
+                "loaded": false,
+                "loadedThreadIds": [
+                  "019d3000-0000-7000-8000-000000000001",
+                  "019d3000-0000-7000-8000-000000000002",
+                  "019d3000-0000-7000-8000-000000000004"
+                ],
+                "appServer": {
+                  "connected": true,
+                  "kind": "url",
+                  "url": "ws://127.0.0.1:<PORT>",
+                  "managed": false,
+                  "initialized": true,
+                  "userAgent": "fake-golden",
+                  "codexHome": "/codex-home",
+                  "platformOs": "macos",
+                  "closed": false,
+                  "clientVersion": "0.5.0",
+                  "managedPid": null,
+                  "managedLaunch": null,
+                  "managedTransport": "unix",
+                  "managedSpawnCount": 0,
+                  "idleTimeoutMs": 300000,
+                  "idleShutdowns": 0,
+                  "startupTimeoutMs": 15000,
+                  "startupFailure": null,
+                  "notifications": "<RUNTIME>",
+                  "serverRequests": "<RUNTIME>"
+                }
+              }
+            },
+            "evidence": {
+              "primaryStatus": "app_server_archive",
+              "loadedThreadGuard": {
+                "status": "loaded_thread_guard_passed",
+                "checked": true,
+                "loaded": false,
+                "source": "app-server",
+                "loadedThreadIdsCount": 3,
+                "note": null,
+                "error": null
+              },
+              "archiveMove": {
+                "source": "app-server",
+                "alreadyArchived": false,
+                "from": "/codex-home/sessions/2026/05/18/rollout-019d3000-0000-7000-8000-000000000003.jsonl",
+                "to": "/codex-home/archived_sessions/rollout-019d3000-0000-7000-8000-000000000003.jsonl",
+                "before": {
+                  "scope": "active",
+                  "inferredFrom": "path",
+                  "path": "/codex-home/sessions/2026/05/18/rollout-019d3000-0000-7000-8000-000000000003.jsonl"
+                },
+                "after": {
+                  "scope": "archived",
+                  "inferredFrom": "path",
+                  "path": "/codex-home/archived_sessions/rollout-019d3000-0000-7000-8000-000000000003.jsonl"
+                },
+                "appServerResponse": {}
+              },
+              "interpretation": "For archive receipts, loadedThreadGuard is the primary active-safety evidence. target.status may come from local JSONL and can be unknown even when the app-server loaded-thread guard passed."
+            },
+            "replyConfirmation": null
+          },
+          {
+            "id": "<RECEIPT#10>",
+            "createdAt": "<NOW>",
+            "action": "archive_thread",
+            "host": "codex",
+            "purpose": null,
+            "cleanupRecommendation": "unspecified",
+            "tags": [],
+            "origin": {
+              "threadId": null,
+              "turnId": null,
+              "toolCallId": null,
+              "note": null,
+              "source": "not_supplied",
+              "sources": {
+                "threadId": null,
+                "turnId": null,
+                "toolCallId": null
+              },
+              "runtime": {
+                "available": false,
+                "threadId": null,
+                "turnId": null,
+                "toolCallId": null,
+                "source": "not_supplied",
+                "sources": {
+                  "threadId": null,
+                  "turnId": null,
+                  "toolCallId": null
+                },
+                "requestId": "40",
+                "sessionId": null,
+                "metaKeys": {
+                  "requestParams": [],
+                  "extra": []
+                }
+              }
+            },
+            "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000003",
+              "threadId": "019d3000-0000-7000-8000-000000000003",
+              "turnId": null,
+              "name": "Gamma sleeping",
+              "cwd": "/work/project",
+              "archiveState": {
+                "scope": "archived",
+                "inferredFrom": "path",
+                "path": "/codex-home/archived_sessions/rollout-019d3000-0000-7000-8000-000000000003.jsonl"
+              },
+              "status": {
+                "type": "idle"
+              },
+              "deepLink": "codex://threads/019d3000-0000-7000-8000-000000000003",
+              "sessionId": null,
+              "loaded": null,
+              "kind": "codex"
+            },
+            "messagePreview": null,
+            "finalResponse": null,
+            "delivery": {
+              "state": "already_archived",
+              "action": "archive_thread",
+              "from": "/codex-home/archived_sessions/rollout-019d3000-0000-7000-8000-000000000003.jsonl",
+              "to": "/codex-home/archived_sessions/rollout-019d3000-0000-7000-8000-000000000003.jsonl",
+              "loadedCheck": {
+                "ok": true,
+                "source": "app-server",
+                "checked": true,
+                "loaded": false,
+                "loadedThreadIds": [
+                  "019d3000-0000-7000-8000-000000000001",
+                  "019d3000-0000-7000-8000-000000000002",
+                  "019d3000-0000-7000-8000-000000000004"
+                ],
+                "appServer": {
+                  "connected": true,
+                  "kind": "url",
+                  "url": "ws://127.0.0.1:<PORT>",
+                  "managed": false,
+                  "initialized": true,
+                  "userAgent": "fake-golden",
+                  "codexHome": "/codex-home",
+                  "platformOs": "macos",
+                  "closed": false,
+                  "clientVersion": "0.5.0",
+                  "managedPid": null,
+                  "managedLaunch": null,
+                  "managedTransport": "unix",
+                  "managedSpawnCount": 0,
+                  "idleTimeoutMs": 300000,
+                  "idleShutdowns": 0,
+                  "startupTimeoutMs": 15000,
+                  "startupFailure": null,
+                  "notifications": "<RUNTIME>",
+                  "serverRequests": "<RUNTIME>"
+                }
+              }
+            },
+            "evidence": {
+              "primaryStatus": "already_archived",
+              "loadedThreadGuard": {
+                "status": "loaded_thread_guard_passed",
+                "checked": true,
+                "loaded": false,
+                "source": "app-server",
+                "loadedThreadIdsCount": 3,
+                "note": null,
+                "error": null
+              },
+              "archiveMove": {
+                "source": "app-server",
+                "alreadyArchived": true,
+                "from": "/codex-home/archived_sessions/rollout-019d3000-0000-7000-8000-000000000003.jsonl",
+                "to": "/codex-home/archived_sessions/rollout-019d3000-0000-7000-8000-000000000003.jsonl",
+                "before": {
+                  "scope": "archived",
+                  "inferredFrom": "path",
+                  "path": "/codex-home/archived_sessions/rollout-019d3000-0000-7000-8000-000000000003.jsonl"
+                },
+                "after": {
+                  "scope": "archived",
+                  "inferredFrom": "path",
+                  "path": "/codex-home/archived_sessions/rollout-019d3000-0000-7000-8000-000000000003.jsonl"
+                },
+                "appServerResponse": {}
+              },
+              "interpretation": "For archive receipts, loadedThreadGuard is the primary active-safety evidence. target.status may come from local JSONL and can be unknown even when the app-server loaded-thread guard passed."
+            },
+            "replyConfirmation": null
+          }
+        ],
+        "scannedReceipts": 16,
+        "filters": {
+          "targetThreadId": null,
+          "originThreadId": null,
+          "action": null,
+          "targetKind": null,
+          "host": null,
+          "targetSessionId": null,
+          "targetAddress": "codex:019d3000-0000-7000-8000-000000000003",
+          "searchTerm": ""
+        }
       },
       "appServerRequests": []
     }
@@ -10151,6 +11880,8 @@
           "socket": null
         },
         "autoStartEnabled": true,
+        "address": "external",
+        "addressSource": "fallback",
         "providers": {
           "claude": {
             "available": false,
@@ -10200,7 +11931,8 @@
         "messageId": "<MSG#1>",
         "deliveredVia": "turn/start",
         "target": {
-          "threadId": "019d3000-0000-7000-8000-000000000001"
+          "threadId": "019d3000-0000-7000-8000-000000000001",
+          "address": "codex:019d3000-0000-7000-8000-000000000001"
         },
         "source": "app-server",
         "action": "started_turn",
@@ -10328,6 +12060,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000001",
               "threadId": "019d3000-0000-7000-8000-000000000001",
               "turnId": "turn-2-001",
               "name": "Alpha worker",
@@ -10403,6 +12136,7 @@
         "action": "started_thread+named_thread",
         "thread": {
           "id": "019d3000-0000-7000-8000-000000000262",
+          "address": "codex:019d3000-0000-7000-8000-000000000262",
           "name": "From Claude",
           "preview": "",
           "status": {
@@ -10505,6 +12239,7 @@
               }
             },
             "target": {
+              "address": "codex:019d3000-0000-7000-8000-000000000262",
               "threadId": "019d3000-0000-7000-8000-000000000262",
               "turnId": null,
               "name": "From Claude",
@@ -10544,6 +12279,260 @@
           "params": {
             "threadId": "019d3000-0000-7000-8000-000000000262",
             "name": "From Claude"
+          }
+        }
+      ]
+    },
+    {
+      "call": "list_agents",
+      "args": {
+        "limit": 5
+      },
+      "meta": false,
+      "isError": false,
+      "payload": {
+        "ok": true,
+        "sessions": [
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000001",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000001",
+            "title": "Alpha worker",
+            "cwd": "<TMP>/project",
+            "surface": [
+              "app"
+            ],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:41:00.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000001",
+            "status": "idle",
+            "preview": "Alpha worker preview"
+          },
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000002",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000002",
+            "title": "Beta active",
+            "cwd": "/work/project",
+            "surface": [
+              "app"
+            ],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:41:00.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000002",
+            "status": "active",
+            "preview": "Beta active preview"
+          },
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000003",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000003",
+            "title": "Gamma sleeping",
+            "cwd": "/work/project",
+            "surface": [
+              "app"
+            ],
+            "loaded": false,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:41:00.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000003",
+            "status": "notLoaded",
+            "preview": "Gamma sleeping preview"
+          },
+          {
+            "address": "codex:019d3000-0000-7000-8000-000000000005",
+            "harness": "codex",
+            "id": "019d3000-0000-7000-8000-000000000005",
+            "title": "Demo Project Orchestrator",
+            "cwd": "/work/demo",
+            "surface": [
+              "app"
+            ],
+            "loaded": true,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:41:00.000Z",
+            "receive": {
+              "push": "codex-turn",
+              "nudge": null,
+              "pull": false
+            },
+            "threadId": "019d3000-0000-7000-8000-000000000005",
+            "status": "idle",
+            "preview": "Demo Project Orchestrator preview"
+          },
+          {
+            "address": "claude:019d3000-0000-7000-8000-000000000001",
+            "harness": "claude",
+            "id": "019d3000-0000-7000-8000-000000000001",
+            "title": "Golden Claude twin",
+            "cwd": "/work/claude-project",
+            "surface": [
+              "code"
+            ],
+            "loaded": false,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:40:30.000Z",
+            "receive": {
+              "push": "channel",
+              "nudge": "claude-hook",
+              "pull": true
+            },
+            "sessionId": "local_019d3000-0000-7000-8000-000000000001",
+            "cliSessionId": "019d3000-0000-7000-8000-000000000001"
+          }
+        ],
+        "providers": {
+          "claude": {
+            "available": true,
+            "reason": null,
+            "source": "claude-session-index",
+            "count": 2
+          },
+          "codex": {
+            "available": true,
+            "reason": null,
+            "source": "app-server",
+            "count": 5
+          }
+        },
+        "caller": {
+          "host": "claude",
+          "address": "external",
+          "source": "fallback"
+        }
+      },
+      "appServerRequests": [
+        {
+          "method": "thread/list",
+          "params": {
+            "limit": 5,
+            "archived": false,
+            "searchTerm": null,
+            "cwd": null,
+            "sourceKinds": null
+          }
+        }
+      ]
+    },
+    {
+      "call": "resolve_agent",
+      "args": {
+        "query": "Golden Claude planner"
+      },
+      "meta": false,
+      "isError": false,
+      "payload": {
+        "ok": true,
+        "status": "resolved",
+        "query": "Golden Claude planner",
+        "best": {
+          "address": "claude:0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+          "harness": "claude",
+          "id": "0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+          "title": "Golden Claude planner",
+          "cwd": "/work/claude-project",
+          "surface": [
+            "code"
+          ],
+          "loaded": false,
+          "archived": false,
+          "lastActivityAt": "2026-05-18T06:40:30.000Z",
+          "receive": {
+            "push": "channel",
+            "nudge": "claude-hook",
+            "pull": true
+          },
+          "sessionId": "local_0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+          "cliSessionId": "0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+          "score": 400,
+          "matchReasons": [
+            "title-exact"
+          ]
+        },
+        "candidates": [
+          {
+            "address": "claude:0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+            "harness": "claude",
+            "id": "0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+            "title": "Golden Claude planner",
+            "cwd": "/work/claude-project",
+            "surface": [
+              "code"
+            ],
+            "loaded": false,
+            "archived": false,
+            "lastActivityAt": "2026-05-18T06:40:30.000Z",
+            "receive": {
+              "push": "channel",
+              "nudge": "claude-hook",
+              "pull": true
+            },
+            "sessionId": "local_0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+            "cliSessionId": "0b5e7c1a-3f2d-4a6e-9c8b-000000000b6b",
+            "score": 400,
+            "matchReasons": [
+              "title-exact"
+            ]
+          }
+        ],
+        "selection": {
+          "ambiguous": false,
+          "tiedCount": 1,
+          "matchReasons": [
+            "title-exact"
+          ]
+        },
+        "providers": {
+          "claude": {
+            "available": true,
+            "reason": null,
+            "source": "claude-session-index",
+            "count": 2
+          },
+          "codex": {
+            "available": true,
+            "reason": null,
+            "source": "app-server",
+            "count": 0
+          }
+        }
+      },
+      "appServerRequests": [
+        {
+          "method": "thread/list",
+          "params": {
+            "limit": 100,
+            "archived": false,
+            "searchTerm": null,
+            "cwd": null,
+            "sourceKinds": null
+          }
+        },
+        {
+          "method": "thread/list",
+          "params": {
+            "limit": 100,
+            "archived": true,
+            "searchTerm": null,
+            "cwd": null,
+            "sourceKinds": null
           }
         }
       ]

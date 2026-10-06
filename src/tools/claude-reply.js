@@ -1,4 +1,5 @@
 import { openMailbox } from "../claude/mailbox.js";
+import { storedAddress } from "../registry/addresses.js";
 import { canonicalClaudeSessionId, claudeSessionAliases } from "../claude/identity.js";
 import { buildReceipt, safeAppendReceipt } from "../shared/receipt-index.js";
 import { assertPeerBodyWithinLimit } from "../shared/envelope.js";
@@ -26,7 +27,7 @@ export const replyAgentLinkMessageTool = {
   output: {
     messageId: out("string", "Id of the reply message."),
     replyToMessageId: out("string", "The message replied to."),
-    target: out("object", "{sessionId, kind} of the original sender."),
+    target: out("object", "{address, sessionId, kind} of the original sender; address is null for an external sender."),
     delivery: out("string", "queued-mailbox."),
     receipt: commonOut.receipt
   },
@@ -113,7 +114,12 @@ export function makeReplyAgentLinkMessageHandler({
         mb.close();
       }
 
+      // The original sender's canonical address (read-time migration of the
+      // stored id, R1.6); null for an external or invalid sender.
+      const senderAddress = storedAddress(original.from_session_id, original.from_session_kind);
+      const address = senderAddress.includes(":") ? senderAddress : null;
       const target = {
+        address,
         sessionId: original.from_session_id,
         kind: original.from_session_kind
       };
@@ -122,6 +128,7 @@ export function makeReplyAgentLinkMessageHandler({
         receipt: null,
         host,
         target: {
+          address,
           sessionId: original.from_session_id,
           kind: original.from_session_kind
         },

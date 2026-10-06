@@ -11,6 +11,7 @@ import { AppServerError, describeCodexInstall } from "../codex/app-server-client
 import { loadedStateSemantics } from "../codex/thread-utils.js";
 import { callerContextContract, summarizeRuntimeCallerContext } from "../shared/caller-context.js";
 import { env, envFlag } from "../shared/env.js";
+import { hostIdentity } from "../shared/identity.js";
 import { receiptIndexSummary } from "../shared/receipt-index.js";
 import { healthExtras } from "../tools/health.js";
 
@@ -81,7 +82,9 @@ export function makeHealth({ appServer, hostInfo, resolveCurrentSession, channel
    */
   async function health(args, toolContext = {}) {
     const report = await healthReport(args, toolContext);
-    return { ...report, ...healthExtras({ codex: report.codex }) };
+    // The caller's own address from runtime identity (R1.4).
+    const caller = hostIdentity({ host: hostInfo.host, callerContext: toolContext.callerContext ?? null, currentSession: resolveCurrentSession });
+    return { ...report, address: caller.address, addressSource: caller.source, ...healthExtras({ codex: report.codex }) };
   }
 
   /**

@@ -6,6 +6,7 @@
 // app-server client; nothing runs at import time.
 
 import { clampInt as clamp, optionalString, requiredString } from "../shared/args.js";
+import { codexAddress } from "../shared/identity.js";
 import { AgentLinkError } from "../shared/errors.js";
 import { sleep } from "../shared/process.js";
 import { listReceipts } from "../shared/receipt-index.js";
@@ -509,7 +510,7 @@ export function makeThreadQueries({ appServer, now = () => Date.now(), wait = sl
       ok: true,
       outcome,
       waitedMs: latest.waitedMs,
-      target: { threadId },
+      target: { threadId, address: codexAddress(threadId) },
       ...(outcome === "turn_completed"
         ? {
             turn: {

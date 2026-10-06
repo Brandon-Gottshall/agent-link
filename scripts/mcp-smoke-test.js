@@ -48,6 +48,10 @@ const CLAUDE_LISTING_TOOLS = [
   "resolve_claude_session"
 ].sort();
 
+// Every tool is registered on every host (design doc R1.16, PR B6): the
+// Claude listing tools and the host-neutral list_agents / resolve_agent too.
+const ALL_TOOLS = [...BASE_CODEX_TOOLS, ...CLAUDE_LISTING_TOOLS, "list_agents", "resolve_agent"].sort();
+
 async function listToolsWithEnv(envOverrides) {
   // Strip CLAUDE_* and CODEX_HOME from the inherited env so each scenario is hermetic.
   const cleanEnv = {};
@@ -96,10 +100,10 @@ async function listToolsWithEnv(envOverrides) {
   }
 }
 
-// Scenario 1: default env (no host-specific env). Expect base codex tools only.
+// Scenario 1: default env (no host-specific env). Expect every tool.
 {
   const { names, capabilities } = await listToolsWithEnv({ __callHealth: true });
-  assert.deepEqual(names, BASE_CODEX_TOOLS);
+  assert.deepEqual(names, ALL_TOOLS);
   assert.equal(capabilities.experimental?.["claude/channel"], undefined);
   assert.ok(names.includes(HOST_NEUTRAL_MAILBOX_TOOL),
     "agent_link_mailbox_inspect must be exposed in no-host scenario (host-neutral)");
@@ -113,12 +117,10 @@ async function listToolsWithEnv(envOverrides) {
     "reply_agent_link_message must be exposed in no-host scenario (host-neutral)");
 }
 
-// Scenario 2: claude-host env. Expect base codex tools + 4 claude listing tools.
+// Scenario 2: claude-host env. Expect every tool, plus the channel capability.
 {
   const { names, capabilities } = await listToolsWithEnv({ CLAUDE_PLUGIN_ROOT: "/tmp/fake-plugin" });
-  const expected = [...BASE_CODEX_TOOLS, ...CLAUDE_LISTING_TOOLS].sort();
-  assert.deepEqual(names, expected);
-  assert.equal(names.length - BASE_CODEX_TOOLS.length, 4);
+  assert.deepEqual(names, ALL_TOOLS);
   assert.deepEqual(capabilities.experimental?.["claude/channel"], {});
   assert.ok(names.includes(HOST_NEUTRAL_MAILBOX_TOOL),
     "agent_link_mailbox_inspect must be exposed in claude-host scenario (host-neutral)");
@@ -132,10 +134,10 @@ async function listToolsWithEnv(envOverrides) {
     "reply_agent_link_message must be exposed in claude-host scenario (host-neutral)");
 }
 
-// Scenario 3: codex-host env. Expect base codex tools only (no claude listing tools).
+// Scenario 3: codex-host env. Expect every tool (host gating is gone).
 {
   const { names, capabilities } = await listToolsWithEnv({ CODEX_HOME: "/tmp/fake-codex-home" });
-  assert.deepEqual(names, BASE_CODEX_TOOLS);
+  assert.deepEqual(names, ALL_TOOLS);
   assert.equal(capabilities.experimental?.["claude/channel"], undefined);
   assert.ok(names.includes(HOST_NEUTRAL_MAILBOX_TOOL),
     "agent_link_mailbox_inspect must be exposed in codex-host scenario (host-neutral)");
