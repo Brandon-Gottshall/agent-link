@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { rankThreadSummaries } from "./thread-utils.js";
+import { cleanString, clampInt as clamp, normalizeStringList, requiredString } from "../shared/args.js";
 
 export const PROJECT_ORCHESTRATOR_BINDING_PATH = path.join(".codex", "project-orchestrator.json");
 const DEFAULT_POLICY_VERSION = "v0";
@@ -444,32 +445,3 @@ function normalizeReturnStatus(value) {
   return status;
 }
 
-function normalizeStringList(value) {
-  if (value === undefined || value === null) {
-    return [];
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => cleanString(item)).filter(Boolean);
-  }
-  const text = cleanString(value);
-  return text ? [text] : [];
-}
-
-function requiredString(value, name) {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new Error(`${name} is required`);
-  }
-  return value;
-}
-
-function cleanString(value) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function clamp(value, min, max) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) {
-    return min;
-  }
-  return Math.max(min, Math.min(max, Math.floor(n)));
-}

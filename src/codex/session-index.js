@@ -2,6 +2,9 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { inferArchiveState, normalizeArchiveScope, scoreThreadMatch } from "./thread-utils.js";
+import { clampInt as clampNumber } from "../shared/args.js";
+import { parseJsonlLines } from "../shared/jsonl.js";
+import { truncate } from "../shared/text.js";
 
 const MAX_PREVIEW_CHARS = 500;
 // Transcripts are read in bounded windows from the head (session_meta, first
@@ -352,16 +355,7 @@ async function readSessionIndex(codexHome) {
   }
 
   const index = new Map();
-  for (const line of raw.trimEnd().split("\n")) {
-    if (!line) {
-      continue;
-    }
-    let record;
-    try {
-      record = JSON.parse(line);
-    } catch {
-      continue;
-    }
+  for (const record of parseJsonlLines(raw)) {
     if (record.id && record.thread_name) {
       index.set(record.id, {
         name: record.thread_name,
@@ -786,20 +780,4 @@ function normalizeCwdFilter(cwd) {
     return new Set(cwd);
   }
   return new Set([cwd]);
-}
-
-function truncate(value, max) {
-  const text = String(value ?? "");
-  if (text.length <= max) {
-    return text;
-  }
-  return `${text.slice(0, max - 3)}...`;
-}
-
-function clampNumber(value, min, max) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) {
-    return min;
-  }
-  return Math.min(max, Math.max(min, Math.floor(number)));
 }

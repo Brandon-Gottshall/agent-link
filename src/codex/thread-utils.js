@@ -1,3 +1,5 @@
+import { truncate } from "../shared/text.js";
+
 const MAX_REASON_TEXT = 160;
 
 export function normalizeArchiveScope(args = {}) {
@@ -648,12 +650,4 @@ function boundedEditDistance(a, b, maxDistance) {
     previous = current;
   }
   return previous[b.length];
-}
-
-function truncate(value, max) {
-  const text = String(value ?? "");
-  if (text.length <= max) {
-    return text;
-  }
-  return `${text.slice(0, max - 3)}...`;
 }

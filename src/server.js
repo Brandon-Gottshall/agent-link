@@ -68,6 +68,9 @@ import {
   suggestThreadIds,
   unsupportedSidebarStateResponse
 } from "./codex/thread-utils.js";
+import { clampInt as clamp, optionalString, requiredString } from "./shared/args.js";
+import { getLogger } from "./shared/log.js";
+import { toIso, truncate } from "./shared/text.js";
 
 const HOST_INFO = detectHost();
 
@@ -2752,45 +2755,11 @@ function jsonResult(value, isError = false) {
   };
 }
 
-function requiredString(value, name) {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new Error(`${name} is required`);
-  }
-  return value;
-}
-
-function optionalString(value) {
-  return typeof value === "string" ? value : "";
-}
-
 function copyOptionalString(source, target, key) {
   const value = optionalString(source[key]).trim();
   if (value) {
     target[key] = value;
   }
-}
-
-function clamp(value, min, max) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) {
-    return min;
-  }
-  return Math.max(min, Math.min(max, Math.floor(n)));
-}
-
-function truncate(value, max) {
-  const text = String(value ?? "");
-  if (text.length <= max) {
-    return text;
-  }
-  return `${text.slice(0, max - 3)}...`;
-}
-
-function toIso(seconds) {
-  if (!seconds) {
-    return null;
-  }
-  return new Date(seconds * 1000).toISOString();
 }
 
 function sleep(ms) {
@@ -2838,7 +2807,7 @@ function shutdown(exitCode) {
   }, SHUTDOWN_HARD_LIMIT_MS);
   shutdownPromise = appServer.close()
     .catch((error) => {
-      process.stderr.write(`agent-link: shutdown cleanup failed: ${error.message}\n`);
+      getLogger().warn("server.shutdown_cleanup_failed", { error });
     })
     .finally(() => {
       clearTimeout(hardStop);
@@ -2846,6 +2815,18 @@ function shutdown(exitCode) {
     });
   return shutdownPromise;
 }
+
+// A stray rejection or exception must not leave the managed app-server behind
+// or kill the process mid-write: log it, then run the normal shutdown.
+function fatal(event, error) {
+  getLogger().error(event, {
+    error: error instanceof Error ? error : String(error),
+    stack: error instanceof Error ? error.stack : undefined
+  });
+  shutdown(1);
+}
+process.on("unhandledRejection", (reason) => fatal("process.unhandled_rejection", reason));
+process.on("uncaughtException", (error) => fatal("process.uncaught_exception", error));
 
 process.on("SIGINT", () => shutdown(130));
 process.on("SIGTERM", () => shutdown(143));

@@ -33,11 +33,20 @@ const groups = {
     "tests/claude/wait.test.js",
     "tests/shared/cross-host-receipt.test.js",
     "tests/shared/host-detect.test.js",
-    "tests/shared/runtime-context.test.js"
+    "tests/shared/runtime-context.test.js",
+    "tests/shared/args.test.js",
+    "tests/shared/env.test.js",
+    "tests/shared/errors.test.js",
+    "tests/shared/jsonl.test.js",
+    "tests/shared/log.test.js",
+    "tests/shared/paths.test.js",
+    "tests/shared/process-handlers.test.js",
+    "tests/shared/text.test.js"
   ],
   codex: [
     "tests/codex/app-server-client.test.js",
     "tests/codex/app-server-lifecycle.test.js",
+    "tests/codex/app-server-logging.test.js",
     "tests/codex/chat-style-close.test.js",
     "tests/codex/codex-binary.test.js",
     "tests/codex/dependency-handoff-matching.test.js",

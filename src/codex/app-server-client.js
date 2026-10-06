@@ -11,6 +11,8 @@ import {
   codexBinaryVersion,
   discoverCodexBinary
 } from "./install-layout.js";
+import { AgentLinkError } from "../shared/errors.js";
+import { getLogger } from "../shared/log.js";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 const DEFAULT_STARTUP_TIMEOUT_MS = 15000;
@@ -51,9 +53,13 @@ export const SERVER_REQUEST_DECLINES = Object.freeze({
 });
 const METHOD_NOT_HANDLED = -32601;
 
-export class AppServerError extends Error {
+// `code` keeps the app-server's own value (a transport tag such as
+// "open-failed", or the JSON-RPC error number). `errorCode` is the section 3.2
+// code: a JSON-RPC error from the app-server is upstream_error; anything else
+// means Codex could not be reached.
+export class AppServerError extends AgentLinkError {
   constructor(message, details = {}) {
-    super(message);
+    super(typeof details.code === "number" ? "upstream_error" : "codex_unavailable", message, { details });
     this.name = "AppServerError";
     this.details = details;
     this.code = details.code ?? null;
@@ -279,8 +285,9 @@ export class CodexAppServerClient {
       if (this.activeRequests > 0 || this.pending.size > 0 || this.connectPromise) {
         return;
       }
+      getLogger().info("app_server.idle_release", { idleMs, managedPid: this.managedProcess?.pid ?? null });
       this.releaseIdleConnection().catch((error) => {
-        process.stderr.write(`agent-link: idle app-server shutdown failed: ${error.message}\n`);
+        getLogger().warn("app_server.idle_release_failed", { error });
       });
     }, idleMs);
     this.idleTimer.unref?.();
@@ -604,7 +611,17 @@ export class CodexAppServerClient {
     child.on("exit", (code, signal) => {
       removeManagedRecord(child.__agentLinkRecordPath);
       removeEndpointFiles(child.__agentLinkEndpoint);
-      if (this.managedProcess !== child) {
+      // stopChild() detaches the child before signalling it, so a child that
+      // is still the managed process exited on its own.
+      const unexpected = this.managedProcess === child;
+      getLogger().log(unexpected ? "warn" : "info", "app_server.exit", {
+        pid: child.pid ?? null,
+        code,
+        signal,
+        unexpected,
+        outputTail: unexpected ? logs.join("").slice(-2000) : undefined
+      });
+      if (!unexpected) {
         return;
       }
       if (this.managedProcessExitCleanup) {

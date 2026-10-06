@@ -17,6 +17,7 @@
   "scripts": {
     "build": "node ./scripts/build.mjs",
     "check:dist": "node ./scripts/build.mjs --check",
+    "typecheck": "tsc -p tsconfig.json",
     "check:approval-config": "node ./scripts/approval-config-check.js",
     "test": "node ./scripts/run-offline-tests.js",
     "test:claude": "node ./scripts/run-offline-tests.js claude",
@@ -40,6 +41,8 @@
     "node": ">=20"
   },
   "devDependencies": {
-    "esbuild": "0.28.2"
+    "@types/node": "^20.19.43",
+    "esbuild": "0.28.2",
+    "typescript": "^5.9.3"
   }
 }

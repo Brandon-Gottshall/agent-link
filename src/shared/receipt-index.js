@@ -3,6 +3,8 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { summarizeRuntimeCallerContext } from "./caller-context.js";
+import { clampInt as clamp } from "./args.js";
+import { appendJsonl, parseJsonlLines } from "./jsonl.js";
 
 const RECEIPT_VERSION = 1;
 const DEFAULT_LIMIT = 20;
@@ -147,8 +149,7 @@ export async function appendReceipt(receipt, options = {}) {
   // Directories this creates are 0700 and the log file 0600. An existing log
   // file this user owns is tightened to 0600. Existing directories (such as
   // $CODEX_HOME) are left alone.
-  await fs.mkdir(path.dirname(logPath), { recursive: true, mode: 0o700 });
-  await fs.appendFile(logPath, `${JSON.stringify(receipt)}\n`, { encoding: "utf8", mode: 0o600 });
+  await appendJsonl(logPath, receipt);
   await tightenFileMode(logPath, 0o600);
   return {
     ok: true,
@@ -201,17 +202,7 @@ export async function listReceipts(options = {}) {
     throw error;
   }
 
-  const receipts = [];
-  for (const line of raw.trimEnd().split("\n")) {
-    if (!line.trim()) {
-      continue;
-    }
-    try {
-      receipts.push(JSON.parse(line));
-    } catch {
-      continue;
-    }
-  }
+  const receipts = parseJsonlLines(raw);
 
   const data = receipts
     .filter((receipt) => receiptMatches(receipt, filters))
@@ -403,12 +394,4 @@ function isNormalizedReceiptInput(value) {
     && "originSource" in value
     && isPlainObject(value.originSources)
     && isPlainObject(value.runtimeCallerContext);
-}
-
-function clamp(value, min, max) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) {
-    return min;
-  }
-  return Math.max(min, Math.min(max, Math.floor(number)));
 }
