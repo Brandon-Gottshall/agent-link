@@ -26920,6 +26920,35 @@ var server = new Server(
   }
 );
 var appServer = new CodexAppServerClient();
+var channelBridge = null;
+var SHUTDOWN_HARD_LIMIT_MS = 4e3;
+var shutdownPromise = null;
+function shutdown(exitCode) {
+  if (shutdownPromise) {
+    return shutdownPromise;
+  }
+  channelBridge?.stop();
+  const hardStop = setTimeout(() => {
+    appServer.killManagedSync("SIGKILL");
+    process.exit(exitCode);
+  }, SHUTDOWN_HARD_LIMIT_MS);
+  shutdownPromise = appServer.close().catch((error2) => {
+    getLogger().warn("server.shutdown_cleanup_failed", { error: error2 });
+  }).finally(() => {
+    clearTimeout(hardStop);
+    process.exit(exitCode);
+  });
+  return shutdownPromise;
+}
+function fatal(event, error2) {
+  getLogger().error(event, {
+    error: error2 instanceof Error ? error2 : String(error2),
+    stack: error2 instanceof Error ? error2.stack : void 0
+  });
+  shutdown(1);
+}
+process.on("unhandledRejection", (reason) => fatal("process.unhandled_rejection", reason));
+process.on("uncaughtException", (error2) => fatal("process.uncaught_exception", error2));
 var LOCAL_SEARCH_SCAN_LIMIT = 300;
 var claudeDeps = { host: HOST_INFO.host, resolveCurrentSession: currentClaudeSession };
 var registry2 = createRegistry([
@@ -28717,35 +28746,7 @@ function startChannelBridge() {
     return null;
   }
 }
-var channelBridge = startChannelBridge();
-var SHUTDOWN_HARD_LIMIT_MS = 4e3;
-var shutdownPromise = null;
-function shutdown(exitCode) {
-  if (shutdownPromise) {
-    return shutdownPromise;
-  }
-  channelBridge?.stop();
-  const hardStop = setTimeout(() => {
-    appServer.killManagedSync("SIGKILL");
-    process.exit(exitCode);
-  }, SHUTDOWN_HARD_LIMIT_MS);
-  shutdownPromise = appServer.close().catch((error2) => {
-    getLogger().warn("server.shutdown_cleanup_failed", { error: error2 });
-  }).finally(() => {
-    clearTimeout(hardStop);
-    process.exit(exitCode);
-  });
-  return shutdownPromise;
-}
-function fatal(event, error2) {
-  getLogger().error(event, {
-    error: error2 instanceof Error ? error2 : String(error2),
-    stack: error2 instanceof Error ? error2.stack : void 0
-  });
-  shutdown(1);
-}
-process.on("unhandledRejection", (reason) => fatal("process.unhandled_rejection", reason));
-process.on("uncaughtException", (error2) => fatal("process.uncaught_exception", error2));
+channelBridge = startChannelBridge();
 process.on("SIGINT", () => shutdown(130));
 process.on("SIGTERM", () => shutdown(143));
 process.on("SIGHUP", () => shutdown(129));

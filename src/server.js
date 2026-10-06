@@ -157,6 +157,49 @@ const server = new Server(
 
 const appServer = new CodexAppServerClient();
 
+// Installed before anything else can fail asynchronously (module loading from
+// source can be slow), so a stray rejection during startup still shuts down
+// cleanly. The channel bridge is assigned once the transport is connected.
+let channelBridge = null;
+
+// Shutdown must take the managed app-server (and its whole process group)
+// down with this server. Previously SIGTERM/SIGINT called the async close()
+// and exited immediately, stdin end never exited at all, and SIGHUP had no
+// handler, so app-servers were routinely left behind with parent = launchd.
+const SHUTDOWN_HARD_LIMIT_MS = 4000;
+let shutdownPromise = null;
+function shutdown(exitCode) {
+  if (shutdownPromise) {
+    return shutdownPromise;
+  }
+  channelBridge?.stop();
+  const hardStop = setTimeout(() => {
+    appServer.killManagedSync("SIGKILL");
+    process.exit(exitCode);
+  }, SHUTDOWN_HARD_LIMIT_MS);
+  shutdownPromise = appServer.close()
+    .catch((error) => {
+      getLogger().warn("server.shutdown_cleanup_failed", { error });
+    })
+    .finally(() => {
+      clearTimeout(hardStop);
+      process.exit(exitCode);
+    });
+  return shutdownPromise;
+}
+
+// A stray rejection or exception must not leave the managed app-server behind
+// or kill the process mid-write: log it, then run the normal shutdown.
+function fatal(event, error) {
+  getLogger().error(event, {
+    error: error instanceof Error ? error : String(error),
+    stack: error instanceof Error ? error.stack : undefined
+  });
+  shutdown(1);
+}
+process.on("unhandledRejection", (reason) => fatal("process.unhandled_rejection", reason));
+process.on("uncaughtException", (error) => fatal("process.uncaught_exception", error));
+
 // Local transcript fallbacks read at most this many of the newest transcripts
 // when a search has to be answered from disk (they used to read up to 2,000).
 const LOCAL_SEARCH_SCAN_LIMIT = 300;
@@ -2202,45 +2245,8 @@ function startChannelBridge() {
   }
 }
 
-const channelBridge = startChannelBridge();
+channelBridge = startChannelBridge();
 
-// Shutdown must take the managed app-server (and its whole process group)
-// down with this server. Previously SIGTERM/SIGINT called the async close()
-// and exited immediately, stdin end never exited at all, and SIGHUP had no
-// handler, so app-servers were routinely left behind with parent = launchd.
-const SHUTDOWN_HARD_LIMIT_MS = 4000;
-let shutdownPromise = null;
-function shutdown(exitCode) {
-  if (shutdownPromise) {
-    return shutdownPromise;
-  }
-  channelBridge?.stop();
-  const hardStop = setTimeout(() => {
-    appServer.killManagedSync("SIGKILL");
-    process.exit(exitCode);
-  }, SHUTDOWN_HARD_LIMIT_MS);
-  shutdownPromise = appServer.close()
-    .catch((error) => {
-      getLogger().warn("server.shutdown_cleanup_failed", { error });
-    })
-    .finally(() => {
-      clearTimeout(hardStop);
-      process.exit(exitCode);
-    });
-  return shutdownPromise;
-}
-
-// A stray rejection or exception must not leave the managed app-server behind
-// or kill the process mid-write: log it, then run the normal shutdown.
-function fatal(event, error) {
-  getLogger().error(event, {
-    error: error instanceof Error ? error : String(error),
-    stack: error instanceof Error ? error.stack : undefined
-  });
-  shutdown(1);
-}
-process.on("unhandledRejection", (reason) => fatal("process.unhandled_rejection", reason));
-process.on("uncaughtException", (error) => fatal("process.uncaught_exception", error));
 
 process.on("SIGINT", () => shutdown(130));
 process.on("SIGTERM", () => shutdown(143));
