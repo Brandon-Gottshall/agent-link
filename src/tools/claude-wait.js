@@ -148,6 +148,8 @@ export function makeWaitHandler({
       });
       const wasLoaded = !!target0.loaded;
       const address = claudeAddress(target0);
+      // The stored id, whatever id form (address, CLI id) the caller passed.
+      const storedId = target0.sessionId ?? sessionId;
       const deadline = waitStartedAt + timeoutMs;
       let nextLivenessCheckAt = waitStartedAt + livenessIntervalMs;
 
@@ -188,11 +190,11 @@ export function makeWaitHandler({
               return {
                 outcome: "reply",
                 waitedMs: waited(),
-                target: { sessionId, address },
+                target: { sessionId: storedId, address },
                 reply,
                 result: "reply",
                 message: reply,
-                sessionId
+                sessionId: storedId
               };
             }
           } finally {
@@ -208,16 +210,16 @@ export function makeWaitHandler({
               return {
                 outcome: "idle",
                 waitedMs: waited(),
-                target: { sessionId, address, lastLoaded: false },
+                target: { sessionId: storedId, address, lastLoaded: false },
                 result: "idle",
-                sessionId
+                sessionId: storedId
               };
             }
           }
 
           // 3. Sleep until the next poll, or break out on timeout.
           if (now() >= deadline) {
-            return { outcome: "timeout", waitedMs: waited(), target: { sessionId, address }, result: "timeout", sessionId };
+            return { outcome: "timeout", waitedMs: waited(), target: { sessionId: storedId, address }, result: "timeout", sessionId: storedId };
           }
           const remaining = deadline - now();
           await sleep(Math.min(pollIntervalMs, Math.max(remaining, 10)));

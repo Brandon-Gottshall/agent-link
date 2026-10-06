@@ -11,10 +11,10 @@ import {
   DEFAULT_DESKTOP_ROOT,
   findClaudeSessionById,
   isClaudeSessionLoaded,
-  listClaudeSessions
+  listClaudeSessions,
+  summarizeTranscriptSession
 } from "../claude/session-index.js";
 import { claudeConfigDir } from "../shared/host-detect.js";
-import { claudeSessionMatches } from "../claude/identity.js";
 import { claudeAddress, canonicalizeClaudeId } from "../shared/identity.js";
 
 /** @typedef {import("./index.js").AgentSession} AgentSession */
@@ -72,6 +72,7 @@ function exists(dir) {
  *   list?: typeof listClaudeSessions,
  *   find?: typeof findClaudeSessionById,
  *   isLoaded?: typeof isClaudeSessionLoaded,
+ *   summarize?: (file: string) => any,
  *   roots?: () => string[]
  * }} [deps]
  */
@@ -79,6 +80,7 @@ export function makeClaudeProvider({
   list = listClaudeSessions,
   find = findClaudeSessionById,
   isLoaded = isClaudeSessionLoaded,
+  summarize = (file) => summarizeTranscriptSession(file),
   roots = () => [claudeConfigDir(), DEFAULT_DESKTOP_ROOT, DEFAULT_CODE_ROOT]
 } = {}) {
   function availability() {
@@ -93,6 +95,15 @@ export function makeClaudeProvider({
    */
   async function listSessions({ includeArchived = false } = {}) {
     const status = availability();
+    // No Claude data on this machine (R1.8): empty list plus a warning.
+    if (!status.available) {
+      return {
+        ...status,
+        source: null,
+        sessions: [],
+        warnings: [{ code: "claude_unavailable", message: `${status.reason} Claude sessions are not listed.` }]
+      };
+    }
     try {
       const sessions = list({ includeArchived, surface: "all" })
         .map(toClaudeAgent)
@@ -119,15 +130,9 @@ export function makeClaudeProvider({
   async function get(id) {
     const raw = String(id ?? "").trim().replace(/^claude:/, "");
     if (!raw) return null;
-    // The full index entry (title, cwd, loaded) when the session is listed;
-    // the direct lookup otherwise (it knows prior CLI ids, and returns
-    // transcript-only sessions without a title).
-    try {
-      const listed = list({ includeArchived: true, surface: "all" }).find((s) => claudeSessionMatches(s, raw));
-      if (listed) return toClaudeAgent(listed);
-    } catch {
-      // fall through to the direct lookup
-    }
+    // The indexed lookup (sidecar id, current or prior CLI id, transcript
+    // file), never a full listing: one sidecar walk over cached parses at
+    // most, plus one `ps` for loaded.
     let session = null;
     try {
       session = find(raw);
@@ -138,6 +143,16 @@ export function makeClaudeProvider({
       session = null;
     }
     if (!session) return null;
+    // A transcript-only hit carries no title or cwd; read that one
+    // transcript's summary for them.
+    if (session.source === "transcript" && session.transcriptPath) {
+      try {
+        const summary = summarize(session.transcriptPath);
+        if (summary) session = { ...summary, ...session, title: summary.title ?? session.title, cwd: summary.cwd || session.cwd };
+      } catch {
+        // keep the bare entry
+      }
+    }
     let loaded = false;
     try {
       loaded = isLoaded(session.cliSessionId);

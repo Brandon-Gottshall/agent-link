@@ -237,6 +237,18 @@ function insertReply({ mailboxPath, fromSessionId, toSessionId, body, replyToMes
   cleanup(sb);
 }
 
+// M3: target.sessionId is the stored id, whatever form the caller passed
+// (here an address); target.address is the canonical address.
+{
+  const sb = makeSandbox();
+  const handlers = makeHandler({ mailboxPath: sb.mailboxPath, sessionsFn: () => [{ ...LOADED_SESSION, loaded: false }] });
+  const result = await handlers.wait_for_claude_session({ sessionId: "claude:uuid-aaa", timeoutMs: 0 });
+  assert.equal(result.outcome, "timeout");
+  assert.deepEqual(result.target, { sessionId: TARGET_SESSION_ID, address: "claude:uuid-aaa" });
+  assert.equal(result.sessionId, TARGET_SESSION_ID);
+  cleanup(sb);
+}
+
 // W2B-10: an archived session can be waited on by exact id through the
 // default session index (which used to drop archived sessions).
 {

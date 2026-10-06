@@ -5,10 +5,13 @@
 // the local transcript index otherwise, on any host. When neither answers,
 // the provider is unavailable and returns an empty list plus a warning (R1.8).
 
+import fs from "node:fs";
+import path from "node:path";
+import { describeCodexInstall } from "../codex/app-server-client.js";
 import { readLocalThread } from "../codex/session-index.js";
 import { summarizeThread } from "../codex/thread-summary.js";
 import { codexAddress } from "../shared/identity.js";
-import { truncate } from "../shared/text.js";
+import { codexHome } from "../shared/paths.js";
 
 /** @typedef {import("./index.js").AgentSession} AgentSession */
 /** @typedef {import("./index.js").ProviderList} ProviderList */
@@ -38,6 +41,9 @@ export function codexSurfaces(source) {
  * @param {{fromAppServer?: boolean}} [options]
  * @returns {AgentSession | null}
  */
+// No raw preview (another agent's text) in registry sessions: list_agents and
+// resolve_agent return only metadata. list_codex_threads keeps its preview,
+// documented there as untrusted.
 export function toCodexAgent(thread, { fromAppServer = true } = {}) {
   const address = codexAddress(thread?.id);
   if (!address) return null;
@@ -54,19 +60,50 @@ export function toCodexAgent(thread, { fromAppServer = true } = {}) {
     lastActivityAt: typeof thread.updatedAt === "string" ? thread.updatedAt : null,
     receive: { push: "codex-turn", nudge: null, pull: false },
     threadId: thread.id,
-    status: statusType,
-    preview: typeof thread.preview === "string" && thread.preview ? truncate(thread.preview, 200) : null
+    status: statusType
   };
+}
+
+/**
+ * Whether Codex is installed here: a Codex binary, or Codex session storage
+ * under CODEX_HOME. Cheap (no `codex --version`).
+ * @returns {{installed: boolean, reason: string | null}}
+ */
+export function codexInstallState() {
+  let binary = { available: false, reason: null };
+  try {
+    binary = describeCodexInstall({ probeVersion: false });
+  } catch {
+    // treated as no binary
+  }
+  if (binary.available) return { installed: true, reason: null };
+  let home = null;
+  try {
+    home = codexHome();
+  } catch {
+    home = null;
+  }
+  const hasSessions = Boolean(home) && ["sessions", "archived_sessions"].some((dir) => {
+    try {
+      return fs.existsSync(path.join(/** @type {string} */ (home), dir));
+    } catch {
+      return false;
+    }
+  });
+  return hasSessions
+    ? { installed: true, reason: null }
+    : { installed: false, reason: "Codex is not installed: no Codex binary was found and CODEX_HOME has no session storage." };
 }
 
 /**
  * @param {{
  *   appServer: AppServerLike,
  *   listThreads: (args: Record<string, any>) => Promise<{source: string, data: any[], appServerError?: string | null}>,
- *   readLocal?: typeof readLocalThread
+ *   readLocal?: typeof readLocalThread,
+ *   installState?: () => {installed: boolean, reason: string | null}
  * }} deps
  */
-export function makeCodexProvider({ appServer, listThreads, readLocal = readLocalThread }) {
+export function makeCodexProvider({ appServer, listThreads, readLocal = readLocalThread, installState = codexInstallState }) {
   /**
    * @param {{includeArchived?: boolean, limit?: number, searchTerm?: string}} [options]
    * @returns {Promise<ProviderList>}
@@ -83,6 +120,20 @@ export function makeCodexProvider({ appServer, listThreads, readLocal = readLoca
       const sessions = result.data
         .map((thread) => toCodexAgent(thread, { fromAppServer }))
         .filter(/** @returns {s is AgentSession} */ (s) => s !== null);
+      // No app-server and nothing on disk: say whether Codex is installed at
+      // all, instead of reporting an empty but available provider (R1.8).
+      if (!fromAppServer && sessions.length === 0) {
+        const install = installState();
+        if (!install.installed) {
+          return {
+            available: false,
+            reason: install.reason,
+            source: null,
+            sessions: [],
+            warnings: [{ code: "codex_unavailable", message: `${install.reason} Codex threads are not listed.` }]
+          };
+        }
+      }
       const warnings = fromAppServer
         ? []
         : [{ code: "codex_unavailable", message: "The Codex app-server was not reachable; Codex threads were listed from local transcripts and report loaded=false." }];

@@ -48,9 +48,9 @@ export const readInboxTool = {
 };
 
 /**
- * @param {{resolveCurrentSession?: () => any, mailboxOpener?: () => any}} [deps]
+ * @param {{resolveCurrentSession?: () => any, mailboxOpener?: () => any, host?: string}} [deps]
  */
-export function makeReadInboxHandler({ resolveCurrentSession, mailboxOpener } = {}) {
+export function makeReadInboxHandler({ resolveCurrentSession, mailboxOpener, host = "claude" } = {}) {
   if (typeof resolveCurrentSession !== "function") {
     throw new Error("makeReadInboxHandler: resolveCurrentSession must be a function");
   }
@@ -61,6 +61,13 @@ export function makeReadInboxHandler({ resolveCurrentSession, mailboxOpener } = 
   return {
     read_agent_link_inbox: async (args = {}) => {
       const session = resolveCurrentSession();
+      if (!session && host === "codex") {
+        // R1.13: the Codex inbox arrives with mailbox-first sends (PR B7).
+        throw new AgentLinkError("no_current_session", "read_agent_link_inbox has no inbox for a Codex thread yet: it reads mail addressed to the current Claude session.", {
+          details: { host: "codex", sources: ["CLAUDE_SESSION_ID", "CLAUDE_CODE_SESSION_ID"] },
+          hint: "Codex threads receive peer messages as turns from message_codex_thread. To reply to a peer from a Codex thread, use message_codex_thread or message_claude_session with the sender's address."
+        });
+      }
       if (!session) {
         throw new AgentLinkError("no_current_session", "read_agent_link_inbox could not identify the current Claude session.", {
           details: { host: "claude", sources: ["CLAUDE_SESSION_ID", "CLAUDE_CODE_SESSION_ID", "session sidecar", "transcript"] },

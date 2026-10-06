@@ -16,8 +16,9 @@ import { makeThreadQueries } from "../../src/codex/thread-queries.js";
 import { makeClaudeProvider } from "../../src/registry/claude.js";
 import { codexSurfaces, makeCodexProvider } from "../../src/registry/codex.js";
 import { createSessionRegistry, scoreAgent } from "../../src/registry/index.js";
-import { createRegistry } from "../../src/server/registry.js";
+import { createRegistry, normalizeThreadIdArguments } from "../../src/server/registry.js";
 import { agentEntries } from "../../src/tools/agents.js";
+import { makeReadInboxHandler } from "../../src/tools/read-inbox.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const sidecarRoot = path.join(root, "tests", "fixtures", "claude-sidecars");
@@ -41,16 +42,18 @@ for (const [id, title, at] of [[CLAUDE_LIVE, "Release planner", SECONDS + 500], 
 }
 const psOutput = `/usr/local/bin/claude --resume ${CLAUDE_LIVE}\n`;
 
-function claudeProvider({ fail = false } = {}) {
+const listCalls = { count: 0 };
+function claudeProvider({ fail = false, roots: searched = () => [projectsRoot] } = {}) {
   const roots = { desktopRoot: sidecarRoot, codeRoot: path.join(tmp, "no-code-root"), projectsRoot };
   return makeClaudeProvider({
     list: (options) => {
+      listCalls.count += 1;
       if (fail) throw new Error("index unreadable");
       return listClaudeSessions({ ...options, ...roots, psOutput });
     },
     find: (id) => findClaudeSessionById(id, roots),
     isLoaded: (cli) => isClaudeSessionLoaded(cli, { psOutput }),
-    roots: () => [projectsRoot]
+    roots: searched
   });
 }
 
@@ -94,19 +97,20 @@ function fakeAppServer({ down = false } = {}) {
   };
 }
 
-function codexProvider(appServer, { failList = false } = {}) {
+function codexProvider(appServer, { failList = false, installed = true } = {}) {
   const queries = makeThreadQueries({ appServer });
   return makeCodexProvider({
     appServer,
-    listThreads: failList ? async () => { throw new Error("transcripts unreadable"); } : queries.listThreads
+    listThreads: failList ? async () => { throw new Error("transcripts unreadable"); } : queries.listThreads,
+    installState: () => (installed ? { installed: true, reason: null } : { installed: false, reason: "Codex is not installed (test)." })
   });
 }
 
-function registry({ down = false, claudeFails = false, codexFails = false } = {}) {
+function registry({ down = false, claudeFails = false, codexFails = false, codexInstalled = true, claudeRoots } = {}) {
   const appServer = fakeAppServer({ down });
   return createSessionRegistry({
-    claude: claudeProvider({ fail: claudeFails }),
-    codex: codexProvider(appServer, { failList: codexFails })
+    claude: claudeProvider({ fail: claudeFails, ...(claudeRoots ? { roots: claudeRoots } : {}) }),
+    codex: codexProvider(appServer, { failList: codexFails, installed: codexInstalled })
   });
 }
 
@@ -157,6 +161,19 @@ test("list: an unavailable provider adds a warning and never fails the call (R1.
   assert.ok(fallback.warnings.some((w) => w.code === "codex_unavailable"));
   assert.ok(fallback.sessions.every((s) => s.harness === "claude"), "the empty temp CODEX_HOME has no transcripts");
 
+  // M5: no app-server, no transcripts, and no Codex install.
+  const noCodex = await registry({ down: true, codexInstalled: false }).list({});
+  assert.equal(noCodex.providers.codex.available, false);
+  assert.equal(noCodex.providers.codex.reason, "Codex is not installed (test).");
+  assert.ok(noCodex.warnings.some((w) => w.code === "codex_unavailable" && /not installed/.test(w.message)));
+
+  // I2: no Claude config dir or session store.
+  const noClaude = await registry({ claudeRoots: () => [path.join(tmp, "no-such-claude-dir")] }).list({});
+  assert.equal(noClaude.providers.claude.available, false);
+  assert.match(noClaude.providers.claude.reason, /No Claude config directory/);
+  assert.deepEqual(noClaude.warnings.map((w) => w.code), ["claude_unavailable"]);
+  assert.ok(noClaude.sessions.every((s) => s.harness === "codex"));
+
   const broken = await registry({ claudeFails: true, codexFails: true }).list({});
   assert.deepEqual(broken.sessions, []);
   assert.equal(broken.providers.claude.available, false);
@@ -176,6 +193,21 @@ test("get: addresses, bare ids, ambiguity, not_found, invalid", async () => {
   await assert.rejects(reg.get("no such thing"), (error) => error.errorCode === "invalid_arguments");
   // Codex unreachable: get falls back to local transcripts, which do not know T1.
   assert.equal((await registry({ down: true }).get(`claude:${TWIN}`)).harness, "claude");
+
+  // I3: the fixture sidecar rotated its CLI id; the prior id's address
+  // resolves to the session's current address.
+  const rotated = await reg.get("claude:11111111-2222-4333-8444-555555555555");
+  assert.equal(rotated.address, "claude:7f3c2b1a-0e9d-4c8b-a7f6-5e4d3c2b1a09");
+  assert.equal((await reg.resolve({ query: "claude:11111111-2222-4333-8444-555555555555" })).best.address, rotated.address);
+
+  // M2: exact lookups use the session index, never a full listing, and a
+  // transcript-only hit still carries its title and cwd.
+  listCalls.count = 0;
+  const twin = await reg.get(`claude:${TWIN}`);
+  assert.deepEqual([twin.title, twin.cwd], ["Twin session", "/work/planner"]);
+  await reg.get(`claude:${ARCHIVED_SIDECAR_CLI}`);
+  await reg.get(T2);
+  assert.equal(listCalls.count, 0);
 });
 
 test("resolve: exact ids first, then one host-neutral ranking", async () => {
@@ -192,13 +224,14 @@ test("resolve: exact ids first, then one host-neutral ranking", async () => {
   const missing = await reg.resolve({ query: "claude:00000000-0000-4000-8000-000000000000" });
   assert.equal(missing.status, "not_found");
 
-  // One scale across hosts: "Release worker" (Codex, title prefix 300 +
-  // preview 40) > "Release planner" (Claude, title prefix 300) > "Old
-  // release notes" (Codex, archived, title contains 200 + preview 40).
+  // One scale across hosts: "Release planner" (Claude) and "Release worker"
+  // (Codex) tie on title prefix (300), the newer first; "Old release notes"
+  // (Codex, archived) has title contains (200).
   const release = await reg.resolve({ query: "release" });
-  assert.equal(release.status, "resolved");
-  assert.deepEqual(release.candidates.map((c) => [c.address, c.score]), [[`codex:${T1}`, 340], [`claude:${CLAUDE_LIVE}`, 300], [`codex:${T_OLD}`, 240]]);
+  assert.equal(release.status, "ambiguous");
+  assert.deepEqual(release.candidates.map((c) => [c.address, c.score]), [[`claude:${CLAUDE_LIVE}`, 300], [`codex:${T1}`, 300], [`codex:${T_OLD}`, 200]]);
   assert.equal(release.candidates[2].archived, true, "archived candidates are included and marked");
+  assert.ok(release.candidates.every((c) => !("preview" in c)), "S2: no raw preview text in registry results");
 
   // Equal scores break by most recent activity.
   const planner = await reg.resolve({ query: "/work/planner" });
@@ -222,7 +255,7 @@ test("scoreAgent scale", () => {
   assert.equal(scoreAgent(session, "codex:abc-123").score, 1000);
   assert.deepEqual(scoreAgent(session, "abc-").reasons, ["id-prefix"]);
   assert.ok(scoreAgent(session, "release worker").score > scoreAgent(session, "worker").score);
-  assert.deepEqual(scoreAgent(session, "release").reasons, ["title-prefix", "cwd-basename", "preview-contains"]);
+  assert.deepEqual(scoreAgent(session, "release").reasons, ["title-prefix", "cwd-basename"]);
   assert.equal(scoreAgent(session, "").score, 0);
 });
 
@@ -263,4 +296,31 @@ test("list_agents and resolve_agent follow the B4 contract on both hosts", async
     const blank = await tools.callTool("resolve_agent", { query: "   " });
     assert.equal(blank.structuredContent.error.code, "invalid_arguments");
   }
+});
+
+test("I1: Codex thread id arguments accept codex:<id> and reject claude: addresses", () => {
+  const definition = { name: "message_codex_thread" };
+  assert.deepEqual(
+    normalizeThreadIdArguments(definition, { threadId: `codex:${T1}`, orchestratorThreadId: `codex:${T2}`, receipt: { originThreadId: `codex:${T2}`, note: "codex:x" }, message: "claude:not-an-id-arg" }),
+    { threadId: T1, orchestratorThreadId: T2, receipt: { originThreadId: T2, note: "codex:x" }, message: "claude:not-an-id-arg" }
+  );
+  assert.deepEqual(normalizeThreadIdArguments(definition, { threadId: T1 }), { threadId: T1 }, "bare ids pass through");
+  assert.throws(() => normalizeThreadIdArguments(definition, { threadId: `claude:${CLAUDE_LIVE}`, callbackThreadId: `claude:${TWIN}` }), (error) => {
+    assert.equal(error.errorCode, "invalid_arguments");
+    assert.deepEqual(error.details.errors.map((e) => [e.path, e.rule]), [["threadId", "harness"], ["callbackThreadId", "harness"]]);
+    assert.match(error.hint, /message_claude_session/);
+    return true;
+  });
+});
+
+test("M4: read_agent_link_inbox on the Codex host names the Codex host and a Codex hint", async () => {
+  const handler = makeReadInboxHandler({ resolveCurrentSession: () => null, host: "codex" });
+  await assert.rejects(handler.read_agent_link_inbox({}), (error) => {
+    assert.equal(error.errorCode, "no_current_session");
+    assert.equal(error.details.host, "codex");
+    assert.match(error.hint, /message_codex_thread/);
+    return true;
+  });
+  const claude = makeReadInboxHandler({ resolveCurrentSession: () => null });
+  await assert.rejects(claude.read_agent_link_inbox({}), (error) => error.details.host === "claude");
 });

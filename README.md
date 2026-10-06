@@ -179,7 +179,11 @@ Then point either host at the folder instead of GitHub: `claude plugin marketpla
 
 ### Any host
 
-Every tool is registered on both hosts. Sessions are named by an address: `claude:<cliSessionId>` for a Claude Desktop or Claude Code session, `codex:<threadId>` for a Codex thread. Tools that name a session return its `address` beside the older id fields, and the exact-id arguments accept an address.
+Every tool is registered on both hosts. Sessions are named by an address: `claude:<cliSessionId>` for a Claude Desktop or Claude Code session, `codex:<threadId>` for a Codex thread. Tools that name a session return its `address` beside the older id fields, and the exact-id arguments accept an address: every Codex thread id argument (`threadId`, `orchestratorThreadId`, `targetThreadId`, `callbackThreadId`, ...) takes `codex:<id>`, and the Claude `sessionId` arguments take `claude:<id>`. Passing a `claude:` address where a Codex thread is expected fails with `invalid_arguments`.
+
+Claude Desktop can change a session's CLI id over time (it keeps the earlier ones as prior ids). A `claude:` address built from an earlier id still names the same session: Agent Link resolves it through the session index to the session's current address, and mail and receipts recorded under any of the session's ids show and match its current address. Nothing stored is rewritten.
+
+`list_agents` and `resolve_agent` read Codex threads through the Codex app-server on either host. On a machine with Codex installed and no reachable app-server, that can start a managed app-server, just as the Codex tools do; set `AGENT_LINK_CODEX_AUTOSTART=0` to prevent it (threads are then listed from local transcripts). Session titles in their results are untrusted data from other sessions.
 
 | Tool | Purpose |
 | --- | --- |

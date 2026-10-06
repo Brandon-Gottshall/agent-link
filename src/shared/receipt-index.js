@@ -7,8 +7,46 @@ import { env, envFlag } from "./env.js";
 import { appendJsonl, parseJsonlLines } from "./jsonl.js";
 import { legacyReceiptPaths, receiptLogPath, stateDir } from "./paths.js";
 import { ensureStateDir } from "./state.js";
-import { receiptTargetAddress } from "../registry/addresses.js";
-import { claudeAddress, codexAddress, parseAddress } from "./identity.js";
+import { canonicalAddress, codexAddress, parseAddress } from "./identity.js";
+
+/**
+ * How receipts are read in addresses (design doc R1.6, R1.7). The server
+ * injects the session-index-aware resolver (src/registry/addresses.js) at
+ * startup; the default only derives addresses from the stored fields.
+ * @typedef {object} ReceiptAddressResolver
+ * @property {(target: Record<string, any> | null | undefined) => string | null} targetAddress
+ *   the current address of a stored receipt target
+ * @property {(address: string) => string | null} canonical
+ *   an address as the current address of the session it names
+ * @property {(address: string) => string[]} aliases
+ *   every stored id or address that names the same session
+ */
+
+/** @type {ReceiptAddressResolver} */
+const DEFAULT_ADDRESS_RESOLVER = {
+  targetAddress(target) {
+    if (!target || typeof target !== "object") return null;
+    if (typeof target.address === "string" && target.address) return parseAddress(target.address) ? target.address : null;
+    if (typeof target.threadId === "string" && target.threadId && target.kind !== "claude") return codexAddress(target.threadId);
+    if (typeof target.sessionId === "string" && target.sessionId) {
+      const address = canonicalAddress(target.sessionId, target.kind === "codex" ? "codex" : "claude");
+      return address.includes(":") ? address : null;
+    }
+    return null;
+  },
+  canonical: (address) => (parseAddress(address) ? address : null),
+  aliases: (address) => [address]
+};
+
+let addressResolver = DEFAULT_ADDRESS_RESOLVER;
+
+/**
+ * Installs the resolver receipts are read with; null restores the default.
+ * @param {ReceiptAddressResolver | null} resolver
+ */
+export function setReceiptAddressResolver(resolver) {
+  addressResolver = resolver ?? DEFAULT_ADDRESS_RESOLVER;
+}
 
 const RECEIPT_VERSION = 1;
 const DEFAULT_LIMIT = 20;
@@ -133,7 +171,7 @@ export function buildReceipt({
     target: {
       // The canonical address (design doc section 1.3); the legacy id
       // fields below stay.
-      address: cleanText(target?.address, 200) ?? receiptTargetAddress(target),
+      address: cleanText(target?.address, 200) ?? addressResolver.targetAddress(target),
       threadId: cleanText(target?.threadId, 160),
       turnId: cleanText(target?.turnId, 160),
       name: cleanText(target?.name, 200),
@@ -265,7 +303,7 @@ export async function listReceipts(options = {}) {
 function targetAddressFilter(options) {
   for (const value of [options.target, options.targetThreadId, options.targetSessionId]) {
     const parsed = parseAddress(typeof value === "string" ? value.trim() : value);
-    if (parsed) return parsed.harness === "codex" ? codexAddress(parsed.id) : claudeAddress(parsed.address);
+    if (parsed) return addressResolver.canonical(parsed.address) ?? parsed.address;
   }
   return null;
 }
@@ -275,9 +313,23 @@ function targetAddressFilter(options) {
  * written before addresses existed (R1.6).
  * @param {Record<string, any>} target
  */
+/**
+ * True when a stored receipt target names the session `address` names: the
+ * same current address, or a stored id that is any alias of that session
+ * (a prior Claude CLI id, the sidecar id, either `local_` form).
+ * @param {Record<string, any> | null | undefined} target
+ * @param {string} address
+ */
+function targetMatchesAddress(target, address) {
+  if (!target) return false;
+  if (addressResolver.targetAddress(target) === address) return true;
+  const aliases = new Set(addressResolver.aliases(address));
+  return [target.address, target.sessionId, target.threadId].some((id) => typeof id === "string" && aliases.has(id));
+}
+
 function withTargetAddress(target) {
   const { address: _stored, ...rest } = target;
-  return { address: receiptTargetAddress(target), ...rest };
+  return { address: addressResolver.targetAddress(target), ...rest };
 }
 
 export function receiptSummary(receipt) {
@@ -325,7 +377,7 @@ function summarizeReplyConfirmation(replyConfirmation) {
 
 function receiptMatches(receipt, filters) {
   if (filters.targetAddress) {
-    if (receiptTargetAddress(receipt.target) !== filters.targetAddress) return false;
+    if (!targetMatchesAddress(receipt.target, filters.targetAddress)) return false;
   } else if (filters.targetThreadId && receipt.target?.threadId !== filters.targetThreadId) {
     return false;
   }

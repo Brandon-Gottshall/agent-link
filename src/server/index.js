@@ -48,7 +48,8 @@ import { extractRuntimeCallerContext } from "../shared/caller-context.js";
 import { optionalString } from "../shared/args.js";
 import { AgentLinkError } from "../shared/errors.js";
 import { currentClaudeSessionId } from "../shared/host-detect.js";
-import { listReceipts } from "../shared/receipt-index.js";
+import { listReceipts, setReceiptAddressResolver } from "../shared/receipt-index.js";
+import { receiptAddressResolver } from "../registry/addresses.js";
 import { getLogger } from "../shared/log.js";
 
 /** @typedef {ReturnType<typeof loadConfig>} AgentLinkConfig */
@@ -129,6 +130,11 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
   const channelEnabled = channelRequested && channelError === null;
 
   const currentClaudeSession = makeCurrentClaudeSession({ host: hostInfo.host });
+
+  // Receipts are read with the session-index-aware address resolver, so a
+  // target recorded under a sidecar id or a rotated Claude CLI id shows (and
+  // matches) the session's current address (R1.6, R1.7).
+  setReceiptAddressResolver(receiptAddressResolver);
 
   const server = new Server(
     {
@@ -268,7 +274,7 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
     ...mailboxInspectEntries({ ...claudeDeps, inspectAll: config.inspectAll }),
     ...claudeSendEntries(claudeDeps),
     ...claudeWaitEntries(claudeDeps),
-    ...readInboxEntries({ resolveCurrentSession: currentClaudeSession }),
+    ...readInboxEntries({ resolveCurrentSession: currentClaudeSession, host: hostInfo.host }),
     ...replyAgentLinkMessageEntries(claudeDeps),
     // Every tool on every host (R1.16): the Claude listing tools are no
     // longer limited to the Claude host.

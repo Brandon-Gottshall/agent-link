@@ -334,6 +334,13 @@ function listTranscriptSessions(projectsRoot) {
   return out;
 }
 
+// The listing entry for one transcript file (title, cwd, timestamps) without
+// listing every session: an exact-id lookup that found a transcript-only
+// session uses this to fill in what findTranscriptSessionByCliId leaves out.
+export function summarizeTranscriptSession(file, { projectsRoot = defaultProjectsRoot() } = {}) {
+  return file ? parseTranscriptSummary(file, projectsRoot) : null;
+}
+
 function parseTranscriptSummary(file, projectsRoot) {
   let stat;
   try {

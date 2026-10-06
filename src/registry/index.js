@@ -15,8 +15,9 @@ import { ID_PATTERN, parseAddress } from "../shared/identity.js";
 
 /**
  * A session as the registry reports it. Host-specific fields (sessionId and
- * cliSessionId for Claude; threadId, status and preview for Codex) are
- * additional (R1.2).
+ * cliSessionId for Claude; threadId and status for Codex) are additional
+ * (R1.2). No session carries another agent's text: titles are metadata, and
+ * Codex previews stay on list_codex_threads.
  * @typedef {{
  *   address: string,
  *   harness: "claude" | "codex",
@@ -78,7 +79,6 @@ const norm = (value) => (typeof value === "string" ? value.trim().toLowerCase() 
  *   id prefix / partial id                  300 / 150
  *   title exact / prefix / contains / words 400 / 300 / 200 / 100
  *   cwd basename exact / cwd contains       120 / 60
- *   Codex preview contains                  40
  * Ties break by most recent activity.
  * @param {AgentSession} session
  * @param {string} query
@@ -113,7 +113,6 @@ export function scoreAgent(session, query) {
     if (base === q) { score += 120; reasons.push("cwd-basename"); }
     else if (cwd.includes(q)) { score += 60; reasons.push("cwd-contains"); }
   }
-  if (norm(session.preview).includes(q)) { score += 40; reasons.push("preview-contains"); }
   return { score, reasons };
 }
 

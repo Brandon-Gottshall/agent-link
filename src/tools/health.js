@@ -30,7 +30,7 @@ export const healthTool = {
     hostDetection: out("string", "How the host was determined."),
     address: out("string", "The caller's own address (claude:<id> or codex:<id>) from runtime identity, or 'external' when it cannot be identified."),
     addressSource: out("string", "Where address came from: runtime_context, current_session, env, or fallback."),
-    providers: out("object", "{claude: {available, reason, searched}, codex: {available, reason, searched}}."),
+    providers: out("object", "{claude: {available, reason, searched}, codex: {available, reason, searched}}. list_agents and resolve_agent read both providers on either host; reading Codex threads may start a managed Codex app-server when Codex is installed and autoStartEnabled is true."),
     stateDir: out("object", "{path, source, exists}: where Agent Link keeps its files."),
     env: out("object", "{deprecated: [{name, canonical}], conflicts: [{canonical, winner, ignored}]}: legacy environment variable names in use (names only, never values)."),
     legacyState: out("object", "{files: [{kind, path, modifiedAt, writtenAfterMigration}], migration, stillWritten, warning}: pre-0.5 state files still present."),

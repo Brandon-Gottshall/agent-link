@@ -190,6 +190,25 @@ try {
     assert.equal(result.payload.turn.finalResponse, "second answer");
     assert.ok(Number.isInteger(result.payload.waitedMs));
 
+    // I1: the address the session registry returns works wherever a Codex
+    // thread id is taken; a claude: address there is invalid_arguments.
+    result = await call("resolve_agent", { query: threadId, harness: "codex" });
+    assert.equal(result.payload.status, "resolved");
+    const address = result.payload.best.address;
+    assert.equal(address, `codex:${threadId}`);
+    result = await call("message_codex_thread", { threadId: address, message: "by address" });
+    assert.equal(result.isError, false, JSON.stringify(result.payload));
+    assert.deepEqual(result.payload.target, { threadId, address });
+    result = await call("get_codex_thread", { threadId: address });
+    assert.equal(result.payload.thread.id, threadId);
+    result = await call("wait_for_codex_thread", { threadId: address, timeoutMs: 1000, pollIntervalMs: 250 });
+    assert.deepEqual(result.payload.target, { threadId, address });
+    result = await call("list_loaded_codex_threads", { threadId: address });
+    assert.equal(result.payload.lookup.loaded, true);
+    result = await call("message_codex_thread", { threadId: "claude:5a7e4c21-9b3d-4f60-8e12-3c4d5e6f7a8b", message: "wrong harness" });
+    assert.equal(result.payload.error.code, "invalid_arguments");
+    assert.equal(result.payload.error.details.errors[0].path, "threadId");
+
     // Out-of-range numbers are rejected, not clamped (R3.12).
     result = await call("wait_for_codex_thread", { threadId, pollIntervalMs: 10 });
     assert.equal(result.payload.error.code, "invalid_arguments");

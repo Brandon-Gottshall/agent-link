@@ -110,9 +110,9 @@ export function claudeSessionMatches(session, id) {
 // `from_session_id` and used as the reply target; `aliases` are every id the
 // caller's mail may be addressed to.
 //
-// Claude host: the resolved current session wins, then the env CLI id. MCP
-// runtime metadata is a Codex concept and is only a last resort here, so a
-// loosely-shaped `_meta` can never impersonate the session.
+// Claude host: the resolved current session wins, then the env CLI id, then
+// "external". MCP runtime metadata is a Codex concept and is never used
+// here, so a loosely-shaped `_meta` can never impersonate the session.
 // Codex host: the runtime caller thread, then CODEX_THREAD_ID.
 // Anything that fails SENDER_ID_PATTERN falls through to "external".
 /**
@@ -131,9 +131,9 @@ export function resolveCallerIdentity({ host, runtimeCallerContext = null, curre
     if (isValidSenderId(canonicalEnvId)) {
       return { id: canonicalEnvId, kind: "claude", aliases: claudeSessionAliases(envId), source: "env" };
     }
-    if (runtimeThreadId) {
-      return { id: runtimeThreadId, kind: "claude", aliases: [runtimeThreadId], source: "runtime_context" };
-    }
+    // MCP runtime metadata never names the Claude caller (Claude Code's
+    // `_meta` carries only progressToken and claudecode/toolUseId), so a
+    // `_meta` thread id is not used here; same rule as hostIdentity().
     return { id: EXTERNAL_SENDER, kind: "claude", aliases: [EXTERNAL_SENDER], source: "fallback" };
   }
   if (host === "codex") {

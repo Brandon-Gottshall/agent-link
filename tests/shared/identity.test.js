@@ -22,14 +22,15 @@ import {
   makeAddressCache,
   parseAddress
 } from "../../src/shared/identity.js";
-import { claudeSessionMatches } from "../../src/claude/identity.js";
+import { claudeSessionMatches, resolveCallerIdentity } from "../../src/claude/identity.js";
+import { spawnSync } from "node:child_process";
 
 const CLI = "36a85a98-8e81-409b-8c1c-07cdaf004d57";
 const SIDECAR_UUID = "4acb50b2-5a15-49d1-a68e-afa1c409030d";
 const SIDECAR = `local_${SIDECAR_UUID}`;
 const THREAD = "019d3000-0000-7000-8000-000000000001";
 const sidecars = { [SIDECAR]: { sessionId: SIDECAR, cliSessionId: CLI } };
-const lookupSidecar = (id) => sidecars[id] ?? null;
+const lookupSession = (id) => sidecars[id] ?? null;
 
 test("parseAddress and formatAddress round-trip", () => {
   for (const [harness, id] of [["claude", CLI], ["codex", THREAD], ["codex", "a"], ["claude", "x".repeat(128)], ["codex", "A_b-9"]]) {
@@ -56,11 +57,11 @@ test("invalid addresses and ids are rejected", () => {
 test("canonicalizeClaudeId: every Claude id form", () => {
   assert.equal(canonicalizeClaudeId(CLI), CLI, "bare CLI id");
   assert.equal(canonicalizeClaudeId(`claude:${CLI}`), CLI, "address");
-  assert.equal(canonicalizeClaudeId(SIDECAR, { lookupSidecar }), CLI, "sidecar id resolves to its cliSessionId");
+  assert.equal(canonicalizeClaudeId(SIDECAR, { lookupSession }), CLI, "sidecar id resolves to its cliSessionId");
   assert.equal(canonicalizeClaudeId(SIDECAR), SIDECAR_UUID, "sidecar id without a lookup strips local_");
-  assert.equal(canonicalizeClaudeId(`local_${CLI}`, { lookupSidecar }), CLI, "local_<cli> with no sidecar strips local_");
-  assert.equal(canonicalizeClaudeId(SIDECAR, { lookupSidecar: () => { throw new Error("io"); } }), SIDECAR_UUID, "a failing lookup falls back");
-  assert.equal(canonicalizeClaudeId(SIDECAR, { lookupSidecar: () => ({ sessionId: SIDECAR }) }), SIDECAR_UUID, "a sidecar with no CLI id yet");
+  assert.equal(canonicalizeClaudeId(`local_${CLI}`, { lookupSession }), CLI, "local_<cli> with no sidecar strips local_");
+  assert.equal(canonicalizeClaudeId(SIDECAR, { lookupSession: () => { throw new Error("io"); } }), SIDECAR_UUID, "a failing lookup falls back");
+  assert.equal(canonicalizeClaudeId(SIDECAR, { lookupSession: () => ({ sessionId: SIDECAR }) }), SIDECAR_UUID, "a sidecar with no CLI id yet");
   assert.equal(canonicalizeClaudeId("bad id"), null);
   assert.equal(canonicalizeClaudeId(""), null);
   assert.equal(canonicalizeClaudeId(undefined), null);
@@ -70,7 +71,7 @@ test("claudeAddress and codexAddress", () => {
   assert.equal(claudeAddress({ sessionId: SIDECAR, cliSessionId: CLI }), `claude:${CLI}`);
   assert.equal(claudeAddress({ sessionId: SIDECAR, cliSessionId: null }), `claude:${SIDECAR_UUID}`, "no CLI id yet");
   assert.equal(claudeAddress({ sessionId: `local_${CLI}`, cliSessionId: CLI }), `claude:${CLI}`, "transcript-only session");
-  assert.equal(claudeAddress(SIDECAR, { lookupSidecar }), `claude:${CLI}`);
+  assert.equal(claudeAddress(SIDECAR, { lookupSession }), `claude:${CLI}`);
   assert.equal(claudeAddress("x y"), null);
   assert.equal(codexAddress(THREAD), `codex:${THREAD}`);
   assert.equal(codexAddress(`codex:${THREAD}`), `codex:${THREAD}`);
@@ -99,7 +100,7 @@ test("migration table (section 1.3): stored value and kind to canonical address"
     [42, "codex", INVALID_ADDRESS]
   ];
   for (const [id, kind, expected] of rows) {
-    assert.equal(canonicalAddress(id, kind, { lookupSidecar }), expected, `${JSON.stringify(id)} (${kind})`);
+    assert.equal(canonicalAddress(id, kind, { lookupSession }), expected, `${JSON.stringify(id)} (${kind})`);
   }
 });
 
@@ -107,7 +108,7 @@ test("makeAddressCache memoizes lookups and expires them", () => {
   let lookups = 0;
   let clock = 0;
   const cached = makeAddressCache({
-    lookupSidecar: (id) => { lookups += 1; return lookupSidecar(id); },
+    lookupSession: (id) => { lookups += 1; return lookupSession(id); },
     ttlMs: 1000,
     now: () => clock
   });
@@ -152,46 +153,91 @@ test("claudeSessionMatches accepts an address", () => {
   assert.ok(!claudeSessionMatches(session, `codex:${CLI}`));
 });
 
-test("read-time migration: mailbox rows and receipts show addresses, stored lines are untouched", async () => {
+
+test("resolveCallerIdentity agrees with hostIdentity: no Claude session or env means external", () => {
+  const ctx = { threadId: THREAD };
+  assert.deepEqual(resolveCallerIdentity({ host: "claude", runtimeCallerContext: ctx, env: {} }),
+    { id: "external", kind: "claude", aliases: ["external"], source: "fallback" });
+  assert.equal(hostIdentity({ host: "claude", callerContext: ctx, env: {} }).address, EXTERNAL_ADDRESS);
+  assert.equal(resolveCallerIdentity({ host: "codex", runtimeCallerContext: ctx, env: {} }).id, THREAD);
+});
+
+// Runs `script` (an ES module body) in a child whose HOME holds the fixture,
+// because the session index resolves its default roots from HOME at import.
+function runInHome(home, script) {
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+    cwd: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".."),
+    env: { PATH: process.env.PATH, HOME: home, CODEX_HOME: path.join(home, ".codex"), AGENT_LINK_STATE_DIR: path.join(home, "state") },
+    encoding: "utf8"
+  });
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout.trim());
+}
+
+// I3: Claude Desktop rotated the session's CLI id from PRIOR to CURRENT (the
+// sidecar lists PRIOR in priorCliSessionIds). Mail, reply targets and
+// receipts recorded under PRIOR, the sidecar id, or claude:PRIOR all read as
+// the session's current address and match a filter by either address.
+test("read-time migration: rotated Claude CLI ids resolve to the current address; stored lines are untouched", () => {
+  const PRIOR = "9d1c2b3a-4e5f-4a6b-8c7d-0e1f2a3b4c5d";
+  const CURRENT = CLI;
   const home = mkdtempSync(path.join(os.tmpdir(), "agent-link-identity-"));
   try {
-    // A Desktop sidecar under the default root of this (temp) HOME.
     const sidecarDir = path.join(home, "Library", "Application Support", "Claude", "local-agent-mode-sessions", "acct", "org");
     mkdirSync(sidecarDir, { recursive: true });
-    writeFileSync(path.join(sidecarDir, `${SIDECAR}.json`), JSON.stringify({ sessionId: SIDECAR, cliSessionId: CLI, title: "t", cwd: "/w", lastActivityAt: 1 }));
+    writeFileSync(path.join(sidecarDir, `${SIDECAR}.json`), JSON.stringify({ sessionId: SIDECAR, cliSessionId: CURRENT, priorCliSessionIds: [PRIOR], title: "t", cwd: "/w", lastActivityAt: 1 }));
     const receiptLog = path.join(home, "receipts.jsonl");
     const legacyReceipts = [
       { id: "r1", createdAt: "2026-05-18T10:00:00.000Z", action: "message_claude_session", target: { sessionId: SIDECAR, kind: "claude" } },
       { id: "r2", createdAt: "2026-05-18T10:00:01.000Z", action: "message_thread", target: { threadId: THREAD, kind: "codex" } },
-      { id: "r3", createdAt: "2026-05-18T10:00:02.000Z", action: "reply_message", target: { sessionId: THREAD, kind: "codex", address: `codex:${THREAD}` } }
+      { id: "r3", createdAt: "2026-05-18T10:00:02.000Z", action: "reply_message", target: { sessionId: THREAD, kind: "codex", address: `codex:${THREAD}` } },
+      { id: "r4", createdAt: "2026-05-18T10:00:03.000Z", action: "message_claude_session", target: { address: `claude:${PRIOR}`, sessionId: SIDECAR, kind: "claude" } },
+      { id: "r5", createdAt: "2026-05-18T10:00:04.000Z", action: "reply_message", target: { sessionId: PRIOR, kind: "claude" } }
     ];
     const stored = legacyReceipts.map((r) => JSON.stringify(r)).join("\n") + "\n";
     writeFileSync(receiptLog, stored);
 
-    // The modules resolve the sidecar root from HOME at import time, so load
-    // them in a child with this HOME.
-    const { spawnSync } = await import("node:child_process");
-    const script = `
-      import { mailboxRowAddresses } from "./src/registry/addresses.js";
-      import { listReceipts } from "./src/shared/receipt-index.js";
-      const rows = mailboxRowAddresses({ from_session_id: ${JSON.stringify(SIDECAR)}, from_session_kind: "claude", to_session_id: ${JSON.stringify(THREAD)}, to_session_kind: "codex" });
-      const all = await listReceipts({ path: ${JSON.stringify(receiptLog)} });
-      const byClaude = await listReceipts({ path: ${JSON.stringify(receiptLog)}, target: "claude:${CLI}" });
-      const bySessionAddress = await listReceipts({ path: ${JSON.stringify(receiptLog)}, targetSessionId: "claude:${CLI}" });
-      const byCodex = await listReceipts({ path: ${JSON.stringify(receiptLog)}, targetThreadId: "codex:${THREAD}" });
-      console.log(JSON.stringify({ rows, all: all.data.map((r) => [r.id, r.target.address]), byClaude: byClaude.data.map((r) => r.id), bySessionAddress: bySessionAddress.data.map((r) => r.id), byCodex: byCodex.data.map((r) => r.id) }));
-    `;
-    const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
-      cwd: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".."),
-      env: { PATH: process.env.PATH, HOME: home, CODEX_HOME: path.join(home, ".codex"), AGENT_LINK_STATE_DIR: path.join(home, "state") },
-      encoding: "utf8"
-    });
-    assert.equal(result.status, 0, result.stderr);
-    const out = JSON.parse(result.stdout.trim());
-    assert.deepEqual(out.rows, { fromAddress: `claude:${CLI}`, toAddress: `codex:${THREAD}` });
-    assert.deepEqual(out.all, [["r3", `codex:${THREAD}`], ["r2", `codex:${THREAD}`], ["r1", `claude:${CLI}`]]);
-    assert.deepEqual(out.byClaude, ["r1"], "a sidecar-id receipt matches the CLI address (R1.7)");
-    assert.deepEqual(out.bySessionAddress, ["r1"]);
+    const out = runInHome(home, `
+      import { mailboxRowAddresses, receiptAddressResolver, storedAddress } from "./src/registry/addresses.js";
+      import { listReceipts, setReceiptAddressResolver } from "./src/shared/receipt-index.js";
+      const ids = (r) => r.data.map((x) => x.id);
+      const log = ${JSON.stringify(receiptLog)};
+      const plain = await listReceipts({ path: log, target: "claude:${PRIOR}" });
+      setReceiptAddressResolver(receiptAddressResolver);
+      const all = await listReceipts({ path: log });
+      console.log(JSON.stringify({
+        rows: [
+          mailboxRowAddresses({ from_session_id: ${JSON.stringify(SIDECAR)}, from_session_kind: "claude", to_session_id: ${JSON.stringify(THREAD)}, to_session_kind: "codex" }),
+          mailboxRowAddresses({ from_session_id: ${JSON.stringify(PRIOR)}, from_session_kind: "claude", to_session_id: "claude:${PRIOR}", to_session_kind: "claude" }),
+          mailboxRowAddresses({ from_session_id: ${JSON.stringify(PRIOR)}, from_session_kind: "undefined", to_session_id: ${JSON.stringify(SIDECAR)} })
+        ],
+        replyTarget: storedAddress(${JSON.stringify(PRIOR)}, "claude"),
+        plainResolver: ids(plain),
+        all: all.data.map((r) => [r.id, r.target.address]),
+        byCurrent: ids(await listReceipts({ path: log, target: "claude:${CURRENT}" })),
+        byPrior: ids(await listReceipts({ path: log, target: "claude:${PRIOR}" })),
+        bySessionAddress: ids(await listReceipts({ path: log, targetSessionId: "claude:${PRIOR}" })),
+        byCodex: ids(await listReceipts({ path: log, targetThreadId: "codex:${THREAD}" }))
+      }));
+    `);
+    assert.deepEqual(out.rows, [
+      { fromAddress: `claude:${CURRENT}`, toAddress: `codex:${THREAD}` },
+      { fromAddress: `claude:${CURRENT}`, toAddress: `claude:${CURRENT}` },
+      // M6: a missing or unrecognized kind is the documented default, claude.
+      { fromAddress: `claude:${CURRENT}`, toAddress: `claude:${CURRENT}` }
+    ]);
+    assert.equal(out.replyTarget, `claude:${CURRENT}`, "a reply to mail sent under the prior id goes to the current address");
+    assert.deepEqual(out.plainResolver, ["r5", "r4"], "without the injected resolver only the stored fields are compared (S1)");
+    assert.deepEqual(out.all, [
+      ["r5", `claude:${CURRENT}`],
+      ["r4", `claude:${CURRENT}`],
+      ["r3", `codex:${THREAD}`],
+      ["r2", `codex:${THREAD}`],
+      ["r1", `claude:${CURRENT}`]
+    ]);
+    assert.deepEqual(out.byCurrent, ["r5", "r4", "r1"], "a filter by the current address matches every alias (R1.7)");
+    assert.deepEqual(out.byPrior, ["r5", "r4", "r1"], "a filter by the prior address resolves to the same session");
+    assert.deepEqual(out.bySessionAddress, ["r5", "r4", "r1"]);
     assert.deepEqual(out.byCodex, ["r3", "r2"]);
     assert.equal(readFileSync(receiptLog, "utf8"), stored, "stored receipts are never rewritten (R1.6)");
   } finally {

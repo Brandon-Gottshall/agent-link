@@ -400,7 +400,12 @@ const SCRIPT = [
   ["resolve_agent", { query: "Golden Claude", harness: "claude" }],
   ["list_claude_sessions", {}],
   ["get_claude_session", { sessionId: `claude:${CLAUDE_SESSION}` }],
-  ["list_agent_link_receipts", { target: `codex:${GAMMA}` }]
+  ["list_agent_link_receipts", { target: `codex:${GAMMA}` }],
+  // The address list_agents returned works as a Codex thread id; a claude:
+  // address there is invalid_arguments.
+  ["message_codex_thread", { threadId: `codex:${ALPHA}`, message: "by address" }],
+  ["get_codex_thread", { threadId: `codex:${ALPHA}` }],
+  ["message_codex_thread", { threadId: `claude:${CLAUDE_SESSION}`, message: "wrong harness" }]
 ];
 
 function serverEnv(host) {

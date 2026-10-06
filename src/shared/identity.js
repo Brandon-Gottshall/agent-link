@@ -86,30 +86,35 @@ export function formatAddress(harness, id) {
 }
 
 /**
- * The canonical Claude id (the CLI session id) for any Claude id form:
- * an address, `local_<x>` (resolved through its sidecar's cliSessionId when
- * `lookupSidecar` finds one, else `x`), or a bare CLI id. Null when the
- * result is not a valid id.
+ * The canonical Claude id (the session's current CLI session id) for any
+ * Claude id form: an address, a `local_<x>` sidecar id, or a bare CLI id.
+ *
+ * Claude Desktop rotates a session's CLI id (the sidecar keeps the old ones
+ * in `priorCliSessionIds`), so an id recorded earlier, or a `claude:<id>`
+ * address built from it, is resolved through `lookupSession` (the
+ * prior-id-aware session index) to the session's current cliSessionId.
+ * Without a lookup, or when the lookup finds nothing, `local_<x>` becomes
+ * `x` and a bare id stays as it is. Null when the result is not a valid id.
  * @param {unknown} value
- * @param {{lookupSidecar?: ((sidecarId: string) => {cliSessionId?: string | null} | null | undefined) | null}} [options]
+ * @param {{lookupSession?: ((id: string) => {cliSessionId?: string | null} | null | undefined) | null}} [options]
  * @returns {string | null}
  */
-export function canonicalizeClaudeId(value, { lookupSidecar = null } = {}) {
+export function canonicalizeClaudeId(value, { lookupSession = null } = {}) {
   if (typeof value !== "string") return null;
   let id = value.trim();
   if (id.startsWith("claude:")) id = id.slice("claude:".length);
-  if (id.startsWith(LOCAL_PREFIX)) {
-    let sidecar = null;
-    if (typeof lookupSidecar === "function") {
-      try {
-        sidecar = lookupSidecar(id);
-      } catch {
-        sidecar = null;
-      }
+  if (!id) return null;
+  let session = null;
+  if (typeof lookupSession === "function") {
+    try {
+      session = lookupSession(id);
+    } catch {
+      session = null;
     }
-    const cli = typeof sidecar?.cliSessionId === "string" ? sidecar.cliSessionId.trim() : "";
-    id = cli || id.slice(LOCAL_PREFIX.length);
   }
+  const cli = typeof session?.cliSessionId === "string" ? session.cliSessionId.trim() : "";
+  if (cli && ID_PATTERN.test(cli)) return cli;
+  if (id.startsWith(LOCAL_PREFIX)) id = id.slice(LOCAL_PREFIX.length);
   return ID_PATTERN.test(id) ? id : null;
 }
 
@@ -118,7 +123,7 @@ export function canonicalizeClaudeId(value, { lookupSidecar = null } = {}) {
  * any Claude id form. A session without a cliSessionId yet (a sidecar that
  * has not started its CLI) falls back to its sidecar id without `local_`.
  * @param {unknown} sessionOrId
- * @param {{lookupSidecar?: ((sidecarId: string) => any) | null}} [options]
+ * @param {{lookupSession?: ((id: string) => any) | null}} [options]
  * @returns {string | null}
  */
 export function claudeAddress(sessionOrId, options = {}) {
@@ -145,12 +150,13 @@ export function codexAddress(threadId) {
 
 /**
  * Read-time migration of one stored sender/recipient (the section 1.3
- * migration table): `external` stays, `claude` ids canonicalize through the
- * sidecar lookup, `codex` ids are prefixed, an address is kept, and anything
+ * migration table): `external` stays, `claude` ids and `claude:` addresses
+ * canonicalize through the session lookup (sidecar ids and prior CLI ids
+ * resolve to the current CLI id), `codex` ids are prefixed, and anything
  * else is `invalid`.
  * @param {unknown} storedId
  * @param {unknown} storedKind  claude, codex, external, or unknown
- * @param {{lookupSidecar?: ((sidecarId: string) => any) | null}} [options]
+ * @param {{lookupSession?: ((id: string) => any) | null}} [options]
  * @returns {string}
  */
 export function canonicalAddress(storedId, storedKind, options = {}) {
@@ -172,9 +178,9 @@ export function canonicalAddress(storedId, storedKind, options = {}) {
  * Memoizes canonicalAddress() for a mailbox view (R1.6: migration happens
  * at read time, with a cache). Entries expire after `ttlMs`, so a sidecar
  * that appears later is picked up.
- * @param {{lookupSidecar?: ((sidecarId: string) => any) | null, ttlMs?: number, maxEntries?: number, now?: () => number}} [options]
+ * @param {{lookupSession?: ((id: string) => any) | null, ttlMs?: number, maxEntries?: number, now?: () => number}} [options]
  */
-export function makeAddressCache({ lookupSidecar = null, ttlMs = 30_000, maxEntries = 2_000, now = () => Date.now() } = {}) {
+export function makeAddressCache({ lookupSession = null, ttlMs = 30_000, maxEntries = 2_000, now = () => Date.now() } = {}) {
   /** @type {Map<string, {address: string, at: number}>} */
   const cache = new Map();
   /**
@@ -187,7 +193,7 @@ export function makeAddressCache({ lookupSidecar = null, ttlMs = 30_000, maxEntr
     const at = now();
     const hit = cache.get(key);
     if (hit && at - hit.at < ttlMs) return hit.address;
-    const address = canonicalAddress(storedId, storedKind, { lookupSidecar });
+    const address = canonicalAddress(storedId, storedKind, { lookupSession });
     if (cache.size >= maxEntries) cache.delete(/** @type {string} */ (cache.keys().next().value));
     cache.set(key, { address, at });
     return address;

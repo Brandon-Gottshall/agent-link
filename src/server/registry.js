@@ -19,6 +19,7 @@ import { AgentLinkError, toErrorPayload } from "../shared/errors.js";
 import { getLogger } from "../shared/log.js";
 import { normalizeArguments, validateSchema } from "./validate.js";
 import { ALIAS_REMOVAL_VERSION, envelopeOutput } from "./schemas.js";
+import { parseAddress } from "../shared/identity.js";
 
 /** @typedef {import("./validate.js").JsonSchema} JsonSchema */
 /** @typedef {import("../shared/errors.js").ErrorPayload} ErrorPayload */
@@ -189,7 +190,7 @@ export function createRegistry(entries, options = {}) {
           details: { errors: problems }
         });
       }
-      const resolved = applyAliases(found.entry.definition, /** @type {Record<string, any>} */ (args), warnings);
+      const resolved = normalizeThreadIdArguments(found.entry.definition, applyAliases(found.entry.definition, /** @type {Record<string, any>} */ (args), warnings));
       const payload = await found.entry.handler(resolved, {
         callerContext: context.callerContext ?? null,
         warn: (warning) => warnings.push(warning)
@@ -280,6 +281,54 @@ export function createRegistry(entries, options = {}) {
     has: (name) => byName.has(name),
     names: () => [...byName.keys()]
   };
+}
+
+// Codex thread id arguments (threadId, orchestratorThreadId, targetThreadId,
+// callbackThreadId, workerThreadId, originThreadId, and receipt.originThreadId).
+const THREAD_ID_ARGUMENT = /^(?:threadId|[A-Za-z]+ThreadId)$/;
+
+/**
+ * Every Codex thread id argument accepts an address (design doc R1.3):
+ * `codex:<id>` is read as `<id>`, and a `claude:` address is
+ * invalid_arguments, because it names a Claude session, not a thread.
+ * Other values pass through unchanged.
+ * @param {ToolDefinition} definition
+ * @param {Record<string, any>} args
+ * @returns {Record<string, any>}
+ */
+export function normalizeThreadIdArguments(definition, args) {
+  /** @type {import("./validate.js").SchemaProblem[]} */
+  const problems = [];
+  /**
+   * @param {Record<string, any>} object
+   * @param {string} prefix
+   */
+  const normalize = (object, prefix) => {
+    const out = { ...object };
+    for (const [key, value] of Object.entries(object)) {
+      if (key === "receipt" && value && typeof value === "object" && !Array.isArray(value)) {
+        out[key] = normalize(value, `${prefix}${key}.`);
+        continue;
+      }
+      if (!THREAD_ID_ARGUMENT.test(key) || typeof value !== "string") continue;
+      const parsed = parseAddress(value.trim());
+      if (!parsed) continue;
+      if (parsed.harness === "codex") {
+        out[key] = parsed.id;
+      } else {
+        problems.push({ path: `${prefix}${key}`, rule: "harness", expected: "a Codex thread id or codex:<id> address, not a claude: address" });
+      }
+    }
+    return out;
+  };
+  const out = normalize(args, "");
+  if (problems.length > 0) {
+    throw new AgentLinkError("invalid_arguments", `Invalid arguments for ${definition.name}: ${problems.map((p) => `${p.path} names a Claude session; it takes a Codex thread id or codex:<id>`).join("; ")}.`, {
+      details: { errors: problems },
+      hint: "Use message_claude_session (or the other *_claude_session tools) for claude: addresses."
+    });
+  }
+  return out;
 }
 
 /**
