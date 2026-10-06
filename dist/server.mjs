@@ -10516,6 +10516,7 @@ var require_websocket_server = __commonJS({
 
 // src/server.js
 import { spawn as spawn2 } from "node:child_process";
+import { existsSync as existsSync2, realpathSync } from "node:fs";
 import path11 from "node:path";
 
 // node_modules/zod/v4/core/core.js
@@ -19077,7 +19078,7 @@ import { spawn, spawnSync as spawnSync2 } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import http from "node:http";
 import net from "node:net";
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync as statSync2, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import os2 from "node:os";
 import path2 from "node:path";
 
@@ -19199,7 +19200,7 @@ function discoverCodexBinary(options = {}) {
   };
 }
 var versionCache = /* @__PURE__ */ new Map();
-function codexBinaryVersion(binaryPath, { timeoutMs = 3e3 } = {}) {
+function codexBinaryVersion(binaryPath, { timeoutMs = 3e3, cachedOnly = false } = {}) {
   if (!binaryPath) {
     return null;
   }
@@ -19210,6 +19211,9 @@ function codexBinaryVersion(binaryPath, { timeoutMs = 3e3 } = {}) {
   }
   if (versionCache.has(key)) {
     return versionCache.get(key);
+  }
+  if (cachedOnly) {
+    return void 0;
   }
   const result = spawnSync(binaryPath, ["--version"], { encoding: "utf8", timeout: timeoutMs });
   const version2 = result.status === 0 && !result.error ? (result.stdout || "").trim().split("\n")[0] || null : null;
@@ -19312,8 +19316,9 @@ var CodexAppServerClient = class {
     this.reapedOrphans = false;
     this.closed = false;
     this.lastStartupFailure = null;
+    this.pendingStops = /* @__PURE__ */ new Set();
     this.notifications = { total: 0, parseErrors: 0, byMethod: {}, recent: [] };
-    this.serverRequests = { total: 0, declined: 0, rejected: 0, byMethod: {}, last: null };
+    this.serverRequests = { total: 0, declined: 0, rejected: 0, unanswered: 0, byMethod: {}, last: null };
   }
   async request(method, params = {}) {
     if (this.closed) {
@@ -19389,7 +19394,7 @@ var CodexAppServerClient = class {
     if (previous && previous.readyState !== wrapper_default.CLOSED) {
       previous.terminate();
     }
-    const ws = target.socketPath ? new wrapper_default(`ws+unix://${target.socketPath}:/`) : new wrapper_default(target.url, target.headers ? { headers: target.headers } : void 0);
+    const ws = target.socketPath ? new wrapper_default("ws://localhost/", { createConnection: () => net.connect(target.socketPath) }) : new wrapper_default(target.url, target.headers ? { headers: target.headers } : void 0);
     this.ws = ws;
     this.initialized = false;
     const { headers: _headers, ...publicTarget } = target;
@@ -19532,11 +19537,20 @@ var CodexAppServerClient = class {
       }
     }
   }
+  // Only an app-server Agent Link started itself is answered automatically.
+  // An explicitly configured endpoint (CODEX_AGENT_LINK_URL / _SOCK) may be a
+  // Desktop or IDE app-server whose prompts belong to a human; those requests
+  // are counted and left for that app-server's other clients.
   answerServerRequest(ws, message) {
     const method = String(message.method);
-    const decline = Object.prototype.hasOwnProperty.call(SERVER_REQUEST_DECLINES, method) ? SERVER_REQUEST_DECLINES[method] : null;
     this.serverRequests.total += 1;
     countMethod(this.serverRequests.byMethod, method);
+    if (this.connectionInfo?.managed !== true) {
+      this.serverRequests.unanswered += 1;
+      this.serverRequests.last = { method, answer: "unanswered", at: (/* @__PURE__ */ new Date()).toISOString() };
+      return;
+    }
+    const decline = Object.prototype.hasOwnProperty.call(SERVER_REQUEST_DECLINES, method) ? SERVER_REQUEST_DECLINES[method] : null;
     const reply = decline ? { id: message.id, result: decline } : {
       id: message.id,
       error: {
@@ -19574,7 +19588,7 @@ var CodexAppServerClient = class {
     }
     const explicitSocket = process.env.CODEX_AGENT_LINK_SOCK || process.env.CODEX_APP_SERVER_SOCK;
     if (explicitSocket) {
-      return { kind: "socket", socketPath: explicitSocket, managed: false };
+      return { kind: "socket", socketPath: path2.resolve(explicitSocket), managed: false };
     }
     if (!this.options.autoStart) {
       throw new AppServerError(
@@ -19633,12 +19647,17 @@ var CodexAppServerClient = class {
   stateDir() {
     return this.options.stateDir || managedAppServerStateDir();
   }
-  // Where the managed app-server listens. Unix socket in a 0700 directory by
-  // default; a capability-token websocket only when Unix sockets are not an
-  // option. Either way no other local user can drive the app-server.
+  // Where the managed app-server listens. By default a Unix socket; other
+  // users are kept out by the directory it lives in, which ensurePrivateDir
+  // creates or tightens to 0700 and requires to be a real directory owned by
+  // this user (Codex also creates the socket itself 0600). The fallback is a
+  // capability-token websocket for platforms without Unix sockets.
+  //
+  // The name is fixed per Agent Link process (<pid>.sock): Codex keeps
+  // per-socket lock files, so a fresh name per spawn would pile them up.
   allocateEndpoint() {
     const stateDir = ensurePrivateDir(this.stateDir());
-    const stem = `${process.pid}-${this.managedSpawnCount + 1}`;
+    const stem = `${process.pid}`;
     if (this.options.transport === "ws-token") {
       const token = randomBytes(32).toString("hex");
       const tokenFile = path2.join(stateDir, `${stem}.token`);
@@ -19656,7 +19675,8 @@ var CodexAppServerClient = class {
     }
     let socketDir = stateDir;
     if (Buffer.byteLength(path2.join(socketDir, `${stem}.sock`)) > MAX_UNIX_SOCKET_PATH_BYTES) {
-      socketDir = ensurePrivateDir(path2.join("/tmp", `agent-link-${process.getuid?.() ?? "user"}`));
+      const base = process.platform === "darwin" ? os2.tmpdir() : "/tmp";
+      socketDir = ensurePrivateDir(path2.join(base, `agent-link-${process.getuid?.() ?? "user"}`));
     }
     const socketPath = path2.join(socketDir, `${stem}.sock`);
     rmSync(socketPath, { force: true });
@@ -19676,6 +19696,10 @@ var CodexAppServerClient = class {
       }
     }
     const launch = findAppServerLaunch();
+    await Promise.allSettled([...this.pendingStops]);
+    if (this.closed) {
+      throw closedError();
+    }
     const endpoint = this.allocateEndpoint();
     if (endpoint.pendingPort) {
       const port = await getFreePort();
@@ -19795,6 +19819,15 @@ var CodexAppServerClient = class {
     if (!child) {
       return;
     }
+    const stopping = this.stopChild(child);
+    this.pendingStops.add(stopping);
+    try {
+      await stopping;
+    } finally {
+      this.pendingStops.delete(stopping);
+    }
+  }
+  async stopChild(child) {
     if (this.managedProcess === child) {
       if (this.managedProcessExitCleanup) {
         process.removeListener("exit", this.managedProcessExitCleanup);
@@ -19865,6 +19898,7 @@ var CodexAppServerClient = class {
         total: this.serverRequests.total,
         declined: this.serverRequests.declined,
         rejected: this.serverRequests.rejected,
+        unanswered: this.serverRequests.unanswered,
         byMethod: { ...this.serverRequests.byMethod },
         last: this.serverRequests.last
       }
@@ -19901,7 +19935,10 @@ function countMethod(table, method) {
 }
 function ensurePrivateDir(dir) {
   mkdirSync(dir, { recursive: true, mode: 448 });
-  const stat = statSync2(dir);
+  const stat = lstatSync(dir);
+  if (stat.isSymbolicLink()) {
+    throw new AppServerError(`Managed app-server state path is a symlink: ${dir}`, { code: "state-dir-unsafe" });
+  }
   if (!stat.isDirectory()) {
     throw new AppServerError(`Managed app-server state path is not a directory: ${dir}`, { code: "state-dir-unsafe" });
   }
@@ -20044,6 +20081,7 @@ function asUserTextInput(text) {
   return [{ type: "text", text, text_elements: [] }];
 }
 function describeCodexInstall(options = {}) {
+  const probeVersion = options.probeVersion !== false;
   const appServerBin = process.env.CODEX_AGENT_LINK_APP_SERVER_BIN || process.env.CODEX_APP_SERVER_BIN;
   if (appServerBin) {
     const exists = !appServerBin.includes("/") || existsSync(appServerBin);
@@ -20052,16 +20090,19 @@ function describeCodexInstall(options = {}) {
       path: appServerBin,
       source: "env:CODEX_AGENT_LINK_APP_SERVER_BIN",
       version: null,
+      versionProbed: false,
       searched: [appServerBin],
       reason: exists ? null : `Configured Codex app-server binary does not exist: ${appServerBin}`
     };
   }
   const found = discoverCodexBinary(options);
+  const version2 = found.found ? codexBinaryVersion(found.path, { cachedOnly: !probeVersion }) : null;
   return {
     available: found.found,
     path: found.path,
     source: found.source,
-    version: found.found ? codexBinaryVersion(found.path) : null,
+    version: version2 ?? null,
+    versionProbed: version2 !== void 0,
     searched: found.searched,
     reason: found.found ? null : found.reason
   };
@@ -23360,9 +23401,13 @@ async function readProjectOrchestratorBinding(projectRoot) {
   }
   return validateBinding(parsed, { bindingPath, requestedProjectRoot: projectRoot });
 }
+function promptSafeIdentifier(value, fallback) {
+  const text = String(value ?? "").replace(/[\u0000-\u001f\u007f\u2028\u2029`]/g, " ").replace(/\s+/g, " ").trim().slice(0, 128);
+  return text || fallback;
+}
 function buildWorkerPrompt(args = {}) {
   const lines = [
-    `You are ${args.workerRole || "a project worker"} for project ${args.projectId || "unknown-project"}.`,
+    `You are ${args.workerRole || "a project worker"} for project ${promptSafeIdentifier(args.projectId, "unknown-project")}.`,
     "",
     "Return path:",
     `- Orchestrator thread ID: ${args.orchestratorThreadId}`,
@@ -23371,7 +23416,7 @@ function buildWorkerPrompt(args = {}) {
     "",
     "Project context:",
     `- Project root: ${args.projectRoot || "not supplied"}`,
-    `- Policy version: ${args.policyVersion || DEFAULT_POLICY_VERSION}`,
+    `- Policy version: ${promptSafeIdentifier(args.policyVersion, DEFAULT_POLICY_VERSION)}`,
     "",
     "Task:",
     args.task
@@ -23570,7 +23615,6 @@ function clamp2(value, min, max) {
 }
 
 // src/codex/dependency-handoff.js
-var PROJECT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var THREAD_ID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 var DEPENDENCY_PHRASES = [
   /\bwhen (?:it|that|this|the .{0,40}) (?:is )?(?:ready|shipped|implemented|callable|available|done|complete|lands?)\b/i,
@@ -23597,12 +23641,6 @@ async function registerDependencyHandoff(args = {}, deps = {}, toolContext = {})
     throw error2;
   }
   const callbackMismatch = callerThreadId && suppliedCallbackThreadId && suppliedCallbackThreadId !== callerThreadId ? { supplied: suppliedCallbackThreadId, used: callerThreadId, reason: "caller context thread id takes precedence over callbackThreadId" } : null;
-  const projectId = cleanString2(args.projectId);
-  if (projectId && !PROJECT_ID_RE.test(projectId)) {
-    const error2 = new Error("projectId must be a slug: letters, digits, '.', '_' or '-', starting with a letter or digit, at most 128 characters");
-    error2.details = { code: "invalid-project-id", projectId };
-    throw error2;
-  }
   const target = await resolveDependencyTarget(args, deps);
   const message = buildDependencyHandoffMessage({
     dependencyName,
@@ -24268,7 +24306,8 @@ async function readHeadRecords(handle, size) {
     const hasMeta = records.some((record2) => record2.type === "session_meta");
     const hasUser = records.some((record2) => userTextFromRecord(record2) !== null);
     if (hasMeta && hasUser || window >= size || window >= MAX_HEAD_BYTES) {
-      return { records, coveredBytes: window };
+      const coveredBytes = window >= size ? size : buffer.lastIndexOf(10) + 1;
+      return { records, coveredBytes };
     }
     window = Math.min(window * 4, MAX_HEAD_BYTES, size);
   }
@@ -24805,7 +24844,7 @@ var tools = [
         },
         recentItems: {
           type: "number",
-          description: "Number of recent ITEMS (messages, tool calls, reasoning, commands), not turns, when includeTurns is true. Returned as thread.recentItems (oldest first, each with its turnId) on both the app-server and the local-transcript fallback paths; app-server results also include thread.turns trimmed to the turns those items belong to. Defaults to 20; caps at 100."
+          description: "Number of recent ITEMS (messages, tool calls, reasoning, commands), not turns, when includeTurns is true. Returned as thread.recentItems, oldest first, on both the app-server and the local-transcript fallback paths. App-server items carry their turnId and the result also includes thread.turns trimmed to the turns those items belong to; local-transcript items carry a timestamp instead (transcripts have no turn ids). Defaults to 20; caps at 100."
         },
         includeReceipts: {
           type: "boolean",
@@ -24979,16 +25018,16 @@ var tools = [
         },
         cwd: {
           type: "string",
-          description: "Optional cwd override for the target turn. Rejected when it differs from the thread's own cwd unless allowTargetOverride is true."
+          description: "Optional cwd for the target turn. Without allowTargetOverride it must match the thread's own cwd (compared by real path); a different cwd is rejected."
         },
         model: {
           type: "string",
-          description: "Optional model override for the target turn. Rejected when it differs from (or cannot be compared with) the thread's own model unless allowTargetOverride is true."
+          description: "Optional model for the target turn. Without allowTargetOverride: rejected when it differs from the thread's reported model; not applied (with a warning) when the thread reports none."
         },
         effort: {
           type: "string",
           enum: ["minimal", "low", "medium", "high", "xhigh"],
-          description: "Optional reasoning effort override for the target turn. Rejected when it differs from (or cannot be compared with) the thread's own effort unless allowTargetOverride is true."
+          description: "Optional reasoning effort for the target turn. Without allowTargetOverride: rejected when it differs from the thread's reported reasoningEffort; not applied (with a warning) when the thread reports none."
         },
         allowParallelTurn: {
           type: "boolean",
@@ -25012,7 +25051,7 @@ var tools = [
         },
         allowTargetOverride: {
           type: "boolean",
-          description: "Messaging an existing thread normally runs the turn with that thread's own cwd, model, and reasoning effort; a cwd/model/effort here that differs from the thread's own (or that cannot be compared because app-server does not report it) is rejected. Set true only when you intend to change the target thread's working directory, model, or effort. Defaults to false."
+          description: "Messaging an existing thread normally keeps that thread's own cwd, model, and reasoning effort. Without this flag, a cwd/model/effort that differs from a value the thread reports is rejected (only warned about when steering an active turn), and one the thread does not report is not applied (warning target-override-unverified). Set true only when you intend to change the target thread's working directory, model, or effort; every supplied value is then forwarded. Defaults to false."
         },
         receipt: receiptInputSchema2
       },
@@ -25091,8 +25130,7 @@ var tools = [
         },
         projectId: {
           type: "string",
-          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
-          description: "Stable project identifier (a slug: letters, digits, '.', '_', '-') used as a project-orchestrator fallback search signal."
+          description: "Stable project identifier used as a project-orchestrator fallback search signal."
         },
         orchestratorThreadId: {
           type: "string",
@@ -25532,7 +25570,8 @@ async function health(args, toolContext = {}) {
   const usesManagedAppServer = !Object.values(configuredEndpoint).some(Boolean);
   const autoStartEnabled = process.env.CODEX_AGENT_LINK_AUTOSTART !== "0";
   const codex = {
-    ...describeCodexInstall(),
+    // Skip the blocking `codex --version` when the caller asked for a cheap check.
+    ...describeCodexInstall({ probeVersion: args.startAppServer !== false }),
     usedForManagedAppServer: usesManagedAppServer
   };
   const common = {
@@ -26408,8 +26447,10 @@ async function messageThread(args, toolContext = {}) {
     throw await enrichThreadLookupError(error2, threadId);
   }
   const initialThread = read.thread;
-  const targetOverrides = checkTargetOverrides(initialThread, args);
-  if (targetOverrides.conflicts.length > 0 && args.allowTargetOverride !== true) {
+  const willSteer = mode === "steer_active" || mode === "auto" && initialThread?.status?.type === "active";
+  const targetOverrides = checkTargetOverrides(initialThread, args, { steering: willSteer });
+  const overrides = targetOverrides.forward;
+  if (targetOverrides.conflicts.length > 0) {
     const error2 = new Error(`Refusing to change ${targetOverrides.conflicts.map((conflict) => conflict.field).join(", ")} of existing thread ${threadId}; pass allowTargetOverride=true to do it intentionally`);
     error2.details = {
       code: "target-override-rejected",
@@ -26420,7 +26461,7 @@ async function messageThread(args, toolContext = {}) {
   }
   let status = read.thread.status;
   let action = null;
-  const warnings = warningsForMessageTarget(status, mode);
+  const warnings = [...targetOverrides.warnings, ...warningsForMessageTarget(status, mode)];
   if (status.type === "notLoaded") {
     if (!resumeIfNeeded) {
       throw new Error(`Thread ${threadId} is not loaded and resumeIfNeeded is false`);
@@ -26430,14 +26471,14 @@ async function messageThread(args, toolContext = {}) {
       excludeTurns: true,
       persistExtendedHistory: true
     };
-    if (args.cwd) {
-      resumeParams.cwd = args.cwd;
+    if (overrides.cwd) {
+      resumeParams.cwd = overrides.cwd;
     }
-    if (args.model) {
-      resumeParams.model = args.model;
+    if (overrides.model) {
+      resumeParams.model = overrides.model;
     }
-    if (args.effort) {
-      resumeParams.reasoningEffort = args.effort;
+    if (overrides.effort) {
+      resumeParams.reasoningEffort = overrides.effort;
     }
     read = await appServer.request("thread/resume", resumeParams);
     status = read.thread.status;
@@ -26512,14 +26553,14 @@ async function messageThread(args, toolContext = {}) {
     throw error2;
   }
   const startParams = { threadId, input };
-  if (args.cwd) {
-    startParams.cwd = args.cwd;
+  if (overrides.cwd) {
+    startParams.cwd = overrides.cwd;
   }
-  if (args.model) {
-    startParams.model = args.model;
+  if (overrides.model) {
+    startParams.model = overrides.model;
   }
-  if (args.effort) {
-    startParams.effort = args.effort;
+  if (overrides.effort) {
+    startParams.effort = overrides.effort;
   }
   const response = await appServer.request("turn/start", startParams);
   const summarizedTurn = summarizeTurn(response.turn);
@@ -26898,30 +26939,60 @@ function recentItemWindow(turns, limit) {
   }
   return { items, turns: windowTurns };
 }
-function checkTargetOverrides(thread, args) {
+function checkTargetOverrides(thread, args, { steering = false } = {}) {
+  const forward = {};
   const conflicts = [];
-  const requestedCwd = optionalString(args.cwd).trim();
-  if (requestedCwd) {
-    const own = optionalString(thread?.cwd).trim();
-    if (!own || path11.resolve(own) !== path11.resolve(requestedCwd)) {
-      conflicts.push({ field: "cwd", requested: requestedCwd, threadValue: own || null });
+  const warnings = [];
+  const fields = [
+    ["cwd", optionalString(args.cwd).trim(), optionalString(thread?.cwd).trim(), sameDirectory],
+    ["model", optionalString(args.model).trim(), optionalString(thread?.model).trim(), (a, b) => a === b],
+    ["effort", optionalString(args.effort).trim(), optionalString(thread?.reasoningEffort ?? thread?.effort).trim(), (a, b) => a === b]
+  ];
+  for (const [field, requested, own, same] of fields) {
+    if (!requested) {
+      continue;
+    }
+    if (args.allowTargetOverride === true) {
+      forward[field] = requested;
+      continue;
+    }
+    if (!own) {
+      warnings.push({
+        code: "target-override-unverified",
+        severity: "warning",
+        field,
+        requested,
+        message: `The app-server does not report this thread's ${field}, so the requested value was not applied. Pass allowTargetOverride=true to apply it anyway.`
+      });
+      continue;
+    }
+    if (same(own, requested)) {
+      forward[field] = requested;
+      continue;
+    }
+    const conflict = { field, requested, threadValue: own };
+    if (steering) {
+      warnings.push({
+        code: "target-override-ignored-steer",
+        severity: "warning",
+        ...conflict,
+        message: `Steering an active turn does not change ${field}; the requested value was ignored.`
+      });
+    } else {
+      conflicts.push(conflict);
     }
   }
-  const requestedModel = optionalString(args.model).trim();
-  if (requestedModel) {
-    const own = optionalString(thread?.model).trim();
-    if (own !== requestedModel) {
-      conflicts.push({ field: "model", requested: requestedModel, threadValue: own || null });
+  return { forward, conflicts, warnings };
+}
+function sameDirectory(a, b) {
+  const canonical = (value) => {
+    try {
+      return realpathSync(value);
+    } catch {
+      return path11.resolve(value);
     }
-  }
-  const requestedEffort = optionalString(args.effort).trim();
-  if (requestedEffort) {
-    const own = optionalString(thread?.reasoningEffort ?? thread?.effort).trim();
-    if (own !== requestedEffort) {
-      conflicts.push({ field: "effort", requested: requestedEffort, threadValue: own || null });
-    }
-  }
-  return { conflicts };
+  };
+  return canonical(a) === canonical(b);
 }
 function summarizeTurn(turn) {
   return {

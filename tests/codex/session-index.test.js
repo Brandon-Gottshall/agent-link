@@ -66,6 +66,27 @@ try {
   assert.equal((await status(3)).type, "idle", "turn_aborted ends the turn");
   assert.equal((await status(4)).type, "unknown");
 
+  // A record straddling the 64 KiB head-window edge is read by the tail, not lost.
+  {
+    const edgeId = id(9);
+    const lines = [JSON.stringify(meta(edgeId)), JSON.stringify(userItem("Edge thread")), JSON.stringify(event("task_started"))];
+    const filler = JSON.stringify(event("token_count", { pad: "x".repeat(900) }));
+    while (Buffer.byteLength(`${lines.join("\n")}\n${filler}\n`) < 65536 - 200) {
+      lines.push(filler);
+    }
+    const prefixBytes = Buffer.byteLength(`${lines.join("\n")}\n`);
+    // Pad so the record starts before byte 65,536 and ends ~200 bytes after it.
+    const complete = JSON.stringify(event("task_complete", { pad: "y".repeat(65536 - prefixBytes + 200) }));
+    assert.ok(prefixBytes < 65536 && prefixBytes + Buffer.byteLength(complete) > 65536, "task_complete spans byte 65,536");
+    lines.push(complete);
+    const dir = path.join(sessions, "2026", "09", "04");
+    await fsp.mkdir(dir, { recursive: true });
+    await fsp.writeFile(path.join(dir, `rollout-2026-09-04T10-00-00-${edgeId}.jsonl`), `${lines.join("\n")}\n`);
+    const edge = (await readLocalThread(edgeId, { codexHome: home })).thread;
+    assert.equal(edge.status.type, "idle", "boundary-straddling task_complete is seen");
+    assert.equal(edge.status.lastLifecycleEvent, "task_complete");
+  }
+
   // --- P3-18: createdAt is never NaN; updatedAt is whole seconds ---
   const noTimestamp = (await readLocalThread(id(4), { codexHome: home })).thread;
   assert.equal(noTimestamp.createdAt, null);

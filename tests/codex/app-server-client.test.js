@@ -4,7 +4,7 @@
 // failures are cached, binary discovery order, and clientInfo.version.
 // Uses the stub app-server and in-process fake servers; never launches Codex.
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -27,7 +27,6 @@ for (const name of ["CODEX_AGENT_LINK_URL", "CODEX_APP_SERVER_URL", "CODEX_AGENT
 const {
   AGENT_LINK_VERSION,
   CodexAppServerClient,
-  SERVER_REQUEST_DECLINES,
   codexBinaryCandidates,
   describeCodexInstall,
   findCodexBinary
@@ -37,8 +36,9 @@ const lastArgs = () => JSON.parse(readFileSync(argsLog, "utf8").trim().split("\n
 
 // In-process fake app-server listening on a Unix socket; lets a test script
 // server->client traffic and see exactly what the client sent.
-async function fakeUnixServer(onMessage) {
-  const socketPath = path.join(tmp, `f${Math.random().toString(36).slice(2, 8)}.sock`);
+async function fakeUnixServer(onMessage, dir = tmp) {
+  mkdirSync(dir, { recursive: true });
+  const socketPath = path.join(dir, `f${Math.random().toString(36).slice(2, 8)}.sock`);
   const server = http.createServer();
   const wss = new WebSocketServer({ server });
   const received = [];
@@ -71,10 +71,14 @@ try {
       } else if (msg.id !== undefined) {
         socket.send(JSON.stringify({ id: msg.id, result: { ok: true } }));
       }
-    });
-    process.env.CODEX_AGENT_LINK_SOCK = fake.socketPath;
+    }, path.join(tmp, "a b:c"));
+    // A relative path, in a directory whose name has a space and a colon
+    // (ws's ws+unix: URL form breaks on both).
+    process.env.CODEX_AGENT_LINK_SOCK = path.relative(process.cwd(), fake.socketPath);
+    assert.ok(!path.isAbsolute(process.env.CODEX_AGENT_LINK_SOCK));
     const client = new CodexAppServerClient({ idleTimeoutMs: 0 });
     assert.deepEqual(await client.request("thread/loaded/list", {}), { ok: true });
+    assert.equal(client.getConnectionSummary().socketPath, fake.socketPath, "explicit socket path is resolved");
     const init = fake.received.find((msg) => msg.method === "initialize");
     assert.equal(init.params.clientInfo.version, pkg.version, "clientInfo.version is the package version");
     assert.notEqual(init.params.clientInfo.version, "0.1.0");
@@ -84,8 +88,36 @@ try {
     delete process.env.CODEX_AGENT_LINK_SOCK;
   }
 
-  // P3-05: server->client requests are answered immediately (approvals
-  // declined, everything else refused), so a turn never waits on them.
+  // P3-05: on an app-server Agent Link manages, server->client requests are
+  // answered immediately (approvals declined, everything else refused), so a
+  // turn never waits on them.
+  {
+    process.env.AGENT_LINK_STUB_SERVER_REQUEST = [
+      "item/commandExecution/requestApproval",
+      "item/permissions/requestApproval",
+      "applyPatchApproval",
+      "item/tool/requestUserInput"
+    ].join(",");
+    const client = new CodexAppServerClient({ idleTimeoutMs: 0, killGraceMs: 300, requestTimeoutMs: 3000 });
+    const result = await client.request("thread/loaded/list", {});
+    const [command, permissions, patch, userInput] = result.serverRequestAnswers;
+    assert.deepEqual(command.result, { decision: "decline" });
+    assert.deepEqual(permissions.result, { permissions: {} });
+    assert.deepEqual(patch.result, { decision: "denied" });
+    assert.equal(userInput.error.code, -32601);
+    assert.match(userInput.error.message, /item\/tool\/requestUserInput/);
+    const summary = client.getConnectionSummary();
+    assert.equal(summary.serverRequests.total, 4);
+    assert.equal(summary.serverRequests.declined, 3);
+    assert.equal(summary.serverRequests.rejected, 1);
+    assert.equal(summary.serverRequests.unanswered, 0);
+    assert.equal(summary.serverRequests.byMethod["item/commandExecution/requestApproval"], 1);
+    await client.close();
+    delete process.env.AGENT_LINK_STUB_SERVER_REQUEST;
+  }
+
+  // An explicitly configured endpoint (CODEX_AGENT_LINK_SOCK/URL) may be a
+  // Desktop app-server whose prompts belong to a human: never answer them.
   // P3-06: notifications are counters plus a capped ring without params.
   {
     const fake = await fakeUnixServer((msg, socket, received) => {
@@ -98,31 +130,20 @@ try {
           socket.send(JSON.stringify({ method: "item/updated", params: { big: "x".repeat(10000) } }));
         }
         socket.send(JSON.stringify({ id: "approval-1", method: "item/commandExecution/requestApproval", params: { command: "rm -rf /" } }));
-        socket.send(JSON.stringify({ id: 77, method: "item/tool/requestUserInput", params: {} }));
-        socket.send(JSON.stringify({ id: "perm-1", method: "item/permissions/requestApproval", params: {} }));
-        // Only answer turn/start once all three server requests were answered.
-        const check = setInterval(() => {
-          const answers = received.filter((m) => ["approval-1", 77, "perm-1"].includes(m.id) && !m.method);
-          if (answers.length === 3) {
-            clearInterval(check);
-            socket.send(JSON.stringify({ id: msg.id, result: { answers } }));
-          }
-        }, 10);
+        setTimeout(() => {
+          const answered = received.filter((m) => m.id === "approval-1" && !m.method);
+          socket.send(JSON.stringify({ id: msg.id, result: { answered: answered.length } }));
+        }, 300);
       }
     });
     process.env.CODEX_AGENT_LINK_SOCK = fake.socketPath;
     const client = new CodexAppServerClient({ idleTimeoutMs: 0, requestTimeoutMs: 3000 });
     const result = await client.request("turn/start", {});
-    const byId = Object.fromEntries(result.answers.map((answer) => [answer.id, answer]));
-    assert.deepEqual(byId["approval-1"].result, { decision: "decline" });
-    assert.deepEqual(byId["perm-1"].result, SERVER_REQUEST_DECLINES["item/permissions/requestApproval"]);
-    assert.equal(byId[77].error.code, -32601);
-    assert.match(byId[77].error.message, /item\/tool\/requestUserInput/);
+    assert.equal(result.answered, 0, "external app-server requests are left for its human client");
     const summary = client.getConnectionSummary();
-    assert.equal(summary.serverRequests.total, 3);
-    assert.equal(summary.serverRequests.declined, 2);
-    assert.equal(summary.serverRequests.rejected, 1);
-    assert.equal(summary.serverRequests.byMethod["item/commandExecution/requestApproval"], 1);
+    assert.equal(summary.serverRequests.total, 1);
+    assert.equal(summary.serverRequests.unanswered, 1);
+    assert.equal(summary.serverRequests.declined, 0);
     assert.equal(summary.notifications.total, 30);
     assert.equal(summary.notifications.byMethod["item/updated"], 30);
     assert.equal(summary.notifications.recent.length, 20, "notification ring is capped");
@@ -145,9 +166,15 @@ try {
     const socketPath = listen.slice("unix://".length);
     assert.equal(path.dirname(socketPath), stateDir, "socket lives in the state dir");
     assert.equal(statSync(stateDir).mode & 0o777, 0o700, "state dir is 0700");
+    assert.equal(path.basename(socketPath), `${process.pid}.sock`, "one socket name per server process");
     const summary = client.getConnectionSummary();
     assert.equal(summary.managedTransport, "unix");
     assert.equal(summary.socketPath, socketPath);
+    // A respawn (after idle shutdown) reuses the same name rather than adding one.
+    await client.releaseIdleConnection();
+    await client.request("thread/loaded/list", {});
+    assert.equal(client.getConnectionSummary().managedSpawnCount, 2);
+    assert.equal(client.getConnectionSummary().socketPath, socketPath);
     await client.close();
     await waitFor(() => {
       try {
@@ -159,7 +186,19 @@ try {
     }, { label: "socket removed after close" });
   }
 
-  // An over-long state dir path falls back to a private /tmp dir, not a
+  // A state dir that is a symlink is refused, even one pointing at a directory
+  // this user owns.
+  {
+    const realDir = path.join(tmp, "real-state");
+    mkdirSync(realDir, { recursive: true, mode: 0o700 });
+    const linkDir = path.join(tmp, "link-state");
+    symlinkSync(realDir, linkDir);
+    const client = new CodexAppServerClient({ idleTimeoutMs: 0, killGraceMs: 300, stateDir: linkDir, startupFailureCacheMs: 0 });
+    await assert.rejects(client.request("thread/loaded/list", {}), (error) => error.code === "state-dir-unsafe");
+    await client.close();
+  }
+
+  // An over-long state dir path falls back to a private temp dir, not a
   // truncated socket path.
   {
     const longStateDir = path.join(tmp, "x".repeat(90));

@@ -462,7 +462,11 @@ async function readHeadRecords(handle, size) {
     const hasMeta = records.some((record) => record.type === "session_meta");
     const hasUser = records.some((record) => userTextFromRecord(record) !== null);
     if ((hasMeta && hasUser) || window >= size || window >= MAX_HEAD_BYTES) {
-      return { records, coveredBytes: window };
+      // Only whole lines count as covered: a record straddling the window
+      // edge belongs to the tail read, which starts right after the last
+      // newline the head saw.
+      const coveredBytes = window >= size ? size : buffer.lastIndexOf(0x0a) + 1;
+      return { records, coveredBytes };
     }
     window = Math.min(window * 4, MAX_HEAD_BYTES, size);
   }

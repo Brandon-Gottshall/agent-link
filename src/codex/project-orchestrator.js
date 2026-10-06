@@ -221,9 +221,22 @@ export async function readProjectOrchestratorBinding(projectRoot) {
   return validateBinding(parsed, { bindingPath, requestedProjectRoot: projectRoot });
 }
 
+// Caller- or binding-supplied identifiers are rendered as one inert line in
+// the worker prompt: no newlines or control characters (which could start new
+// prompt sections), no backticks, bounded length. Values like owner/repo stay
+// readable.
+export function promptSafeIdentifier(value, fallback) {
+  const text = String(value ?? "")
+    .replace(/[\u0000-\u001f\u007f\u2028\u2029`]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 128);
+  return text || fallback;
+}
+
 export function buildWorkerPrompt(args = {}) {
   const lines = [
-    `You are ${args.workerRole || "a project worker"} for project ${args.projectId || "unknown-project"}.`,
+    `You are ${args.workerRole || "a project worker"} for project ${promptSafeIdentifier(args.projectId, "unknown-project")}.`,
     "",
     "Return path:",
     `- Orchestrator thread ID: ${args.orchestratorThreadId}`,
@@ -232,7 +245,7 @@ export function buildWorkerPrompt(args = {}) {
     "",
     "Project context:",
     `- Project root: ${args.projectRoot || "not supplied"}`,
-    `- Policy version: ${args.policyVersion || DEFAULT_POLICY_VERSION}`,
+    `- Policy version: ${promptSafeIdentifier(args.policyVersion, DEFAULT_POLICY_VERSION)}`,
     "",
     "Task:",
     args.task

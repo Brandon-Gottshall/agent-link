@@ -2,7 +2,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import http from "node:http";
 import net from "node:net";
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import WebSocket from "ws";
@@ -36,9 +36,11 @@ export const AGENT_LINK_VERSION = typeof __AGENT_LINK_VERSION__ === "string"
   : readPackageVersion();
 
 // Requests the app-server sends to its client (approval prompts, user-input
-// prompts, elicitation). Agent Link has no human to ask, so each one is
-// answered at once: approvals are declined, anything else gets a JSON-RPC
-// error. An unanswered request would leave the target turn waiting forever.
+// prompts, elicitation). On an app-server Agent Link manages there is no human
+// to ask, so each one is answered at once: approvals are declined, anything
+// else gets a JSON-RPC error. An unanswered request would leave the target
+// turn waiting forever. External endpoints are not answered (see
+// answerServerRequest).
 export const SERVER_REQUEST_DECLINES = Object.freeze({
   "item/commandExecution/requestApproval": { decision: "decline" },
   "item/fileChange/requestApproval": { decision: "decline" },
@@ -120,8 +122,9 @@ export class CodexAppServerClient {
     this.reapedOrphans = false;
     this.closed = false;
     this.lastStartupFailure = null;
+    this.pendingStops = new Set();
     this.notifications = { total: 0, parseErrors: 0, byMethod: {}, recent: [] };
-    this.serverRequests = { total: 0, declined: 0, rejected: 0, byMethod: {}, last: null };
+    this.serverRequests = { total: 0, declined: 0, rejected: 0, unanswered: 0, byMethod: {}, last: null };
   }
 
   async request(method, params = {}) {
@@ -207,10 +210,11 @@ export class CodexAppServerClient {
     if (previous && previous.readyState !== WebSocket.CLOSED) {
       previous.terminate();
     }
-    // ws only honours Unix sockets through the ws+unix: scheme; a socketPath
-    // option is ignored and the client silently dials localhost:80 instead.
+    // A socketPath option is ignored by ws (it silently dials localhost:80),
+    // and its ws+unix: URL form splits on ":" and keeps %-escapes, so paths
+    // with a colon or a space break. Hand ws the Unix-socket connection itself.
     const ws = target.socketPath
-      ? new WebSocket(`ws+unix://${target.socketPath}:/`)
+      ? new WebSocket("ws://localhost/", { createConnection: () => net.connect(target.socketPath) })
       : new WebSocket(target.url, target.headers ? { headers: target.headers } : undefined);
 
     this.ws = ws;
@@ -371,13 +375,22 @@ export class CodexAppServerClient {
     }
   }
 
+  // Only an app-server Agent Link started itself is answered automatically.
+  // An explicitly configured endpoint (CODEX_AGENT_LINK_URL / _SOCK) may be a
+  // Desktop or IDE app-server whose prompts belong to a human; those requests
+  // are counted and left for that app-server's other clients.
   answerServerRequest(ws, message) {
     const method = String(message.method);
+    this.serverRequests.total += 1;
+    countMethod(this.serverRequests.byMethod, method);
+    if (this.connectionInfo?.managed !== true) {
+      this.serverRequests.unanswered += 1;
+      this.serverRequests.last = { method, answer: "unanswered", at: new Date().toISOString() };
+      return;
+    }
     const decline = Object.prototype.hasOwnProperty.call(SERVER_REQUEST_DECLINES, method)
       ? SERVER_REQUEST_DECLINES[method]
       : null;
-    this.serverRequests.total += 1;
-    countMethod(this.serverRequests.byMethod, method);
     const reply = decline
       ? { id: message.id, result: decline }
       : {
@@ -421,7 +434,7 @@ export class CodexAppServerClient {
 
     const explicitSocket = process.env.CODEX_AGENT_LINK_SOCK || process.env.CODEX_APP_SERVER_SOCK;
     if (explicitSocket) {
-      return { kind: "socket", socketPath: explicitSocket, managed: false };
+      return { kind: "socket", socketPath: path.resolve(explicitSocket), managed: false };
     }
 
     if (!this.options.autoStart) {
@@ -488,12 +501,17 @@ export class CodexAppServerClient {
     return this.options.stateDir || managedAppServerStateDir();
   }
 
-  // Where the managed app-server listens. Unix socket in a 0700 directory by
-  // default; a capability-token websocket only when Unix sockets are not an
-  // option. Either way no other local user can drive the app-server.
+  // Where the managed app-server listens. By default a Unix socket; other
+  // users are kept out by the directory it lives in, which ensurePrivateDir
+  // creates or tightens to 0700 and requires to be a real directory owned by
+  // this user (Codex also creates the socket itself 0600). The fallback is a
+  // capability-token websocket for platforms without Unix sockets.
+  //
+  // The name is fixed per Agent Link process (<pid>.sock): Codex keeps
+  // per-socket lock files, so a fresh name per spawn would pile them up.
   allocateEndpoint() {
     const stateDir = ensurePrivateDir(this.stateDir());
-    const stem = `${process.pid}-${this.managedSpawnCount + 1}`;
+    const stem = `${process.pid}`;
     if (this.options.transport === "ws-token") {
       const token = randomBytes(32).toString("hex");
       const tokenFile = path.join(stateDir, `${stem}.token`);
@@ -511,7 +529,10 @@ export class CodexAppServerClient {
     }
     let socketDir = stateDir;
     if (Buffer.byteLength(path.join(socketDir, `${stem}.sock`)) > MAX_UNIX_SOCKET_PATH_BYTES) {
-      socketDir = ensurePrivateDir(path.join("/tmp", `agent-link-${process.getuid?.() ?? "user"}`));
+      // macOS gives each user a private temp dir; elsewhere use /tmp with the
+      // same ownership/symlink checks.
+      const base = process.platform === "darwin" ? os.tmpdir() : "/tmp";
+      socketDir = ensurePrivateDir(path.join(base, `agent-link-${process.getuid?.() ?? "user"}`));
     }
     const socketPath = path.join(socketDir, `${stem}.sock`);
     rmSync(socketPath, { force: true });
@@ -534,6 +555,12 @@ export class CodexAppServerClient {
     }
 
     const launch = findAppServerLaunch();
+    // The socket name is reused, and an exiting app-server unlinks its socket:
+    // let any previous one finish exiting before the next one binds the name.
+    await Promise.allSettled([...this.pendingStops]);
+    if (this.closed) {
+      throw closedError();
+    }
     const endpoint = this.allocateEndpoint();
     if (endpoint.pendingPort) {
       const port = await getFreePort();
@@ -662,6 +689,16 @@ export class CodexAppServerClient {
     if (!child) {
       return;
     }
+    const stopping = this.stopChild(child);
+    this.pendingStops.add(stopping);
+    try {
+      await stopping;
+    } finally {
+      this.pendingStops.delete(stopping);
+    }
+  }
+
+  async stopChild(child) {
     if (this.managedProcess === child) {
       if (this.managedProcessExitCleanup) {
         process.removeListener("exit", this.managedProcessExitCleanup);
@@ -736,6 +773,7 @@ export class CodexAppServerClient {
         total: this.serverRequests.total,
         declined: this.serverRequests.declined,
         rejected: this.serverRequests.rejected,
+        unanswered: this.serverRequests.unanswered,
         byMethod: { ...this.serverRequests.byMethod },
         last: this.serverRequests.last
       }
@@ -784,10 +822,15 @@ function readPackageVersion() {
   }
 }
 
-// Create (or tighten) a directory only this user can enter.
+// Create (or tighten) a directory only this user can enter. The leaf must be
+// a real directory (not a symlink someone else could have planted) owned by
+// this user.
 function ensurePrivateDir(dir) {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const stat = statSync(dir);
+  const stat = lstatSync(dir);
+  if (stat.isSymbolicLink()) {
+    throw new AppServerError(`Managed app-server state path is a symlink: ${dir}`, { code: "state-dir-unsafe" });
+  }
   if (!stat.isDirectory()) {
     throw new AppServerError(`Managed app-server state path is not a directory: ${dir}`, { code: "state-dir-unsafe" });
   }
@@ -954,8 +997,11 @@ export function findCodexBinary(options = {}) {
 }
 
 // What health reports about the local Codex install: which binary would be
-// launched, where it came from, its version, and what was searched.
+// launched, where it came from, its version, and what was searched. The
+// version needs a blocking `codex --version`; with probeVersion=false only an
+// already-cached version is reported (versionProbed tells which).
 export function describeCodexInstall(options = {}) {
+  const probeVersion = options.probeVersion !== false;
   const appServerBin = process.env.CODEX_AGENT_LINK_APP_SERVER_BIN || process.env.CODEX_APP_SERVER_BIN;
   if (appServerBin) {
     const exists = !appServerBin.includes("/") || existsSync(appServerBin);
@@ -964,16 +1010,19 @@ export function describeCodexInstall(options = {}) {
       path: appServerBin,
       source: "env:CODEX_AGENT_LINK_APP_SERVER_BIN",
       version: null,
+      versionProbed: false,
       searched: [appServerBin],
       reason: exists ? null : `Configured Codex app-server binary does not exist: ${appServerBin}`
     };
   }
   const found = discoverCodexBinary(options);
+  const version = found.found ? codexBinaryVersion(found.path, { cachedOnly: !probeVersion }) : null;
   return {
     available: found.found,
     path: found.path,
     source: found.source,
-    version: found.found ? codexBinaryVersion(found.path) : null,
+    version: version ?? null,
+    versionProbed: version !== undefined,
     searched: found.searched,
     reason: found.found ? null : found.reason
   };

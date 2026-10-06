@@ -143,14 +143,20 @@ const noContext = await registerDependencyHandoff({
 assert.equal(noContext.dependency.callbackThreadId, spoofedCallback);
 assert.equal(noContext.dependency.callbackMismatch, null);
 
-// projectId must be a slug.
-await assert.rejects(
-  () => registerDependencyHandoff({
-    projectId: "../../etc/passwd",
-    dependencyName: "Bad project",
-    readinessContract: "ready"
-  }, registerDeps, { callerContext: { available: true, threadId: originThreadId } }),
-  (error) => error.details?.code === "invalid-project-id"
-);
+// projectId is free-form (owner/repo is fine); it is passed through to
+// orchestrator resolution unchanged.
+let resolvedWith = null;
+await registerDependencyHandoff({
+  projectId: "owner/repo",
+  dependencyName: "Slash project",
+  readinessContract: "ready"
+}, {
+  ...registerDeps,
+  resolveProjectOrchestrator: async (resolveArgs) => {
+    resolvedWith = resolveArgs;
+    return { threadId: targetThreadId, source: "search", verification: { thread: null } };
+  }
+}, { callerContext: { available: true, threadId: originThreadId } });
+assert.equal(resolvedWith.projectId, "owner/repo");
 
 console.log("Dependency handoff regression test passed");

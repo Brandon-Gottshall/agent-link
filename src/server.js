@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -325,7 +325,7 @@ const tools = [
         },
         recentItems: {
           type: "number",
-          description: "Number of recent ITEMS (messages, tool calls, reasoning, commands), not turns, when includeTurns is true. Returned as thread.recentItems (oldest first, each with its turnId) on both the app-server and the local-transcript fallback paths; app-server results also include thread.turns trimmed to the turns those items belong to. Defaults to 20; caps at 100."
+          description: "Number of recent ITEMS (messages, tool calls, reasoning, commands), not turns, when includeTurns is true. Returned as thread.recentItems, oldest first, on both the app-server and the local-transcript fallback paths. App-server items carry their turnId and the result also includes thread.turns trimmed to the turns those items belong to; local-transcript items carry a timestamp instead (transcripts have no turn ids). Defaults to 20; caps at 100."
         },
         includeReceipts: {
           type: "boolean",
@@ -499,16 +499,16 @@ const tools = [
         },
         cwd: {
           type: "string",
-          description: "Optional cwd override for the target turn. Rejected when it differs from the thread's own cwd unless allowTargetOverride is true."
+          description: "Optional cwd for the target turn. Without allowTargetOverride it must match the thread's own cwd (compared by real path); a different cwd is rejected."
         },
         model: {
           type: "string",
-          description: "Optional model override for the target turn. Rejected when it differs from (or cannot be compared with) the thread's own model unless allowTargetOverride is true."
+          description: "Optional model for the target turn. Without allowTargetOverride: rejected when it differs from the thread's reported model; not applied (with a warning) when the thread reports none."
         },
         effort: {
           type: "string",
           enum: ["minimal", "low", "medium", "high", "xhigh"],
-          description: "Optional reasoning effort override for the target turn. Rejected when it differs from (or cannot be compared with) the thread's own effort unless allowTargetOverride is true."
+          description: "Optional reasoning effort for the target turn. Without allowTargetOverride: rejected when it differs from the thread's reported reasoningEffort; not applied (with a warning) when the thread reports none."
         },
         allowParallelTurn: {
           type: "boolean",
@@ -532,7 +532,7 @@ const tools = [
         },
         allowTargetOverride: {
           type: "boolean",
-          description: "Messaging an existing thread normally runs the turn with that thread's own cwd, model, and reasoning effort; a cwd/model/effort here that differs from the thread's own (or that cannot be compared because app-server does not report it) is rejected. Set true only when you intend to change the target thread's working directory, model, or effort. Defaults to false."
+          description: "Messaging an existing thread normally keeps that thread's own cwd, model, and reasoning effort. Without this flag, a cwd/model/effort that differs from a value the thread reports is rejected (only warned about when steering an active turn), and one the thread does not report is not applied (warning target-override-unverified). Set true only when you intend to change the target thread's working directory, model, or effort; every supplied value is then forwarded. Defaults to false."
         },
         receipt: receiptInputSchema
       },
@@ -611,8 +611,7 @@ const tools = [
         },
         projectId: {
           type: "string",
-          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
-          description: "Stable project identifier (a slug: letters, digits, '.', '_', '-') used as a project-orchestrator fallback search signal."
+          description: "Stable project identifier used as a project-orchestrator fallback search signal."
         },
         orchestratorThreadId: {
           type: "string",
@@ -1060,7 +1059,8 @@ async function health(args, toolContext = {}) {
   const usesManagedAppServer = !Object.values(configuredEndpoint).some(Boolean);
   const autoStartEnabled = process.env.CODEX_AGENT_LINK_AUTOSTART !== "0";
   const codex = {
-    ...describeCodexInstall(),
+    // Skip the blocking `codex --version` when the caller asked for a cheap check.
+    ...describeCodexInstall({ probeVersion: args.startAppServer !== false }),
     usedForManagedAppServer: usesManagedAppServer
   };
   const common = {
@@ -2036,8 +2036,11 @@ async function messageThread(args, toolContext = {}) {
     throw await enrichThreadLookupError(error, threadId);
   }
   const initialThread = read.thread;
-  const targetOverrides = checkTargetOverrides(initialThread, args);
-  if (targetOverrides.conflicts.length > 0 && args.allowTargetOverride !== true) {
+  // turn/steer ignores cwd/model/effort, so a mismatch there is only a warning.
+  const willSteer = mode === "steer_active" || (mode === "auto" && initialThread?.status?.type === "active");
+  const targetOverrides = checkTargetOverrides(initialThread, args, { steering: willSteer });
+  const overrides = targetOverrides.forward;
+  if (targetOverrides.conflicts.length > 0) {
     const error = new Error(`Refusing to change ${targetOverrides.conflicts.map((conflict) => conflict.field).join(", ")} of existing thread ${threadId}; pass allowTargetOverride=true to do it intentionally`);
     error.details = {
       code: "target-override-rejected",
@@ -2048,7 +2051,7 @@ async function messageThread(args, toolContext = {}) {
   }
   let status = read.thread.status;
   let action = null;
-  const warnings = warningsForMessageTarget(status, mode);
+  const warnings = [...targetOverrides.warnings, ...warningsForMessageTarget(status, mode)];
 
   if (status.type === "notLoaded") {
     if (!resumeIfNeeded) {
@@ -2059,14 +2062,14 @@ async function messageThread(args, toolContext = {}) {
       excludeTurns: true,
       persistExtendedHistory: true
     };
-    if (args.cwd) {
-      resumeParams.cwd = args.cwd;
+    if (overrides.cwd) {
+      resumeParams.cwd = overrides.cwd;
     }
-    if (args.model) {
-      resumeParams.model = args.model;
+    if (overrides.model) {
+      resumeParams.model = overrides.model;
     }
-    if (args.effort) {
-      resumeParams.reasoningEffort = args.effort;
+    if (overrides.effort) {
+      resumeParams.reasoningEffort = overrides.effort;
     }
     read = await appServer.request("thread/resume", resumeParams);
     status = read.thread.status;
@@ -2146,14 +2149,14 @@ async function messageThread(args, toolContext = {}) {
   }
 
   const startParams = { threadId, input };
-  if (args.cwd) {
-    startParams.cwd = args.cwd;
+  if (overrides.cwd) {
+    startParams.cwd = overrides.cwd;
   }
-  if (args.model) {
-    startParams.model = args.model;
+  if (overrides.model) {
+    startParams.model = overrides.model;
   }
-  if (args.effort) {
-    startParams.effort = args.effort;
+  if (overrides.effort) {
+    startParams.effort = overrides.effort;
   }
 
   const response = await appServer.request("turn/start", startParams);
@@ -2581,33 +2584,69 @@ function recentItemWindow(turns, limit) {
   return { items, turns: windowTurns };
 }
 
-// cwd/model/effort a caller asks for that differ from what the existing
-// thread already uses. A value the app-server does not report cannot be
-// compared and counts as a change.
-function checkTargetOverrides(thread, args) {
+// Decide which caller-supplied cwd/model/effort values reach the existing
+// thread. allowTargetOverride forwards everything. Otherwise a value equal to
+// the thread's own is forwarded; one that differs from a KNOWN thread value is
+// a conflict (only a warning when steering, since turn/steer ignores them);
+// one the app-server does not report (null) is not forwarded and is flagged
+// with a target-override-unverified warning.
+function checkTargetOverrides(thread, args, { steering = false } = {}) {
+  const forward = {};
   const conflicts = [];
-  const requestedCwd = optionalString(args.cwd).trim();
-  if (requestedCwd) {
-    const own = optionalString(thread?.cwd).trim();
-    if (!own || path.resolve(own) !== path.resolve(requestedCwd)) {
-      conflicts.push({ field: "cwd", requested: requestedCwd, threadValue: own || null });
+  const warnings = [];
+  const fields = [
+    ["cwd", optionalString(args.cwd).trim(), optionalString(thread?.cwd).trim(), sameDirectory],
+    ["model", optionalString(args.model).trim(), optionalString(thread?.model).trim(), (a, b) => a === b],
+    ["effort", optionalString(args.effort).trim(), optionalString(thread?.reasoningEffort ?? thread?.effort).trim(), (a, b) => a === b]
+  ];
+  for (const [field, requested, own, same] of fields) {
+    if (!requested) {
+      continue;
+    }
+    if (args.allowTargetOverride === true) {
+      forward[field] = requested;
+      continue;
+    }
+    if (!own) {
+      warnings.push({
+        code: "target-override-unverified",
+        severity: "warning",
+        field,
+        requested,
+        message: `The app-server does not report this thread's ${field}, so the requested value was not applied. Pass allowTargetOverride=true to apply it anyway.`
+      });
+      continue;
+    }
+    if (same(own, requested)) {
+      forward[field] = requested;
+      continue;
+    }
+    const conflict = { field, requested, threadValue: own };
+    if (steering) {
+      warnings.push({
+        code: "target-override-ignored-steer",
+        severity: "warning",
+        ...conflict,
+        message: `Steering an active turn does not change ${field}; the requested value was ignored.`
+      });
+    } else {
+      conflicts.push(conflict);
     }
   }
-  const requestedModel = optionalString(args.model).trim();
-  if (requestedModel) {
-    const own = optionalString(thread?.model).trim();
-    if (own !== requestedModel) {
-      conflicts.push({ field: "model", requested: requestedModel, threadValue: own || null });
+  return { forward, conflicts, warnings };
+}
+
+// Compare directories by real path when both exist (macOS /tmp is
+// /private/tmp), else lexically.
+function sameDirectory(a, b) {
+  const canonical = (value) => {
+    try {
+      return realpathSync(value);
+    } catch {
+      return path.resolve(value);
     }
-  }
-  const requestedEffort = optionalString(args.effort).trim();
-  if (requestedEffort) {
-    const own = optionalString(thread?.reasoningEffort ?? thread?.effort).trim();
-    if (own !== requestedEffort) {
-      conflicts.push({ field: "effort", requested: requestedEffort, threadValue: own || null });
-    }
-  }
-  return { conflicts };
+  };
+  return canonical(a) === canonical(b);
 }
 
 function summarizeTurn(turn) {

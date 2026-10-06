@@ -7,8 +7,9 @@
 //   AGENT_LINK_STUB_TERM_DELAY_MS delay before exiting on SIGTERM
 //   AGENT_LINK_STUB_IGNORE_TERM=1 ignore SIGTERM entirely (needs SIGKILL)
 //   AGENT_LINK_STUB_EXIT_AT_START=<code> exit immediately with that code
-//   AGENT_LINK_STUB_SERVER_REQUEST=<method> before answering thread/loaded/list,
-//     send that server->client request and include the client's answer in the result
+//   AGENT_LINK_STUB_SERVER_REQUEST=<method>[,<method>...] before answering
+//     thread/loaded/list, send those server->client requests and include the
+//     client's answers (in order) as serverRequestAnswers
 //   AGENT_LINK_STUB_ARGS_LOG      append the full argv (JSON) for transport assertions
 import { spawn } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
@@ -87,16 +88,26 @@ wss.on("connection", (socket) => {
         reply({ result: { userAgent: "stub-app-server", codexHome: "/tmp/stub-codex-home", platformOs: "macos", clientInfo: msg.params?.clientInfo ?? null } });
         break;
       case "thread/loaded/list": {
-        const serverRequest = process.env.AGENT_LINK_STUB_SERVER_REQUEST;
-        if (!serverRequest) {
+        const methods = (process.env.AGENT_LINK_STUB_SERVER_REQUEST || "").split(",").filter(Boolean);
+        if (methods.length === 0) {
           reply({ result: { data: [], nextCursor: null } });
           break;
         }
-        const requestId = `srv-${msg.id}`;
-        awaiting.set(requestId, (answer) => {
-          reply({ result: { data: [], nextCursor: null, serverRequestAnswer: answer } });
+        // Send every server request, then answer the original call once all
+        // of them were answered, echoing the client's answers in order.
+        const answers = new Array(methods.length);
+        let pending = methods.length;
+        methods.forEach((method, index) => {
+          const requestId = `srv-${msg.id}-${index}`;
+          awaiting.set(requestId, (answer) => {
+            answers[index] = answer;
+            pending -= 1;
+            if (pending === 0) {
+              reply({ result: { data: [], nextCursor: null, serverRequestAnswers: answers } });
+            }
+          });
+          socket.send(JSON.stringify({ id: requestId, method, params: { threadId: "stub-thread", turnId: "stub-turn", itemId: "stub-item" } }));
         });
-        socket.send(JSON.stringify({ id: requestId, method: serverRequest, params: { threadId: "stub-thread", turnId: "stub-turn", itemId: "stub-item" } }));
         break;
       }
       case "thread/list":

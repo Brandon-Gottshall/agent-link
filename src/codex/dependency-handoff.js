@@ -1,4 +1,3 @@
-const PROJECT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const THREAD_ID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 
 const DEPENDENCY_PHRASES = [
@@ -33,12 +32,6 @@ export async function registerDependencyHandoff(args = {}, deps = {}, toolContex
   const callbackMismatch = callerThreadId && suppliedCallbackThreadId && suppliedCallbackThreadId !== callerThreadId
     ? { supplied: suppliedCallbackThreadId, used: callerThreadId, reason: "caller context thread id takes precedence over callbackThreadId" }
     : null;
-  const projectId = cleanString(args.projectId);
-  if (projectId && !PROJECT_ID_RE.test(projectId)) {
-    const error = new Error("projectId must be a slug: letters, digits, '.', '_' or '-', starting with a letter or digit, at most 128 characters");
-    error.details = { code: "invalid-project-id", projectId };
-    throw error;
-  }
 
   const target = await resolveDependencyTarget(args, deps);
   const message = buildDependencyHandoffMessage({

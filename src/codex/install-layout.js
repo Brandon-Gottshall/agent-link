@@ -128,7 +128,8 @@ export function discoverCodexBinary(options = {}) {
 const versionCache = new Map();
 
 // `codex --version`, cached per (path, mtime) so health stays cheap.
-export function codexBinaryVersion(binaryPath, { timeoutMs = 3000 } = {}) {
+// With cachedOnly, never spawns: returns a cached version or undefined.
+export function codexBinaryVersion(binaryPath, { timeoutMs = 3000, cachedOnly = false } = {}) {
   if (!binaryPath) {
     return null;
   }
@@ -140,6 +141,9 @@ export function codexBinaryVersion(binaryPath, { timeoutMs = 3000 } = {}) {
   }
   if (versionCache.has(key)) {
     return versionCache.get(key);
+  }
+  if (cachedOnly) {
+    return undefined;
   }
   const result = spawnSync(binaryPath, ["--version"], { encoding: "utf8", timeout: timeoutMs });
   const version = result.status === 0 && !result.error
