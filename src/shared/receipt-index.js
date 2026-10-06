@@ -236,6 +236,7 @@ export function receiptSummary(receipt) {
     host: receipt.host ?? null,
     purpose: receipt.purpose ?? null,
     cleanupRecommendation: receipt.cleanupRecommendation ?? "unspecified",
+    tags: Array.isArray(receipt.tags) ? receipt.tags : [],
     origin: receipt.origin ?? null,
     target: receipt.target ?? null,
     messagePreview: receipt.messagePreview ?? null,

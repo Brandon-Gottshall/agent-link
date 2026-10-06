@@ -40,6 +40,7 @@ const groups = {
     "tests/codex/app-server-lifecycle.test.js",
     "tests/codex/chat-style-close.test.js",
     "tests/codex/codex-binary.test.js",
+    "tests/codex/dependency-handoff-matching.test.js",
     "tests/codex/server-idle-churn.test.js",
     "tests/codex/server-tools.test.js",
     "tests/codex/session-index.test.js",

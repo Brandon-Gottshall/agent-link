@@ -1,0 +1,85 @@
+// Labeled corpus for check_coordination_obligations (P3-16). Every sentence is
+// invented. `positive` sentences describe work that waits on another thread,
+// agent, or workstream and so needs a registered dependency callback.
+// `negative` sentences do not, including ones that use the old trigger words
+// ("callback", "handoff", "return path", "another thread") in other senses.
+//
+// The thread ids are made-up UUIDs with no meaning outside this file.
+export const THREAD_A = "11111111-2222-4333-8444-555555555555";
+export const THREAD_B = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+
+export const positive = [
+  `Use the surface from ${THREAD_A} when ready.`,
+  "Blocked on the schema thread finishing the migration contract.",
+  "I'm blocked on the API owner shipping the export endpoint.",
+  "Once the auth workstream ships the token refresh API, I'll wire it into the client.",
+  "When the parser agent lands its grammar change, I will rebase and finish the formatter.",
+  "Waiting on another agent to expose the search endpoint before I can finish the UI.",
+  "This depends on another thread publishing the shared config schema.",
+  "The billing export is not ready yet; the owner thread still has to implement the CSV writer.",
+  `Thread ${THREAD_B} owns the storage layer; I'll continue once it is merged.`,
+  "I can't proceed with the dashboard until the metrics agent exposes the query API.",
+  "Registered a callback with the owner thread so it pings this thread when the endpoint is callable.",
+  "Need a dependency handoff to the orchestrator for the release notes generator.",
+  "The orchestrator will notify this thread when the build cache service is available.",
+  "Pending a fix from the networking workstream, the retry logic stays disabled.",
+  "Ask the upstream thread to report back to this thread once the queue consumer is deployed.",
+  "As soon as the design agent publishes the tokens, I'll pick it back up and apply them.",
+  "Waiting for the indexing workstream to land the new ranking function.",
+  "The import tool needs the validator from the sibling thread to merge first.",
+  "Blocked by the sibling agent's pending refactor of the event bus.",
+  `Waiting on ${THREAD_A} to finish the localization strings.`,
+  "I'll resume the rollout after the infra thread confirms the bucket is ready.",
+  "Hand this off to the docs agent and have it message me when the guide is published.",
+  "The mobile client can't ship until the backend workstream releases the v2 endpoint.",
+  "This task is waiting on the data agent; it hasn't shipped the cleaned dataset yet.",
+  "Set up a callback to the origin thread for when the feature flag service is live.",
+  "Once the other agent's PR is merged, I will update the lockfile and finish the upgrade.",
+  "Dependent on another workstream delivering the permissions model; not implemented yet.",
+  "The owner thread will ping me when the rate limiter is callable.",
+  `When ${THREAD_B} reports the parser is ready, continue with the code generator.`,
+  "Paused: blocked on the security agent reviewing the token storage.",
+  "Need the other thread to land the schema change first, then I'll regenerate the client.",
+  "Requested a handoff from the platform orchestrator; it will call back when the runner image is available.",
+  "Cannot finish the report until the analytics agent publishes the weekly numbers.",
+  "The search page waits for the ranking workstream; I'll integrate once it ships.",
+  "Remaining work is blocked on the upstream thread; it still has to expose the health endpoint."
+];
+
+export const negative = [
+  "Implemented the local parser and ran the tests.",
+  "The callback function returns a promise that resolves with the parsed rows.",
+  "Updated the handoff document with the new on-call rotation.",
+  "The return path of the function now handles the empty-list case.",
+  "Each request is processed on another thread from the worker pool.",
+  "When the DOM is ready, the handler attaches the click listeners.",
+  "Once the build finishes, I'll run the integration tests.",
+  "The result depends on the input size and the cache hit rate.",
+  "Fixed a bug where the callback was invoked twice on retry.",
+  "Renamed the handoff checklist template to match the style guide.",
+  "Added a test for the error return path in the config loader.",
+  "The UI thread no longer blocks while the file is parsed.",
+  "Let me know if you want me to also update the README.",
+  "The feature flag is not available on the legacy plan.",
+  "Waiting for the tests to finish took about two minutes.",
+  "Refactored the event loop so callbacks run in insertion order.",
+  "The request was blocked by the CORS policy until I added the header.",
+  "Wrote the migration and verified it on a copy of the database.",
+  "When the user clicks save, the form is validated and submitted.",
+  "The handoff between the two parsing stages now streams tokens.",
+  "Deleted the unused callback registry and its tests.",
+  "The download is done; the archive is in the output folder.",
+  "Once the server starts, it listens on the configured socket.",
+  "The background thread flushes logs every five seconds.",
+  "Merged the two config loaders into one module.",
+  "This module depends on the standard library only.",
+  "If the cache is ready, the lookup skips the network call.",
+  "The function returns early when the list is empty.",
+  "Benchmarks show the new tokenizer is about thirty percent faster.",
+  "I documented the callback signature in the API reference.",
+  "Spawned a worker thread for the image resize so the main thread stays responsive.",
+  "The release is complete and the changelog is updated.",
+  "The handoff note for tomorrow's shift is in the shared folder.",
+  "Tests pass locally and in CI.",
+  "After the page is loaded, the script reads the saved preferences."
+];

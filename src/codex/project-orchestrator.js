@@ -389,11 +389,28 @@ function buildSelection(candidates) {
   };
 }
 
-function forwardMessageOptions(args) {
+// Options the wrapper tools (message_project_orchestrator,
+// return_project_work_result, register_dependency_handoff) pass through to
+// message_codex_thread. cwd is deliberately absent: on these tools it filters
+// the orchestrator or dependency-owner search; it is never the target turn's
+// working directory (W2B-03).
+export const FORWARDED_MESSAGE_OPTION_KEYS = Object.freeze([
+  "mode",
+  "resumeIfNeeded",
+  "expectedTurnId",
+  "model",
+  "effort",
+  "allowParallelTurn",
+  "allowTargetOverride",
+  "waitForReply",
+  "timeoutMs",
+  "pollIntervalMs",
+  "recentItems"
+]);
+
+export function forwardMessageOptions(args) {
   const out = {};
-  // cwd is deliberately absent: on these tools it filters the orchestrator
-  // search; it is never the orchestrator turn's working directory.
-  for (const key of ["mode", "resumeIfNeeded", "expectedTurnId", "model", "effort", "allowParallelTurn", "allowTargetOverride", "waitForReply", "timeoutMs", "pollIntervalMs", "recentItems"]) {
+  for (const key of FORWARDED_MESSAGE_OPTION_KEYS) {
     if (args[key] !== undefined) {
       out[key] = args[key];
     }

@@ -84,6 +84,9 @@ const satisfiedDeps = {
         id: "agent-link-receipt-test",
         action: "message_thread",
         purpose: "Dependency handoff: Snoozable full-screen Auditions alert surface",
+        // P3-16: only a receipt tagged dependency-handoff can satisfy an
+        // obligation; register_dependency_handoff writes these tags.
+        tags: calls[0].receipt.tags,
         origin: { threadId: originThreadId },
         target: { threadId: targetThreadId },
         messagePreview: calls[0].message,

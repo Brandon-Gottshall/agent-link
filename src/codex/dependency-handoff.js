@@ -1,18 +1,158 @@
+import { forwardMessageOptions } from "./project-orchestrator.js";
+
 const THREAD_ID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 
-const DEPENDENCY_PHRASES = [
-  /\bwhen (?:it|that|this|the .{0,40}) (?:is )?(?:ready|shipped|implemented|callable|available|done|complete|lands?)\b/i,
-  /\bif (?:it|that|this|the .{0,40}) (?:is )?(?:ready|shipped|implemented|callable|available|done|complete|lands?)\b/i,
-  /\bblocked on\b/i,
-  /\bdepends on\b/i,
-  /\bwaiting on\b/i,
-  /\bnot (?:ready|shipped|implemented|callable|available) yet\b/i,
-  /\banother (?:thread|agent|workstream)\b/i,
-  /\bowner thread\b/i,
-  /\bcallback\b/i,
-  /\breturn path\b/i,
-  /\bhandoff\b/i
-];
+// Weighted phrase table for check_coordination_obligations (P3-16).
+//
+// Each pattern belongs to one category. A text's score is the sum, over
+// categories, of the highest weight matched in that category, plus
+// THREAD_ID_WEIGHT when it names a thread id other than the origin's own. An
+// obligation needs score >= OBLIGATION_THRESHOLD, so no single weak signal
+// ("when the DOM is ready", "waiting for the tests", "another thread from the
+// pool") is enough on its own: it takes a strong phrase ("blocked on",
+// "depends on another workstream", "register a callback with the owner
+// thread") or a wait/readiness phrase plus a reference to another thread,
+// agent, workstream, or orchestrator. The bare words "callback", "handoff",
+// and "return path" are not patterns at all.
+//
+// Every regex is linear: no nested unbounded quantifiers; word runs are
+// written as `(?:WORD\s+){0,N}` with WORD excluding whitespace, so each
+// position can be consumed only one way.
+export const OBLIGATION_THRESHOLD = 1;
+const THREAD_ID_WEIGHT = 0.5;
+const WORD = String.raw`[\w'’/#-]{1,40}`;
+const ACTOR = String.raw`(?:threads?|agents?|workstreams?|orchestrators?)`;
+// Concurrency and tooling senses of "thread"/"agent" that are not a peer.
+const NOT_A_PEER = String.raw`(?:main|ui|worker|background|render|rendering|io|gpu|audio|daemon|user|current|same|this|calling|parent-process|pool)`;
+const READY_WORD = String.raw`(?:ready|ships|shipped|lands|landed|merged|available|callable|implemented|deployed|released|published|publishes|done|complete|finished|live|exposes|exposed|delivers|delivered)`;
+
+export const COORDINATION_PATTERNS = Object.freeze([
+  // explicit-thread-reference: another thread/agent/workstream is involved.
+  {
+    id: "peer-actor",
+    category: "explicit-thread-reference",
+    weight: 0.5,
+    re: new RegExp(String.raw`\b(?:another|other|separate|sibling|upstream|downstream|owner|owning|origin|peer|dependency[- ]owner)\s+(?:${WORD}\s+){0,2}?${ACTOR}\b`, "i")
+  },
+  {
+    id: "named-actor",
+    category: "explicit-thread-reference",
+    weight: 0.5,
+    re: new RegExp(String.raw`\b(?:the|that)\s+(?!${NOT_A_PEER}\b)[\w-]{1,30}\s+${ACTOR}\b`, "i")
+  },
+  {
+    id: "workstream-or-orchestrator",
+    category: "explicit-thread-reference",
+    weight: 0.5,
+    re: /\b(?:workstreams?|orchestrators?)\b/i
+  },
+  // readiness-wait: work resumes when something elsewhere becomes ready.
+  {
+    id: "when-ready",
+    category: "readiness-wait",
+    weight: 0.6,
+    re: /\b(?:when|once|as soon as) (?:it's |it is |they're |they are )?ready\b/i
+  },
+  {
+    id: "once-subject-ready",
+    category: "readiness-wait",
+    weight: 0.6,
+    re: new RegExp(String.raw`\b(?:when|once|after|until|as soon as)\s+(?:${WORD}\s+){1,8}?${READY_WORD}\b`, "i")
+  },
+  {
+    id: "not-ready-yet",
+    category: "readiness-wait",
+    weight: 0.6,
+    re: /\b(?:not|n't|not been) (?:yet )?(?:ready|shipped|landed|merged|implemented|callable|available|deployed|released|published)(?: it)? yet\b|\bnot yet (?:ready|shipped|landed|merged|implemented|callable|available|deployed|released|published)\b|\b(?:has|have)(?:n't| not) (?:yet )?(?:shipped|landed|merged|released|published)\b/i
+  },
+  // blocked-on: the current work cannot finish without someone else.
+  {
+    id: "blocked-on",
+    category: "blocked-on",
+    weight: 1,
+    re: /\bblocked on\b/i
+  },
+  {
+    id: "depends-on-peer",
+    category: "blocked-on",
+    weight: 1,
+    re: /\b(?:depends|depending|dependent|relies|relying|reliant) on (?:another|the other|an? upstream|the upstream|a sibling|the sibling|work (?:in|from))\b/i
+  },
+  {
+    id: "cannot-until",
+    category: "blocked-on",
+    weight: 1,
+    re: new RegExp(String.raw`\b(?:can't|can’t|cannot|can not|won't|won’t|unable to)\s+(?:${WORD}\s+){0,6}?until\s+(?:the|a|an|another|other|it|they|that|this)\b`, "i")
+  },
+  {
+    id: "blocked-by",
+    category: "blocked-on",
+    weight: 0.6,
+    re: /\bblocked by\b/i
+  },
+  {
+    id: "waiting-on",
+    category: "blocked-on",
+    weight: 0.6,
+    re: /\b(?:waiting|waits|wait) (?:on|for)\b/i
+  },
+  {
+    id: "pending-from",
+    category: "blocked-on",
+    weight: 0.6,
+    re: new RegExp(String.raw`\bpending\s+(?:${WORD}\s+){0,3}?from\b`, "i")
+  },
+  {
+    id: "lands-first",
+    category: "blocked-on",
+    weight: 0.6,
+    re: new RegExp(String.raw`\bto (?:land|ship|merge|release|publish)\s+(?:${WORD}\s+){0,4}?first\b|\bto (?:land|ship|merge|release|publish) first\b`, "i")
+  },
+  // will-notify: a callback or return path to this thread is being set up.
+  {
+    id: "register-callback",
+    category: "will-notify",
+    weight: 1,
+    re: new RegExp(String.raw`\b(?:register(?:ed|ing|s)?|set(?:ting)? up|wire[ds]?|wiring|send(?:ing|s)?|sent|request(?:ed|ing|s)?|need(?:s|ed)?|add(?:ed|ing|s)?|open(?:ed|ing|s)?)\s+(?:a |an |the )?(?:dependency\s+)?(?:callback|handoff)\s+(?:with|to|from|for|on)\s+(?:the |this |that |another |other |an? )?(?:${WORD}\s+){0,2}?(?:${ACTOR}|owners?)\b`, "i")
+  },
+  {
+    id: "dependency-handoff",
+    category: "will-notify",
+    weight: 1,
+    re: /\bdependency (?:handoff|callback)s?\b/i
+  },
+  {
+    id: "notify-this-thread",
+    category: "will-notify",
+    weight: 0.6,
+    re: /\b(?:ping|notify|message|alert) (?:me|us|this thread|this agent|the (?:origin|caller|calling|requesting) (?:thread|agent|session))\b/i
+  },
+  {
+    id: "report-back",
+    category: "will-notify",
+    weight: 0.6,
+    re: /\b(?:report back|call back|get back) (?:to (?:me|us|this thread|the (?:origin|caller|calling|requesting) (?:thread|agent|session))|when|once|as soon as)\b|\breport back to (?:this|the origin) thread\b/i
+  },
+  {
+    id: "return-path-to-origin",
+    category: "will-notify",
+    weight: 0.6,
+    re: /\breturn path (?:to|for|back to) (?:the |this )?(?:origin|caller|calling|requesting|manager|orchestrator|owner|thread)\b/i
+  },
+  {
+    id: "hand-off-to",
+    category: "will-notify",
+    weight: 0.5,
+    re: /\bhand (?:this|it|that|them|the \w+) off to\b/i
+  },
+  // resume-after: this thread says it will pick the work back up later.
+  {
+    id: "will-resume",
+    category: "resume-after",
+    weight: 0.4,
+    re: /\b(?:I'll|I’ll|I will|we'll|we’ll|we will|then I'll|then I will)\s+(?:then\s+)?(?:resume|continue|pick (?:it|this|that) (?:back )?up|integrate|wire|rebase|regenerate|finish|proceed|update|apply)\b/i
+  }
+]);
 
 export async function registerDependencyHandoff(args = {}, deps = {}, toolContext = {}) {
   const dependencyName = requiredString(args.dependencyName || args.dependency, "dependencyName").trim();
@@ -49,20 +189,12 @@ export async function registerDependencyHandoff(args = {}, deps = {}, toolContex
     `dependency:${slug(dependencyName)}`,
     `callback:${callbackThreadId}`
   ];
+  // Same allowlist as the project-orchestrator wrappers. cwd/targetCwd only
+  // filter target resolution and are never forwarded as a turn override.
   const messageResult = await deps.messageThread({
+    ...forwardMessageOptions(args),
     threadId: target.threadId,
     message,
-    mode: args.mode,
-    resumeIfNeeded: args.resumeIfNeeded,
-    expectedTurnId: args.expectedTurnId,
-    model: args.model,
-    effort: args.effort,
-    allowParallelTurn: args.allowParallelTurn,
-    allowTargetOverride: args.allowTargetOverride,
-    waitForReply: args.waitForReply,
-    timeoutMs: args.timeoutMs,
-    pollIntervalMs: args.pollIntervalMs,
-    recentItems: args.recentItems,
     receipt: mergeReceipt(args.receipt, {
       purpose: `Dependency handoff: ${dependencyName}`,
       cleanupRecommendation: "keep_as_evidence",
@@ -100,8 +232,8 @@ export async function registerDependencyHandoff(args = {}, deps = {}, toolContex
 
 export async function checkCoordinationObligations(args = {}, deps = {}, toolContext = {}) {
   const text = requiredString(args.text || args.finalText || args.currentText, "text");
-  const analysis = analyzeCoordinationText(text);
   const originThreadId = cleanString(args.originThreadId || args.threadId || toolContext.callerContext?.threadId);
+  const analysis = analyzeCoordinationText(text, { originThreadId });
 
   if (!analysis.hasObligation) {
     return {
@@ -134,7 +266,8 @@ export async function checkCoordinationObligations(args = {}, deps = {}, toolCon
     searchTerm: "dependency-handoff",
     limit: args.receiptLimit ?? 20
   });
-  const matchingReceipts = (receipts.data ?? []).filter((receipt) => receiptSatisfiesAnalysis(receipt, analysis));
+  const scope = satisfactionScope(args, analysis, originThreadId, toolContext);
+  const matchingReceipts = (receipts.data ?? []).filter((receipt) => receiptSatisfiesObligation(receipt, scope));
   const status = matchingReceipts.length > 0 ? "satisfied" : "needs_handoff";
 
   return {
@@ -144,6 +277,7 @@ export async function checkCoordinationObligations(args = {}, deps = {}, toolCon
     status,
     analysis,
     originThreadId,
+    satisfaction: scope.summary,
     receipts: {
       path: receipts.path ?? null,
       scannedReceipts: receipts.scannedReceipts ?? null,
@@ -152,41 +286,113 @@ export async function checkCoordinationObligations(args = {}, deps = {}, toolCon
       matching: matchingReceipts
     },
     nextRequiredAction: status === "needs_handoff"
-      ? "Call register_dependency_handoff or report callback not wired with a specific blocker before closing."
+      ? (scope.summary.rule === "unscoped"
+        ? "The text names no thread id and no dependencyName, turn id, or since was available to match a receipt. Pass dependencyName (or since), or call register_dependency_handoff, or report callback not wired with a specific blocker before closing."
+        : "Call register_dependency_handoff or report callback not wired with a specific blocker before closing.")
       : null
   };
 }
 
-export function analyzeCoordinationText(text) {
+export function analyzeCoordinationText(text, options = {}) {
   const source = String(text ?? "");
-  const referencedThreadIds = [...new Set(source.match(THREAD_ID_RE)?.map((id) => id.toLowerCase()) ?? [])];
-  const matchedPhrases = DEPENDENCY_PHRASES
-    .filter((pattern) => pattern.test(source))
-    .map((pattern) => pattern.source);
+  const originThreadId = cleanString(options.originThreadId).toLowerCase();
+  const referencedThreadIds = [...new Set(source.match(THREAD_ID_RE)?.map((id) => id.toLowerCase()) ?? [])]
+    .filter((id) => id !== originThreadId);
+  const matches = [];
+  const bestByCategory = new Map();
+  for (const pattern of COORDINATION_PATTERNS) {
+    const found = pattern.re.exec(source);
+    if (!found) {
+      continue;
+    }
+    matches.push({
+      id: pattern.id,
+      category: pattern.category,
+      weight: pattern.weight,
+      excerpt: found[0].slice(0, 120)
+    });
+    bestByCategory.set(pattern.category, Math.max(bestByCategory.get(pattern.category) ?? 0, pattern.weight));
+  }
+  if (referencedThreadIds.length > 0) {
+    bestByCategory.set("explicit-thread-reference", Math.max(bestByCategory.get("explicit-thread-reference") ?? 0, THREAD_ID_WEIGHT));
+  }
+  const score = Math.round([...bestByCategory.values()].reduce((sum, weight) => sum + weight, 0) * 100) / 100;
   return {
-    hasObligation: matchedPhrases.length > 0 || referencedThreadIds.length > 0,
+    hasObligation: score >= OBLIGATION_THRESHOLD,
+    score,
+    threshold: OBLIGATION_THRESHOLD,
+    categories: Object.fromEntries(bestByCategory),
     referencedThreadIds,
-    matchedPhraseCount: matchedPhrases.length,
-    matchedPhrases: matchedPhrases.slice(0, 10),
-    note: "Dependency language or referenced thread ids require a dependency-handoff receipt before passive readiness language is used in a final status."
+    matchedPhraseCount: matches.length,
+    matchedPhrases: matches.slice(0, 10).map((match) => match.id),
+    matches: matches.slice(0, 10),
+    note: "Cross-thread dependency language (score >= threshold) requires a dependency-handoff receipt before passive readiness language is used in a final status."
   };
 }
 
-function receiptSatisfiesAnalysis(receipt, analysis) {
+// Satisfaction rule (documented in the check_coordination_obligations tool
+// description). A receipt counts only if it is a dependency-handoff receipt
+// (tag `dependency-handoff`) recorded by the origin thread, and:
+//   - when the text names thread ids: its target is one of them;
+//   - otherwise: it carries `dependency:<slug(dependencyName)>`, or was sent
+//     in the same origin turn (originTurnId / caller turn id), or was created
+//     at or after `since`. With none of those available nothing matches.
+function satisfactionScope(args, analysis, originThreadId, toolContext) {
+  const dependencyName = cleanString(args.dependencyName || args.dependency);
+  const dependencyTag = dependencyName ? `dependency:${slug(dependencyName)}` : null;
+  const originTurnId = cleanString(args.originTurnId || toolContext.callerContext?.turnId) || null;
+  const sinceText = cleanString(args.since);
+  const sinceMs = sinceText ? Date.parse(sinceText) : NaN;
+  if (sinceText && Number.isNaN(sinceMs)) {
+    throw new Error(`since must be an ISO-8601 timestamp, got ${JSON.stringify(sinceText)}`);
+  }
+  const byThreadIds = analysis.referencedThreadIds.length > 0;
+  const rule = byThreadIds
+    ? "target_in_referenced_thread_ids"
+    : (dependencyTag || originTurnId || sinceText ? "dependency_tag_or_same_turn_or_since" : "unscoped");
+  return {
+    originThreadId: originThreadId.toLowerCase(),
+    referencedThreadIds: analysis.referencedThreadIds,
+    dependencyTag,
+    originTurnId,
+    sinceMs: sinceText ? sinceMs : null,
+    rule,
+    summary: {
+      rule,
+      requiredTag: "dependency-handoff",
+      originThreadId,
+      targetThreadIds: byThreadIds ? analysis.referencedThreadIds : null,
+      dependencyTag: byThreadIds ? null : dependencyTag,
+      originTurnId: byThreadIds ? null : originTurnId,
+      since: byThreadIds || !sinceText ? null : new Date(sinceMs).toISOString()
+    }
+  };
+}
+
+function receiptSatisfiesObligation(receipt, scope) {
   if (!receipt?.id) {
     return false;
   }
-  if (analysis.referencedThreadIds.length === 0) {
+  const tags = Array.isArray(receipt.tags) ? receipt.tags : [];
+  if (!tags.includes("dependency-handoff")) {
+    return false;
+  }
+  if (cleanString(receipt.origin?.threadId).toLowerCase() !== scope.originThreadId) {
+    return false;
+  }
+  if (scope.rule === "target_in_referenced_thread_ids") {
+    return scope.referencedThreadIds.includes(cleanString(receipt.target?.threadId).toLowerCase());
+  }
+  if (scope.dependencyTag && tags.includes(scope.dependencyTag)) {
     return true;
   }
-  const targetThreadId = cleanString(receipt.target?.threadId).toLowerCase();
-  const text = [
-    receipt.messagePreview,
-    receipt.finalResponse,
-    receipt.purpose,
-    receipt.target?.name
-  ].filter(Boolean).join("\n").toLowerCase();
-  return analysis.referencedThreadIds.some((id) => targetThreadId === id || text.includes(id));
+  if (scope.originTurnId && cleanString(receipt.origin?.turnId) === scope.originTurnId) {
+    return true;
+  }
+  if (scope.sinceMs !== null && Date.parse(receipt.createdAt ?? "") >= scope.sinceMs) {
+    return true;
+  }
+  return false;
 }
 
 async function resolveDependencyTarget(args, deps) {

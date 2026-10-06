@@ -689,7 +689,7 @@ const tools = [
   },
   {
     name: "check_coordination_obligations",
-    description: "Check whether text that mentions cross-thread dependency readiness has a dependency-handoff receipt from the origin thread.",
+    description: "Check whether text that implies a cross-thread dependency has a dependency-handoff receipt from the origin thread. The text is scored against a weighted phrase table (analysis.score vs analysis.threshold): strong phrases such as \"blocked on\" or \"register a callback with the owner thread\" count on their own; weak ones (\"when ready\", \"waiting for\", a thread id, \"another agent\") only in combination. Bare words like \"callback\" or \"handoff\" do not count. Satisfaction: only a receipt tagged dependency-handoff whose origin is the origin thread counts. If the text names thread ids (other than the origin's own), the receipt's target must be one of them. If it names none, the receipt must carry dependency:<slug of dependencyName>, or come from the same origin turn (originTurnId, defaulting to the caller's turn), or be created at or after since; with none of these supplied, nothing satisfies.",
     inputSchema: {
       type: "object",
       properties: {
@@ -710,6 +710,18 @@ const tools = [
         receiptLimit: {
           type: "number",
           description: "Maximum recent dependency-handoff receipts to inspect. Defaults to 20."
+        },
+        dependencyName: {
+          type: "string",
+          description: "When the text names no thread id: the dependencyName passed to register_dependency_handoff. A receipt tagged dependency:<slug> satisfies."
+        },
+        originTurnId: {
+          type: "string",
+          description: "When the text names no thread id: a receipt sent from this origin turn satisfies. Defaults to the caller's turn id from runtime context."
+        },
+        since: {
+          type: "string",
+          description: "When the text names no thread id: ISO-8601 timestamp; a receipt created at or after it satisfies."
         }
       },
       additionalProperties: false
