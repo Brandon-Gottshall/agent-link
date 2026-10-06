@@ -10835,7 +10835,7 @@ function without(paths, current) {
 // src/shared/state.js
 import fs from "node:fs";
 function pluginVersion() {
-  if (true) return "0.4.0";
+  if (true) return "0.5.0";
   try {
     const pkg = JSON.parse(fs.readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
     return typeof pkg.version === "string" ? pkg.version : null;
@@ -20077,7 +20077,7 @@ function detectHost({ env: env2 = process.env } = {}) {
 
 // src/server/config.js
 function serverVersion() {
-  if (true) return "0.4.0";
+  if (true) return "0.5.0";
   try {
     const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
     return typeof pkg.version === "string" ? pkg.version : "0.0.0-dev";
@@ -21539,7 +21539,7 @@ var DEFAULT_STARTUP_FAILURE_CACHE_MS = 60 * 1e3;
 var MAX_UNIX_SOCKET_PATH_BYTES = 100;
 var RECENT_NOTIFICATIONS = 20;
 var MAX_TRACKED_METHODS = 64;
-var AGENT_LINK_VERSION = true ? "0.4.0" : readPackageVersion();
+var AGENT_LINK_VERSION = true ? "0.5.0" : readPackageVersion();
 var SERVER_REQUEST_DECLINES = Object.freeze({
   "item/commandExecution/requestApproval": { decision: "decline" },
   "item/fileChange/requestApproval": { decision: "decline" },
