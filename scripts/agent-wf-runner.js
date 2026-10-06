@@ -153,8 +153,7 @@ async function connectMcp(root, options = {}) {
     cwd: root,
     env: {
       ...process.env,
-      CODEX_AGENT_LINK_AUTOSTART: options.live ? "1" : "0",
-      CODEX_AGENT_LINK_USE_DESKTOP_BRIDGE: process.env.CODEX_AGENT_LINK_USE_DESKTOP_BRIDGE ?? "0"
+      CODEX_AGENT_LINK_AUTOSTART: options.live ? "1" : "0"
     }
   });
   const mcpClient = new Client({ name: "codex-agent-link-agent-wf", version: "0.1.0" });

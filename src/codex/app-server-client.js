@@ -14,13 +14,6 @@ const DEFAULT_STARTUP_TIMEOUT_MS = 15000;
 // fresh one. Override with CODEX_AGENT_LINK_APP_SERVER_IDLE_MS (0 disables).
 const DEFAULT_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_KILL_GRACE_MS = 1500;
-const DEFAULT_DESKTOP_BRIDGE_ENDPOINT_FILE = path.join(
-  os.homedir(),
-  "Library",
-  "Application Support",
-  "CodexDesktopQuietRoutePatch",
-  "desktop-app-server.json"
-);
 
 export class AppServerError extends Error {
   constructor(message, details = {}) {
@@ -313,24 +306,6 @@ export class CodexAppServerClient {
     const explicitSocket = process.env.CODEX_AGENT_LINK_SOCK || process.env.CODEX_APP_SERVER_SOCK;
     if (explicitSocket) {
       return { kind: "socket", socketPath: explicitSocket, managed: false };
-    }
-
-    const explicitAppServerBin = process.env.CODEX_AGENT_LINK_APP_SERVER_BIN || process.env.CODEX_APP_SERVER_BIN;
-    const desktopBridge = explicitAppServerBin || process.env.CODEX_AGENT_LINK_USE_DESKTOP_BRIDGE === "0"
-      ? null
-      : await readHealthyDesktopBridgeEndpoint();
-    if (desktopBridge) {
-      return {
-        kind: "desktop-bridge",
-        url: desktopBridge.url,
-        managed: false,
-        endpointFile: desktopBridge.endpointFile,
-        appServerPid: desktopBridge.appServerPid ?? null,
-        bridgePid: desktopBridge.bridgePid ?? null,
-        parentPid: desktopBridge.parentPid ?? null,
-        parentCommand: desktopBridge.parentCommand ?? null,
-        createdAt: desktopBridge.createdAt ?? null
-      };
     }
 
     if (!this.options.autoStart) {
@@ -703,90 +678,6 @@ export function findAppServerLaunch() {
   };
 }
 
-async function readHealthyDesktopBridgeEndpoint() {
-  const endpointFile = process.env.CODEX_AGENT_LINK_DESKTOP_ENDPOINT_FILE || DEFAULT_DESKTOP_BRIDGE_ENDPOINT_FILE;
-  if (!existsSync(endpointFile)) {
-    return null;
-  }
-
-  let endpoint;
-  try {
-    endpoint = JSON.parse(readFileSync(endpointFile, "utf8"));
-  } catch {
-    return null;
-  }
-
-  if (!endpoint?.url || typeof endpoint.url !== "string") {
-    return null;
-  }
-  if (endpoint.appServerPid && !pidIsAlive(endpoint.appServerPid)) {
-    return null;
-  }
-  if (endpoint.bridgePid && !pidIsAlive(endpoint.bridgePid)) {
-    return null;
-  }
-  if (!isDesktopPublishedEndpoint(endpoint)) {
-    return null;
-  }
-
-  const readyUrl = endpoint.readyUrl || readyUrlFromWebSocketUrl(endpoint.url);
-  if (!readyUrl) {
-    return null;
-  }
-
-  try {
-    const status = await httpGetStatus(readyUrl);
-    if (status < 200 || status >= 300) {
-      return null;
-    }
-  } catch {
-    return null;
-  }
-
-  return { ...endpoint, endpointFile };
-}
-
-function isDesktopPublishedEndpoint(endpoint) {
-  if (endpoint.kind !== "codex-desktop-quiet-route-bridge") {
-    return false;
-  }
-  if (typeof endpoint.parentCommand === "string" && endpoint.parentCommand.length > 0) {
-    return isCodexDesktopCommand(endpoint.parentCommand);
-  }
-  if (!endpoint.bridgePid) {
-    return false;
-  }
-  const bridgeParentPid = parentPid(endpoint.bridgePid);
-  if (!bridgeParentPid) {
-    return false;
-  }
-  return isCodexDesktopCommand(processCommand(bridgeParentPid));
-}
-
-function isCodexDesktopCommand(command) {
-  return command.includes("/Applications/Codex.app/Contents/MacOS/Codex")
-    || command.includes("/Contents/MacOS/Codex");
-}
-
-function readyUrlFromWebSocketUrl(url) {
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol === "ws:") {
-      parsed.protocol = "http:";
-    } else if (parsed.protocol === "wss:") {
-      parsed.protocol = "https:";
-    } else {
-      return null;
-    }
-    parsed.pathname = "/readyz";
-    parsed.search = "";
-    parsed.hash = "";
-    return parsed.toString();
-  } catch {
-    return null;
-  }
-}
-
 function pidIsAlive(pid) {
   try {
     process.kill(pid, 0);
@@ -794,18 +685,6 @@ function pidIsAlive(pid) {
   } catch {
     return false;
   }
-}
-
-function parentPid(pid) {
-  const result = spawnSync("ps", ["-p", String(pid), "-o", "ppid="], {
-    encoding: "utf8",
-    timeout: 1000
-  });
-  if (result.status !== 0 || result.error) {
-    return null;
-  }
-  const parsed = Number(result.stdout.trim());
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function processCommand(pid) {

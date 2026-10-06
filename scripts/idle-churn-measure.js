@@ -39,7 +39,6 @@ export async function measure({
     CLAUDE_CODE_ENTRYPOINT: "claude-desktop",
     AGENT_LINK_MAILBOX_PATH: path.join(tmp, "mailbox.jsonl"),
     CODEX_AGENT_LINK_APP_SERVER_BIN: stub,
-    CODEX_AGENT_LINK_USE_DESKTOP_BRIDGE: "0",
     CODEX_AGENT_LINK_STATE_DIR: path.join(tmp, "state"),
     CODEX_HOME: path.join(tmp, "codex-home"),
     AGENT_LINK_STUB_SPAWN_LOG: spawnLog,

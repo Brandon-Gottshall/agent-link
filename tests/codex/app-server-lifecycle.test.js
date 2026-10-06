@@ -13,7 +13,6 @@ const spawnLog = path.join(tmp, "spawns.log");
 const stateDir = path.join(tmp, "state");
 process.env.CODEX_AGENT_LINK_APP_SERVER_BIN = stubAppServer;
 process.env.CODEX_AGENT_LINK_STATE_DIR = stateDir;
-process.env.CODEX_AGENT_LINK_USE_DESKTOP_BRIDGE = "0";
 process.env.AGENT_LINK_STUB_SPAWN_LOG = spawnLog;
 process.env.AGENT_LINK_STUB_GRANDCHILD = "1";
 delete process.env.CODEX_AGENT_LINK_URL;

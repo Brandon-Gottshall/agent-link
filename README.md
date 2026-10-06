@@ -219,7 +219,6 @@ Everything works with no configuration. These environment variables override def
 | `CODEX_AGENT_LINK_SOCK` or `CODEX_APP_SERVER_SOCK` | Use an existing app-server Unix socket. |
 | `CODEX_AGENT_LINK_AUTOSTART=0` | Never start a managed app-server. |
 | `CODEX_AGENT_LINK_CODEX_BIN` | Codex binary to use for the managed app-server. |
-| `CODEX_AGENT_LINK_USE_DESKTOP_BRIDGE=0` | Don't join the Codex Desktop app-server bridge. |
 | `CODEX_AGENT_LINK_RECEIPT_LOG` | Receipt log path. Default: `$CODEX_HOME/agent-link-receipts.jsonl`. |
 | `CODEX_AGENT_LINK_INFER_RECEIPT_ORIGIN=0` | Don't infer receipt origin from `CODEX_THREAD_ID` and `CODEX_TURN_ID`. |
 
@@ -240,11 +239,7 @@ What each tool does to real state, and what its results do and don't prove.
 - `launch_codex_thread` creates a real thread. If you pass `message`, it also starts a real turn.
 - It doesn't touch the Codex GUI by default. The result still includes the `codex://threads/<threadId>` deep link, so you can hand it to a person.
 - `openInGui: true` opens that deep link on macOS with `open -g`. No clicks, keystrokes, or window automation. Codex Desktop currently focuses its window when it handles a deep link, so leave this off when you need a fully quiet launch.
-- `antechamberHandoff.enabled: true` hands routing to [Antechamber](docs/native-desktop-route-host.md) instead. Agent Link then never opens or focuses Codex itself. Modes:
-  - `data_only` records the handoff only.
-  - `user_present_open` leaves it for the owner to open later.
-  - `native_quiet_route` asks Antechamber to route quietly now. The result reports `handoffOk` and `routeOk` separately. If the Desktop host can't route, the thread is kept and the route reports `validated_only` or `unsupported`.
-- `openInGui` and `antechamberHandoff` can't be combined.
+- To route through another tool, such as a GUI broker, pass it the returned deep link. Agent Link doesn't call other routing tools itself.
 
 ### Messaging and waiting
 
@@ -266,7 +261,7 @@ What each tool does to real state, and what its results do and don't prove.
 - `sidebarMembership` is `in_sidebar_model`, `background_only`, or `unknown`. It's trustworthy only when `sidebarState.authority` is `rendererSidebarModel`. Otherwise it's `unknown`.
 - Loaded subagent threads missing from the sidebar are listed under `subagentRegistry.loadedSubagents`, grouped by parent in `subagentRegistry.byParentThreadId`.
 - `get_codex_sidebar_state` reports what Codex Desktop returns, with no guessing. Unsupported hosts show up in `sidebarState.unsupported`.
-- Agent Link joins the Codex Desktop bridge (`desktop-app-server.json`) only when the endpoint is healthy and was published by Codex Desktop itself.
+- Sidebar state needs an app-server that supports `desktop/sidebar/state/read`. A plain `codex app-server` doesn't, so these fields report unsupported unless you point Agent Link at such a server with `CODEX_AGENT_LINK_URL`. Agent Link never discovers Desktop endpoints on its own.
 
 ### Archiving
 

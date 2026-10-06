@@ -22,7 +22,6 @@ async function chatStyleRun(closeAfterMs, label) {
       ...process.env,
       CODEX_AGENT_LINK_APP_SERVER_BIN: stubAppServer,
       CODEX_AGENT_LINK_STATE_DIR: path.join(tmp, `${label}-state`),
-      CODEX_AGENT_LINK_USE_DESKTOP_BRIDGE: "0",
       AGENT_LINK_STUB_SPAWN_LOG: spawnLog,
       AGENT_LINK_STUB_GRANDCHILD: "1",
       CODEX_AGENT_LINK_URL: "",

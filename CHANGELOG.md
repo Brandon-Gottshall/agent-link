@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0 - 2026-10-06 Remove Antechamber handoff and Desktop bridge discovery
+
+Breaking for callers that used these options.
+
+- Removed `launch_codex_thread`'s `antechamberHandoff` option. Agent Link no longer runs the Antechamber broker CLI. The result still includes the `codex://threads/<threadId>` deep link; pass it to Antechamber's own MCP tools, or any other router, when a GUI route is needed.
+- Removed automatic discovery of a Codex Desktop app-server bridge from `desktop-app-server.json`. Any local process could write that file and redirect Agent Link's Codex traffic. To use a Desktop app-server, set `CODEX_AGENT_LINK_URL` explicitly. `CODEX_AGENT_LINK_USE_DESKTOP_BRIDGE` and `CODEX_AGENT_LINK_DESKTOP_ENDPOINT_FILE` are no longer read.
+- Removed the native quiet-route helper (`scripts/codex-native-route.js`, previously the `codex-agent-link-route` bin), the installed Desktop route-host inspector, and their tests and docs. The quiet-route helper belongs with the tool that owns GUI routing.
+
 ## 0.2.7 - 2026-10-06 Clean public history
 
 - The repository was recreated with a single fresh commit. Earlier history contained developer-machine paths, real session and thread identifiers, and an author email; none of it was a credential.

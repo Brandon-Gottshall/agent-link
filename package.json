@@ -1,12 +1,9 @@
 {
   "name": "agent-link",
-  "version": "0.2.7",
+  "version": "0.3.0",
   "description": "Cross-host Agent Link MCP plugin for Codex threads and Claude sessions.",
   "private": true,
   "type": "module",
-  "bin": {
-    "codex-agent-link-route": "./scripts/codex-native-route.js"
-  },
   "scripts": {
     "check:approval-config": "node ./scripts/approval-config-check.js",
     "test:feedback": "node ./scripts/feedback-regression-test.js",
@@ -26,8 +23,6 @@
     "test:wait": "node ./tests/claude/wait.test.js",
     "test:cross-host-receipt": "node ./tests/shared/cross-host-receipt.test.js",
     "test:runtime-context": "node ./tests/shared/runtime-context.test.js",
-    "test:desktop-bridge-endpoint-auth": "node ./scripts/desktop-bridge-endpoint-auth-test.js",
-    "test:launch-thread-antechamber-conflict": "node ./scripts/launch-thread-antechamber-conflict-test.js",
     "test:project-orchestrator": "node ./scripts/project-orchestrator-regression-test.js",
     "test:dependency-handoff": "node ./scripts/dependency-handoff-regression-test.js",
     "wf:agent-link": "node ./scripts/agent-wf-runner.js --suite ./wf/agent-link/suite.json",
@@ -37,14 +32,6 @@
     "smoke:sidebar-state": "node ./scripts/sidebar-state-smoke-test.js",
     "smoke:app-server": "CODEX_AGENT_LINK_AUTOSTART=1 node ./scripts/app-server-smoke-test.js",
     "smoke:launch-thread": "CODEX_AGENT_LINK_AUTOSTART=1 node ./scripts/launch-thread-smoke-test.js",
-    "smoke:launch-thread-antechamber": "CODEX_AGENT_LINK_AUTOSTART=1 node ./scripts/launch-thread-antechamber-handoff-test.js",
-    "smoke:launch-thread-antechamber-native-route": "CODEX_AGENT_LINK_AUTOSTART=1 node ./scripts/launch-thread-antechamber-native-route-test.js",
-    "smoke:launch-thread-antechamber-native-route-live": "CODEX_AGENT_LINK_AUTOSTART=1 node ./scripts/launch-thread-antechamber-native-route-live-test.js",
-    "smoke:launch-thread-antechamber-native-route-host": "CODEX_AGENT_LINK_AUTOSTART=1 node ./scripts/launch-thread-antechamber-native-route-host-test.js",
-    "smoke:launch-thread-antechamber-native-route-no-host": "CODEX_AGENT_LINK_AUTOSTART=1 node ./scripts/launch-thread-antechamber-native-route-no-host-test.js",
-    "smoke:app-server-native-route-contract": "CODEX_AGENT_LINK_AUTOSTART=1 node ./scripts/app-server-native-route-contract-test.js",
-    "smoke:app-server-native-route-host": "CODEX_AGENT_LINK_AUTOSTART=1 node ./scripts/app-server-native-route-host-success-test.js",
-    "inspect:installed-desktop-route-host": "node ./scripts/inspect-installed-codex-desktop-route-host.js",
     "smoke:launch-thread-persistence": "CODEX_AGENT_LINK_AUTOSTART=1 node ./scripts/launch-thread-persistence-test.js",
     "smoke:launch-thread-gui": "CODEX_AGENT_LINK_AUTOSTART=1 CODEX_AGENT_LINK_SMOKE_OPEN_GUI=1 CODEX_AGENT_LINK_SMOKE_GUI_DRY_RUN=1 node ./scripts/launch-thread-smoke-test.js"
   },

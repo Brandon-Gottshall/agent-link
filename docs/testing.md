@@ -23,21 +23,15 @@ Run these from a clone after `npm ci`. Protocol smoke tests are necessary but no
 | `npm run smoke:launch-thread` | `launch_codex_thread` creates an ephemeral thread without touching the GUI and returns the deep link as data. |
 | `npm run smoke:launch-thread-persistence` | A blank non-ephemeral thread is named, persisted, and readable from a fresh app-server. |
 | `npm run smoke:launch-thread-gui` | The GUI path builds the `codex://threads/<threadId>` link in dry-run mode. |
-| `npm run test:launch-thread-antechamber-conflict` | `openInGui` and an Antechamber handoff cannot be combined. |
-| `npm run test:desktop-bridge-endpoint-auth` | Forged or stale `desktop-app-server.json` endpoint files are rejected. |
 | `npm run check:approval-config` | Codex approval settings let the model call every tool. Scripted calls can pass while model-selected calls are still blocked. Set `CODEX_AGENT_LINK_PLUGIN_ID` if you installed from a different marketplace. |
 
 These need extra setup or touch live apps:
 
 | Command | Notes |
 | --- | --- |
-| `CODEX_AGENT_LINK_ANTECHAMBER_CLI=/path/to/agent-browser-broker npm run smoke:launch-thread-antechamber` | Creates a durable thread and a pending Antechamber handoff without opening the GUI. |
-| `npm run smoke:launch-thread-antechamber-native-route` | Delegates native-route authority to Antechamber and reports its result. |
-| `CODEX_AGENT_LINK_APP_SERVER_BIN=/path/to/codex-app-server npm run smoke:launch-thread-antechamber-native-route-no-host` | Without a Desktop host, the thread survives and the route reports `validated_only`. |
-| `npm run inspect:installed-desktop-route-host -- --route-thread-id <thread-id> --json` | Live quiet route and readback against the installed Codex Desktop. See [native-desktop-route-host.md](native-desktop-route-host.md). |
 | `CODEX_AGENT_LINK_SMOKE_OPEN_GUI=1 npm run smoke:launch-thread` | Real macOS deep-link route. May focus Codex Desktop. |
 | `CODEX_AGENT_LINK_WF_LIVE=1 npm run wf:agent-link:live` | Launches disposable Codex threads against this checkout, checks tool choice from transcripts and receipts, writes reports under `wf-runs/`, then archives the threads. |
-| `CODEX_AGENT_LINK_WF_LIVE=1 npm run wf:agent-link:installed-live` | Same live suite against the installed plugin cache. |
+| `CODEX_AGENT_LINK_WF_LIVE=1 AGENT_LINK_INSTALLED_PLUGIN_ROOT=<path> npm run wf:agent-link:installed-live` | Same live suite against an installed plugin cache directory. |
 
 ## Claude
 

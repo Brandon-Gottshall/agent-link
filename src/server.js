@@ -64,7 +64,6 @@ import {
 } from "./codex/thread-utils.js";
 
 const HOST_INFO = detectHost();
-const pluginRoot = process.cwd();
 
 const claudeHandlers = HOST_INFO.host === "claude" ? makeClaudeListingHandlers() : null;
 const claudeToolDefs = HOST_INFO.host === "claude" ? claudeListingTools : [];
@@ -340,34 +339,6 @@ const tools = [
         openInGui: {
           type: "boolean",
           description: "Route Codex Desktop to the created thread via codex://threads/<id>. Defaults to false to avoid stealing focus or changing the active GUI thread."
-        },
-        antechamberHandoff: {
-          type: "object",
-          description: "Optional Antechamber native-app route handoff. When enabled, Agent Link writes an auditable handoff envelope for the created Codex thread without opening, focusing, or routing Codex Desktop.",
-          properties: {
-            enabled: {
-              type: "boolean",
-              description: "When true, write an Antechamber native-app route handoff after creating the thread."
-            },
-            mode: {
-              type: "string",
-              enum: ["data_only", "user_present_open", "native_quiet_route"],
-              description: "data_only records focus_policy=never. user_present_open records focus_policy=user_present for a later explicit owner-facing open action. native_quiet_route asks Antechamber to attempt a verified quiet route after creating the handoff."
-            },
-            transportRoot: {
-              type: "string",
-              description: "Optional Antechamber approval transport root. Defaults to ANTECHAMBER_APPROVAL_TRANSPORT_ROOT, then Antechamber's macOS Application Support transport root."
-            },
-            routeHelper: {
-              type: "string",
-              description: "Optional Antechamber route helper executable used only by native_quiet_route mode. Defaults to Agent Link's configured helper."
-            },
-            expiresInSeconds: {
-              type: "number",
-              description: "Optional handoff expiry in seconds. Antechamber clamps this to its supported range."
-            }
-          },
-          additionalProperties: false
         },
         receipt: receiptInputSchema
       },
@@ -1591,11 +1562,6 @@ async function withOptionalReceipts(payload, args, threadId) {
 }
 
 async function launchThread(args, toolContext = {}) {
-  const handoffOptions = normalizeAntechamberHandoff(args.antechamberHandoff);
-  if (args.openInGui === true && handoffOptions.enabled) {
-    throw new Error("launch_codex_thread cannot combine openInGui:true with antechamberHandoff.enabled:true; choose direct GUI routing or a brokered Antechamber handoff.");
-  }
-
   const startParams = {};
   copyOptionalString(args, startParams, "cwd");
   copyOptionalString(args, startParams, "model");
@@ -1648,15 +1614,6 @@ async function launchThread(args, toolContext = {}) {
         focusPolicy: "No keyboard, mouse, menu, window automation, or LaunchServices route was used."
       };
   const deepLink = codexThreadDeepLink(threadId);
-  const antechamberHandoff = handoffOptions.enabled
-    ? await createAntechamberHandoff({ threadId, deepLink, options: handoffOptions })
-    : {
-        attempted: false,
-        ok: false,
-        threadId,
-        routeUrl: deepLink,
-        reason: "antechamberHandoff.enabled was not true."
-      };
 
   const appServerSummary = appServer.getConnectionSummary();
   const action = message
@@ -1674,7 +1631,6 @@ async function launchThread(args, toolContext = {}) {
     turn,
     warnings: launchWarnings(args),
     gui,
-    antechamberHandoff,
     appServer: appServerSummary
   };
   result.receipt = await recordActionReceipt({
@@ -2153,298 +2109,6 @@ async function waitForThreadRead(args) {
     thread: latest.thread,
     waitState
   };
-}
-
-function normalizeAntechamberHandoff(input) {
-  if (!input || typeof input !== "object" || input.enabled !== true) {
-    return { enabled: false };
-  }
-
-  const mode = optionalString(input.mode).trim() || "data_only";
-  if (mode !== "data_only" && mode !== "user_present_open" && mode !== "native_quiet_route") {
-    throw new Error("antechamberHandoff.mode must be data_only, user_present_open, or native_quiet_route.");
-  }
-
-  let expiresInSeconds = null;
-  if (input.expiresInSeconds !== undefined) {
-    const parsed = Number(input.expiresInSeconds);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      throw new Error("antechamberHandoff.expiresInSeconds must be a positive number when supplied.");
-    }
-    expiresInSeconds = Math.floor(parsed);
-  }
-
-  return {
-    enabled: true,
-    mode,
-    transportRoot: optionalString(input.transportRoot).trim(),
-    routeHelper: optionalString(input.routeHelper).trim(),
-    expiresInSeconds
-  };
-}
-
-async function createAntechamberHandoff({ threadId, deepLink, options }) {
-  const focusPolicy = options.mode === "user_present_open" ? "user_present" : "never";
-  const transportRoot = options.transportRoot
-    || optionalString(process.env.ANTECHAMBER_APPROVAL_TRANSPORT_ROOT).trim()
-    || defaultAntechamberTransportRoot();
-  const command = findAntechamberBrokerCommand();
-  const base = {
-    attempted: true,
-    ok: false,
-    threadId,
-    routeUrl: deepLink,
-    surface: "codex_desktop",
-    action: "route_thread",
-    authority: "handoff_only",
-    focusPolicy,
-    requester: "codex-agent-link",
-    opensTargetApp: false
-  };
-
-  if (!transportRoot) {
-    return {
-      ...base,
-      error: "Could not resolve an Antechamber transport root. Set ANTECHAMBER_APPROVAL_TRANSPORT_ROOT or antechamberHandoff.transportRoot."
-    };
-  }
-
-  const args = [
-    "write-native-app-route-handoff",
-    transportRoot,
-    "--surface",
-    "codex_desktop",
-    "--thread-id",
-    threadId,
-    "--route-url",
-    deepLink,
-    "--focus-policy",
-    focusPolicy,
-    "--requester",
-    "codex-agent-link"
-  ];
-  if (options.expiresInSeconds !== null) {
-    args.push("--expires-in-seconds", String(options.expiresInSeconds));
-  }
-
-  const commandDisplay = `${command} ${args.map(shellQuoteForDisplay).join(" ")}`;
-  try {
-    const result = await runCommand(command, args);
-    const output = parseKeyValueOutput(result.stdout);
-    if (!result.ok) {
-      return {
-        ...base,
-        command: commandDisplay,
-        exitCode: result.exitCode,
-        signal: result.signal,
-        stdout: result.stdout,
-        stderr: result.stderr,
-        error: result.error ?? `Antechamber handoff command exited with code ${result.exitCode ?? "unknown"}.`
-      };
-    }
-
-    const handoff = {
-      ...base,
-      ok: true,
-      handoffOk: true,
-      routeAttempted: false,
-      routeOk: null,
-      command: commandDisplay,
-      requestId: output.request_id ?? null,
-      auditCorrelationId: output.audit_correlation_id ?? null,
-      approvalClass: output.approval_class ?? null,
-      expiresAt: output.expires_at ?? null,
-      transportRoot: output.transport_root ?? transportRoot,
-      handoffPath: output.handoff_path ?? null,
-      approvalRequestPath: output.request_path ?? null,
-      stdout: result.stdout
-    };
-
-    if (options.mode !== "native_quiet_route") {
-      return handoff;
-    }
-
-    const routeResult = await requestAntechamberNativeQuietRoute({
-      command,
-      transportRoot,
-      requestId: handoff.requestId,
-      routeHelper: options.routeHelper || defaultNativeRouteHelperPath()
-    });
-    return {
-      ...handoff,
-      authority: routeResult.authority ?? "validated_only",
-      routeAttempted: routeResult.attempted === true,
-      routeOk: routeResult.ok === true,
-      routeResult
-    };
-  } catch (error) {
-    return {
-      ...base,
-      command: commandDisplay,
-      error: error.message
-    };
-  }
-}
-
-function defaultNativeRouteHelperPath() {
-  return path.join(pluginRoot, "scripts", "codex-native-route.js");
-}
-
-function findAntechamberBrokerCommand() {
-  const configured = optionalString(process.env.CODEX_AGENT_LINK_ANTECHAMBER_CLI).trim();
-  if (configured) {
-    return configured;
-  }
-
-  const candidates = [
-    "/opt/homebrew/bin/agent-browser-broker",
-    "/usr/local/bin/agent-browser-broker"
-  ];
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-  }
-  return "agent-browser-broker";
-}
-
-async function requestAntechamberNativeQuietRoute({ command, transportRoot, requestId, routeHelper }) {
-  const base = {
-    attempted: true,
-    ok: false,
-    authority: "validated_only",
-    opensTargetApp: false,
-    requestId: requestId ?? null
-  };
-  if (!requestId) {
-    return {
-      ...base,
-      error: "Antechamber did not return a request id for the handoff, so native quiet route was not attempted."
-    };
-  }
-
-  const args = [
-    "route-native-app-quietly",
-    transportRoot,
-    "--request-id",
-    requestId
-  ];
-  if (routeHelper) {
-    args.push("--route-helper", routeHelper);
-  }
-
-  const commandDisplay = `${command} ${args.map(shellQuoteForDisplay).join(" ")}`;
-  try {
-    const result = await runCommand(command, args);
-    const output = parseKeyValueOutput(result.stdout);
-    const ok = output.ok === "true";
-    const authority = output.authority || (ok ? "native_quiet_route" : "validated_only");
-    return {
-      ...base,
-      ok,
-      authority,
-      command: commandDisplay,
-      requestId: output.request_id ?? requestId,
-      auditCorrelationId: output.audit_correlation_id ?? null,
-      threadId: output.thread_id ?? null,
-      routeAuthority: output.route_authority ?? null,
-      selectedThreadId: output.selected_thread_id && output.selected_thread_id !== "null" ? output.selected_thread_id : null,
-      focused: parseOptionalBool(output.focused),
-      routed: output.routed === "true",
-      reason: output.reason && output.reason !== "none" ? output.reason : null,
-      transportRoot: output.transport_root ?? transportRoot,
-      handoffPath: output.handoff_path ?? null,
-      auditPath: output.audit_path ?? null,
-      exitCode: result.exitCode,
-      signal: result.signal,
-      stdout: result.stdout,
-      stderr: result.stderr,
-      error: result.ok ? null : (result.error ?? `Antechamber native quiet route command exited with code ${result.exitCode ?? "unknown"}.`)
-    };
-  } catch (error) {
-    return {
-      ...base,
-      command: commandDisplay,
-      error: error.message
-    };
-  }
-}
-
-function defaultAntechamberTransportRoot() {
-  if (process.platform !== "darwin") {
-    return "";
-  }
-  const home = optionalString(process.env.HOME).trim() || homedir();
-  if (!home) {
-    return "";
-  }
-  return path.join(home, "Library", "Application Support", "Antechamber", "approval-transport");
-}
-
-async function runCommand(command, args) {
-  return await new Promise((resolve) => {
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-    const settle = (value) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      resolve(value);
-    };
-
-    const child = spawn(command, args, {
-      stdio: ["ignore", "pipe", "pipe"]
-    });
-
-    child.stdout?.on("data", (chunk) => {
-      stdout += chunk.toString("utf8");
-    });
-    child.stderr?.on("data", (chunk) => {
-      stderr += chunk.toString("utf8");
-    });
-    child.on("error", (error) => {
-      settle({
-        ok: false,
-        error: error.message,
-        stdout,
-        stderr
-      });
-    });
-    child.on("exit", (code, signal) => {
-      settle({
-        ok: code === 0,
-        exitCode: code,
-        signal,
-        stdout,
-        stderr
-      });
-    });
-  });
-}
-
-function parseKeyValueOutput(text) {
-  const result = {};
-  for (const line of String(text ?? "").split(/\r?\n/)) {
-    const separator = line.indexOf("=");
-    if (separator <= 0) {
-      continue;
-    }
-    const key = line.slice(0, separator).trim();
-    const value = line.slice(separator + 1).trim();
-    if (key) {
-      result[key] = value;
-    }
-  }
-  return result;
-}
-
-function parseOptionalBool(value) {
-  if (value === undefined || value === null || value === "" || value === "null") {
-    return null;
-  }
-  return value === "true";
 }
 
 async function openCodexDesktopThread({ threadId, ephemeral }) {
