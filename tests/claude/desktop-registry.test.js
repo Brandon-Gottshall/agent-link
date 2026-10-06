@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseSidecar, listSidecars, enrichLoaded, findSidecar } from "../../src/claude/desktop-registry.js";
+import { parseSidecar } from "../../src/claude/desktop-registry.js";
 
 const FIXTURE_DIR = path.dirname(fileURLToPath(import.meta.url)) + "/../fixtures/claude-sidecars";
 
-// parseSidecar picks the documented fields and ignores the rest
+// parseSidecar picks the documented fields and ignores the rest (older
+// local-agent-mode sidecar shape, which still carries processName).
 {
   const fp = FIXTURE_DIR + "/local_4acb50b2-5a15-49d1-a68e-afa1c409030d.json";
   const sess = parseSidecar(fp);
@@ -15,66 +18,43 @@ const FIXTURE_DIR = path.dirname(fileURLToPath(import.meta.url)) + "/../fixtures
   assert.equal(sess.isArchived, true);
   assert.ok(Array.isArray(sess.userSelectedFolders));
   assert.equal(sess.sourceSidecar, fp);
+  assert.equal(sess.processName, "blissful-wonderful-goldberg");
 }
 
-// listSidecars enumerates an account directory
+// P4-01: a current Claude Code sidecar has no processName. It must parse,
+// keeping its title, archive state and prior CLI ids.
 {
-  const sessions = listSidecars({ rootDir: FIXTURE_DIR });
-  assert.ok(sessions.length >= 1);
-  assert.ok(sessions.every(s => s.sessionId.startsWith("local_")));
+  const fp = FIXTURE_DIR + "/code-2026-10/local_0b5e7c1a-3f2d-4a6e-9c8b-1d2e3f4a5b6c.json";
+  const raw = JSON.parse(fs.readFileSync(fp, "utf8"));
+  assert.equal(raw.processName, undefined, "fixture mirrors real sidecars: no processName");
+  const sess = parseSidecar(fp);
+  assert.equal(sess.sessionId, "local_0b5e7c1a-3f2d-4a6e-9c8b-1d2e3f4a5b6c");
+  assert.equal(sess.cliSessionId, "7f3c2b1a-0e9d-4c8b-a7f6-5e4d3c2b1a09");
+  assert.equal(sess.title, "Sample real-shaped Code session");
+  assert.equal(sess.isArchived, true);
+  assert.deepEqual(sess.priorCliSessionIds, ["11111111-2222-4333-8444-555555555555"]);
+  assert.equal(sess.processName, undefined);
+  assert.equal(sess.permissionMode, undefined, "unlisted fields are not copied");
 }
 
-// Synthetic ps output where one session is loaded
+// Sidecars written before the CLI starts have no cliSessionId, and untitled
+// sessions have no title. Both still parse; title is null, not missing.
 {
-  const sessions = [
-    { sessionId: "local_a", cliSessionId: "uuid-a" },
-    { sessionId: "local_b", cliSessionId: "uuid-b" }
-  ];
-  const fakePs = "claude --resume uuid-a --whatever\nfoo --bar\n";
-  const enriched = enrichLoaded(sessions, { psOutput: fakePs });
-  assert.equal(enriched.find(s => s.sessionId === "local_a").loaded, true);
-  assert.equal(enriched.find(s => s.sessionId === "local_b").loaded, false);
-}
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "agent-link-registry-"));
+  const fp = path.join(tmp, "local_fresh.json");
+  fs.writeFileSync(fp, JSON.stringify({ sessionId: "local_fresh", cwd: "/tmp/x", model: "opus", isArchived: false }));
+  const sess = parseSidecar(fp);
+  assert.equal(sess.sessionId, "local_fresh");
+  assert.equal(sess.cliSessionId, undefined);
+  assert.equal(sess.title, null);
 
-// Tighter matcher: substrings in unrelated commands must NOT count as loaded.
-// `tail` line lacks --resume; `grep` line has `claude` as an arg, not the program.
-{
-  const sessions = [
-    { sessionId: "local_a", cliSessionId: "uuid-a" },
-    { sessionId: "local_b", cliSessionId: "uuid-b" }
-  ];
-  const fakePs = "tail -f ~/.claude/log\ngrep claude --resume uuid-a /var/tmp/notes\n";
-  const enriched = enrichLoaded(sessions, { psOutput: fakePs });
-  assert.equal(enriched.find(s => s.sessionId === "local_a").loaded, false);
-  assert.equal(enriched.find(s => s.sessionId === "local_b").loaded, false);
-}
-
-// findSidecar returns the first matching session and short-circuits.
-{
-  const found = findSidecar(s => s.sessionId === "local_4acb50b2-5a15-49d1-a68e-afa1c409030d", { rootDir: FIXTURE_DIR });
-  assert.ok(found);
-  assert.equal(found.sessionId, "local_4acb50b2-5a15-49d1-a68e-afa1c409030d");
-  assert.equal(found.cliSessionId, "36a85a98-8e81-409b-8c1c-07cdaf004d57");
-}
-
-// findSidecar returns null when no sidecar matches.
-{
-  const found = findSidecar(s => s.sessionId === "local_does_not_exist", { rootDir: FIXTURE_DIR });
-  assert.equal(found, null);
-}
-
-// findSidecar's predicate is called only until a match is found. We can't
-// directly observe the short-circuit in a one-fixture test, but we can lock
-// in the contract: the function returns as soon as the predicate matches,
-// and never aggregates beyond the match.
-{
-  let callCount = 0;
-  const found = findSidecar(s => {
-    callCount += 1;
-    return true; // first sidecar matches
-  }, { rootDir: FIXTURE_DIR });
-  assert.ok(found);
-  assert.equal(callCount, 1, "findSidecar must short-circuit at first match");
+  // Only sessionId is required, and it must be a non-empty string.
+  const bad = path.join(tmp, "local_bad.json");
+  fs.writeFileSync(bad, JSON.stringify({ cwd: "/tmp/x" }));
+  assert.throws(() => parseSidecar(bad), /missing required field sessionId/);
+  fs.writeFileSync(bad, JSON.stringify(["not", "an", "object"]));
+  assert.throws(() => parseSidecar(bad), /not a JSON object/);
+  fs.rmSync(tmp, { recursive: true, force: true });
 }
 
 console.log("desktop-registry tests passed");

@@ -8,6 +8,8 @@
 // By default the tool drains pending messages (marks them delivered) in the
 // same transaction. Set markAsDelivered:false to inspect without draining.
 import { openMailbox } from "../claude/mailbox.js";
+import { claudeSessionAliases, displaySenderId } from "../claude/identity.js";
+import { escapeAttr, escapeXml } from "../claude/xml.js";
 
 export const readInboxTool = {
   name: "read_agent_link_inbox",
@@ -58,17 +60,27 @@ export function makeReadInboxHandler({ resolveCurrentSession, mailboxOpener } = 
         ? Math.floor(args.limit)
         : null;
 
+      // Mail may be addressed to any id form of this session (sidecar id,
+      // CLI id, local_<cli>); see claudeSessionAliases().
+      const toSessionIds = claudeSessionAliases(session);
       const mb = openMb();
       try {
-        const messages = markAsDelivered
-          ? mb.drainFor({ toSessionId: session.sessionId })
-          : mb.listPendingFor({ toSessionId: session.sessionId });
-        const sliced = limit !== null ? messages.slice(0, limit) : messages;
+        // Slice before marking: with `limit`, only the returned messages are
+        // marked delivered and the rest stay pending.
+        const rows = markAsDelivered
+          ? mb.drainFor({ toSessionIds, limit: limit ?? undefined })
+          : mb.listPendingFor({ toSessionIds }).slice(0, limit ?? undefined);
+        // Sender ids are untrusted; never hand an invalid one to the model.
+        const messages = rows.map((m) => ({
+          ...m,
+          from_session_id: displaySenderId(m.from_session_id),
+          from_session_kind: displaySenderId(m.from_session_kind)
+        }));
         return {
           sessionId: session.sessionId,
           markedDelivered: markAsDelivered,
-          messages: sliced,
-          renderedBlock: renderInbox(sliced)
+          messages,
+          renderedBlock: renderInbox(messages)
         };
       } finally {
         mb.close();
@@ -83,10 +95,10 @@ function renderInbox(messages) {
   }
   const lines = [`<agent-link-inbox count="${messages.length}">`];
   for (const m of messages) {
-    const replyAttr = m.reply_to_message_id ? ` replyTo="${m.reply_to_message_id}"` : "";
-    const sentAt = new Date(m.sent_at).toISOString();
+    const replyAttr = m.reply_to_message_id ? ` replyTo="${escapeAttr(m.reply_to_message_id)}"` : "";
+    const sentAt = Number.isFinite(m.sent_at) ? new Date(m.sent_at).toISOString() : "";
     lines.push(
-      `  <message id="${m.id}" from="${m.from_session_id}" fromKind="${m.from_session_kind}" sentAt="${sentAt}"${replyAttr}>`
+      `  <message id="${escapeAttr(m.id)}" from="${escapeAttr(displaySenderId(m.from_session_id))}" fromKind="${escapeAttr(displaySenderId(m.from_session_kind))}" sentAt="${escapeAttr(sentAt)}"${replyAttr}>`
     );
     lines.push(`    <body>${escapeXml(m.body)}</body>`);
     lines.push(`  </message>`);
@@ -95,6 +107,3 @@ function renderInbox(messages) {
   return lines.join("\n");
 }
 
-function escapeXml(s) {
-  return String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-}

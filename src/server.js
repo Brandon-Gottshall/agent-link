@@ -26,7 +26,7 @@ import { readInboxTool, makeReadInboxHandler } from "./tools/read-inbox.js";
 import { replyAgentLinkMessageTool, makeReplyAgentLinkMessageHandler } from "./tools/claude-reply.js";
 import { makeAgentLinkChannelBridge } from "./claude/channel-bridge.js";
 import { listClaudeSessions, resolveCurrentClaudeSession } from "./claude/session-index.js";
-import { openMailbox, resolveMailboxPath } from "./claude/mailbox.js";
+import { mailboxStatus } from "./claude/mailbox.js";
 import {
   buildReceipt,
   listReceipts,
@@ -67,17 +67,50 @@ const HOST_INFO = detectHost();
 const claudeHandlers = HOST_INFO.host === "claude" ? makeClaudeListingHandlers() : null;
 const claudeToolDefs = HOST_INFO.host === "claude" ? claudeListingTools : [];
 
-const mailboxInspectHandlers = makeMailboxInspectHandler();
-const messageClaudeSessionHandlers = makeClaudeSendHandler({ host: HOST_INFO.host });
-const waitClaudeSessionHandlers = makeWaitHandler();
+// The current Claude session never changes for the life of this server.
+// Resolve it with the fast lookup (sidecar or transcript by id, no `ps`, no
+// full listing) and memoize. A transcript-only result is re-checked at most
+// every 30 s, in case the Desktop sidecar (which owns the canonical id)
+// appears after startup; a miss is retried at most every 5 s.
+const CURRENT_SESSION_RECHECK_MS = 30_000;
+const CURRENT_SESSION_MISS_RETRY_MS = 5_000;
+let currentClaudeSessionMemo = null;
 function currentClaudeSession() {
   if (HOST_INFO.host !== "claude") return null;
-  return resolveCurrentClaudeSession({ sessionId: currentClaudeSessionId() });
+  const now = Date.now();
+  const memo = currentClaudeSessionMemo;
+  if (memo) {
+    const ttl = !memo.session
+      ? CURRENT_SESSION_MISS_RETRY_MS
+      : memo.session.source === "transcript" ? CURRENT_SESSION_RECHECK_MS : Infinity;
+    if (now - memo.at < ttl) return memo.session;
+  }
+  let session = null;
+  try {
+    session = resolveCurrentClaudeSession({ sessionId: currentClaudeSessionId() });
+  } catch {
+    session = null;
+  }
+  currentClaudeSessionMemo = { session: session ?? memo?.session ?? null, at: now };
+  return currentClaudeSessionMemo.session;
 }
+const mailboxInspectHandlers = makeMailboxInspectHandler({
+  host: HOST_INFO.host,
+  resolveCurrentSession: currentClaudeSession
+});
+const messageClaudeSessionHandlers = makeClaudeSendHandler({
+  host: HOST_INFO.host,
+  resolveCurrentSession: currentClaudeSession
+});
+const waitClaudeSessionHandlers = makeWaitHandler({
+  host: HOST_INFO.host,
+  resolveCurrentSession: currentClaudeSession
+});
 const readInboxHandlers = makeReadInboxHandler({
   resolveCurrentSession: currentClaudeSession
 });
 const replyAgentLinkMessageHandlers = makeReplyAgentLinkMessageHandler({
+  host: HOST_INFO.host,
   resolveCurrentSession: currentClaudeSession
 });
 
@@ -394,7 +427,8 @@ const tools = [
             "launch_thread",
             "message_thread",
             "archive_thread",
-            "message_claude_session"
+            "message_claude_session",
+            "reply_message"
           ],
           description: "Only return receipts for this action."
         },
@@ -884,7 +918,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       return jsonResult(await claudeHandlers[name](args));
     }
     if (Object.prototype.hasOwnProperty.call(mailboxInspectHandlers, name)) {
-      return jsonResult(await mailboxInspectHandlers[name](args));
+      return jsonResult(await mailboxInspectHandlers[name](args, {
+        runtimeCallerContext: toolContext.callerContext
+      }));
     }
     if (Object.prototype.hasOwnProperty.call(messageClaudeSessionHandlers, name)) {
       return jsonResult(await messageClaudeSessionHandlers[name](args, {
@@ -892,13 +928,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       }));
     }
     if (Object.prototype.hasOwnProperty.call(waitClaudeSessionHandlers, name)) {
-      return jsonResult(await waitClaudeSessionHandlers[name](args));
+      return jsonResult(await waitClaudeSessionHandlers[name](args, {
+        runtimeCallerContext: toolContext.callerContext
+      }));
     }
     if (Object.prototype.hasOwnProperty.call(readInboxHandlers, name)) {
       return jsonResult(await readInboxHandlers[name](args));
     }
     if (Object.prototype.hasOwnProperty.call(replyAgentLinkMessageHandlers, name)) {
-      return jsonResult(await replyAgentLinkMessageHandlers[name](args));
+      return jsonResult(await replyAgentLinkMessageHandlers[name](args, {
+        runtimeCallerContext: toolContext.callerContext
+      }));
     }
     switch (name) {
       case "agent_link_health":
@@ -1017,20 +1057,15 @@ function claudeHealthSummary() {
   } catch {
     sessions = [];
   }
-  let pendingMessagesCount = null;
-  let mailboxWritable = false;
+  // Read-only: a health check must not create ~/.claude/agent-link.
+  let status = { path: null, writable: false, pendingMessagesCount: null };
   try {
-    const mb = openMailbox();
-    try {
-      pendingMessagesCount = mb.inspect({ undelivered: true, limit: 10000 }).length;
-      mailboxWritable = true;
-    } finally {
-      mb.close();
-    }
+    status = mailboxStatus();
   } catch {
-    mailboxWritable = false;
+    // keep defaults
   }
 
+  const current = currentClaudeSession();
   return {
     sessionIndex: {
       total: sessions.length,
@@ -1039,17 +1074,17 @@ function claudeHealthSummary() {
       loaded: sessions.filter((s) => s.loaded).length
     },
     mailbox: {
-      path: resolveMailboxPath(),
-      writable: mailboxWritable,
-      pendingMessagesCount
+      path: status.path,
+      writable: status.writable,
+      pendingMessagesCount: status.pendingMessagesCount
     },
     channel: {
       enabled: HOST_INFO.host === "claude" && process.env.AGENT_LINK_DISABLE_CHANNEL !== "1",
-      currentSession: currentClaudeSession()
+      currentSession: current
         ? {
-            sessionId: currentClaudeSession().sessionId,
-            surface: currentClaudeSession().surface,
-            supportsChannel: currentClaudeSession().supportsChannel
+            sessionId: current.sessionId,
+            surface: current.surface,
+            supportsChannel: current.supportsChannel
           }
         : null
     }

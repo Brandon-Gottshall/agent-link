@@ -1,0 +1,30 @@
+{
+  "sessionId": "local_0b5e7c1a-3f2d-4a6e-9c8b-1d2e3f4a5b6c",
+  "cliSessionId": "7f3c2b1a-0e9d-4c8b-a7f6-5e4d3c2b1a09",
+  "priorCliSessionIds": [
+    "11111111-2222-4333-8444-555555555555"
+  ],
+  "cwd": "/Users/example/work/sample-project",
+  "originCwd": "/Users/example/work/sample-project",
+  "createdAt": 1790000000000,
+  "lastActivityAt": 1790000600000,
+  "lastFocusedAt": 1790000500000,
+  "model": "claude-opus-4-6",
+  "effort": "high",
+  "isArchived": true,
+  "permissionMode": "default",
+  "chromePermissionMode": "ask",
+  "title": "Sample real-shaped Code session",
+  "titleSource": "auto",
+  "completedTurns": 4,
+  "classifierSummaryEnabled": false,
+  "alwaysAllowedReasons": [],
+  "sessionPermissionUpdates": [],
+  "remoteMcpServersConfig": [],
+  "enabledMcpTools": {
+    "plugin:sample:tool": true
+  },
+  "spawnSeed": {
+    "kind": "user"
+  }
+}

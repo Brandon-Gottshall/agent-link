@@ -237,7 +237,9 @@ function withCleanEnv(fn) {
     const mb = openMailbox({ dbPath: sb.dbPath });
     const rows = mb.inspect({ toSessionId: "local_target_claude" });
     mb.close();
-    assert.equal(rows[0].from_session_id, "uuid-claude-caller-env");
+    // P4-04: the env carries the raw CLI id; the mailbox records the
+    // canonical `local_<cli>` form so replies reach the sender's inbox.
+    assert.equal(rows[0].from_session_id, "local_uuid-claude-caller-env");
     assert.equal(rows[0].from_session_kind, "claude");
   });
 

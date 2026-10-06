@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { openMailbox, resolveMailboxPath } from "./mailbox.js";
+import { claudeSessionAliases, displaySenderId } from "./identity.js";
+import { escapeAttr, escapeXml } from "./xml.js";
 
 // Poll cadence: start at 1s, double on every tick that finds nothing to
 // deliver, cap at 30s, and snap back to 1s on delivery or when fs.watch sees
@@ -10,17 +12,19 @@ const DEFAULT_MAX_POLL_INTERVAL_MS = 30_000;
 const WAKE_DEBOUNCE_MS = 50;
 
 export function renderChannelMessage(message) {
+  const from = displaySenderId(message.from_session_id);
+  const fromKind = displaySenderId(message.from_session_kind);
   return {
     content: [
-      `<agent-link-message id="${escapeAttr(message.id)}" from="${escapeAttr(message.from_session_id)}" fromKind="${escapeAttr(message.from_session_kind)}">`,
+      `<agent-link-message id="${escapeAttr(message.id)}" from="${escapeAttr(from)}" fromKind="${escapeAttr(fromKind)}">`,
       `  <body>${escapeXml(message.body)}</body>`,
       `  <reply>Use reply_agent_link_message with messageId="${escapeAttr(message.id)}" to reply.</reply>`,
       `</agent-link-message>`
     ].join("\n"),
     meta: {
       message_id: String(message.id),
-      from_session_id: String(message.from_session_id),
-      from_kind: String(message.from_session_kind)
+      from_session_id: from,
+      from_kind: fromKind
     }
   };
 }
@@ -59,7 +63,10 @@ export function makeAgentLinkChannelBridge({
     if (cachedSession) return cachedSession;
     stats.sessionResolves += 1;
     const session = typeof resolveCurrentSession === "function" ? resolveCurrentSession() : null;
-    if (session?.sessionId) cachedSession = session;
+    // A transcript-only resolution may later gain its Desktop sidecar (and
+    // with it the canonical id other agents address), so keep asking the
+    // resolver (memoized by the server) instead of pinning it here.
+    if (session?.sessionId && session.source !== "transcript") cachedSession = session;
     return session;
   }
 
@@ -90,20 +97,30 @@ export function makeAgentLinkChannelBridge({
     stats.fullChecks += 1;
     const mb = openMb();
     try {
-      const pending = mb.listPendingFor({ toSessionId: session.sessionId });
+      const pending = mb.listPendingFor({ toSessionIds: claudeSessionAliases(session) });
       lastHadPending = pending.length > 0;
+      // Claim every message before the first await. The inbox tool runs in
+      // this same process and drains synchronously, so a claim made before
+      // notifying means it can never hand out a message the channel is
+      // already delivering. A failed notification releases what it did not
+      // deliver.
+      for (const message of pending) mb.markDelivered({ messageId: message.id });
       let delivered = 0;
-      for (const message of pending) {
-        const rendered = renderChannelMessage(message);
-        await notify({
-          method: "notifications/claude/channel",
-          params: {
-            content: rendered.content,
-            meta: rendered.meta
-          }
-        });
-        mb.markDelivered({ messageId: message.id });
-        delivered += 1;
+      try {
+        for (const message of pending) {
+          const rendered = renderChannelMessage(message);
+          await notify({
+            method: "notifications/claude/channel",
+            params: {
+              content: rendered.content,
+              meta: rendered.meta
+            }
+          });
+          delivered += 1;
+        }
+      } catch (error) {
+        for (const message of pending.slice(delivered)) mb.releaseDelivery({ messageId: message.id });
+        throw error;
       }
       lastHadPending = false;
       lastSignature = signature;
@@ -183,12 +200,4 @@ export function makeAgentLinkChannelBridge({
       watcher = null;
     }
   };
-}
-
-function escapeXml(s) {
-  return String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-}
-
-function escapeAttr(s) {
-  return escapeXml(s).replace(/"/g, "&quot;");
 }

@@ -1,13 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
-import { execSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { parseSidecar } from "./desktop-registry.js";
-import { currentClaudeSessionId } from "../shared/host-detect.js";
+import { claudeProjectsRoot, currentClaudeSessionId } from "../shared/host-detect.js";
 
 export const DEFAULT_DESKTOP_ROOT = path.join(homedir(), "Library/Application Support/Claude/local-agent-mode-sessions");
 export const DEFAULT_CODE_ROOT = path.join(homedir(), "Library/Application Support/Claude/claude-code-sessions");
-export const DEFAULT_PROJECTS_ROOT = path.join(homedir(), ".claude/projects");
+
+// Resolved per call so CLAUDE_CONFIG_DIR is honored (see claudeConfigDir()).
+export function defaultProjectsRoot() {
+  return claudeProjectsRoot();
+}
 
 // Transcripts routinely reach tens of MB, but the summary below only needs the
 // opening records. Read a bounded prefix instead of the whole file, growing it
@@ -16,19 +20,26 @@ export const DEFAULT_PROJECTS_ROOT = path.join(homedir(), ".claude/projects");
 const TRANSCRIPT_PREFIX_BYTES = 64 * 1024;
 const TRANSCRIPT_PREFIX_MAX_BYTES = 4 * 1024 * 1024;
 
+// `ps` output for every process on a busy machine can exceed Node's default
+// 1 MiB buffer, which used to fail silently and report every session as not
+// loaded.
+const PS_MAX_BUFFER = 16 * 1024 * 1024;
+
 // Session listing runs on a 1s poll, so re-parsing every transcript each tick
 // dominates CPU. Transcript prefixes are immutable in practice, so key the
 // summary on (mtime, size) and re-read only what actually changed.
 const transcriptSummaryCache = new Map();
 
 // Same story for sidecars: a few MB of JSON (one session file reaches ~1 MB)
-// re-parsed on every tick. Key on (mtime, size) as above.
+// re-parsed on every tick. Key on (mtime, size) as above. Failed parses are
+// cached too (as `parsed: null`), so a malformed sidecar costs one stat per
+// listing instead of a full read and parse.
 const sidecarCache = new Map();
 
 export function listClaudeSessions({
   desktopRoot = DEFAULT_DESKTOP_ROOT,
   codeRoot = DEFAULT_CODE_ROOT,
-  projectsRoot = DEFAULT_PROJECTS_ROOT,
+  projectsRoot = defaultProjectsRoot(),
   psOutput,
   surface = "all",
   includeArchived = false
@@ -53,39 +64,91 @@ export function listClaudeSessions({
     .sort((a, b) => (b.lastActivityAt ?? 0) - (a.lastActivityAt ?? 0));
 }
 
+// Fast lookup of one session by any of its ids (sidecar `local_<uuid>`,
+// CLI session id, or `local_<cliSessionId>`). Never runs `ps` and never
+// summarizes every transcript:
+//   - a `local_` id is first tried as a sidecar file name (direct lookup);
+//   - a CLI id is matched against sidecars' cliSessionId (cached parses,
+//     short-circuits on the first match), then against the one transcript
+//     file it names.
+// The returned session has `loaded: false`; callers that know better (the
+// current session is by definition running) override it.
+export function findClaudeSessionById(id, {
+  desktopRoot = DEFAULT_DESKTOP_ROOT,
+  codeRoot = DEFAULT_CODE_ROOT,
+  projectsRoot = defaultProjectsRoot(),
+  transcriptPath
+} = {}) {
+  const value = typeof id === "string" ? id.trim() : "";
+  if (!value) return null;
+  const roots = [[desktopRoot, "desktop"], [codeRoot, "code"]];
+  if (value.startsWith("local_")) {
+    for (const [root, surface] of roots) {
+      const file = findSidecarFileById(root, value);
+      const parsed = file ? parseSidecarCached(file) : null;
+      if (parsed) return withTranscript(normalizeSidecar(parsed, surface), projectsRoot);
+    }
+  }
+  const cliId = value.startsWith("local_") ? value.slice("local_".length) : value;
+  for (const [root, surface] of roots) {
+    const parsed = findSidecar(root, (s) => s.cliSessionId === cliId || s.sessionId === value);
+    if (parsed) return withTranscript(normalizeSidecar(parsed, surface), projectsRoot);
+  }
+  return findTranscriptSessionByCliId(cliId, { transcriptPath, projectsRoot });
+}
+
 export function resolveCurrentClaudeSession({
   sessionId = currentClaudeSessionId(),
   desktopRoot,
   codeRoot,
   projectsRoot,
-  psOutput
+  transcriptPath
 } = {}) {
   if (!sessionId) return null;
-  const sessions = listClaudeSessions({ desktopRoot, codeRoot, projectsRoot, psOutput, includeArchived: true });
-  return sessions.find((s) => s.sessionId === sessionId || s.cliSessionId === sessionId) ?? null;
+  const session = findClaudeSessionById(sessionId, { desktopRoot, codeRoot, projectsRoot, transcriptPath });
+  // This process runs inside the session, so it is loaded by definition.
+  return session ? { ...session, loaded: true } : null;
+}
+
+// Is the `claude --resume <cliSessionId>` process for one session running?
+// One `ps` call and one regex, for wait loops that only care about a single
+// session (instead of re-listing every session).
+export function isClaudeSessionLoaded(cliSessionId, { psOutput } = {}) {
+  if (!cliSessionId) return false;
+  return isLoaded(resumeCandidateLines(psOutput ?? safePs()), cliSessionId);
 }
 
 // Resolve a transcript-only session (e.g. Claude Code running inside Claude
-// Desktop) by its cliSessionId. These sessions have no sidecar, so findSidecar
-// misses them and the notify hook would never fire. Kept cheap for the
-// per-prompt notify hook: prefer the hook payload's transcript_path (O(1)),
-// otherwise probe one file per project dir with existsSync — never parse
-// transcript contents.
-export function findTranscriptSessionByCliId(cliSessionId, { transcriptPath, projectsRoot = DEFAULT_PROJECTS_ROOT } = {}) {
+// Desktop) by its cliSessionId. Kept cheap for the per-prompt notify hook:
+// prefer the hook payload's transcript_path (O(1)), otherwise probe one file
+// per project dir with existsSync — never parse transcript contents.
+export function findTranscriptSessionByCliId(cliSessionId, { transcriptPath, projectsRoot = defaultProjectsRoot() } = {}) {
   if (!cliSessionId) return null;
   let file = null;
-  if (transcriptPath && fs.existsSync(transcriptPath)) {
+  if (transcriptPath && path.basename(transcriptPath, ".jsonl") === cliSessionId && fs.existsSync(transcriptPath)) {
     file = transcriptPath;
   } else {
     file = findTranscriptFileByCliId(cliSessionId, projectsRoot);
   }
   if (!file) return null;
+  let lastActivityAt = null;
+  try {
+    lastActivityAt = fs.statSync(file).mtimeMs;
+  } catch {
+    // keep null
+  }
   return {
     sessionId: cliSessionId.startsWith("local_") ? cliSessionId : `local_${cliSessionId}`,
     cliSessionId,
+    title: null,
+    cwd: "",
+    model: "unknown",
+    isArchived: false,
+    lastActivityAt,
+    sourceSidecar: null,
+    transcriptPath: file,
     surface: "code",
     source: "transcript",
-    transcriptPath: file,
     loaded: false,
     supportsChannel: true,
     supportsHookInbox: true
@@ -113,32 +176,100 @@ function findTranscriptFileByCliId(cliSessionId, projectsRoot) {
   return null;
 }
 
+function withTranscript(session, projectsRoot) {
+  if (!session.cliSessionId || session.transcriptPath) return session;
+  const file = findTranscriptFileByCliId(session.cliSessionId, projectsRoot);
+  return file ? { ...session, transcriptPath: file } : session;
+}
+
+// Direct sidecar lookup by sidecar id only (no walk over every sidecar, no
+// transcript scan). Returns null for ids that are not `local_<uuid>` files.
+export function findSidecarSessionById(sessionId, {
+  desktopRoot = DEFAULT_DESKTOP_ROOT,
+  codeRoot = DEFAULT_CODE_ROOT
+} = {}) {
+  for (const [root, surface] of [[desktopRoot, "desktop"], [codeRoot, "code"]]) {
+    const file = findSidecarFileById(root, sessionId);
+    const parsed = file ? parseSidecarCached(file) : null;
+    if (parsed) return normalizeSidecar(parsed, surface);
+  }
+  return null;
+}
+
+// Sidecars live at <root>/<account>/<org>/<sessionId>.json. Look the file up
+// by name instead of parsing every sidecar.
+export function findSidecarFileById(root, sessionId, { maxDepth = 3 } = {}) {
+  if (!root || !sessionId || !/^local_[0-9A-Za-z-]+$/.test(sessionId)) return null;
+  const name = `${sessionId}.json`;
+  const visit = (dir, depth) => {
+    const direct = path.join(dir, name);
+    try {
+      if (fs.statSync(direct).isFile()) return direct;
+    } catch {
+      // not here
+    }
+    if (depth >= maxDepth) return null;
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return null;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const found = visit(path.join(dir, entry.name), depth + 1);
+      if (found) return found;
+    }
+    return null;
+  };
+  return visit(root, 0);
+}
+
+function findSidecar(root, predicate) {
+  if (!root || !fs.existsSync(root)) return null;
+  let found = null;
+  walk(root, (file) => {
+    if (found || !isSidecarFile(file)) return;
+    const parsed = parseSidecarCached(file);
+    if (parsed && predicate(parsed)) found = parsed;
+  }, () => Boolean(found));
+  return found;
+}
+
+function isSidecarFile(file) {
+  return /^local_[0-9a-zA-Z-]+\.json$/.test(path.basename(file));
+}
+
 function listSidecarSessions(root, surface) {
   if (!root || !fs.existsSync(root)) return [];
   const out = [];
   walk(root, (file) => {
-    if (!path.basename(file).match(/^local_[0-9a-zA-Z-]+\.json$/)) return;
-    try {
-      const parsed = parseSidecarCached(file);
-      out.push(normalizeSidecar(parsed, surface));
-    } catch {
-      // malformed sidecars are ignored like the older Desktop registry reader
-    }
+    if (!isSidecarFile(file)) return;
+    const parsed = parseSidecarCached(file);
+    if (parsed) out.push(normalizeSidecar(parsed, surface));
   });
   return out;
 }
 
-// Malformed sidecars are deliberately not cached: parseSidecar throws for them
-// and the caller skips, exactly as before.
 function parseSidecarCached(file) {
-  const stat = fs.statSync(file);
+  let stat;
+  try {
+    stat = fs.statSync(file);
+  } catch {
+    return null;
+  }
   const cached = sidecarCache.get(file);
   if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
-    return { ...cached.parsed };
+    return cached.parsed ? { ...cached.parsed } : null;
   }
-  const parsed = parseSidecar(file);
+  let parsed = null;
+  try {
+    parsed = parseSidecar(file);
+  } catch {
+    parsed = null;
+  }
   sidecarCache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, parsed });
-  return { ...parsed };
+  return parsed ? { ...parsed } : null;
 }
 
 function normalizeSidecar(session, surface) {
@@ -152,14 +283,33 @@ function normalizeSidecar(session, surface) {
   };
 }
 
+// Only top-level transcripts, `<projectsRoot>/<project>/<cliSessionId>.jsonl`,
+// are sessions. Deeper files (`<cliSessionId>/subagents/agent-*.jsonl`) belong
+// to subagents and used to replace their parent session in the index.
 function listTranscriptSessions(projectsRoot) {
   if (!projectsRoot || !fs.existsSync(projectsRoot)) return [];
   const out = [];
-  walk(projectsRoot, (file) => {
-    if (!file.endsWith(".jsonl")) return;
-    const session = parseTranscriptSummary(file, projectsRoot);
-    if (session) out.push(session);
-  });
+  let projects;
+  try {
+    projects = fs.readdirSync(projectsRoot, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  for (const project of projects) {
+    if (!project.isDirectory()) continue;
+    const dir = path.join(projectsRoot, project.name);
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+      const session = parseTranscriptSummary(path.join(dir, entry.name), projectsRoot);
+      if (session) out.push(session);
+    }
+  }
   return out;
 }
 
@@ -171,13 +321,18 @@ function parseTranscriptSummary(file, projectsRoot) {
     return null;
   }
   const cached = transcriptSummaryCache.get(file);
+  let summary;
   if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
-    return { ...cached.summary };
-  }
-  const summary = buildTranscriptSummary(file, projectsRoot, stat);
-  if (summary) {
+    summary = { ...cached.summary };
+  } else {
+    summary = buildTranscriptSummary(file, projectsRoot, stat);
+    if (!summary) return null;
     transcriptSummaryCache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, summary });
+    summary = { ...summary };
   }
+  // Activity is when the transcript was last written, not when its first
+  // record was.
+  summary.lastActivityAt = stat.mtimeMs;
   return summary;
 }
 
@@ -196,7 +351,6 @@ function readPrefixLines(fd, size, limit) {
 
 function buildTranscriptSummary(file, projectsRoot, stat) {
   let firstRecord = null;
-  let lastTimestamp = 0;
   try {
     const fd = fs.openSync(file, "r");
     try {
@@ -204,12 +358,12 @@ function buildTranscriptSummary(file, projectsRoot, stat) {
         const { lines, atEof } = readPrefixLines(fd, stat.size, limit);
         for (const line of lines) {
           if (!line.trim()) continue;
-          let record;
-          try { record = JSON.parse(line); } catch { continue; }
-          firstRecord ??= record;
-          const ts = Date.parse(record.timestamp ?? record.createdAt ?? 0);
-          if (Number.isFinite(ts)) lastTimestamp = Math.max(lastTimestamp, ts);
-          if (firstRecord && lastTimestamp) break;
+          try {
+            firstRecord = JSON.parse(line);
+            break;
+          } catch {
+            continue;
+          }
         }
         if (firstRecord || atEof || limit >= TRANSCRIPT_PREFIX_MAX_BYTES) break;
       }
@@ -219,9 +373,12 @@ function buildTranscriptSummary(file, projectsRoot, stat) {
   } catch {
     return null;
   }
-  const cliSessionId = firstRecord?.sessionId ?? firstRecord?.session_id ?? path.basename(file, ".jsonl");
+  // The file name is the id `claude --resume` and CLAUDE_CODE_SESSION_ID use;
+  // the first record can carry an older id after a resume or fork.
+  const cliSessionId = path.basename(file, ".jsonl");
   if (!cliSessionId) return null;
   const cwd = firstRecord?.cwd ?? inferCwdFromProjectPath(file, projectsRoot);
+  const createdAt = Date.parse(firstRecord?.timestamp ?? firstRecord?.createdAt ?? "");
   return {
     sessionId: cliSessionId.startsWith("local_") ? cliSessionId : `local_${cliSessionId}`,
     cliSessionId,
@@ -230,7 +387,8 @@ function buildTranscriptSummary(file, projectsRoot, stat) {
     model: firstRecord?.model ?? "unknown",
     title: firstRecord?.title ?? firstRecord?.content?.title ?? path.basename(path.dirname(file)),
     isArchived: false,
-    lastActivityAt: lastTimestamp || stat.mtimeMs,
+    createdAt: Number.isFinite(createdAt) ? createdAt : null,
+    lastActivityAt: stat.mtimeMs,
     sourceSidecar: null,
     transcriptPath: file,
     surface: "code",
@@ -247,13 +405,32 @@ function inferCwdFromProjectPath(file, projectsRoot) {
   return rel.replace(/-/g, "/");
 }
 
+// One entry per logical session. A sidecar and the transcript it points at
+// (by cliSessionId, or an earlier cliSessionId) are the same session; the
+// sidecar wins and inherits the transcript path. Sidecars that have no
+// cliSessionId yet are keyed by their own sessionId.
 function dedupeSessions(sessions) {
   const byKey = new Map();
-  for (const session of sessions) {
-    const key = session.sessionId || session.cliSessionId;
+  const aliasToKey = new Map();
+  const keyFor = (session) => {
+    const cli = session.cliSessionId;
+    if (cli && aliasToKey.has(cli)) return aliasToKey.get(cli);
+    return cli ? `cli:${cli}` : `id:${session.sessionId}`;
+  };
+  const ordered = [...sessions].sort((a, b) => sourceRank(b.source) - sourceRank(a.source));
+  for (const session of ordered) {
+    const key = keyFor(session);
     const existing = byKey.get(key);
-    if (!existing || sourceRank(session.source) > sourceRank(existing.source)) {
+    if (!existing) {
       byKey.set(key, session);
+      for (const prior of Array.isArray(session.priorCliSessionIds) ? session.priorCliSessionIds : []) {
+        if (typeof prior === "string" && prior && !aliasToKey.has(prior)) aliasToKey.set(prior, key);
+      }
+      if (session.cliSessionId && !aliasToKey.has(session.cliSessionId)) aliasToKey.set(session.cliSessionId, key);
+      continue;
+    }
+    if (session.source === "transcript" && !existing.transcriptPath && session.cliSessionId === existing.cliSessionId) {
+      byKey.set(key, { ...existing, transcriptPath: session.transcriptPath });
     }
   }
   return [...byKey.values()];
@@ -264,12 +441,28 @@ function sourceRank(source) {
   return 1;
 }
 
-function safePs() {
+let psErrorReported = false;
+
+export function safePs({ spawn = spawnSync } = {}) {
+  let result;
   try {
-    return execSync("ps -Awwo command", { encoding: "utf8" });
-  } catch {
+    result = spawn("ps", ["-Awwo", "command"], { encoding: "utf8", maxBuffer: PS_MAX_BUFFER });
+  } catch (error) {
+    reportPsError(error?.message ?? String(error));
     return "";
   }
+  if (result?.error || result?.status !== 0) {
+    reportPsError(result?.error?.message ?? `ps exited with status ${result?.status}`);
+    return "";
+  }
+  return String(result.stdout ?? "");
+}
+
+function reportPsError(message) {
+  if (psErrorReported) return;
+  psErrorReported = true;
+  // stdout is the MCP channel; diagnostics go to stderr only.
+  process.stderr.write(`agent-link: ps failed, Claude sessions will report loaded=false: ${message}\n`);
 }
 
 function resumeCandidateLines(psOutput) {
@@ -285,10 +478,17 @@ function isLoaded(psLines, cliSessionId) {
   return psLines.some((line) => re.test(line));
 }
 
-function walk(dir, visit) {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+function walk(dir, visit, stop = () => false) {
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (stop()) return;
     const fp = path.join(dir, entry.name);
-    if (entry.isDirectory()) walk(fp, visit);
+    if (entry.isDirectory()) walk(fp, visit, stop);
     else if (entry.isFile()) visit(fp);
   }
 }

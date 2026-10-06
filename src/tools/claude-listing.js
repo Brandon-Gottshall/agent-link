@@ -1,5 +1,6 @@
 import { listClaudeSessions } from "../claude/session-index.js";
 import { resolveSession } from "../claude/session-resolver.js";
+import { claudeSessionMatches } from "../claude/identity.js";
 
 export const claudeListingTools = [
   {
@@ -58,7 +59,7 @@ export function makeClaudeListingHandlers() {
     },
     get_claude_session: async ({ sessionId }) => {
       const sessions = listClaudeSessions({ includeArchived: true });
-      const found = sessions.find(s => s.sessionId === sessionId || s.cliSessionId === sessionId);
+      const found = sessions.find(s => claudeSessionMatches(s, sessionId));
       if (!found) return { error: "not_found", sessionId };
       return { session: found };
     },

@@ -125,25 +125,26 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
   cleanup(sb);
 }
 
-// Test 3: Idle transition — listSessions reports loaded=true on the
-// first call, loaded=false on subsequent calls. The handler should
-// detect the transition and return result: "idle".
+// Test 3: Idle transition — the listing reports loaded=true at the start;
+// the single-session liveness probe later reports the process gone. The
+// handler should return result: "idle" without re-listing every session.
 {
   const sb = makeSandbox();
   let listCalls = 0;
-  const sessionsFn = () => {
-    listCalls += 1;
-    return [
-      {
-        ...LOADED_SESSION,
-        // First call (priming check inside handler) sees loaded=true; any
-        // subsequent call sees loaded=false to simulate the session ending
-        // its turn and dropping out of the ps view.
-        loaded: listCalls <= 1
-      }
-    ];
-  };
-  const handlers = makeHandler({ dbPath: sb.dbPath, sessionsFn });
+  let livenessCalls = 0;
+  const handlers = makeWaitHandler({
+    listSessions: () => {
+      listCalls += 1;
+      return [LOADED_SESSION];
+    },
+    isSessionLoaded: (session) => {
+      livenessCalls += 1;
+      assert.equal(session.cliSessionId, "uuid-aaa", "liveness is checked for the target only");
+      return false;
+    },
+    livenessIntervalMs: 50,
+    mailboxOpener: () => openMailbox({ dbPath: sb.dbPath })
+  });
 
   const result = await handlers.wait_for_claude_session({
     sessionId: TARGET_SESSION_ID,
@@ -154,7 +155,105 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
   assert.equal(result.result, "idle");
   assert.equal(result.target.sessionId, TARGET_SESSION_ID);
   assert.equal(result.target.lastLoaded, false);
-  assert.ok(listCalls >= 2, `expected at least 2 listSessions calls, got ${listCalls}`);
+  assert.equal(listCalls, 1, `the full listing runs once (saw ${listCalls})`);
+  assert.equal(livenessCalls, 1);
+  cleanup(sb);
+}
+
+// P4-06 / W2A-13: while waiting, liveness is probed for the one session no
+// more than every 2 s by default, and the full listing never repeats.
+{
+  const sb = makeSandbox();
+  let listCalls = 0;
+  let livenessCalls = 0;
+  const handlers = makeWaitHandler({
+    listSessions: () => {
+      listCalls += 1;
+      return [LOADED_SESSION];
+    },
+    isSessionLoaded: () => {
+      livenessCalls += 1;
+      return true;
+    },
+    mailboxOpener: () => openMailbox({ dbPath: sb.dbPath })
+  });
+  const result = await handlers.wait_for_claude_session({ sessionId: TARGET_SESSION_ID, timeoutMs: 1500 });
+  assert.equal(result.result, "timeout");
+  assert.equal(listCalls, 1, `full listing must not repeat every poll (saw ${listCalls})`);
+  assert.equal(livenessCalls, 0, `liveness probed more often than every 2 s (saw ${livenessCalls} in 1.5 s)`);
+  cleanup(sb);
+}
+
+// P4-06 / W2B-02: without latestMessageId, a message the target sent before
+// the wait started does not resolve it.
+{
+  const sb = makeSandbox();
+  insertReply({ dbPath: sb.dbPath, fromSessionId: TARGET_SESSION_ID, toSessionId: "external", body: "stale, from yesterday" });
+  await new Promise((r) => setTimeout(r, 5));
+  const handlers = makeHandler({ dbPath: sb.dbPath, sessionsFn: () => [{ ...LOADED_SESSION, loaded: false }] });
+  const result = await handlers.wait_for_claude_session({ sessionId: TARGET_SESSION_ID, timeoutMs: 300 });
+  assert.equal(result.result, "timeout", `old message must not resolve a new wait (got ${result.result}: ${result.message?.body})`);
+  cleanup(sb);
+}
+
+// P4-06: only mail addressed to the caller resolves the wait.
+{
+  const sb = makeSandbox();
+  const handlers = makeWaitHandler({
+    host: "claude",
+    resolveCurrentSession: () => ({ sessionId: "local_waiter", cliSessionId: "uuid-waiter" }),
+    listSessions: () => [{ ...LOADED_SESSION, loaded: false }],
+    mailboxOpener: () => openMailbox({ dbPath: sb.dbPath })
+  });
+  setTimeout(() => {
+    insertReply({ dbPath: sb.dbPath, fromSessionId: TARGET_SESSION_ID, toSessionId: "local_bystander", body: "for someone else" });
+  }, 30);
+  setTimeout(() => {
+    insertReply({ dbPath: sb.dbPath, fromSessionId: TARGET_SESSION_ID, toSessionId: "uuid-waiter", body: "for the waiter" });
+  }, 400);
+  const result = await handlers.wait_for_claude_session({ sessionId: TARGET_SESSION_ID, timeoutMs: 2000 });
+  assert.equal(result.result, "reply");
+  assert.equal(result.message.body, "for the waiter", "mail to another recipient must not resolve the wait");
+  cleanup(sb);
+}
+
+// P4-06: waiting by cliSessionId matches messages sent under the sidecar
+// sessionId (and vice versa).
+{
+  const sb = makeSandbox();
+  const handlers = makeHandler({ dbPath: sb.dbPath, sessionsFn: () => [{ ...LOADED_SESSION, loaded: false }] });
+  setTimeout(() => {
+    insertReply({ dbPath: sb.dbPath, fromSessionId: TARGET_SESSION_ID, toSessionId: "external", body: "sent under the sidecar id" });
+  }, 30);
+  const result = await handlers.wait_for_claude_session({ sessionId: "uuid-aaa", timeoutMs: 2000 });
+  assert.equal(result.result, "reply", `cliSessionId input must match (got ${result.result})`);
+  assert.equal(result.message.body, "sent under the sidecar id");
+  cleanup(sb);
+}
+
+// W2B-10: an archived session can be waited on by exact id through the
+// default session index (which used to drop archived sessions).
+{
+  const sb = makeSandbox();
+  const codeRoot = path.join(sb.tmp, "claude-code-sessions");
+  fs.mkdirSync(path.join(codeRoot, "acct", "org"), { recursive: true });
+  fs.writeFileSync(path.join(codeRoot, "acct", "org", "local_arch.json"), JSON.stringify({
+    sessionId: "local_arch", cliSessionId: "uuid-arch", cwd: "/x", model: "opus", title: "Archived", isArchived: true
+  }));
+  const handlers = makeWaitHandler({
+    listOptions: {
+      desktopRoot: path.join(sb.tmp, "none"),
+      codeRoot,
+      projectsRoot: path.join(sb.tmp, "no-projects"),
+      psOutput: ""
+    },
+    mailboxOpener: () => openMailbox({ dbPath: sb.dbPath })
+  });
+  const result = await handlers.wait_for_claude_session({ sessionId: "local_arch", timeoutMs: 50 });
+  assert.equal(result.error, undefined, "archived session must not be not_found");
+  assert.equal(result.result, "timeout");
+  const byCli = await handlers.wait_for_claude_session({ sessionId: "uuid-arch", timeoutMs: 50 });
+  assert.equal(byCli.result, "timeout");
   cleanup(sb);
 }
 

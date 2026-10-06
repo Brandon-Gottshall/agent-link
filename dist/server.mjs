@@ -3238,8 +3238,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path9) {
-      let input = path9;
+    function removeDotSegments(path10) {
+      let input = path10;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3491,8 +3491,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path9, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path9 && path9 !== "/" ? path9 : void 0;
+        const [path10, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path10 && path10 !== "/" ? path10 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -10757,10 +10757,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path9) {
-  if (!path9)
+function getElementAtPath(obj, path10) {
+  if (!path10)
     return obj;
-  return path9.reduce((acc, key) => acc?.[key], obj);
+  return path10.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -11169,11 +11169,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path9, issues) {
+function prefixIssues(path10, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path9);
+    iss.path.unshift(path10);
     return iss;
   });
 }
@@ -11320,16 +11320,16 @@ function flattenError(error2, mapper = (issue2) => issue2.message) {
 }
 function formatError(error2, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error3, path9 = []) => {
+  const processError = (error3, path10 = []) => {
     for (const issue2 of error3.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path9, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path10, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path9, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path10, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path9, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path10, ...issue2.path]);
       } else {
-        const fullpath = [...path9, ...issue2.path];
+        const fullpath = [...path10, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -19802,7 +19802,37 @@ function sleep(ms) {
 // src/shared/caller-context.js
 var MAX_TEXT = 300;
 var MAX_META_KEYS = 50;
-var MAX_DEPTH = 6;
+var NAMESPACES = [null, "openai/codex", "codex", "claudecode"];
+var FIELD_SPECS = {
+  threadId: [
+    ["callerThreadId"],
+    ["caller", "thread", "id"],
+    ["threadId"],
+    ["thread_id"],
+    ["codexThreadId"],
+    ["thread", "id"],
+    ["originThreadId"]
+  ],
+  turnId: [
+    ["callerTurnId"],
+    ["caller", "turn", "id"],
+    ["turnId"],
+    ["turn_id"],
+    ["codexTurnId"],
+    ["turn", "id"],
+    ["originTurnId"]
+  ],
+  toolCallId: [
+    ["callerToolCallId"],
+    ["caller", "toolCall", "id"],
+    ["toolCallId"],
+    ["tool_call_id"],
+    ["claudecode/toolUseId"],
+    ["toolUseId"],
+    ["tool_use_id"],
+    ["originToolCallId"]
+  ]
+};
 function callerContextContract() {
   return {
     purpose: "Automatically attach caller thread/turn/tool-call provenance to Agent Link receipts when Codex supplies it in MCP runtime metadata.",
@@ -19814,10 +19844,10 @@ function callerContextContract() {
     ],
     runtimeMetadataShape: {
       accepted: [
-        "threadId, thread_id, codexThreadId, callerThreadId, originThreadId",
-        "turnId, turn_id, codexTurnId, callerTurnId, originTurnId",
-        "toolCallId, tool_call_id, callerToolCallId, originToolCallId",
-        "nested objects such as { caller: { thread: { id }, turn: { id } } }"
+        "threadId (priority order): " + FIELD_SPECS.threadId.map((spec) => spec.join(".")).join(", "),
+        "turnId (priority order): " + FIELD_SPECS.turnId.map((spec) => spec.join(".")).join(", "),
+        "toolCallId (priority order): " + FIELD_SPECS.toolCallId.map((spec) => spec.join(".")).join(", "),
+        "each key is exact (case-sensitive) and read at the top of _meta or inside one of: " + NAMESPACES.filter(Boolean).join(", ")
       ],
       sources: [
         "request.params._meta",
@@ -19829,16 +19859,13 @@ function callerContextContract() {
 function extractRuntimeCallerContext(request = {}, extra = {}) {
   const requestMeta = request?.params?._meta;
   const extraMeta = extra?._meta;
-  const matches = {
-    threadId: [],
-    turnId: [],
-    toolCallId: []
-  };
-  collectMatches(requestMeta, "request.params._meta", [], matches);
-  collectMatches(extraMeta, "handler.extra._meta", [], matches);
-  const threadId = firstMatch(matches.threadId);
-  const turnId = firstMatch(matches.turnId);
-  const toolCallId = firstMatch(matches.toolCallId);
+  const metas = [
+    [requestMeta, "request.params._meta"],
+    [extraMeta, "handler.extra._meta"]
+  ];
+  const threadId = findField(metas, FIELD_SPECS.threadId);
+  const turnId = findField(metas, FIELD_SPECS.turnId);
+  const toolCallId = findField(metas, FIELD_SPECS.toolCallId);
   return {
     available: Boolean(threadId || turnId || toolCallId),
     threadId: threadId?.value ?? null,
@@ -19875,54 +19902,36 @@ function summarizeRuntimeCallerContext(context) {
     }
   };
 }
-function collectMatches(value, source, path9, matches, depth = 0) {
-  if (!value || depth > MAX_DEPTH) {
-    return;
-  }
-  if (Array.isArray(value)) {
-    for (let index = 0; index < Math.min(value.length, 20); index += 1) {
-      collectMatches(value[index], source, [...path9, String(index)], matches, depth + 1);
-    }
-    return;
-  }
-  if (typeof value !== "object") {
-    return;
-  }
-  for (const [key, child] of Object.entries(value)) {
-    const childPath = [...path9, key];
-    if (typeof child === "string" || typeof child === "number") {
-      const field = classifyPath(childPath);
-      if (field) {
-        matches[field].push({
-          value: cleanText(child, MAX_TEXT),
-          source,
-          path: childPath.join(".")
-        });
+function findField(metas, specs) {
+  for (const [meta2, source] of metas) {
+    if (!isPlainObject3(meta2)) continue;
+    for (const spec of specs) {
+      for (const namespace of NAMESPACES) {
+        const container = namespace === null ? meta2 : meta2[namespace];
+        if (!isPlainObject3(container)) continue;
+        const value = cleanText(readPath(container, spec), MAX_TEXT);
+        if (value) {
+          return {
+            value,
+            source,
+            path: [...namespace === null ? [] : [namespace], ...spec].join(".")
+          };
+        }
       }
-      continue;
     }
-    collectMatches(child, source, childPath, matches, depth + 1);
-  }
-}
-function classifyPath(path9) {
-  const normalized = normalizeKey(path9.join("."));
-  const leaf = normalizeKey(path9[path9.length - 1] ?? "");
-  if (hasIdSuffix(normalized) && (normalized.includes("toolcall") || normalized.includes("tool_call") || normalized.includes("tool") && normalized.includes("call"))) {
-    return "toolCallId";
-  }
-  if (hasIdSuffix(normalized) && (normalized.includes("thread") || normalized.includes("conversation") || normalized.includes("originthread") || normalized.includes("callerthread") || normalized.includes("sourcethread") || leaf === "id" && path9.some((part) => normalizeKey(part).includes("thread")))) {
-    return "threadId";
-  }
-  if (hasIdSuffix(normalized) && (normalized.includes("turn") || normalized.includes("originturn") || normalized.includes("callerturn") || leaf === "id" && path9.some((part) => normalizeKey(part).includes("turn")))) {
-    return "turnId";
   }
   return null;
 }
-function hasIdSuffix(value) {
-  return value.endsWith("id") || value.endsWith("_id");
+function readPath(container, spec) {
+  let node = container;
+  for (const key of spec) {
+    if (!isPlainObject3(node) || !Object.prototype.hasOwnProperty.call(node, key)) return null;
+    node = node[key];
+  }
+  return typeof node === "string" || typeof node === "number" ? node : null;
 }
-function firstMatch(matches) {
-  return matches.find((match) => Boolean(match.value)) ?? null;
+function isPlainObject3(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function summarizeMatch(match) {
   if (!match) {
@@ -19939,9 +19948,6 @@ function topLevelKeys(value) {
   }
   return Object.keys(value).slice(0, MAX_META_KEYS);
 }
-function normalizeKey(value) {
-  return String(value ?? "").toLowerCase().replace(/[^a-z0-9_]+/g, "");
-}
 function cleanText(value, max) {
   if (value === null || value === void 0) {
     return null;
@@ -19957,8 +19963,17 @@ function cleanText(value, max) {
 }
 
 // src/shared/host-detect.js
+import path2 from "node:path";
+import { homedir } from "node:os";
 function currentClaudeSessionId({ env = process.env } = {}) {
   return env.CLAUDE_SESSION_ID || env.CLAUDE_CODE_SESSION_ID || void 0;
+}
+function claudeConfigDir({ env = process.env } = {}) {
+  const configured = typeof env.CLAUDE_CONFIG_DIR === "string" ? env.CLAUDE_CONFIG_DIR.trim() : "";
+  return configured ? path2.resolve(configured) : path2.join(homedir(), ".claude");
+}
+function claudeProjectsRoot({ env = process.env } = {}) {
+  return path2.join(claudeConfigDir({ env }), "projects");
 }
 function detectHost({ env = process.env } = {}) {
   const claude = !!(env.CLAUDE_PROJECT_DIR || env.CLAUDE_PLUGIN_ROOT || env.CLAUDE_SESSION_ID || env.CLAUDE_CODE_SESSION_ID);
@@ -19970,43 +19985,66 @@ function detectHost({ env = process.env } = {}) {
 
 // src/claude/session-index.js
 import fs2 from "node:fs";
-import path3 from "node:path";
-import { homedir as homedir2 } from "node:os";
-import { execSync } from "node:child_process";
+import path4 from "node:path";
+import { homedir as homedir3 } from "node:os";
+import { spawnSync as spawnSync2 } from "node:child_process";
 
 // src/claude/desktop-registry.js
 import fs from "node:fs";
-import path2 from "node:path";
-import { homedir } from "node:os";
+import path3 from "node:path";
+import { homedir as homedir2 } from "node:os";
 var DEFAULT_SIDECAR_ROOTS = [
-  path2.join(homedir(), "Library/Application Support/Claude/local-agent-mode-sessions"),
-  path2.join(homedir(), "Library/Application Support/Claude/claude-code-sessions")
+  path3.join(homedir2(), "Library/Application Support/Claude/local-agent-mode-sessions"),
+  path3.join(homedir2(), "Library/Application Support/Claude/claude-code-sessions")
 ];
-var REQUIRED = ["sessionId", "processName", "cliSessionId", "cwd", "model", "title"];
-var OPTIONAL = ["userSelectedFolders", "isArchived", "createdAt", "lastActivityAt", "enabledMcpTools", "slashCommands"];
+var REQUIRED = ["sessionId"];
+var OPTIONAL = [
+  "cliSessionId",
+  "priorCliSessionIds",
+  "processName",
+  "cwd",
+  "originCwd",
+  "model",
+  "title",
+  "userSelectedFolders",
+  "isArchived",
+  "createdAt",
+  "lastActivityAt",
+  "enabledMcpTools",
+  "slashCommands"
+];
 function parseSidecar(filePath) {
   const raw = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error(`sidecar ${filePath} is not a JSON object`);
+  }
   const out = { sourceSidecar: filePath };
   for (const k of REQUIRED) {
-    if (raw[k] === void 0) throw new Error(`sidecar ${filePath} missing required field ${k}`);
+    if (typeof raw[k] !== "string" || !raw[k]) throw new Error(`sidecar ${filePath} missing required field ${k}`);
     out[k] = raw[k];
   }
   for (const k of OPTIONAL) if (raw[k] !== void 0) out[k] = raw[k];
+  out.title = typeof out.title === "string" ? out.title : null;
+  out.cwd = typeof out.cwd === "string" ? out.cwd : "";
+  out.model = typeof out.model === "string" ? out.model : "unknown";
   return out;
 }
 
 // src/claude/session-index.js
-var DEFAULT_DESKTOP_ROOT = path3.join(homedir2(), "Library/Application Support/Claude/local-agent-mode-sessions");
-var DEFAULT_CODE_ROOT = path3.join(homedir2(), "Library/Application Support/Claude/claude-code-sessions");
-var DEFAULT_PROJECTS_ROOT = path3.join(homedir2(), ".claude/projects");
+var DEFAULT_DESKTOP_ROOT = path4.join(homedir3(), "Library/Application Support/Claude/local-agent-mode-sessions");
+var DEFAULT_CODE_ROOT = path4.join(homedir3(), "Library/Application Support/Claude/claude-code-sessions");
+function defaultProjectsRoot() {
+  return claudeProjectsRoot();
+}
 var TRANSCRIPT_PREFIX_BYTES = 64 * 1024;
 var TRANSCRIPT_PREFIX_MAX_BYTES = 4 * 1024 * 1024;
+var PS_MAX_BUFFER = 16 * 1024 * 1024;
 var transcriptSummaryCache = /* @__PURE__ */ new Map();
 var sidecarCache = /* @__PURE__ */ new Map();
 function listClaudeSessions({
   desktopRoot = DEFAULT_DESKTOP_ROOT,
   codeRoot = DEFAULT_CODE_ROOT,
-  projectsRoot = DEFAULT_PROJECTS_ROOT,
+  projectsRoot = defaultProjectsRoot(),
   psOutput,
   surface = "all",
   includeArchived = false
@@ -20023,39 +20061,166 @@ function listClaudeSessions({
     loaded: isLoaded(ps, session.cliSessionId)
   })).filter((session) => surface === "all" || session.surface === surface).filter((session) => includeArchived || !session.isArchived).sort((a, b) => (b.lastActivityAt ?? 0) - (a.lastActivityAt ?? 0));
 }
+function findClaudeSessionById(id, {
+  desktopRoot = DEFAULT_DESKTOP_ROOT,
+  codeRoot = DEFAULT_CODE_ROOT,
+  projectsRoot = defaultProjectsRoot(),
+  transcriptPath
+} = {}) {
+  const value = typeof id === "string" ? id.trim() : "";
+  if (!value) return null;
+  const roots = [[desktopRoot, "desktop"], [codeRoot, "code"]];
+  if (value.startsWith("local_")) {
+    for (const [root, surface] of roots) {
+      const file = findSidecarFileById(root, value);
+      const parsed = file ? parseSidecarCached(file) : null;
+      if (parsed) return withTranscript(normalizeSidecar(parsed, surface), projectsRoot);
+    }
+  }
+  const cliId = value.startsWith("local_") ? value.slice("local_".length) : value;
+  for (const [root, surface] of roots) {
+    const parsed = findSidecar(root, (s) => s.cliSessionId === cliId || s.sessionId === value);
+    if (parsed) return withTranscript(normalizeSidecar(parsed, surface), projectsRoot);
+  }
+  return findTranscriptSessionByCliId(cliId, { transcriptPath, projectsRoot });
+}
 function resolveCurrentClaudeSession({
   sessionId = currentClaudeSessionId(),
   desktopRoot,
   codeRoot,
   projectsRoot,
-  psOutput
+  transcriptPath
 } = {}) {
   if (!sessionId) return null;
-  const sessions = listClaudeSessions({ desktopRoot, codeRoot, projectsRoot, psOutput, includeArchived: true });
-  return sessions.find((s) => s.sessionId === sessionId || s.cliSessionId === sessionId) ?? null;
+  const session = findClaudeSessionById(sessionId, { desktopRoot, codeRoot, projectsRoot, transcriptPath });
+  return session ? { ...session, loaded: true } : null;
+}
+function isClaudeSessionLoaded(cliSessionId, { psOutput } = {}) {
+  if (!cliSessionId) return false;
+  return isLoaded(resumeCandidateLines(psOutput ?? safePs()), cliSessionId);
+}
+function findTranscriptSessionByCliId(cliSessionId, { transcriptPath, projectsRoot = defaultProjectsRoot() } = {}) {
+  if (!cliSessionId) return null;
+  let file = null;
+  if (transcriptPath && path4.basename(transcriptPath, ".jsonl") === cliSessionId && fs2.existsSync(transcriptPath)) {
+    file = transcriptPath;
+  } else {
+    file = findTranscriptFileByCliId(cliSessionId, projectsRoot);
+  }
+  if (!file) return null;
+  let lastActivityAt = null;
+  try {
+    lastActivityAt = fs2.statSync(file).mtimeMs;
+  } catch {
+  }
+  return {
+    sessionId: cliSessionId.startsWith("local_") ? cliSessionId : `local_${cliSessionId}`,
+    cliSessionId,
+    title: null,
+    cwd: "",
+    model: "unknown",
+    isArchived: false,
+    lastActivityAt,
+    sourceSidecar: null,
+    transcriptPath: file,
+    surface: "code",
+    source: "transcript",
+    loaded: false,
+    supportsChannel: true,
+    supportsHookInbox: true
+  };
+}
+function findTranscriptFileByCliId(cliSessionId, projectsRoot) {
+  if (!projectsRoot || !fs2.existsSync(projectsRoot)) return null;
+  let entries;
+  try {
+    entries = fs2.readdirSync(projectsRoot, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  const target = `${cliSessionId}.jsonl`;
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const candidate = path4.join(projectsRoot, entry.name, target);
+    try {
+      if (fs2.existsSync(candidate)) return candidate;
+    } catch {
+    }
+  }
+  return null;
+}
+function withTranscript(session, projectsRoot) {
+  if (!session.cliSessionId || session.transcriptPath) return session;
+  const file = findTranscriptFileByCliId(session.cliSessionId, projectsRoot);
+  return file ? { ...session, transcriptPath: file } : session;
+}
+function findSidecarFileById(root, sessionId, { maxDepth = 3 } = {}) {
+  if (!root || !sessionId || !/^local_[0-9A-Za-z-]+$/.test(sessionId)) return null;
+  const name = `${sessionId}.json`;
+  const visit = (dir, depth) => {
+    const direct = path4.join(dir, name);
+    try {
+      if (fs2.statSync(direct).isFile()) return direct;
+    } catch {
+    }
+    if (depth >= maxDepth) return null;
+    let entries;
+    try {
+      entries = fs2.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return null;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const found = visit(path4.join(dir, entry.name), depth + 1);
+      if (found) return found;
+    }
+    return null;
+  };
+  return visit(root, 0);
+}
+function findSidecar(root, predicate) {
+  if (!root || !fs2.existsSync(root)) return null;
+  let found = null;
+  walk(root, (file) => {
+    if (found || !isSidecarFile(file)) return;
+    const parsed = parseSidecarCached(file);
+    if (parsed && predicate(parsed)) found = parsed;
+  }, () => Boolean(found));
+  return found;
+}
+function isSidecarFile(file) {
+  return /^local_[0-9a-zA-Z-]+\.json$/.test(path4.basename(file));
 }
 function listSidecarSessions(root, surface) {
   if (!root || !fs2.existsSync(root)) return [];
   const out = [];
   walk(root, (file) => {
-    if (!path3.basename(file).match(/^local_[0-9a-zA-Z-]+\.json$/)) return;
-    try {
-      const parsed = parseSidecarCached(file);
-      out.push(normalizeSidecar(parsed, surface));
-    } catch {
-    }
+    if (!isSidecarFile(file)) return;
+    const parsed = parseSidecarCached(file);
+    if (parsed) out.push(normalizeSidecar(parsed, surface));
   });
   return out;
 }
 function parseSidecarCached(file) {
-  const stat = fs2.statSync(file);
+  let stat;
+  try {
+    stat = fs2.statSync(file);
+  } catch {
+    return null;
+  }
   const cached2 = sidecarCache.get(file);
   if (cached2 && cached2.mtimeMs === stat.mtimeMs && cached2.size === stat.size) {
-    return { ...cached2.parsed };
+    return cached2.parsed ? { ...cached2.parsed } : null;
   }
-  const parsed = parseSidecar(file);
+  let parsed = null;
+  try {
+    parsed = parseSidecar(file);
+  } catch {
+    parsed = null;
+  }
   sidecarCache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, parsed });
-  return { ...parsed };
+  return parsed ? { ...parsed } : null;
 }
 function normalizeSidecar(session, surface) {
   return {
@@ -20070,11 +20235,27 @@ function normalizeSidecar(session, surface) {
 function listTranscriptSessions(projectsRoot) {
   if (!projectsRoot || !fs2.existsSync(projectsRoot)) return [];
   const out = [];
-  walk(projectsRoot, (file) => {
-    if (!file.endsWith(".jsonl")) return;
-    const session = parseTranscriptSummary(file, projectsRoot);
-    if (session) out.push(session);
-  });
+  let projects;
+  try {
+    projects = fs2.readdirSync(projectsRoot, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  for (const project of projects) {
+    if (!project.isDirectory()) continue;
+    const dir = path4.join(projectsRoot, project.name);
+    let entries;
+    try {
+      entries = fs2.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+      const session = parseTranscriptSummary(path4.join(dir, entry.name), projectsRoot);
+      if (session) out.push(session);
+    }
+  }
   return out;
 }
 function parseTranscriptSummary(file, projectsRoot) {
@@ -20085,13 +20266,16 @@ function parseTranscriptSummary(file, projectsRoot) {
     return null;
   }
   const cached2 = transcriptSummaryCache.get(file);
+  let summary;
   if (cached2 && cached2.mtimeMs === stat.mtimeMs && cached2.size === stat.size) {
-    return { ...cached2.summary };
-  }
-  const summary = buildTranscriptSummary(file, projectsRoot, stat);
-  if (summary) {
+    summary = { ...cached2.summary };
+  } else {
+    summary = buildTranscriptSummary(file, projectsRoot, stat);
+    if (!summary) return null;
     transcriptSummaryCache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, summary });
+    summary = { ...summary };
   }
+  summary.lastActivityAt = stat.mtimeMs;
   return summary;
 }
 function readPrefixLines(fd, size, limit) {
@@ -20105,7 +20289,6 @@ function readPrefixLines(fd, size, limit) {
 }
 function buildTranscriptSummary(file, projectsRoot, stat) {
   let firstRecord = null;
-  let lastTimestamp = 0;
   try {
     const fd = fs2.openSync(file, "r");
     try {
@@ -20113,16 +20296,12 @@ function buildTranscriptSummary(file, projectsRoot, stat) {
         const { lines, atEof } = readPrefixLines(fd, stat.size, limit);
         for (const line of lines) {
           if (!line.trim()) continue;
-          let record2;
           try {
-            record2 = JSON.parse(line);
+            firstRecord = JSON.parse(line);
+            break;
           } catch {
             continue;
           }
-          firstRecord ??= record2;
-          const ts = Date.parse(record2.timestamp ?? record2.createdAt ?? 0);
-          if (Number.isFinite(ts)) lastTimestamp = Math.max(lastTimestamp, ts);
-          if (firstRecord && lastTimestamp) break;
         }
         if (firstRecord || atEof || limit >= TRANSCRIPT_PREFIX_MAX_BYTES) break;
       }
@@ -20132,18 +20311,20 @@ function buildTranscriptSummary(file, projectsRoot, stat) {
   } catch {
     return null;
   }
-  const cliSessionId = firstRecord?.sessionId ?? firstRecord?.session_id ?? path3.basename(file, ".jsonl");
+  const cliSessionId = path4.basename(file, ".jsonl");
   if (!cliSessionId) return null;
   const cwd = firstRecord?.cwd ?? inferCwdFromProjectPath(file, projectsRoot);
+  const createdAt = Date.parse(firstRecord?.timestamp ?? firstRecord?.createdAt ?? "");
   return {
     sessionId: cliSessionId.startsWith("local_") ? cliSessionId : `local_${cliSessionId}`,
     cliSessionId,
-    processName: path3.basename(path3.dirname(file)),
+    processName: path4.basename(path4.dirname(file)),
     cwd,
     model: firstRecord?.model ?? "unknown",
-    title: firstRecord?.title ?? firstRecord?.content?.title ?? path3.basename(path3.dirname(file)),
+    title: firstRecord?.title ?? firstRecord?.content?.title ?? path4.basename(path4.dirname(file)),
     isArchived: false,
-    lastActivityAt: lastTimestamp || stat.mtimeMs,
+    createdAt: Number.isFinite(createdAt) ? createdAt : null,
+    lastActivityAt: stat.mtimeMs,
     sourceSidecar: null,
     transcriptPath: file,
     surface: "code",
@@ -20154,17 +20335,32 @@ function buildTranscriptSummary(file, projectsRoot, stat) {
   };
 }
 function inferCwdFromProjectPath(file, projectsRoot) {
-  const rel = path3.relative(projectsRoot, path3.dirname(file));
+  const rel = path4.relative(projectsRoot, path4.dirname(file));
   if (!rel || rel.startsWith("..")) return "";
   return rel.replace(/-/g, "/");
 }
 function dedupeSessions(sessions) {
   const byKey = /* @__PURE__ */ new Map();
-  for (const session of sessions) {
-    const key = session.sessionId || session.cliSessionId;
+  const aliasToKey = /* @__PURE__ */ new Map();
+  const keyFor = (session) => {
+    const cli = session.cliSessionId;
+    if (cli && aliasToKey.has(cli)) return aliasToKey.get(cli);
+    return cli ? `cli:${cli}` : `id:${session.sessionId}`;
+  };
+  const ordered = [...sessions].sort((a, b) => sourceRank(b.source) - sourceRank(a.source));
+  for (const session of ordered) {
+    const key = keyFor(session);
     const existing = byKey.get(key);
-    if (!existing || sourceRank(session.source) > sourceRank(existing.source)) {
+    if (!existing) {
       byKey.set(key, session);
+      for (const prior of Array.isArray(session.priorCliSessionIds) ? session.priorCliSessionIds : []) {
+        if (typeof prior === "string" && prior && !aliasToKey.has(prior)) aliasToKey.set(prior, key);
+      }
+      if (session.cliSessionId && !aliasToKey.has(session.cliSessionId)) aliasToKey.set(session.cliSessionId, key);
+      continue;
+    }
+    if (session.source === "transcript" && !existing.transcriptPath && session.cliSessionId === existing.cliSessionId) {
+      byKey.set(key, { ...existing, transcriptPath: session.transcriptPath });
     }
   }
   return [...byKey.values()];
@@ -20173,12 +20369,26 @@ function sourceRank(source) {
   if (source === "sidecar:desktop" || source === "sidecar:code") return 2;
   return 1;
 }
-function safePs() {
+var psErrorReported = false;
+function safePs({ spawn: spawn3 = spawnSync2 } = {}) {
+  let result;
   try {
-    return execSync("ps -Awwo command", { encoding: "utf8" });
-  } catch {
+    result = spawn3("ps", ["-Awwo", "command"], { encoding: "utf8", maxBuffer: PS_MAX_BUFFER });
+  } catch (error2) {
+    reportPsError(error2?.message ?? String(error2));
     return "";
   }
+  if (result?.error || result?.status !== 0) {
+    reportPsError(result?.error?.message ?? `ps exited with status ${result?.status}`);
+    return "";
+  }
+  return String(result.stdout ?? "");
+}
+function reportPsError(message) {
+  if (psErrorReported) return;
+  psErrorReported = true;
+  process.stderr.write(`agent-link: ps failed, Claude sessions will report loaded=false: ${message}
+`);
 }
 function resumeCandidateLines(psOutput) {
   return String(psOutput ?? "").split("\n").filter((line) => line.includes("--resume") && line.includes("claude"));
@@ -20189,45 +20399,54 @@ function isLoaded(psLines, cliSessionId) {
   const re = new RegExp(`(^|/)claude\\s(\\S+\\s)*--resume\\s+${escaped}(\\s|$)`);
   return psLines.some((line) => re.test(line));
 }
-function walk(dir, visit) {
-  for (const entry of fs2.readdirSync(dir, { withFileTypes: true })) {
-    const fp = path3.join(dir, entry.name);
-    if (entry.isDirectory()) walk(fp, visit);
+function walk(dir, visit, stop = () => false) {
+  let entries;
+  try {
+    entries = fs2.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (stop()) return;
+    const fp = path4.join(dir, entry.name);
+    if (entry.isDirectory()) walk(fp, visit, stop);
     else if (entry.isFile()) visit(fp);
   }
 }
 
 // src/claude/session-resolver.js
+var lower = (value) => typeof value === "string" ? value.toLowerCase() : "";
 function resolveSession({ query }, sessions) {
-  const q = query.trim().toLowerCase();
+  const q = String(query ?? "").trim().toLowerCase();
+  if (!q) return { best: null, candidates: [], selection: { ambiguous: false, matchReasons: [] } };
   const scored = [];
   for (const s of sessions) {
     const reasons = [];
     let score = 0;
-    if (s.sessionId.toLowerCase() === q) {
+    if (lower(s.sessionId) === q) {
       score += 100;
       reasons.push("sessionId-exact");
-    } else if (s.sessionId.toLowerCase().includes(q)) {
+    } else if (lower(s.sessionId).includes(q)) {
       score += 60;
       reasons.push("sessionId-partial");
     }
-    if (s.cliSessionId?.toLowerCase().includes(q)) {
+    if (lower(s.cliSessionId).includes(q)) {
       score += 50;
       reasons.push("cliSessionId-partial");
     }
-    if (s.title.toLowerCase().includes(q)) {
+    if (lower(s.title).includes(q)) {
       score += 40;
       reasons.push("title-substring");
     }
-    if (s.processName?.toLowerCase().includes(q)) {
+    if (lower(s.processName).includes(q)) {
       score += 30;
       reasons.push("processName-substring");
     }
-    if (s.cwd?.toLowerCase().includes(q)) {
+    if (lower(s.cwd).includes(q)) {
       score += 20;
       reasons.push("cwd-substring");
     }
-    if ((s.userSelectedFolders ?? []).some((f) => f.toLowerCase().includes(q))) {
+    if ((Array.isArray(s.userSelectedFolders) ? s.userSelectedFolders : []).some((f) => lower(f).includes(q))) {
       score += 20;
       reasons.push("folder-substring");
     }
@@ -20242,6 +20461,99 @@ function resolveSession({ query }, sessions) {
     candidates: scored.map((c) => ({ ...c.session, score: c.score, matchReasons: c.reasons })),
     selection: { ambiguous: tied.length > 1, matchReasons: top.reasons }
   };
+}
+
+// src/claude/identity.js
+var SENDER_ID_PATTERN = /^[A-Za-z0-9_.:-]{1,80}$/;
+var UNKNOWN_SENDER = "unknown sender";
+var EXTERNAL_SENDER = "external";
+function isValidSenderId(id) {
+  return typeof id === "string" && SENDER_ID_PATTERN.test(id);
+}
+function displaySenderId(id) {
+  return isValidSenderId(id) ? id : UNKNOWN_SENDER;
+}
+function canonicalClaudeSessionId(sessionOrId) {
+  if (sessionOrId && typeof sessionOrId === "object") {
+    if (typeof sessionOrId.sessionId === "string" && sessionOrId.sessionId.trim()) {
+      return sessionOrId.sessionId.trim();
+    }
+    return canonicalClaudeSessionId(sessionOrId.cliSessionId);
+  }
+  const id = typeof sessionOrId === "string" ? sessionOrId.trim() : "";
+  if (!id) return null;
+  return id.startsWith("local_") ? id : `local_${id}`;
+}
+function claudeSessionAliases(sessionOrId) {
+  const out = /* @__PURE__ */ new Set();
+  const add = (value) => {
+    if (typeof value !== "string") return;
+    const v = value.trim();
+    if (v) out.add(v);
+  };
+  const addCli = (cli) => {
+    if (typeof cli !== "string" || !cli.trim()) return;
+    const v = cli.trim();
+    if (v.startsWith("local_")) {
+      add(v);
+      add(v.slice("local_".length));
+    } else {
+      add(v);
+      add(`local_${v}`);
+    }
+  };
+  if (sessionOrId && typeof sessionOrId === "object") {
+    add(sessionOrId.sessionId);
+    addCli(sessionOrId.cliSessionId);
+    for (const prior of Array.isArray(sessionOrId.priorCliSessionIds) ? sessionOrId.priorCliSessionIds : []) {
+      addCli(prior);
+    }
+    for (const extra of Array.isArray(sessionOrId.aliases) ? sessionOrId.aliases : []) add(extra);
+  } else {
+    addCli(sessionOrId);
+  }
+  return [...out];
+}
+function claudeSessionMatches(session, id) {
+  if (!session || typeof id !== "string" || !id.trim()) return false;
+  return claudeSessionAliases(session).includes(id.trim());
+}
+function resolveCallerIdentity({ host, runtimeCallerContext = null, currentSession = null, env = process.env } = {}) {
+  const runtimeThreadId = isValidSenderId(runtimeCallerContext?.threadId) ? runtimeCallerContext.threadId : null;
+  if (host === "claude") {
+    const session = typeof currentSession === "function" ? safeCall(currentSession) : currentSession;
+    const sessionId = canonicalClaudeSessionId(session);
+    if (session && isValidSenderId(sessionId)) {
+      return { id: sessionId, kind: "claude", aliases: claudeSessionAliases(session), source: "current_session" };
+    }
+    const envId = currentClaudeSessionId({ env });
+    const canonicalEnvId = canonicalClaudeSessionId(envId);
+    if (isValidSenderId(canonicalEnvId)) {
+      return { id: canonicalEnvId, kind: "claude", aliases: claudeSessionAliases(envId), source: "env" };
+    }
+    if (runtimeThreadId) {
+      return { id: runtimeThreadId, kind: "claude", aliases: [runtimeThreadId], source: "runtime_context" };
+    }
+    return { id: EXTERNAL_SENDER, kind: "claude", aliases: [EXTERNAL_SENDER], source: "fallback" };
+  }
+  if (host === "codex") {
+    if (runtimeThreadId) {
+      return { id: runtimeThreadId, kind: "codex", aliases: [runtimeThreadId], source: "runtime_context" };
+    }
+    const envThread = env.CODEX_THREAD_ID;
+    if (isValidSenderId(envThread)) {
+      return { id: envThread, kind: "codex", aliases: [envThread], source: "env" };
+    }
+    return { id: EXTERNAL_SENDER, kind: "codex", aliases: [EXTERNAL_SENDER], source: "fallback" };
+  }
+  return { id: EXTERNAL_SENDER, kind: "external", aliases: [EXTERNAL_SENDER], source: "fallback" };
+}
+function safeCall(fn) {
+  try {
+    return fn();
+  } catch {
+    return null;
+  }
 }
 
 // src/tools/claude-listing.js
@@ -20301,7 +20613,7 @@ function makeClaudeListingHandlers() {
     },
     get_claude_session: async ({ sessionId }) => {
       const sessions = listClaudeSessions({ includeArchived: true });
-      const found = sessions.find((s) => s.sessionId === sessionId || s.cliSessionId === sessionId);
+      const found = sessions.find((s) => claudeSessionMatches(s, sessionId));
       if (!found) return { error: "not_found", sessionId };
       return { session: found };
     },
@@ -20313,35 +20625,97 @@ function makeClaudeListingHandlers() {
 }
 
 // src/claude/mailbox.js
-import path4 from "node:path";
+import path5 from "node:path";
 import fs3 from "node:fs";
-import { homedir as homedir3 } from "node:os";
-import { spawnSync as spawnSync2 } from "node:child_process";
+import { homedir as homedir4 } from "node:os";
+import { spawnSync as spawnSync3 } from "node:child_process";
 import crypto from "node:crypto";
-var DEFAULT_DIR = path4.join(homedir3(), ".claude/agent-link");
-var DEFAULT_MAILBOX_PATH = path4.join(DEFAULT_DIR, "mailbox.jsonl");
-var DEFAULT_LEGACY_DB_PATH = path4.join(DEFAULT_DIR, "mailbox.sqlite");
+var DEFAULT_DIR = path5.join(homedir4(), ".claude/agent-link");
+var DEFAULT_MAILBOX_PATH = path5.join(DEFAULT_DIR, "mailbox.jsonl");
+var DEFAULT_LEGACY_DB_PATH = path5.join(DEFAULT_DIR, "mailbox.sqlite");
+var MAX_MESSAGE_BODY_BYTES = 64 * 1024;
+var DIR_MODE = 448;
+var FILE_MODE = 384;
+function messageBodyTooLarge(body) {
+  const bytes = Buffer.byteLength(String(body ?? ""), "utf8");
+  if (bytes <= MAX_MESSAGE_BODY_BYTES) return null;
+  return {
+    error: "invalid_arguments",
+    message: `\`body\` is ${bytes} bytes; Agent Link message bodies are limited to ${MAX_MESSAGE_BODY_BYTES} bytes (64 KiB). Send a shorter message, or point the receiver at a file.`,
+    bodyBytes: bytes,
+    maxBodyBytes: MAX_MESSAGE_BODY_BYTES
+  };
+}
 function resolveMailboxPath({ mailboxPath, dbPath } = {}) {
   if (mailboxPath) return mailboxPath;
+  if (dbPath) return legacyToJsonl(dbPath);
   if (process.env.AGENT_LINK_MAILBOX_PATH) return process.env.AGENT_LINK_MAILBOX_PATH;
-  const legacy = dbPath ?? process.env.AGENT_LINK_MAILBOX_DB;
-  if (legacy) {
-    return legacy.endsWith(".sqlite") ? legacy.slice(0, -".sqlite".length) + ".jsonl" : legacy;
-  }
+  if (process.env.AGENT_LINK_MAILBOX_DB) return legacyToJsonl(process.env.AGENT_LINK_MAILBOX_DB);
   return DEFAULT_MAILBOX_PATH;
 }
-function resolveLegacyDbPath({ dbPath } = {}) {
-  return dbPath ?? process.env.AGENT_LINK_MAILBOX_DB ?? null;
+function legacyToJsonl(legacy) {
+  return legacy.endsWith(".sqlite") ? legacy.slice(0, -".sqlite".length) + ".jsonl" : legacy;
+}
+function resolveLegacyDbPath({ mailboxPath, dbPath } = {}) {
+  if (dbPath) return dbPath;
+  if (mailboxPath) return null;
+  return process.env.AGENT_LINK_MAILBOX_DB ?? null;
+}
+function ensurePrivateMailbox(mailboxPath) {
+  const dir = path5.dirname(mailboxPath);
+  fs3.mkdirSync(dir, { recursive: true, mode: DIR_MODE });
+  if (path5.resolve(dir) === path5.resolve(DEFAULT_DIR)) tightenMode(dir, DIR_MODE);
+  tightenMode(mailboxPath, FILE_MODE);
+}
+function tightenMode(target, mode) {
+  try {
+    const stat = fs3.statSync(target);
+    const uid = typeof process.getuid === "function" ? process.getuid() : null;
+    if (uid !== null && stat.uid !== uid) return;
+    if ((stat.mode & 511 & ~mode) !== 0) fs3.chmodSync(target, mode);
+  } catch {
+  }
+}
+function mailboxStatus(options = {}) {
+  const mailboxPath = resolveMailboxPath(options);
+  const exists = fs3.existsSync(mailboxPath);
+  let pendingMessagesCount = 0;
+  let readable = true;
+  if (exists) {
+    try {
+      pendingMessagesCount = view(mailboxPath).filter((m) => !m.delivered_at).length;
+    } catch {
+      readable = false;
+      pendingMessagesCount = null;
+    }
+  }
+  return { path: mailboxPath, exists, readable, writable: canWrite(exists ? mailboxPath : path5.dirname(mailboxPath)), pendingMessagesCount };
+}
+function canWrite(target) {
+  let current = path5.resolve(target);
+  while (true) {
+    if (fs3.existsSync(current)) {
+      try {
+        fs3.accessSync(current, fs3.constants.W_OK);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    const parent = path5.dirname(current);
+    if (parent === current) return false;
+    current = parent;
+  }
 }
 function openMailbox(options = {}) {
   const mailboxPath = resolveMailboxPath(options);
-  fs3.mkdirSync(path4.dirname(mailboxPath), { recursive: true });
+  ensurePrivateMailbox(mailboxPath);
   importLegacySqliteIfNeeded({
     mailboxPath,
     legacyDbPath: resolveLegacyDbPath(options) ?? (mailboxPath === DEFAULT_MAILBOX_PATH ? DEFAULT_LEGACY_DB_PATH : null)
   });
   function appendEvent(event) {
-    fs3.appendFileSync(mailboxPath, JSON.stringify(event) + "\n", "utf8");
+    fs3.appendFileSync(mailboxPath, JSON.stringify(event) + "\n", { encoding: "utf8", mode: FILE_MODE });
   }
   function insertMessage({
     fromSessionId,
@@ -20352,10 +20726,13 @@ function openMailbox(options = {}) {
     metadata,
     replyToMessageId = null
   }) {
+    const tooLarge = messageBodyTooLarge(body);
+    if (tooLarge) throw new Error(tooLarge.message);
     const id = ulid2();
+    const now = Date.now();
     appendEvent({
       type: "message",
-      at: Date.now(),
+      at: now,
       message: {
         id,
         from_session_id: fromSessionId,
@@ -20364,7 +20741,7 @@ function openMailbox(options = {}) {
         to_session_kind: toSessionKind,
         body,
         metadata_json: metadata ? JSON.stringify(metadata) : null,
-        sent_at: Date.now(),
+        sent_at: now,
         delivered_at: null,
         acknowledged_at: null,
         reply_to_message_id: replyToMessageId
@@ -20378,23 +20755,33 @@ function openMailbox(options = {}) {
   function markAcknowledged({ messageId, acknowledgedAt = Date.now() }) {
     appendEvent({ type: "acknowledged", at: acknowledgedAt, messageId });
   }
+  function releaseDelivery({ messageId, releasedAt = Date.now() }) {
+    appendEvent({ type: "released", at: releasedAt, messageId });
+  }
+  function listPendingFor({ toSessionId, toSessionIds } = {}) {
+    const recipients = idSet(toSessionId, toSessionIds);
+    return view(mailboxPath).filter((m) => recipients.has(m.to_session_id) && !m.delivered_at).sort((a, b) => a.sent_at - b.sent_at);
+  }
   return {
     insertMessage,
     markDelivered,
     markAcknowledged,
-    listPendingFor({ toSessionId }) {
-      return view(mailboxPath).filter((m) => m.to_session_id === toSessionId && !m.delivered_at).sort((a, b) => a.sent_at - b.sent_at);
-    },
-    drainFor({ toSessionId }) {
-      const rows = this.listPendingFor({ toSessionId });
+    releaseDelivery,
+    listPendingFor,
+    // Marks delivered only what it returns: with `limit`, the rest stays
+    // pending for the next read.
+    drainFor({ toSessionId, toSessionIds, limit } = {}) {
+      let rows = listPendingFor({ toSessionId, toSessionIds });
+      if (Number.isFinite(limit)) rows = rows.slice(0, Math.max(0, Math.floor(limit)));
       for (const row of rows) markDelivered({ messageId: row.id });
       return rows;
     },
+    // Returns the reply message id, or null when no reply was written.
     ackMessage({ messageId, body }) {
       const original = view(mailboxPath).find((m) => m.id === messageId);
       markAcknowledged({ messageId });
       if (body && original) {
-        insertMessage({
+        return insertMessage({
           fromSessionId: original.to_session_id,
           fromSessionKind: original.to_session_kind,
           toSessionId: original.from_session_id,
@@ -20403,6 +20790,7 @@ function openMailbox(options = {}) {
           replyToMessageId: messageId
         });
       }
+      return null;
     },
     getMessage({ messageId }) {
       return view(mailboxPath).find((m) => m.id === messageId) ?? null;
@@ -20411,6 +20799,18 @@ function openMailbox(options = {}) {
       let rows = view(mailboxPath);
       if (filters.fromSessionId) rows = rows.filter((m) => m.from_session_id === filters.fromSessionId);
       if (filters.toSessionId) rows = rows.filter((m) => m.to_session_id === filters.toSessionId);
+      if (Array.isArray(filters.fromSessionIds)) {
+        const from = idSet(null, filters.fromSessionIds);
+        rows = rows.filter((m) => from.has(m.from_session_id));
+      }
+      if (Array.isArray(filters.toSessionIds)) {
+        const to = idSet(null, filters.toSessionIds);
+        rows = rows.filter((m) => to.has(m.to_session_id));
+      }
+      if (Array.isArray(filters.involvingSessionIds)) {
+        const involved = idSet(null, filters.involvingSessionIds);
+        rows = rows.filter((m) => involved.has(m.from_session_id) || involved.has(m.to_session_id));
+      }
       if (filters.replyToMessageId) rows = rows.filter((m) => m.reply_to_message_id === filters.replyToMessageId);
       if (filters.undelivered) rows = rows.filter((m) => !m.delivered_at);
       if (filters.pendingAck) rows = rows.filter((m) => !m.acknowledged_at);
@@ -20422,17 +20822,27 @@ function openMailbox(options = {}) {
     }
   };
 }
+function idSet(single, many) {
+  const out = /* @__PURE__ */ new Set();
+  if (typeof single === "string" && single) out.add(single);
+  for (const id of Array.isArray(many) ? many : []) {
+    if (typeof id === "string" && id) out.add(id);
+  }
+  return out;
+}
 function view(mailboxPath) {
   const messages = /* @__PURE__ */ new Map();
   for (const event of readEvents(mailboxPath)) {
     if (event.type === "message" && event.message?.id) {
-      messages.set(event.message.id, normalizeMessage(event.message));
+      messages.set(event.message.id, normalizeMessage(event.message, event.at));
     } else if (event.type === "delivered" && event.messageId && messages.has(event.messageId)) {
       const message = messages.get(event.messageId);
       message.delivered_at = event.at ?? Date.now();
     } else if (event.type === "acknowledged" && event.messageId && messages.has(event.messageId)) {
       const message = messages.get(event.messageId);
       message.acknowledged_at = event.at ?? Date.now();
+    } else if (event.type === "released" && event.messageId && messages.has(event.messageId)) {
+      messages.get(event.messageId).delivered_at = null;
     }
   }
   return [...messages.values()];
@@ -20451,7 +20861,15 @@ function readEvents(mailboxPath) {
   }
   return events;
 }
-function normalizeMessage(message) {
+function normalizeTimestamp(...candidates) {
+  for (const candidate of candidates) {
+    if (candidate === null || candidate === void 0 || candidate === "") continue;
+    const n = Number(candidate);
+    if (Number.isFinite(n)) return n;
+  }
+  return 0;
+}
+function normalizeMessage(message, eventAt) {
   return {
     id: String(message.id),
     from_session_id: String(message.from_session_id),
@@ -20460,7 +20878,7 @@ function normalizeMessage(message) {
     to_session_kind: String(message.to_session_kind),
     body: String(message.body ?? ""),
     metadata_json: message.metadata_json ?? null,
-    sent_at: Number(message.sent_at ?? Date.now()),
+    sent_at: normalizeTimestamp(message.sent_at, eventAt),
     delivered_at: message.delivered_at ?? null,
     acknowledged_at: message.acknowledged_at ?? null,
     reply_to_message_id: message.reply_to_message_id ?? null
@@ -20469,7 +20887,7 @@ function normalizeMessage(message) {
 function importLegacySqliteIfNeeded({ mailboxPath, legacyDbPath }) {
   if (fs3.existsSync(mailboxPath) && fs3.statSync(mailboxPath).size > 0) return;
   if (!legacyDbPath || !legacyDbPath.endsWith(".sqlite") || !fs3.existsSync(legacyDbPath)) return;
-  const result = spawnSync2("sqlite3", [
+  const result = spawnSync3("sqlite3", [
     "-json",
     legacyDbPath,
     "SELECT id, from_session_id, from_session_kind, to_session_id, to_session_kind, body, metadata_json, sent_at, delivered_at, acknowledged_at, reply_to_message_id FROM messages ORDER BY sent_at"
@@ -20486,13 +20904,13 @@ function importLegacySqliteIfNeeded({ mailboxPath, legacyDbPath }) {
   for (const row of rows) {
     events.push({
       type: "message",
-      at: Number(row.sent_at ?? Date.now()),
+      at: normalizeTimestamp(row.sent_at),
       message: normalizeMessage(row)
     });
     if (row.delivered_at) events.push({ type: "delivered", at: Number(row.delivered_at), messageId: row.id });
     if (row.acknowledged_at) events.push({ type: "acknowledged", at: Number(row.acknowledged_at), messageId: row.id });
   }
-  fs3.appendFileSync(mailboxPath, events.map((event) => JSON.stringify(event)).join("\n") + "\n", "utf8");
+  fs3.appendFileSync(mailboxPath, events.map((event) => JSON.stringify(event)).join("\n") + "\n", { encoding: "utf8", mode: FILE_MODE });
 }
 function ulid2() {
   const ENC = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -20513,14 +20931,14 @@ function ulid2() {
 import { randomUUID } from "node:crypto";
 import { promises as fs4 } from "node:fs";
 import os2 from "node:os";
-import path5 from "node:path";
+import path6 from "node:path";
 var RECEIPT_VERSION = 1;
 var DEFAULT_LIMIT = 20;
 var MAX_LIMIT = 500;
 var MAX_TEXT2 = 700;
 function receiptLogPath(options = {}) {
-  const codexHome = options.codexHome || process.env.CODEX_HOME || path5.join(os2.homedir(), ".codex");
-  return options.path || process.env.CODEX_AGENT_LINK_RECEIPT_LOG || path5.join(codexHome, "agent-link-receipts.jsonl");
+  const codexHome = options.codexHome || process.env.CODEX_HOME || path6.join(os2.homedir(), ".codex");
+  return options.path || process.env.CODEX_AGENT_LINK_RECEIPT_LOG || path6.join(codexHome, "agent-link-receipts.jsonl");
 }
 function receiptIndexSummary(options = {}) {
   return {
@@ -20534,7 +20952,7 @@ function normalizeReceiptInput(value = {}, options = {}) {
   if (isNormalizedReceiptInput(value)) {
     return value;
   }
-  const input = isPlainObject3(value) ? value : {};
+  const input = isPlainObject4(value) ? value : {};
   const runtimeCallerContext = summarizeRuntimeCallerContext(options.runtimeCallerContext);
   const callerOriginThreadId = cleanText2(input.originThreadId, 160);
   const callerOriginTurnId = cleanText2(input.originTurnId, 160);
@@ -20633,7 +21051,7 @@ function buildReceipt({
 }
 async function appendReceipt(receipt, options = {}) {
   const logPath = receiptLogPath(options);
-  await fs4.mkdir(path5.dirname(logPath), { recursive: true });
+  await fs4.mkdir(path6.dirname(logPath), { recursive: true });
   await fs4.appendFile(logPath, `${JSON.stringify(receipt)}
 `, "utf8");
   return {
@@ -20850,11 +21268,11 @@ function cleanText2(value, max) {
 function normalizeSearch(value) {
   return String(value ?? "").toLowerCase().replace(/\s+/g, " ").trim();
 }
-function isPlainObject3(value) {
+function isPlainObject4(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function isNormalizedReceiptInput(value) {
-  return isPlainObject3(value) && "originSource" in value && isPlainObject3(value.originSources) && isPlainObject3(value.runtimeCallerContext);
+  return isPlainObject4(value) && "originSource" in value && isPlainObject4(value.originSources) && isPlainObject4(value.runtimeCallerContext);
 }
 function clamp(value, min, max) {
   const number3 = Number(value);
@@ -20920,8 +21338,15 @@ var claudeSendTool = {
     required: ["to", "body"]
   }
 };
-function makeClaudeSendHandler({ host, listSessions, mailboxOpener } = {}) {
-  const sessionsFn = typeof listSessions === "function" ? listSessions : (args = {}) => listClaudeSessions({ surface: args.surface ?? "all" });
+function makeClaudeSendHandler({
+  host,
+  listSessions,
+  listOptions = {},
+  mailboxOpener,
+  resolveCurrentSession = null,
+  appendReceipt: appendReceipt2 = safeAppendReceipt
+} = {}) {
+  const sessionsFn = typeof listSessions === "function" ? listSessions : (args = {}) => listClaudeSessions({ ...listOptions, surface: args.surface ?? "all", includeArchived: true });
   const openMb = typeof mailboxOpener === "function" ? mailboxOpener : () => openMailbox();
   return {
     message_claude_session: async (args = {}, toolContext = {}) => {
@@ -20942,10 +21367,12 @@ function makeClaudeSendHandler({ host, listSessions, mailboxOpener } = {}) {
       if (typeof body !== "string" || !body.length) {
         return { error: "invalid_arguments", message: "`body` must be a non-empty string" };
       }
+      const tooLarge = messageBodyTooLarge(body);
+      if (tooLarge) return tooLarge;
       const sessions = (sessionsFn({ surface: surface ?? "all" }) ?? []).filter((s) => !surface || s.surface === surface);
       let target = null;
       let resolution = null;
-      const exact = sessions.find((s) => s.sessionId === to || s.cliSessionId === to);
+      const exact = sessions.find((s) => claudeSessionMatches(s, to));
       if (exact) {
         target = exact;
         resolution = {
@@ -20954,7 +21381,7 @@ function makeClaudeSendHandler({ host, listSessions, mailboxOpener } = {}) {
           matchReasons: ["sessionId-exact"]
         };
       } else {
-        const r = resolveSession({ query: to }, sessions);
+        const r = resolveSession({ query: to }, sessions.filter((s) => !s.isArchived));
         if (!r.best) {
           return { error: "not_found", candidates: [], query: to };
         }
@@ -20973,15 +21400,28 @@ function makeClaudeSendHandler({ host, listSessions, mailboxOpener } = {}) {
           candidates: r.candidates
         };
       }
+      const caller = resolveCallerIdentity({
+        host,
+        runtimeCallerContext,
+        currentSession: resolveCurrentSession
+      });
       const mb = openMb();
       let messageId;
       try {
-        const fromSessionKind = host === "claude" || host === "codex" ? host : "external";
-        const fromSessionId = pickFromSessionId(host, runtimeCallerContext);
+        if (replyToMessageId !== void 0 && replyToMessageId !== null) {
+          const original = typeof replyToMessageId === "string" ? mb.getMessage({ messageId: replyToMessageId }) : null;
+          if (!original || !caller.aliases.includes(original.to_session_id)) {
+            return {
+              error: "invalid_arguments",
+              message: "`replyToMessageId` must reference an Agent Link message addressed to the caller.",
+              replyToMessageId
+            };
+          }
+        }
         messageId = mb.insertMessage({
-          fromSessionId,
-          fromSessionKind,
-          toSessionId: target.sessionId,
+          fromSessionId: caller.id,
+          fromSessionKind: caller.kind,
+          toSessionId: canonicalClaudeSessionId(target),
           toSessionKind: "claude",
           body,
           metadata: { receipt: receipt ?? null, resolution },
@@ -20994,6 +21434,7 @@ function makeClaudeSendHandler({ host, listSessions, mailboxOpener } = {}) {
           loaded: !!target.loaded,
           surface: target.surface ?? null
         };
+        let receiptResult = { ok: true, recorded: false, reason: "receipt.record was false" };
         if (!receipt || receipt.record !== false) {
           const built = buildReceipt({
             action: "message_claude_session",
@@ -21013,20 +21454,22 @@ function makeClaudeSendHandler({ host, listSessions, mailboxOpener } = {}) {
             delivery,
             runtimeCallerContext
           });
-          await safeAppendReceipt(built);
+          receiptResult = { recorded: true, ...await appendReceipt2(built) };
         }
         const result = {
           messageId,
           delivery,
           target: targetSummary,
-          resolution
+          resolution,
+          receipt: receiptResult
         };
         if (waitForReply) {
-          result.replyConfirmation = await pollForReply(
-            mb,
+          result.replyConfirmation = await pollForReply(mb, {
             messageId,
-            typeof timeoutMs === "number" && timeoutMs >= 0 ? timeoutMs : DEFAULT_WAIT_TIMEOUT_MS
-          );
+            fromIds: claudeSessionAliases(target),
+            toIds: caller.aliases,
+            timeoutMs: typeof timeoutMs === "number" && timeoutMs >= 0 ? timeoutMs : DEFAULT_WAIT_TIMEOUT_MS
+          });
         }
         return result;
       } finally {
@@ -21043,20 +21486,12 @@ function classifyDelivery({ target, deliveryPreference }) {
   if (target.surface === "code" && target.loaded && target.supportsChannel !== false) return "queued-channel";
   return target.loaded ? "queued-online" : "queued-offline";
 }
-function pickFromSessionId(host, runtimeCallerContext) {
-  const runtimeId = runtimeCallerContext?.threadId ?? null;
-  if (host === "claude") {
-    return runtimeId ?? currentClaudeSessionId() ?? "external";
-  }
-  if (host === "codex") {
-    return runtimeId ?? process.env.CODEX_THREAD_ID ?? "external";
-  }
-  return "external";
-}
-async function pollForReply(mb, messageId, timeoutMs) {
+async function pollForReply(mb, { messageId, fromIds, toIds, timeoutMs }) {
   const deadline = Date.now() + timeoutMs;
+  const from = new Set(fromIds);
+  const to = new Set(toIds);
   while (true) {
-    const replies = mb.inspect({ replyToMessageId: messageId, limit: 1 });
+    const replies = mb.inspect({ replyToMessageId: messageId, limit: Number.MAX_SAFE_INTEGER }).filter((m) => from.has(m.from_session_id) && to.has(m.to_session_id)).sort((a, b) => a.sent_at - b.sent_at);
     if (replies.length) {
       return {
         received: true,
@@ -21078,6 +21513,7 @@ function sleep2(ms) {
 // src/tools/claude-wait.js
 var DEFAULT_TIMEOUT_MS = 6e4;
 var DEFAULT_POLL_INTERVAL_MS2 = 250;
+var DEFAULT_LIVENESS_INTERVAL_MS = 2e3;
 var claudeWaitTool = {
   name: "wait_for_claude_session",
   description: "Block until the target Claude Desktop or Claude Code session sends a reply (matching `latestMessageId` if provided) or goes idle (was loaded, now isn't). Returns one of {result: 'reply', message} | {result: 'idle', target} | {result: 'timeout'} | {error: 'not_found'}. Default timeout 60s. Use this when message_claude_session was called without waitForReply, or to wait for any inbound message from a particular session.",
@@ -21101,31 +21537,56 @@ var claudeWaitTool = {
     additionalProperties: false
   }
 };
-function makeWaitHandler({ listSessions, mailboxOpener } = {}) {
-  const sessionsFn = typeof listSessions === "function" ? listSessions : () => listClaudeSessions();
+function makeWaitHandler({
+  host,
+  listSessions,
+  listOptions = {},
+  mailboxOpener,
+  resolveCurrentSession = null,
+  isSessionLoaded,
+  livenessIntervalMs = DEFAULT_LIVENESS_INTERVAL_MS,
+  pollIntervalMs = DEFAULT_POLL_INTERVAL_MS2,
+  now = () => Date.now()
+} = {}) {
+  const sessionsFn = typeof listSessions === "function" ? listSessions : () => listClaudeSessions({ ...listOptions, includeArchived: true });
   const openMb = typeof mailboxOpener === "function" ? mailboxOpener : () => openMailbox();
+  const loadedFn = typeof isSessionLoaded === "function" ? isSessionLoaded : (session) => isClaudeSessionLoaded(session.cliSessionId);
   return {
-    wait_for_claude_session: async (args = {}) => {
+    wait_for_claude_session: async (args = {}, toolContext = {}) => {
       const { sessionId, latestMessageId } = args;
       const timeoutMs = typeof args.timeoutMs === "number" && args.timeoutMs >= 0 ? args.timeoutMs : DEFAULT_TIMEOUT_MS;
       if (typeof sessionId !== "string" || !sessionId.trim()) {
         return { error: "invalid_arguments", message: "`sessionId` must be a non-empty string" };
       }
+      const waitStartedAt = now();
       const sessions0 = sessionsFn() ?? [];
-      const target0 = sessions0.find((s) => s.sessionId === sessionId || s.cliSessionId === sessionId);
+      const target0 = sessions0.find((s) => claudeSessionMatches(s, sessionId));
       if (!target0) {
         return { error: "not_found", sessionId };
       }
+      const fromIds = claudeSessionAliases(target0);
+      const caller = resolveCallerIdentity({
+        host,
+        runtimeCallerContext: toolContext.runtimeCallerContext ?? null,
+        currentSession: resolveCurrentSession
+      });
       const wasLoaded = !!target0.loaded;
-      const deadline = Date.now() + timeoutMs;
+      const deadline = waitStartedAt + timeoutMs;
+      let nextLivenessCheckAt = waitStartedAt + livenessIntervalMs;
       while (true) {
         const mb = openMb();
         try {
-          const filters = { fromSessionId: sessionId, limit: 5 };
+          const filters = {
+            fromSessionIds: fromIds,
+            toSessionIds: caller.aliases,
+            limit: Number.MAX_SAFE_INTEGER
+          };
           if (latestMessageId) {
             filters.replyToMessageId = latestMessageId;
+          } else {
+            filters.since = waitStartedAt;
           }
-          const messages = mb.inspect(filters);
+          const messages = mb.inspect(filters).sort((a, b) => a.sent_at - b.sent_at);
           if (messages.length > 0) {
             return {
               result: "reply",
@@ -21136,21 +21597,20 @@ function makeWaitHandler({ listSessions, mailboxOpener } = {}) {
         } finally {
           mb.close();
         }
-        if (wasLoaded) {
-          const sessionsNow = sessionsFn() ?? [];
-          const targetNow = sessionsNow.find((s) => s.sessionId === sessionId || s.cliSessionId === sessionId);
-          if (targetNow && !targetNow.loaded) {
+        if (wasLoaded && now() >= nextLivenessCheckAt) {
+          nextLivenessCheckAt = now() + livenessIntervalMs;
+          if (!loadedFn(target0)) {
             return {
               result: "idle",
               target: { sessionId, lastLoaded: false }
             };
           }
         }
-        if (Date.now() >= deadline) {
+        if (now() >= deadline) {
           return { result: "timeout", sessionId };
         }
-        const remaining = deadline - Date.now();
-        await sleep3(Math.min(DEFAULT_POLL_INTERVAL_MS2, Math.max(remaining, 10)));
+        const remaining = deadline - now();
+        await sleep3(Math.min(pollIntervalMs, Math.max(remaining, 10)));
       }
     }
   };
@@ -21162,7 +21622,7 @@ function sleep3(ms) {
 // src/tools/mailbox-inspect.js
 var mailboxInspectTool = {
   name: "agent_link_mailbox_inspect",
-  description: "Read-only sift over the Agent Link JSONL mailbox. Filter by from/to session, undelivered/pendingAck, replyToMessageId, since.",
+  description: "Read-only sift over the Agent Link JSONL mailbox. Filter by from/to session, undelivered/pendingAck, replyToMessageId, since. By default only mail sent by or addressed to the calling session is returned; pass scope='all' to inspect every session's mail.",
   inputSchema: {
     type: "object",
     properties: {
@@ -21172,21 +21632,43 @@ var mailboxInspectTool = {
       undelivered: { type: "boolean" },
       pendingAck: { type: "boolean" },
       since: { type: "number" },
-      limit: { type: "number" }
+      limit: { type: "number" },
+      scope: {
+        type: "string",
+        enum: ["caller", "all"],
+        description: "'caller' (default): only mail sent by or addressed to the calling session. 'all': every session's mail."
+      }
     }
   }
 };
-function makeMailboxInspectHandler() {
+function makeMailboxInspectHandler({ host, mailboxOpener, resolveCurrentSession = null } = {}) {
+  const openMb = typeof mailboxOpener === "function" ? mailboxOpener : () => openMailbox();
   return {
-    agent_link_mailbox_inspect: async (args) => {
-      const mb = openMailbox();
+    agent_link_mailbox_inspect: async (args, toolContext = {}) => {
+      const { scope, ...filters } = args ?? {};
+      const all = scope === "all";
+      const caller = all ? null : resolveCallerIdentity({
+        host,
+        runtimeCallerContext: toolContext.runtimeCallerContext ?? null,
+        currentSession: resolveCurrentSession
+      });
+      const mb = openMb();
       try {
-        return { messages: mb.inspect(args ?? {}) };
+        const messages = mb.inspect(all ? filters : { ...filters, involvingSessionIds: caller.aliases });
+        return all ? { scope: "all", messages } : { scope: "caller", callerSessionId: caller.id, messages };
       } finally {
         mb.close();
       }
     }
   };
+}
+
+// src/claude/xml.js
+function escapeXml(value) {
+  return String(value ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+}
+function escapeAttr(value) {
+  return escapeXml(value).replace(/["']/g, (c) => c === '"' ? "&quot;" : "&apos;");
 }
 
 // src/tools/read-inbox.js
@@ -21226,15 +21708,20 @@ function makeReadInboxHandler({ resolveCurrentSession, mailboxOpener } = {}) {
       }
       const markAsDelivered = args.markAsDelivered !== false;
       const limit = typeof args.limit === "number" && args.limit >= 0 ? Math.floor(args.limit) : null;
+      const toSessionIds = claudeSessionAliases(session);
       const mb = openMb();
       try {
-        const messages = markAsDelivered ? mb.drainFor({ toSessionId: session.sessionId }) : mb.listPendingFor({ toSessionId: session.sessionId });
-        const sliced = limit !== null ? messages.slice(0, limit) : messages;
+        const rows = markAsDelivered ? mb.drainFor({ toSessionIds, limit: limit ?? void 0 }) : mb.listPendingFor({ toSessionIds }).slice(0, limit ?? void 0);
+        const messages = rows.map((m) => ({
+          ...m,
+          from_session_id: displaySenderId(m.from_session_id),
+          from_session_kind: displaySenderId(m.from_session_kind)
+        }));
         return {
           sessionId: session.sessionId,
           markedDelivered: markAsDelivered,
-          messages: sliced,
-          renderedBlock: renderInbox(sliced)
+          messages,
+          renderedBlock: renderInbox(messages)
         };
       } finally {
         mb.close();
@@ -21248,19 +21735,16 @@ function renderInbox(messages) {
   }
   const lines = [`<agent-link-inbox count="${messages.length}">`];
   for (const m of messages) {
-    const replyAttr = m.reply_to_message_id ? ` replyTo="${m.reply_to_message_id}"` : "";
-    const sentAt = new Date(m.sent_at).toISOString();
+    const replyAttr = m.reply_to_message_id ? ` replyTo="${escapeAttr(m.reply_to_message_id)}"` : "";
+    const sentAt = Number.isFinite(m.sent_at) ? new Date(m.sent_at).toISOString() : "";
     lines.push(
-      `  <message id="${m.id}" from="${m.from_session_id}" fromKind="${m.from_session_kind}" sentAt="${sentAt}"${replyAttr}>`
+      `  <message id="${escapeAttr(m.id)}" from="${escapeAttr(displaySenderId(m.from_session_id))}" fromKind="${escapeAttr(displaySenderId(m.from_session_kind))}" sentAt="${escapeAttr(sentAt)}"${replyAttr}>`
     );
     lines.push(`    <body>${escapeXml(m.body)}</body>`);
     lines.push(`  </message>`);
   }
   lines.push(`</agent-link-inbox>`);
   return lines.join("\n");
-}
-function escapeXml(s) {
-  return String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
 }
 
 // src/tools/claude-reply.js
@@ -21277,68 +21761,102 @@ var replyAgentLinkMessageTool = {
     additionalProperties: false
   }
 };
-function makeReplyAgentLinkMessageHandler({ mailboxOpener, resolveCurrentSession } = {}) {
+function makeReplyAgentLinkMessageHandler({
+  mailboxOpener,
+  resolveCurrentSession,
+  host = "claude",
+  appendReceipt: appendReceipt2 = safeAppendReceipt
+} = {}) {
   const openMb = typeof mailboxOpener === "function" ? mailboxOpener : () => openMailbox();
   return {
-    reply_agent_link_message: async ({ messageId, body } = {}) => {
+    reply_agent_link_message: async ({ messageId, body } = {}, toolContext = {}) => {
       if (typeof messageId !== "string" || !messageId.trim()) {
         return { error: "invalid_arguments", message: "`messageId` must be a non-empty string" };
       }
       if (typeof body !== "string" || !body.length) {
         return { error: "invalid_arguments", message: "`body` must be a non-empty string" };
       }
+      const tooLarge = messageBodyTooLarge(body);
+      if (tooLarge) return tooLarge;
       const session = typeof resolveCurrentSession === "function" ? resolveCurrentSession() : null;
       if (!session?.sessionId) {
         return { error: "no_current_session", message: "Could not resolve the current Claude session." };
       }
+      const currentSessionId = canonicalClaudeSessionId(session);
       const mb = openMb();
+      let original;
+      let replyId;
       try {
-        const original = mb.getMessage({ messageId });
+        original = mb.getMessage({ messageId });
         if (!original) return { error: "not_found", messageId };
-        if (original.to_session_id !== session.sessionId) {
+        if (!claudeSessionAliases(session).includes(original.to_session_id)) {
           return {
             error: "wrong_recipient",
             messageId,
             expectedSessionId: original.to_session_id,
-            currentSessionId: session.sessionId
+            currentSessionId
           };
         }
-        mb.ackMessage({ messageId, body });
-        const reply = mb.inspect({ replyToMessageId: messageId, limit: 1 })[0] ?? null;
-        return {
-          messageId: reply?.id ?? null,
-          replyToMessageId: messageId,
-          target: {
-            sessionId: original.from_session_id,
-            kind: original.from_session_kind
-          },
-          delivery: "queued-mailbox"
-        };
+        mb.markAcknowledged({ messageId });
+        replyId = mb.insertMessage({
+          fromSessionId: currentSessionId,
+          fromSessionKind: "claude",
+          toSessionId: original.from_session_id,
+          toSessionKind: original.from_session_kind,
+          body,
+          replyToMessageId: messageId
+        });
       } finally {
         mb.close();
       }
+      const target = {
+        sessionId: original.from_session_id,
+        kind: original.from_session_kind
+      };
+      const built = buildReceipt({
+        action: "reply_message",
+        receipt: null,
+        host,
+        target: {
+          sessionId: original.from_session_id,
+          kind: original.from_session_kind
+        },
+        message: body,
+        delivery: "queued-mailbox",
+        runtimeCallerContext: toolContext.runtimeCallerContext ?? null
+      });
+      const receipt = { recorded: true, ...await appendReceipt2(built) };
+      return {
+        messageId: replyId,
+        replyToMessageId: messageId,
+        target,
+        delivery: "queued-mailbox",
+        receipt
+      };
     }
   };
 }
 
 // src/claude/channel-bridge.js
 import fs5 from "node:fs";
-import path6 from "node:path";
+import path7 from "node:path";
 var DEFAULT_POLL_INTERVAL_MS3 = 1e3;
 var DEFAULT_MAX_POLL_INTERVAL_MS = 3e4;
 var WAKE_DEBOUNCE_MS = 50;
 function renderChannelMessage(message) {
+  const from = displaySenderId(message.from_session_id);
+  const fromKind = displaySenderId(message.from_session_kind);
   return {
     content: [
-      `<agent-link-message id="${escapeAttr(message.id)}" from="${escapeAttr(message.from_session_id)}" fromKind="${escapeAttr(message.from_session_kind)}">`,
-      `  <body>${escapeXml2(message.body)}</body>`,
+      `<agent-link-message id="${escapeAttr(message.id)}" from="${escapeAttr(from)}" fromKind="${escapeAttr(fromKind)}">`,
+      `  <body>${escapeXml(message.body)}</body>`,
       `  <reply>Use reply_agent_link_message with messageId="${escapeAttr(message.id)}" to reply.</reply>`,
       `</agent-link-message>`
     ].join("\n"),
     meta: {
       message_id: String(message.id),
-      from_session_id: String(message.from_session_id),
-      from_kind: String(message.from_session_kind)
+      from_session_id: from,
+      from_kind: fromKind
     }
   };
 }
@@ -21369,7 +21887,7 @@ function makeAgentLinkChannelBridge({
     if (cachedSession) return cachedSession;
     stats.sessionResolves += 1;
     const session = typeof resolveCurrentSession === "function" ? resolveCurrentSession() : null;
-    if (session?.sessionId) cachedSession = session;
+    if (session?.sessionId && session.source !== "transcript") cachedSession = session;
     return session;
   }
   function mailboxSignature() {
@@ -21395,20 +21913,25 @@ function makeAgentLinkChannelBridge({
     stats.fullChecks += 1;
     const mb = openMb();
     try {
-      const pending = mb.listPendingFor({ toSessionId: session.sessionId });
+      const pending = mb.listPendingFor({ toSessionIds: claudeSessionAliases(session) });
       lastHadPending = pending.length > 0;
+      for (const message of pending) mb.markDelivered({ messageId: message.id });
       let delivered = 0;
-      for (const message of pending) {
-        const rendered = renderChannelMessage(message);
-        await notify({
-          method: "notifications/claude/channel",
-          params: {
-            content: rendered.content,
-            meta: rendered.meta
-          }
-        });
-        mb.markDelivered({ messageId: message.id });
-        delivered += 1;
+      try {
+        for (const message of pending) {
+          const rendered = renderChannelMessage(message);
+          await notify({
+            method: "notifications/claude/channel",
+            params: {
+              content: rendered.content,
+              meta: rendered.meta
+            }
+          });
+          delivered += 1;
+        }
+      } catch (error2) {
+        for (const message of pending.slice(delivered)) mb.releaseDelivery({ messageId: message.id });
+        throw error2;
       }
       lastHadPending = false;
       lastSignature = signature;
@@ -21453,8 +21976,8 @@ function makeAgentLinkChannelBridge({
   function startWatcher() {
     if (!watch || !signaturePath) return;
     try {
-      const dir = path6.dirname(signaturePath);
-      const base = path6.basename(signaturePath);
+      const dir = path7.dirname(signaturePath);
+      const base = path7.basename(signaturePath);
       watcher = fs5.watch(dir, { persistent: false }, (_event, filename) => {
         if (!filename || String(filename) === base) wake();
       });
@@ -21485,16 +22008,10 @@ function makeAgentLinkChannelBridge({
     }
   };
 }
-function escapeXml2(s) {
-  return String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
-}
-function escapeAttr(s) {
-  return escapeXml2(s).replace(/"/g, "&quot;");
-}
 
 // src/codex/project-orchestrator.js
 import { promises as fs6 } from "node:fs";
-import path7 from "node:path";
+import path8 from "node:path";
 
 // src/codex/thread-utils.js
 var MAX_REASON_TEXT = 160;
@@ -21505,32 +22022,32 @@ function normalizeArchiveScope(args = {}) {
   return args.archived === true ? "archived" : "active";
 }
 function inferArchiveState(threadOrPath) {
-  const path9 = typeof threadOrPath === "string" ? threadOrPath : threadOrPath?.path ?? null;
-  if (!path9) {
+  const path10 = typeof threadOrPath === "string" ? threadOrPath : threadOrPath?.path ?? null;
+  if (!path10) {
     return {
       scope: "unknown",
       inferredFrom: "missingPath",
       path: null
     };
   }
-  if (path9.includes("/archived_sessions/")) {
+  if (path10.includes("/archived_sessions/")) {
     return {
       scope: "archived",
       inferredFrom: "path",
-      path: path9
+      path: path10
     };
   }
-  if (path9.includes("/sessions/")) {
+  if (path10.includes("/sessions/")) {
     return {
       scope: "active",
       inferredFrom: "path",
-      path: path9
+      path: path10
     };
   }
   return {
     scope: "unknown",
     inferredFrom: "path",
-    path: path9
+    path: path10
   };
 }
 function desktopVisibilityContract(appServerSummary = {}) {
@@ -22012,7 +22529,7 @@ function truncate(value, max) {
 }
 
 // src/codex/project-orchestrator.js
-var PROJECT_ORCHESTRATOR_BINDING_PATH = path7.join(".codex", "project-orchestrator.json");
+var PROJECT_ORCHESTRATOR_BINDING_PATH = path8.join(".codex", "project-orchestrator.json");
 var DEFAULT_POLICY_VERSION = "v0";
 var ALLOWED_RETURN_STATUSES = /* @__PURE__ */ new Set(["done", "done_with_concerns", "blocked"]);
 async function resolveProjectOrchestrator(args = {}, deps = {}) {
@@ -22192,7 +22709,7 @@ async function returnProjectWorkResult(args = {}, deps = {}, toolContext = {}) {
   };
 }
 async function readProjectOrchestratorBinding(projectRoot) {
-  const bindingPath = path7.join(requiredString(projectRoot, "projectRoot"), PROJECT_ORCHESTRATOR_BINDING_PATH);
+  const bindingPath = path8.join(requiredString(projectRoot, "projectRoot"), PROJECT_ORCHESTRATOR_BINDING_PATH);
   let raw;
   try {
     raw = await fs6.readFile(bindingPath, "utf8");
@@ -22269,8 +22786,8 @@ function validateBinding(value, { bindingPath, requestedProjectRoot }) {
       throwBindingError(`Binding field ${field} is required`, { bindingPath, field });
     }
   }
-  const resolvedBindingRoot = path7.resolve(value.projectRoot);
-  const resolvedRequestedRoot = path7.resolve(requestedProjectRoot);
+  const resolvedBindingRoot = path8.resolve(value.projectRoot);
+  const resolvedRequestedRoot = path8.resolve(requestedProjectRoot);
   if (resolvedBindingRoot !== resolvedRequestedRoot) {
     throwBindingError("Binding projectRoot does not match the source root that contains it", {
       bindingPath,
@@ -22346,7 +22863,7 @@ function buildFallbackQuery(args) {
     return `Project Orchestrator ${projectId}`;
   }
   if (args.projectRoot) {
-    return `${path7.basename(args.projectRoot)} Project Orchestrator`;
+    return `${path8.basename(args.projectRoot)} Project Orchestrator`;
   }
   return "";
 }
@@ -22681,7 +23198,7 @@ function hasProjectResolutionArgs(args) {
   return Boolean(cleanString2(args.projectRoot || args.projectId || args.orchestratorThreadId));
 }
 function mergeReceipt(receipt, defaults) {
-  const input = isPlainObject4(receipt) ? receipt : {};
+  const input = isPlainObject5(receipt) ? receipt : {};
   return {
     ...input,
     purpose: cleanString2(input.purpose) || defaults.purpose,
@@ -22712,17 +23229,17 @@ function slug(value) {
   const out = cleanString2(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
   return out || "dependency";
 }
-function isPlainObject4(value) {
+function isPlainObject5(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 // src/codex/session-index.js
 import { promises as fs7 } from "node:fs";
 import os3 from "node:os";
-import path8 from "node:path";
+import path9 from "node:path";
 var MAX_PREVIEW_CHARS = 500;
 async function listLocalThreads(options = {}) {
-  const codexHome = options.codexHome || process.env.CODEX_HOME || path8.join(os3.homedir(), ".codex");
+  const codexHome = options.codexHome || process.env.CODEX_HOME || path9.join(os3.homedir(), ".codex");
   const archiveScope = normalizeArchiveScope(options);
   const roots = rootsForArchiveScope(codexHome, archiveScope);
   const sessionIndex = await readSessionIndex(codexHome);
@@ -22764,8 +23281,8 @@ async function listLocalThreads(options = {}) {
   };
 }
 async function readLocalThread(threadId, options = {}) {
-  const codexHome = options.codexHome || process.env.CODEX_HOME || path8.join(os3.homedir(), ".codex");
-  const roots = [path8.join(codexHome, "sessions"), path8.join(codexHome, "archived_sessions")];
+  const codexHome = options.codexHome || process.env.CODEX_HOME || path9.join(os3.homedir(), ".codex");
+  const roots = [path9.join(codexHome, "sessions"), path9.join(codexHome, "archived_sessions")];
   const sessionIndex = await readSessionIndex(codexHome);
   for (const root of roots) {
     const files = await collectJsonlFiles(root);
@@ -22789,10 +23306,10 @@ async function readLocalThread(threadId, options = {}) {
   throw new Error(`Thread ${threadId} was not found under ${codexHome}`);
 }
 async function archiveLocalThread(threadId, options = {}) {
-  const codexHome = options.codexHome || process.env.CODEX_HOME || path8.join(os3.homedir(), ".codex");
+  const codexHome = options.codexHome || process.env.CODEX_HOME || path9.join(os3.homedir(), ".codex");
   const located = await findLocalThread(threadId, { codexHome });
-  const activeRoot = path8.join(codexHome, "sessions");
-  const archivedRoot = path8.join(codexHome, "archived_sessions");
+  const activeRoot = path9.join(codexHome, "sessions");
+  const archivedRoot = path9.join(codexHome, "archived_sessions");
   const before = located.thread.archiveState ?? inferArchiveState(located.path);
   if (before.scope === "archived") {
     return {
@@ -22807,11 +23324,11 @@ async function archiveLocalThread(threadId, options = {}) {
       codexHome
     };
   }
-  const relative = path8.relative(activeRoot, located.path);
-  if (relative.startsWith("..") || path8.isAbsolute(relative)) {
+  const relative = path9.relative(activeRoot, located.path);
+  if (relative.startsWith("..") || path9.isAbsolute(relative)) {
     throw new Error(`Thread ${threadId} is not under ${activeRoot}; refusing to archive ${located.path}`);
   }
-  const destination = path8.join(archivedRoot, relative);
+  const destination = path9.join(archivedRoot, relative);
   try {
     await fs7.access(destination);
     throw new Error(`Archive destination already exists for thread ${threadId}: ${destination}`);
@@ -22820,7 +23337,7 @@ async function archiveLocalThread(threadId, options = {}) {
       throw error2;
     }
   }
-  await fs7.mkdir(path8.dirname(destination), { recursive: true });
+  await fs7.mkdir(path9.dirname(destination), { recursive: true });
   await moveFileAcrossDevices(located.path, destination);
   const afterThread = {
     ...located.thread,
@@ -22861,7 +23378,7 @@ async function moveFileAcrossDevices(source, destination) {
   await fs7.unlink(source);
 }
 async function findLocalThread(threadId, options = {}) {
-  const codexHome = options.codexHome || process.env.CODEX_HOME || path8.join(os3.homedir(), ".codex");
+  const codexHome = options.codexHome || process.env.CODEX_HOME || path9.join(os3.homedir(), ".codex");
   const found = await readLocalThread(threadId, { codexHome });
   return {
     thread: found.thread,
@@ -22881,7 +23398,7 @@ async function collectJsonlFiles(root) {
   const out = [];
   const entries = await fs7.readdir(root, { withFileTypes: true });
   for (const entry of entries) {
-    const fullPath = path8.join(root, entry.name);
+    const fullPath = path9.join(root, entry.name);
     if (entry.isDirectory()) {
       out.push(...await collectJsonlFiles(fullPath));
     } else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
@@ -22891,7 +23408,7 @@ async function collectJsonlFiles(root) {
   return out;
 }
 async function readSessionIndex(codexHome) {
-  const indexPath = path8.join(codexHome, "session_index.jsonl");
+  const indexPath = path9.join(codexHome, "session_index.jsonl");
   let raw;
   try {
     raw = await fs7.readFile(indexPath, "utf8");
@@ -23079,15 +23596,15 @@ function threadMatches(thread, searchTerm) {
 }
 function rootsForArchiveScope(codexHome, archiveScope) {
   if (archiveScope === "archived") {
-    return [path8.join(codexHome, "archived_sessions")];
+    return [path9.join(codexHome, "archived_sessions")];
   }
   if (archiveScope === "all") {
     return [
-      path8.join(codexHome, "sessions"),
-      path8.join(codexHome, "archived_sessions")
+      path9.join(codexHome, "sessions"),
+      path9.join(codexHome, "archived_sessions")
     ];
   }
-  return [path8.join(codexHome, "sessions")];
+  return [path9.join(codexHome, "sessions")];
 }
 function normalizeCwdFilter(cwd) {
   if (!cwd) {
@@ -23117,17 +23634,43 @@ function clampNumber(value, min, max) {
 var HOST_INFO = detectHost();
 var claudeHandlers = HOST_INFO.host === "claude" ? makeClaudeListingHandlers() : null;
 var claudeToolDefs = HOST_INFO.host === "claude" ? claudeListingTools : [];
-var mailboxInspectHandlers = makeMailboxInspectHandler();
-var messageClaudeSessionHandlers = makeClaudeSendHandler({ host: HOST_INFO.host });
-var waitClaudeSessionHandlers = makeWaitHandler();
+var CURRENT_SESSION_RECHECK_MS = 3e4;
+var CURRENT_SESSION_MISS_RETRY_MS = 5e3;
+var currentClaudeSessionMemo = null;
 function currentClaudeSession() {
   if (HOST_INFO.host !== "claude") return null;
-  return resolveCurrentClaudeSession({ sessionId: currentClaudeSessionId() });
+  const now = Date.now();
+  const memo = currentClaudeSessionMemo;
+  if (memo) {
+    const ttl = !memo.session ? CURRENT_SESSION_MISS_RETRY_MS : memo.session.source === "transcript" ? CURRENT_SESSION_RECHECK_MS : Infinity;
+    if (now - memo.at < ttl) return memo.session;
+  }
+  let session = null;
+  try {
+    session = resolveCurrentClaudeSession({ sessionId: currentClaudeSessionId() });
+  } catch {
+    session = null;
+  }
+  currentClaudeSessionMemo = { session: session ?? memo?.session ?? null, at: now };
+  return currentClaudeSessionMemo.session;
 }
+var mailboxInspectHandlers = makeMailboxInspectHandler({
+  host: HOST_INFO.host,
+  resolveCurrentSession: currentClaudeSession
+});
+var messageClaudeSessionHandlers = makeClaudeSendHandler({
+  host: HOST_INFO.host,
+  resolveCurrentSession: currentClaudeSession
+});
+var waitClaudeSessionHandlers = makeWaitHandler({
+  host: HOST_INFO.host,
+  resolveCurrentSession: currentClaudeSession
+});
 var readInboxHandlers = makeReadInboxHandler({
   resolveCurrentSession: currentClaudeSession
 });
 var replyAgentLinkMessageHandlers = makeReplyAgentLinkMessageHandler({
+  host: HOST_INFO.host,
   resolveCurrentSession: currentClaudeSession
 });
 var SERVER_VERSION = true ? "0.3.0" : "0.0.0-dev";
@@ -23434,7 +23977,8 @@ var tools = [
             "launch_thread",
             "message_thread",
             "archive_thread",
-            "message_claude_session"
+            "message_claude_session",
+            "reply_message"
           ],
           description: "Only return receipts for this action."
         },
@@ -23921,7 +24465,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       return jsonResult(await claudeHandlers[name](args));
     }
     if (Object.prototype.hasOwnProperty.call(mailboxInspectHandlers, name)) {
-      return jsonResult(await mailboxInspectHandlers[name](args));
+      return jsonResult(await mailboxInspectHandlers[name](args, {
+        runtimeCallerContext: toolContext.callerContext
+      }));
     }
     if (Object.prototype.hasOwnProperty.call(messageClaudeSessionHandlers, name)) {
       return jsonResult(await messageClaudeSessionHandlers[name](args, {
@@ -23929,13 +24475,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       }));
     }
     if (Object.prototype.hasOwnProperty.call(waitClaudeSessionHandlers, name)) {
-      return jsonResult(await waitClaudeSessionHandlers[name](args));
+      return jsonResult(await waitClaudeSessionHandlers[name](args, {
+        runtimeCallerContext: toolContext.callerContext
+      }));
     }
     if (Object.prototype.hasOwnProperty.call(readInboxHandlers, name)) {
       return jsonResult(await readInboxHandlers[name](args));
     }
     if (Object.prototype.hasOwnProperty.call(replyAgentLinkMessageHandlers, name)) {
-      return jsonResult(await replyAgentLinkMessageHandlers[name](args));
+      return jsonResult(await replyAgentLinkMessageHandlers[name](args, {
+        runtimeCallerContext: toolContext.callerContext
+      }));
     }
     switch (name) {
       case "agent_link_health":
@@ -24045,19 +24595,12 @@ function claudeHealthSummary() {
   } catch {
     sessions = [];
   }
-  let pendingMessagesCount = null;
-  let mailboxWritable = false;
+  let status = { path: null, writable: false, pendingMessagesCount: null };
   try {
-    const mb = openMailbox();
-    try {
-      pendingMessagesCount = mb.inspect({ undelivered: true, limit: 1e4 }).length;
-      mailboxWritable = true;
-    } finally {
-      mb.close();
-    }
+    status = mailboxStatus();
   } catch {
-    mailboxWritable = false;
   }
+  const current = currentClaudeSession();
   return {
     sessionIndex: {
       total: sessions.length,
@@ -24066,16 +24609,16 @@ function claudeHealthSummary() {
       loaded: sessions.filter((s) => s.loaded).length
     },
     mailbox: {
-      path: resolveMailboxPath(),
-      writable: mailboxWritable,
-      pendingMessagesCount
+      path: status.path,
+      writable: status.writable,
+      pendingMessagesCount: status.pendingMessagesCount
     },
     channel: {
       enabled: HOST_INFO.host === "claude" && process.env.AGENT_LINK_DISABLE_CHANNEL !== "1",
-      currentSession: currentClaudeSession() ? {
-        sessionId: currentClaudeSession().sessionId,
-        surface: currentClaudeSession().surface,
-        supportsChannel: currentClaudeSession().supportsChannel
+      currentSession: current ? {
+        sessionId: current.sessionId,
+        surface: current.surface,
+        supportsChannel: current.supportsChannel
       } : null
     }
   };

@@ -60,4 +60,16 @@ import { detectHost, currentClaudeSessionId } from "../../src/shared/host-detect
   assert.equal(currentClaudeSessionId({ env: {} }), undefined);
 }
 
+// W2C-04: one claudeConfigDir() helper honors CLAUDE_CONFIG_DIR.
+{
+  const hostDetect = await import("../../src/shared/host-detect.js");
+  assert.equal(typeof hostDetect.claudeConfigDir, "function", "claudeConfigDir() must exist");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  assert.equal(hostDetect.claudeConfigDir({ env: {} }), path.join(os.homedir(), ".claude"));
+  assert.equal(hostDetect.claudeConfigDir({ env: { CLAUDE_CONFIG_DIR: "/tmp/relocated-claude" } }), "/tmp/relocated-claude");
+  assert.equal(hostDetect.claudeConfigDir({ env: { CLAUDE_CONFIG_DIR: "  " } }), path.join(os.homedir(), ".claude"));
+  assert.equal(hostDetect.claudeProjectsRoot({ env: { CLAUDE_CONFIG_DIR: "/tmp/relocated-claude" } }), "/tmp/relocated-claude/projects");
+}
+
 console.log("host-detect tests passed");

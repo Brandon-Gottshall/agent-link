@@ -1,9 +1,14 @@
 // src/tools/claude-send.js
-import { openMailbox } from "../claude/mailbox.js";
+import { openMailbox, messageBodyTooLarge } from "../claude/mailbox.js";
 import { listClaudeSessions } from "../claude/session-index.js";
 import { resolveSession } from "../claude/session-resolver.js";
+import {
+  canonicalClaudeSessionId,
+  claudeSessionAliases,
+  claudeSessionMatches,
+  resolveCallerIdentity
+} from "../claude/identity.js";
 import { buildReceipt, safeAppendReceipt } from "../shared/receipt-index.js";
-import { currentClaudeSessionId } from "../shared/host-detect.js";
 
 const DEFAULT_WAIT_TIMEOUT_MS = 60_000;
 const DEFAULT_POLL_INTERVAL_MS = 250;
@@ -71,10 +76,19 @@ export const claudeSendTool = {
   }
 };
 
-export function makeClaudeSendHandler({ host, listSessions, mailboxOpener } = {}) {
+export function makeClaudeSendHandler({
+  host,
+  listSessions,
+  listOptions = {},
+  mailboxOpener,
+  resolveCurrentSession = null,
+  appendReceipt = safeAppendReceipt
+} = {}) {
+  // Archived sessions are listed so an exact id can still address them;
+  // fuzzy matching below skips them.
   const sessionsFn = typeof listSessions === "function"
     ? listSessions
-    : (args = {}) => listClaudeSessions({ surface: args.surface ?? "all" });
+    : (args = {}) => listClaudeSessions({ ...listOptions, surface: args.surface ?? "all", includeArchived: true });
   const openMb = typeof mailboxOpener === "function"
     ? mailboxOpener
     : () => openMailbox();
@@ -99,6 +113,8 @@ export function makeClaudeSendHandler({ host, listSessions, mailboxOpener } = {}
       if (typeof body !== "string" || !body.length) {
         return { error: "invalid_arguments", message: "`body` must be a non-empty string" };
       }
+      const tooLarge = messageBodyTooLarge(body);
+      if (tooLarge) return tooLarge;
 
       const sessions = (sessionsFn({ surface: surface ?? "all" }) ?? [])
         .filter((s) => !surface || s.surface === surface);
@@ -106,7 +122,9 @@ export function makeClaudeSendHandler({ host, listSessions, mailboxOpener } = {}
       // 1. Resolve target
       let target = null;
       let resolution = null;
-      const exact = sessions.find((s) => s.sessionId === to || s.cliSessionId === to);
+      // Exact ids (sidecar id, CLI id, or local_<cli>) also reach archived
+      // sessions; fuzzy queries only consider active ones.
+      const exact = sessions.find((s) => claudeSessionMatches(s, to));
       if (exact) {
         target = exact;
         resolution = {
@@ -115,7 +133,7 @@ export function makeClaudeSendHandler({ host, listSessions, mailboxOpener } = {}
           matchReasons: ["sessionId-exact"]
         };
       } else {
-        const r = resolveSession({ query: to }, sessions);
+        const r = resolveSession({ query: to }, sessions.filter((s) => !s.isArchived));
         if (!r.best) {
           return { error: "not_found", candidates: [], query: to };
         }
@@ -136,16 +154,29 @@ export function makeClaudeSendHandler({ host, listSessions, mailboxOpener } = {}
       }
 
       // 2. Insert into mailbox
+      const caller = resolveCallerIdentity({
+        host,
+        runtimeCallerContext,
+        currentSession: resolveCurrentSession
+      });
       const mb = openMb();
       let messageId;
       try {
-        const fromSessionKind = host === "claude" || host === "codex" ? host : "external";
-        const fromSessionId = pickFromSessionId(host, runtimeCallerContext);
+        if (replyToMessageId !== undefined && replyToMessageId !== null) {
+          const original = typeof replyToMessageId === "string" ? mb.getMessage({ messageId: replyToMessageId }) : null;
+          if (!original || !caller.aliases.includes(original.to_session_id)) {
+            return {
+              error: "invalid_arguments",
+              message: "`replyToMessageId` must reference an Agent Link message addressed to the caller.",
+              replyToMessageId
+            };
+          }
+        }
 
         messageId = mb.insertMessage({
-          fromSessionId,
-          fromSessionKind,
-          toSessionId: target.sessionId,
+          fromSessionId: caller.id,
+          fromSessionKind: caller.kind,
+          toSessionId: canonicalClaudeSessionId(target),
           toSessionKind: "claude",
           body,
           metadata: { receipt: receipt ?? null, resolution },
@@ -160,7 +191,9 @@ export function makeClaudeSendHandler({ host, listSessions, mailboxOpener } = {}
           surface: target.surface ?? null
         };
 
-        // 3. Write receipt (unless caller opted out)
+        // 3. Write receipt (unless caller opted out). The write result is
+        // returned to the caller as `receipt`, including failures.
+        let receiptResult = { ok: true, recorded: false, reason: "receipt.record was false" };
         if (!receipt || receipt.record !== false) {
           const built = buildReceipt({
             action: "message_claude_session",
@@ -180,24 +213,25 @@ export function makeClaudeSendHandler({ host, listSessions, mailboxOpener } = {}
             delivery,
             runtimeCallerContext
           });
-          // Fire-and-forget; failures are logged inside safeAppendReceipt.
-          await safeAppendReceipt(built);
+          receiptResult = { recorded: true, ...await appendReceipt(built) };
         }
 
         const result = {
           messageId,
           delivery,
           target: targetSummary,
-          resolution
+          resolution,
+          receipt: receiptResult
         };
 
         // 4. Optionally wait for a reply
         if (waitForReply) {
-          result.replyConfirmation = await pollForReply(
-            mb,
+          result.replyConfirmation = await pollForReply(mb, {
             messageId,
-            typeof timeoutMs === "number" && timeoutMs >= 0 ? timeoutMs : DEFAULT_WAIT_TIMEOUT_MS
-          );
+            fromIds: claudeSessionAliases(target),
+            toIds: caller.aliases,
+            timeoutMs: typeof timeoutMs === "number" && timeoutMs >= 0 ? timeoutMs : DEFAULT_WAIT_TIMEOUT_MS
+          });
         }
 
         return result;
@@ -217,29 +251,19 @@ function classifyDelivery({ target, deliveryPreference }) {
   return target.loaded ? "queued-online" : "queued-offline";
 }
 
-// Precedence: MCP runtime caller context > host env var > "external".
-// `extractRuntimeCallerContext` (see src/shared/caller-context.js) returns
-// {available, threadId, turnId, toolCallId, ...}, classifying both
-// `callerThreadId` and `originThreadId` _meta keys onto `threadId`. This
-// matches the precedence the receipt origin chain already uses, so a Codex
-// caller's threadId reaches both `from_session_id` and `origin.threadId`
-// even when CODEX_THREAD_ID isn't set in the server's environment.
-function pickFromSessionId(host, runtimeCallerContext) {
-  const runtimeId = runtimeCallerContext?.threadId ?? null;
-  if (host === "claude") {
-    return runtimeId ?? currentClaudeSessionId() ?? "external";
-  }
-  if (host === "codex") {
-    return runtimeId ?? process.env.CODEX_THREAD_ID ?? "external";
-  }
-  return "external";
-}
-
-async function pollForReply(mb, messageId, timeoutMs) {
+// A reply only counts when it comes from the target session (any of its id
+// forms) and is addressed to this caller. Anyone can append to the mailbox,
+// so a reply_to_message_id match alone would let a third party forge the
+// answer the caller is blocked on.
+async function pollForReply(mb, { messageId, fromIds, toIds, timeoutMs }) {
   const deadline = Date.now() + timeoutMs;
+  const from = new Set(fromIds);
+  const to = new Set(toIds);
   // First check immediately in case a reply arrived synchronously.
   while (true) {
-    const replies = mb.inspect({ replyToMessageId: messageId, limit: 1 });
+    const replies = mb.inspect({ replyToMessageId: messageId, limit: Number.MAX_SAFE_INTEGER })
+      .filter((m) => from.has(m.from_session_id) && to.has(m.to_session_id))
+      .sort((a, b) => a.sent_at - b.sent_at);
     if (replies.length) {
       return {
         received: true,

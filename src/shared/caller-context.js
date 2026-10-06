@@ -1,6 +1,46 @@
 const MAX_TEXT = 300;
 const MAX_META_KEYS = 50;
-const MAX_DEPTH = 6;
+
+// Caller provenance is read from an explicit allowlist of exact keys and
+// nested paths, never by fuzzy key matching: a loose match once turned
+// `{thread:{turnId}}` into the caller's threadId, which then became a
+// message sender id.
+//
+// Each field lists its accepted specs in priority order. Every spec is tried
+// at the top of `_meta` and inside each NAMESPACES object, request
+// `params._meta` before handler `extra._meta`; the first non-empty
+// string or number wins.
+const NAMESPACES = [null, "openai/codex", "codex", "claudecode"];
+const FIELD_SPECS = {
+  threadId: [
+    ["callerThreadId"],
+    ["caller", "thread", "id"],
+    ["threadId"],
+    ["thread_id"],
+    ["codexThreadId"],
+    ["thread", "id"],
+    ["originThreadId"]
+  ],
+  turnId: [
+    ["callerTurnId"],
+    ["caller", "turn", "id"],
+    ["turnId"],
+    ["turn_id"],
+    ["codexTurnId"],
+    ["turn", "id"],
+    ["originTurnId"]
+  ],
+  toolCallId: [
+    ["callerToolCallId"],
+    ["caller", "toolCall", "id"],
+    ["toolCallId"],
+    ["tool_call_id"],
+    ["claudecode/toolUseId"],
+    ["toolUseId"],
+    ["tool_use_id"],
+    ["originToolCallId"]
+  ]
+};
 
 export function callerContextContract() {
   return {
@@ -13,10 +53,10 @@ export function callerContextContract() {
     ],
     runtimeMetadataShape: {
       accepted: [
-        "threadId, thread_id, codexThreadId, callerThreadId, originThreadId",
-        "turnId, turn_id, codexTurnId, callerTurnId, originTurnId",
-        "toolCallId, tool_call_id, callerToolCallId, originToolCallId",
-        "nested objects such as { caller: { thread: { id }, turn: { id } } }"
+        "threadId (priority order): " + FIELD_SPECS.threadId.map((spec) => spec.join(".")).join(", "),
+        "turnId (priority order): " + FIELD_SPECS.turnId.map((spec) => spec.join(".")).join(", "),
+        "toolCallId (priority order): " + FIELD_SPECS.toolCallId.map((spec) => spec.join(".")).join(", "),
+        "each key is exact (case-sensitive) and read at the top of _meta or inside one of: " + NAMESPACES.filter(Boolean).join(", ")
       ],
       sources: [
         "request.params._meta",
@@ -29,18 +69,14 @@ export function callerContextContract() {
 export function extractRuntimeCallerContext(request = {}, extra = {}) {
   const requestMeta = request?.params?._meta;
   const extraMeta = extra?._meta;
-  const matches = {
-    threadId: [],
-    turnId: [],
-    toolCallId: []
-  };
+  const metas = [
+    [requestMeta, "request.params._meta"],
+    [extraMeta, "handler.extra._meta"]
+  ];
 
-  collectMatches(requestMeta, "request.params._meta", [], matches);
-  collectMatches(extraMeta, "handler.extra._meta", [], matches);
-
-  const threadId = firstMatch(matches.threadId);
-  const turnId = firstMatch(matches.turnId);
-  const toolCallId = firstMatch(matches.toolCallId);
+  const threadId = findField(metas, FIELD_SPECS.threadId);
+  const turnId = findField(metas, FIELD_SPECS.turnId);
+  const toolCallId = findField(metas, FIELD_SPECS.toolCallId);
 
   return {
     available: Boolean(threadId || turnId || toolCallId),
@@ -80,80 +116,38 @@ export function summarizeRuntimeCallerContext(context) {
   };
 }
 
-function collectMatches(value, source, path, matches, depth = 0) {
-  if (!value || depth > MAX_DEPTH) {
-    return;
-  }
-
-  if (Array.isArray(value)) {
-    for (let index = 0; index < Math.min(value.length, 20); index += 1) {
-      collectMatches(value[index], source, [...path, String(index)], matches, depth + 1);
-    }
-    return;
-  }
-
-  if (typeof value !== "object") {
-    return;
-  }
-
-  for (const [key, child] of Object.entries(value)) {
-    const childPath = [...path, key];
-    if (typeof child === "string" || typeof child === "number") {
-      const field = classifyPath(childPath);
-      if (field) {
-        matches[field].push({
-          value: cleanText(child, MAX_TEXT),
-          source,
-          path: childPath.join(".")
-        });
+function findField(metas, specs) {
+  for (const [meta, source] of metas) {
+    if (!isPlainObject(meta)) continue;
+    for (const spec of specs) {
+      for (const namespace of NAMESPACES) {
+        const container = namespace === null ? meta : meta[namespace];
+        if (!isPlainObject(container)) continue;
+        const value = cleanText(readPath(container, spec), MAX_TEXT);
+        if (value) {
+          return {
+            value,
+            source,
+            path: [...(namespace === null ? [] : [namespace]), ...spec].join(".")
+          };
+        }
       }
-      continue;
     }
-    collectMatches(child, source, childPath, matches, depth + 1);
   }
-}
-
-function classifyPath(path) {
-  const normalized = normalizeKey(path.join("."));
-  const leaf = normalizeKey(path[path.length - 1] ?? "");
-
-  if (hasIdSuffix(normalized) && (
-    normalized.includes("toolcall")
-      || normalized.includes("tool_call")
-      || (normalized.includes("tool") && normalized.includes("call"))
-  )) {
-    return "toolCallId";
-  }
-
-  if (hasIdSuffix(normalized) && (
-    normalized.includes("thread")
-      || normalized.includes("conversation")
-      || normalized.includes("originthread")
-      || normalized.includes("callerthread")
-      || normalized.includes("sourcethread")
-      || (leaf === "id" && path.some((part) => normalizeKey(part).includes("thread")))
-  )) {
-    return "threadId";
-  }
-
-  if (hasIdSuffix(normalized) && (
-    normalized.includes("turn")
-      || normalized.includes("originturn")
-      || normalized.includes("callerturn")
-      || (leaf === "id" && path.some((part) => normalizeKey(part).includes("turn")))
-  )) {
-    return "turnId";
-  }
-
   return null;
 }
 
-function hasIdSuffix(value) {
-  return value.endsWith("id") || value.endsWith("_id");
+function readPath(container, spec) {
+  let node = container;
+  for (const key of spec) {
+    if (!isPlainObject(node) || !Object.prototype.hasOwnProperty.call(node, key)) return null;
+    node = node[key];
+  }
+  return typeof node === "string" || typeof node === "number" ? node : null;
 }
 
-function firstMatch(matches) {
-  return matches.find((match) => Boolean(match.value)) ?? null;
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function summarizeMatch(match) {
@@ -173,11 +167,6 @@ function topLevelKeys(value) {
   return Object.keys(value).slice(0, MAX_META_KEYS);
 }
 
-function normalizeKey(value) {
-  return String(value ?? "")
-    .toLowerCase()
-    .replace(/[^a-z0-9_]+/g, "");
-}
 
 function cleanText(value, max) {
   if (value === null || value === undefined) {

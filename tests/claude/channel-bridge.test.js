@@ -148,5 +148,80 @@ const session = { sessionId: "local_code", cliSessionId: "uuid-code", surface: "
   assert.ok(resolves <= 12, `unresolved session retried on backoff (saw ${resolves})`);
 }
 
+// P4-10: the bridge claims messages before notifying, so the inbox tool
+// running in the same process during the notify await cannot return them a
+// second time.
+{
+  const { makeReadInboxHandler } = await import("../../src/tools/read-inbox.js");
+  const claimPath = path.join(tmp, "claim.jsonl");
+  const mb = openMailbox({ mailboxPath: claimPath });
+  for (const body of ["one", "two"]) {
+    mb.insertMessage({ fromSessionId: "local_sender", fromSessionKind: "codex", toSessionId: "local_code", toSessionKind: "claude", body });
+  }
+  mb.close();
+  const inbox = makeReadInboxHandler({
+    resolveCurrentSession: () => session,
+    mailboxOpener: () => openMailbox({ mailboxPath: claimPath })
+  });
+  const inboxSaw = [];
+  const bridge = makeAgentLinkChannelBridge({
+    resolveCurrentSession: () => session,
+    mailboxPath: claimPath,
+    mailboxOpener: () => openMailbox({ mailboxPath: claimPath }),
+    notify: async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      const read = await inbox.read_agent_link_inbox({});
+      inboxSaw.push(...read.messages.map((m) => m.body));
+    },
+    watch: false
+  });
+  const result = await bridge.pollOnce();
+  assert.equal(result.delivered, 2);
+  assert.deepEqual(inboxSaw, [], "inbox tool must not re-deliver messages the channel is delivering");
+}
+
+// P4-10: a failed notification releases the messages it did not deliver.
+{
+  const failPath = path.join(tmp, "fail.jsonl");
+  const mb = openMailbox({ mailboxPath: failPath });
+  mb.insertMessage({ fromSessionId: "local_sender", fromSessionKind: "codex", toSessionId: "local_code", toSessionKind: "claude", body: "will fail" });
+  mb.close();
+  const bridge = makeAgentLinkChannelBridge({
+    resolveCurrentSession: () => session,
+    mailboxPath: failPath,
+    mailboxOpener: () => openMailbox({ mailboxPath: failPath }),
+    notify: async () => {
+      throw new Error("transport closed");
+    },
+    watch: false
+  });
+  await assert.rejects(() => bridge.pollOnce(), /transport closed/);
+  const check = openMailbox({ mailboxPath: failPath });
+  assert.equal(check.listPendingFor({ toSessionId: "local_code" }).length, 1, "undelivered message is pending again");
+  check.close();
+}
+
+// P4-04: mail queued under the session's raw CLI id reaches the channel.
+// W2A-06: an invalid sender id is never rendered verbatim.
+{
+  const aliasPath = path.join(tmp, "alias.jsonl");
+  const mb = openMailbox({ mailboxPath: aliasPath });
+  mb.insertMessage({ fromSessionId: "x\"><inject/>", fromSessionKind: "codex", toSessionId: "uuid-code", toSessionKind: "claude", body: "via cli id" });
+  mb.close();
+  const notifications = [];
+  const bridge = makeAgentLinkChannelBridge({
+    resolveCurrentSession: () => session,
+    mailboxPath: aliasPath,
+    mailboxOpener: () => openMailbox({ mailboxPath: aliasPath }),
+    notify: async (n) => notifications.push(n),
+    watch: false
+  });
+  assert.equal((await bridge.pollOnce()).delivered, 1);
+  assert.match(notifications[0].params.content, /via cli id/);
+  assert.match(notifications[0].params.content, /from="unknown sender"/);
+  assert.ok(!notifications[0].params.content.includes("<inject/>"));
+  assert.equal(notifications[0].params.meta.from_session_id, "unknown sender");
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("channel-bridge tests passed");

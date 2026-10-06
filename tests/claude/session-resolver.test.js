@@ -33,4 +33,17 @@ const SESSIONS = [
   assert.ok(r.candidates.length >= 2);
 }
 
+// P4-14: optional sidecar fields may be null or missing (untitled sessions,
+// sidecars without processName/cwd). Resolution must not throw.
+{
+  const sessions = [
+    ...SESSIONS,
+    { sessionId: "local_untitled", title: null, cwd: null, userSelectedFolders: null },
+    { sessionId: "local_bare" }
+  ];
+  const r = resolveSession({ query: "untitled" }, sessions);
+  assert.equal(r.best.sessionId, "local_untitled");
+  assert.equal(resolveSession({ query: "payment retry" }, sessions).best.sessionId, "local_bbb2222");
+}
+
 console.log("session-resolver tests passed");

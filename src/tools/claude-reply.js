@@ -1,4 +1,6 @@
-import { openMailbox } from "../claude/mailbox.js";
+import { openMailbox, messageBodyTooLarge } from "../claude/mailbox.js";
+import { canonicalClaudeSessionId, claudeSessionAliases } from "../claude/identity.js";
+import { buildReceipt, safeAppendReceipt } from "../shared/receipt-index.js";
 
 export const replyAgentLinkMessageTool = {
   name: "reply_agent_link_message",
@@ -16,51 +18,88 @@ export const replyAgentLinkMessageTool = {
   }
 };
 
-export function makeReplyAgentLinkMessageHandler({ mailboxOpener, resolveCurrentSession } = {}) {
+export function makeReplyAgentLinkMessageHandler({
+  mailboxOpener,
+  resolveCurrentSession,
+  host = "claude",
+  appendReceipt = safeAppendReceipt
+} = {}) {
   const openMb = typeof mailboxOpener === "function"
     ? mailboxOpener
     : () => openMailbox();
 
   return {
-    reply_agent_link_message: async ({ messageId, body } = {}) => {
+    reply_agent_link_message: async ({ messageId, body } = {}, toolContext = {}) => {
       if (typeof messageId !== "string" || !messageId.trim()) {
         return { error: "invalid_arguments", message: "`messageId` must be a non-empty string" };
       }
       if (typeof body !== "string" || !body.length) {
         return { error: "invalid_arguments", message: "`body` must be a non-empty string" };
       }
+      const tooLarge = messageBodyTooLarge(body);
+      if (tooLarge) return tooLarge;
 
       const session = typeof resolveCurrentSession === "function" ? resolveCurrentSession() : null;
       if (!session?.sessionId) {
         return { error: "no_current_session", message: "Could not resolve the current Claude session." };
       }
+      const currentSessionId = canonicalClaudeSessionId(session);
 
       const mb = openMb();
+      let original;
+      let replyId;
       try {
-        const original = mb.getMessage({ messageId });
+        original = mb.getMessage({ messageId });
         if (!original) return { error: "not_found", messageId };
-        if (original.to_session_id !== session.sessionId) {
+        // Mail may be addressed to any id form of this session.
+        if (!claudeSessionAliases(session).includes(original.to_session_id)) {
           return {
             error: "wrong_recipient",
             messageId,
             expectedSessionId: original.to_session_id,
-            currentSessionId: session.sessionId
+            currentSessionId
           };
         }
-        mb.ackMessage({ messageId, body });
-        const reply = mb.inspect({ replyToMessageId: messageId, limit: 1 })[0] ?? null;
-        return {
-          messageId: reply?.id ?? null,
-          replyToMessageId: messageId,
-          target: {
-            sessionId: original.from_session_id,
-            kind: original.from_session_kind
-          },
-          delivery: "queued-mailbox"
-        };
+        mb.markAcknowledged({ messageId });
+        // The reply always comes from the canonical id, whatever id form the
+        // original was addressed to, so the sender's wait can match it.
+        replyId = mb.insertMessage({
+          fromSessionId: currentSessionId,
+          fromSessionKind: "claude",
+          toSessionId: original.from_session_id,
+          toSessionKind: original.from_session_kind,
+          body,
+          replyToMessageId: messageId
+        });
       } finally {
         mb.close();
       }
+
+      const target = {
+        sessionId: original.from_session_id,
+        kind: original.from_session_kind
+      };
+      const built = buildReceipt({
+        action: "reply_message",
+        receipt: null,
+        host,
+        target: {
+          sessionId: original.from_session_id,
+          kind: original.from_session_kind
+        },
+        message: body,
+        delivery: "queued-mailbox",
+        runtimeCallerContext: toolContext.runtimeCallerContext ?? null
+      });
+      const receipt = { recorded: true, ...await appendReceipt(built) };
+
+      return {
+        messageId: replyId,
+        replyToMessageId: messageId,
+        target,
+        delivery: "queued-mailbox",
+        receipt
+      };
     }
   };
 }

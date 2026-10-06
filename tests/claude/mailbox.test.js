@@ -69,5 +69,151 @@ const mailboxPath = path.join(tmp, "mailbox.jsonl");
   mb.close();
 }
 
+// P4-09: ackMessage returns the reply id it wrote.
+{
+  const mb = openMailbox({ mailboxPath });
+  const id = mb.insertMessage({ fromSessionId: "local_a", fromSessionKind: "claude", toSessionId: "local_b", toSessionKind: "claude", body: "q" });
+  const replyId = mb.ackMessage({ messageId: id, body: "a" });
+  assert.match(String(replyId), /^[0-9A-Z]{26}$/, "ackMessage returns the reply id");
+  assert.equal(mb.getMessage({ messageId: replyId }).reply_to_message_id, id);
+  mb.close();
+}
+
+// P4-05: drainFor with a limit marks only the returned messages delivered.
+// P4-04: toSessionIds matches every id form of one recipient.
+{
+  const p = path.join(tmp, "drain-limit.jsonl");
+  const mb = openMailbox({ mailboxPath: p });
+  for (const to of ["local_me", "cli-me", "local_cli-me", "local_someone-else"]) {
+    mb.insertMessage({ fromSessionId: "local_x", fromSessionKind: "claude", toSessionId: to, toSessionKind: "claude", body: `to ${to}` });
+  }
+  const ids = ["local_me", "cli-me", "local_cli-me"];
+  assert.equal(mb.listPendingFor({ toSessionIds: ids }).length, 3);
+  const first = mb.drainFor({ toSessionIds: ids, limit: 1 });
+  assert.equal(first.length, 1);
+  assert.equal(mb.listPendingFor({ toSessionIds: ids }).length, 2, "messages beyond the limit stay pending");
+  assert.equal(mb.drainFor({ toSessionIds: ids }).length, 2);
+  assert.equal(mb.listPendingFor({ toSessionId: "local_someone-else" }).length, 1, "other recipients untouched");
+  mb.close();
+}
+
+// P4-10: a released delivery claim makes the message pending again.
+{
+  const p = path.join(tmp, "release.jsonl");
+  const mb = openMailbox({ mailboxPath: p });
+  const id = mb.insertMessage({ fromSessionId: "local_x", fromSessionKind: "codex", toSessionId: "local_me", toSessionKind: "claude", body: "retry me" });
+  mb.markDelivered({ messageId: id });
+  assert.equal(mb.listPendingFor({ toSessionId: "local_me" }).length, 0);
+  mb.releaseDelivery({ messageId: id });
+  assert.equal(mb.listPendingFor({ toSessionId: "local_me" }).length, 1);
+  mb.close();
+}
+
+// W2A-08: bodies over 64 KiB are refused, even by direct inserts.
+{
+  const mb = openMailbox({ mailboxPath: path.join(tmp, "cap.jsonl") });
+  const ok = "y".repeat(64 * 1024);
+  mb.insertMessage({ fromSessionId: "a", fromSessionKind: "claude", toSessionId: "b", toSessionKind: "claude", body: ok });
+  assert.throws(
+    () => mb.insertMessage({ fromSessionId: "a", fromSessionKind: "claude", toSessionId: "b", toSessionKind: "claude", body: ok + "y" }),
+    /64 KiB/
+  );
+  mb.close();
+}
+
+// W2A-09: a new mailbox directory is 0700 and the mailbox file 0600; an
+// existing world-readable mailbox file is tightened.
+{
+  const dir = path.join(tmp, "private-dir", "nested");
+  const p = path.join(dir, "mailbox.jsonl");
+  const mb = openMailbox({ mailboxPath: p });
+  mb.insertMessage({ fromSessionId: "a", fromSessionKind: "claude", toSessionId: "b", toSessionKind: "claude", body: "secret" });
+  mb.close();
+  assert.equal(fs.statSync(dir).mode & 0o777, 0o700, "mailbox dir must be 0700");
+  assert.equal(fs.statSync(p).mode & 0o777, 0o600, "mailbox file must be 0600");
+
+  const loose = path.join(tmp, "loose.jsonl");
+  fs.writeFileSync(loose, "", { mode: 0o644 });
+  fs.chmodSync(loose, 0o644);
+  openMailbox({ mailboxPath: loose }).close();
+  assert.equal(fs.statSync(loose).mode & 0o777, 0o600, "existing mailbox file is tightened to 0600");
+}
+
+// P4-12: explicit options win over environment variables.
+{
+  const envPath = path.join(tmp, "from-env.jsonl");
+  const explicitDb = path.join(tmp, "explicit.sqlite");
+  const prevPath = process.env.AGENT_LINK_MAILBOX_PATH;
+  const prevDb = process.env.AGENT_LINK_MAILBOX_DB;
+  process.env.AGENT_LINK_MAILBOX_PATH = envPath;
+  process.env.AGENT_LINK_MAILBOX_DB = path.join(tmp, "env-legacy.sqlite");
+  try {
+    assert.equal(resolveMailboxPath({ dbPath: explicitDb }), path.join(tmp, "explicit.jsonl"), "explicit dbPath beats AGENT_LINK_MAILBOX_PATH");
+    assert.equal(resolveMailboxPath({ mailboxPath }), mailboxPath);
+    assert.equal(resolveMailboxPath(), envPath, "env applies when nothing explicit is given");
+  } finally {
+    if (prevPath === undefined) delete process.env.AGENT_LINK_MAILBOX_PATH;
+    else process.env.AGENT_LINK_MAILBOX_PATH = prevPath;
+    if (prevDb === undefined) delete process.env.AGENT_LINK_MAILBOX_DB;
+    else process.env.AGENT_LINK_MAILBOX_DB = prevDb;
+  }
+}
+
+// P4-14: a record without sent_at gets a deterministic timestamp (its event
+// time, else 0), not the time of each read.
+{
+  const p = path.join(tmp, "no-sent-at.jsonl");
+  fs.writeFileSync(p, [
+    JSON.stringify({ type: "message", at: 1700000000000, message: { id: "M1", from_session_id: "a", from_session_kind: "claude", to_session_id: "b", to_session_kind: "claude", body: "x" } }),
+    JSON.stringify({ type: "message", message: { id: "M2", from_session_id: "a", from_session_kind: "claude", to_session_id: "b", to_session_kind: "claude", body: "y" } })
+  ].join("\n") + "\n");
+  const mb = openMailbox({ mailboxPath: p });
+  const first = mb.getMessage({ messageId: "M1" }).sent_at;
+  const second = mb.getMessage({ messageId: "M2" }).sent_at;
+  assert.equal(first, 1700000000000);
+  assert.equal(second, 0);
+  assert.equal(mb.getMessage({ messageId: "M2" }).sent_at, second, "stable across reads");
+  mb.close();
+}
+
+// W2A-10: agent_link_mailbox_inspect returns only the caller's mail unless
+// scope:"all" is passed explicitly.
+{
+  const p = path.join(tmp, "inspect-scope.jsonl");
+  const mb = openMailbox({ mailboxPath: p });
+  mb.insertMessage({ fromSessionId: "local_other", fromSessionKind: "claude", toSessionId: "local_me", toSessionKind: "claude", body: "to me" });
+  mb.insertMessage({ fromSessionId: "local_me", fromSessionKind: "claude", toSessionId: "local_other", toSessionKind: "claude", body: "from me" });
+  mb.insertMessage({ fromSessionId: "local_other", fromSessionKind: "claude", toSessionId: "local_third", toSessionKind: "claude", body: "not mine" });
+  mb.close();
+  const { makeMailboxInspectHandler } = await import("../../src/tools/mailbox-inspect.js");
+  const handlers = makeMailboxInspectHandler({
+    host: "claude",
+    mailboxOpener: () => openMailbox({ mailboxPath: p }),
+    resolveCurrentSession: () => ({ sessionId: "local_me", cliSessionId: "cli-me" })
+  });
+  const mine = await handlers.agent_link_mailbox_inspect({});
+  assert.deepEqual(mine.messages.map((m) => m.body).sort(), ["from me", "to me"]);
+  const filtered = await handlers.agent_link_mailbox_inspect({ toSessionId: "local_third" });
+  assert.equal(filtered.messages.length, 0, "filters cannot widen past the caller's mail");
+  const all = await handlers.agent_link_mailbox_inspect({ scope: "all" });
+  assert.equal(all.messages.length, 3);
+}
+
+// Health uses mailboxStatus(), which never creates the mailbox dir or file.
+{
+  const { mailboxStatus } = await import("../../src/claude/mailbox.js");
+  const p = path.join(tmp, "not-created", "mailbox.jsonl");
+  const status = mailboxStatus({ mailboxPath: p });
+  assert.equal(fs.existsSync(path.dirname(p)), false, "status must not create the mailbox dir");
+  assert.equal(status.exists, false);
+  assert.equal(status.writable, true);
+  assert.equal(status.pendingMessagesCount, 0);
+  const existing = path.join(tmp, "status.jsonl");
+  const mb = openMailbox({ mailboxPath: existing });
+  mb.insertMessage({ fromSessionId: "a", fromSessionKind: "claude", toSessionId: "b", toSessionKind: "claude", body: "x" });
+  mb.close();
+  assert.equal(mailboxStatus({ mailboxPath: existing }).pendingMessagesCount, 1);
+}
+
 fs.rmSync(tmp, { recursive: true });
 console.log("mailbox tests passed");
