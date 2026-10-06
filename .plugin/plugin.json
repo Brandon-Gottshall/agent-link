@@ -16,7 +16,7 @@
   "interface": {
     "displayName": "Agent Link",
     "shortDescription": "Inspect, resolve, message, and audit Codex and Claude sessions",
-    "longDescription": "Agent Link gives agents one MCP surface for cross-host coordination. It lists, resolves, messages, and audits Codex threads plus Claude Desktop and Claude Code sessions. Claude delivery uses a pure-JS JSONL mailbox, Desktop hook/inbox visibility, and Claude Code Channel events when enabled. One receipt log per host. Cross-host messaging is first-class.",
+    "longDescription": "Agent Link gives agents one MCP surface for cross-host coordination. It lists, resolves, messages, and audits Codex threads plus Claude Desktop and Claude Code sessions. Claude delivery uses a pure-JS JSONL mailbox, Desktop hook/inbox visibility, and Claude Code Channel events when enabled. Both hosts share one receipt log at $CODEX_HOME/agent-link-receipts.jsonl. Cross-host messaging is first-class.",
     "developerName": "Brandon",
     "category": "Engineering",
     "capabilities": ["Interactive", "Read", "Write"],

@@ -14,15 +14,13 @@ Agent Link is an MCP plugin that lets one AI agent find, read, message, and wait
 ## Requirements
 
 - **macOS.** Session discovery reads Claude and Codex state from macOS application folders.
-- **Node.js 20 or later**, with `npm` on your `PATH`.
+- **Node.js 20 or later.** The plugin ships a prebuilt server bundle (`dist/server.mjs`), so running it needs no `npm` and no network access.
 - **At least one host:** Claude Code (the `claude` CLI or the Code tab in Claude Desktop), or Codex (the `codex` CLI, or the Codex app bundled in ChatGPT).
 - Codex features need a Codex install that can run `codex app-server`. Agent Link starts and stops that server itself.
 
 ## Install
 
 Agent Link's GitHub repo is its own plugin marketplace, so installing takes two commands per host. Install it on every host you want to send or receive from.
-
-The first time the MCP server starts, it runs `npm ci --omit=dev` inside the installed plugin folder to fetch its two runtime dependencies. This needs network access once and takes a few seconds.
 
 ### Claude Code
 
@@ -70,6 +68,9 @@ enabled = true
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.agent_link_health]
 approval_mode = "approve"
 
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.agent_link_mailbox_inspect]
+approval_mode = "approve"
+
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.archive_codex_thread]
 approval_mode = "approve"
 
@@ -97,13 +98,22 @@ approval_mode = "approve"
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.list_loaded_codex_threads]
 approval_mode = "approve"
 
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.message_claude_session]
+approval_mode = "approve"
+
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.message_codex_thread]
 approval_mode = "approve"
 
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.message_project_orchestrator]
 approval_mode = "approve"
 
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.read_agent_link_inbox]
+approval_mode = "approve"
+
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.register_dependency_handoff]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.reply_agent_link_message]
 approval_mode = "approve"
 
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.resolve_codex_thread]
@@ -113,6 +123,9 @@ approval_mode = "approve"
 approval_mode = "approve"
 
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.return_project_work_result]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.wait_for_claude_session]
 approval_mode = "approve"
 
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.wait_for_codex_thread]
@@ -140,9 +153,7 @@ For development, or to pin a local copy:
 git clone https://github.com/Brandon-Gottshall/agent-link.git
 ```
 
-```bash
-cd agent-link && npm ci
-```
+The clone already contains the built server, so no install step is needed to run it. Run `npm ci` only if you plan to change the code or run the tests.
 
 Then point either host at the folder instead of GitHub: `claude plugin marketplace add ./agent-link` or `codex plugin marketplace add ./agent-link`, followed by the same install command as above. For a single Claude Code session without installing, use `claude --plugin-dir ./agent-link`.
 
@@ -182,6 +193,8 @@ Then point either host at the folder instead of GitHub: `claude plugin marketpla
 
 ### Claude sessions
 
+These tools are listed only when Agent Link runs inside Claude Code or Claude Desktop. Codex can still message a Claude session with `message_claude_session`, using a session ID or alias.
+
 | Tool | Purpose |
 | --- | --- |
 | `list_claude_sessions` | List Claude Desktop and Claude Code sessions. |
@@ -219,7 +232,7 @@ Everything works with no configuration. These environment variables override def
 | `CODEX_AGENT_LINK_SOCK` or `CODEX_APP_SERVER_SOCK` | Use an existing app-server Unix socket. |
 | `CODEX_AGENT_LINK_AUTOSTART=0` | Never start a managed app-server. |
 | `CODEX_AGENT_LINK_CODEX_BIN` | Codex binary to use for the managed app-server. |
-| `CODEX_AGENT_LINK_RECEIPT_LOG` | Receipt log path. Default: `$CODEX_HOME/agent-link-receipts.jsonl`. |
+| `CODEX_AGENT_LINK_RECEIPT_LOG` | Receipt log path, shared by both hosts. Default: `$CODEX_HOME/agent-link-receipts.jsonl` (`~/.codex` when `CODEX_HOME` is unset). |
 | `CODEX_AGENT_LINK_INFER_RECEIPT_ORIGIN=0` | Don't infer receipt origin from `CODEX_THREAD_ID` and `CODEX_TURN_ID`. |
 
 **Claude**
@@ -227,7 +240,6 @@ Everything works with no configuration. These environment variables override def
 | Variable | Effect |
 | --- | --- |
 | `AGENT_LINK_MAILBOX_PATH` | Mailbox path. Default: `~/.claude/agent-link/mailbox.jsonl`. |
-| `CLAUDE_AGENT_LINK_RECEIPT_LOG` | Receipt log path. Default: `$CLAUDE_HOME/agent-link-receipts.jsonl`. |
 | `AGENT_LINK_MAILBOX_DB` | Deprecated. Legacy SQLite paths are mapped to a `.jsonl` mailbox. |
 
 ## Behavior reference
@@ -276,10 +288,7 @@ What each tool does to real state, and what its results do and don't prove.
 
 ## Receipts
 
-Launch, message, and archive calls write a receipt by default:
-
-- Codex side: `$CODEX_HOME/agent-link-receipts.jsonl`
-- Claude side: `$CLAUDE_HOME/agent-link-receipts.jsonl`
+Launch, message, and archive calls write a receipt by default. Both hosts append to one shared log: `$CODEX_HOME/agent-link-receipts.jsonl` (`~/.codex/agent-link-receipts.jsonl` when `CODEX_HOME` is unset). Set `CODEX_AGENT_LINK_RECEIPT_LOG` to use a different file.
 
 Each receipt records the action, target, message preview, delivery state, any final response or reply-confirmation error, and evidence. Every receipt also has a top-level `host` and a `target.kind` (`codex_thread` or `claude_session`), so you can filter by host pair.
 
@@ -318,6 +327,8 @@ npm ci
 ```bash
 npm run smoke
 ```
+
+The hosts launch the committed bundle `dist/server.mjs`, not `src/server.js`. After changing anything under `src/` or the dependencies, run `npm run build` and commit `dist/server.mjs`. `npm run check:dist` fails when the bundle is out of date.
 
 The full test catalogue, including live and GUI-touching checks, is in [docs/testing.md](docs/testing.md). Version history is in [CHANGELOG.md](CHANGELOG.md).
 

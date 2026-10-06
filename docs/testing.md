@@ -6,7 +6,8 @@ Run these from a clone after `npm ci`. Protocol smoke tests are necessary but no
 
 | Command | What it covers |
 | --- | --- |
-| `npm run smoke` | MCP server starts and exposes the expected tools. |
+| `npm run check:dist` | The committed bundle `dist/server.mjs` matches a fresh `npm run build`. |
+| `npm run smoke` | The bundled MCP server (`dist/server.mjs`) starts, reports the package version, and exposes the expected tools per host. |
 | `npm run test:claude` | Every Claude-side unit test in one run. |
 | `npm run test:codex-lifecycle` | Codex binary discovery and app-server process lifecycle. |
 | `npm run test:feedback` | Shared helpers: archive scope, fuzzy IDs, sidebar classification, reply extraction, receipts, caller context, origin inference. |

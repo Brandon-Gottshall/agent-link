@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+// Exercise the committed bundle the plugin manifests launch, not src/server.js.
+const packageVersion = JSON.parse(readFileSync(path.join(pluginRoot, "package.json"), "utf8")).version;
 
 const BASE_CODEX_TOOLS = [
   "agent_link_health",
@@ -56,7 +59,7 @@ async function listToolsWithEnv(envOverrides) {
 
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: ["./scripts/start-server.js"],
+    args: ["./dist/server.mjs"],
     cwd: pluginRoot,
     env: {
       ...cleanEnv,
@@ -70,6 +73,8 @@ async function listToolsWithEnv(envOverrides) {
   try {
     await client.connect(transport);
     const capabilities = client.getServerCapabilities();
+    assert.equal(client.getServerVersion()?.version, packageVersion,
+      "dist/server.mjs must report package.json's version; run npm run build");
     const tools = await client.listTools();
     const names = tools.tools.map((tool) => tool.name).sort();
     const archiveTool = tools.tools.find((tool) => tool.name === "archive_codex_thread");

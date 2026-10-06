@@ -81,10 +81,13 @@ const replyAgentLinkMessageHandlers = makeReplyAgentLinkMessageHandler({
   resolveCurrentSession: currentClaudeSession
 });
 
+// Replaced with package.json's version when scripts/build.mjs bundles dist/server.mjs.
+const SERVER_VERSION = typeof __AGENT_LINK_VERSION__ === "string" ? __AGENT_LINK_VERSION__ : "0.0.0-dev";
+
 const server = new Server(
   {
     name: "agent-link",
-    version: "0.2.3"
+    version: SERVER_VERSION
   },
   {
     instructions:

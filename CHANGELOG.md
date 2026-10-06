@@ -6,6 +6,13 @@
 - Removed the `src/app-server-client.js` re-export shim. Import `src/codex/app-server-client.js` directly; no in-repo importers of the shim remained.
 - Removed the unused `desktopVisibilityContract` import from `src/server.js`.
 - Removed the stray `src/claude/.gitkeep` and added `*.bak-*`, `*.OFF`, and `*.orig` to `.gitignore`.
+- The plugin now ships a prebuilt server bundle, `dist/server.mjs`, built with esbuild from `src/server.js` and its runtime dependencies. Both hosts launch it directly, so the server starts with no `node_modules`, no `npm`, and no network access. This removes the first-launch `npm ci` that could race between concurrent launches and leave a broken install, and that blocked offline startup for about 70 seconds. `scripts/start-server.js` is removed.
+- `npm run build` regenerates the bundle and `npm run check:dist` fails when the committed bundle is stale.
+- The server reports the real package version (it reported `0.2.3`). The build injects it from `package.json`.
+- The `SessionStart` and `UserPromptSubmit` hooks no longer fail with exit code 127 when `node` is not on the host's `PATH` (or is a version-manager shim that cannot run). The hook exits 0 instead; other hook exit codes pass through.
+- `npm run check:approval-config` now reads the tool list from the bundled server's `tools/list` in Codex-host mode, so it checks all 22 Codex tools instead of a hardcoded 17. The README approval snippet now lists all 22; the five it was missing were `agent_link_mailbox_inspect`, `message_claude_session`, `read_agent_link_inbox`, `reply_agent_link_message`, and `wait_for_claude_session`.
+- Docs: receipts from both hosts go to one shared log at `$CODEX_HOME/agent-link-receipts.jsonl` (override with `CODEX_AGENT_LINK_RECEIPT_LOG`). The README, the `agent-link` skill, and the plugin manifests no longer describe a per-host log, `$CLAUDE_HOME`, or `CLAUDE_AGENT_LINK_RECEIPT_LOG`, none of which existed.
+- Docs: Node.js 20 or later is the only runtime requirement. The README marks the Claude session listing tools as Claude-host only, matching current behavior.
 
 ## 0.3.0 - 2026-10-06 Remove Antechamber handoff and Desktop bridge discovery
 

@@ -3,7 +3,7 @@
     "codex-agent-link": {
       "command": "node",
       "args": [
-        "./scripts/start-server.js"
+        "./dist/server.mjs"
       ],
       "cwd": "."
     }

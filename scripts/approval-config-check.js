@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -8,25 +9,9 @@ import { fileURLToPath } from "node:url";
 const pluginId = process.env.CODEX_AGENT_LINK_PLUGIN_ID || "codex-agent-link@agent-link";
 const mcpServer = "codex-agent-link";
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const tools = [
-  "agent_link_health",
-  "archive_codex_thread",
-  "check_coordination_obligations",
-  "get_codex_sidebar_state",
-  "list_codex_threads",
-  "list_loaded_codex_threads",
-  "get_codex_thread",
-  "launch_codex_thread",
-  "launch_project_worker",
-  "list_agent_link_receipts",
-  "message_codex_thread",
-  "message_project_orchestrator",
-  "register_dependency_handoff",
-  "resolve_codex_thread",
-  "resolve_project_orchestrator",
-  "return_project_work_result",
-  "wait_for_codex_thread"
-];
+const SERVER_ENTRY = "./dist/server.mjs";
+// Derive the tool list from the server itself so it cannot drift from what Codex exposes.
+const tools = await listCodexHostTools(pluginRoot);
 
 const configPath = process.env.CODEX_CONFIG
   || path.join(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"), "config.toml");
@@ -143,10 +128,88 @@ function validatePluginEnvelope(root) {
     if (server.command !== "node") {
       problems.push(`${path.relative(root, mcpPath)} mcpServers.${mcpServer}.command must be node`);
     }
-    if (!Array.isArray(server.args) || server.args[0] !== "./scripts/start-server.js") {
-      problems.push(`${path.relative(root, mcpPath)} mcpServers.${mcpServer}.args must start with ./scripts/start-server.js`);
+    if (!Array.isArray(server.args) || server.args[0] !== SERVER_ENTRY) {
+      problems.push(`${path.relative(root, mcpPath)} mcpServers.${mcpServer}.args must start with ${SERVER_ENTRY}`);
     }
   }
 
   return problems;
+}
+
+// Start the bundled server as a Codex host would (CODEX_HOME set, no Claude env,
+// no managed app-server) and return the names from its tools/list. Uses raw
+// JSON-RPC over stdio so the check runs in an installed plugin without node_modules.
+async function listCodexHostTools(root) {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "agent-link-approval-check-"));
+  const env = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key.startsWith("CLAUDE_") || key.startsWith("CODEX_")) continue;
+    env[key] = value;
+  }
+  Object.assign(env, {
+    CODEX_HOME: scratch,
+    CODEX_AGENT_LINK_AUTOSTART: "0",
+    AGENT_LINK_DISABLE_CHANNEL: "1",
+    AGENT_LINK_MAILBOX_PATH: path.join(scratch, "mailbox.jsonl")
+  });
+
+  const child = spawn(process.execPath, [SERVER_ENTRY], {
+    cwd: root,
+    env,
+    stdio: ["pipe", "pipe", "pipe"]
+  });
+  let stderr = "";
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+
+  try {
+    return await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("timed out waiting for tools/list")), 15000);
+      let buffer = "";
+      const send = (message) => child.stdin.write(`${JSON.stringify(message)}\n`);
+      child.once("error", (error) => { clearTimeout(timer); reject(error); });
+      child.once("exit", (code) => {
+        clearTimeout(timer);
+        reject(new Error(`server exited (${code}) before tools/list${stderr ? `: ${stderr.trim()}` : ""}`));
+      });
+      child.stdout.on("data", (chunk) => {
+        buffer += chunk;
+        let newline;
+        while ((newline = buffer.indexOf("\n")) !== -1) {
+          const line = buffer.slice(0, newline).trim();
+          buffer = buffer.slice(newline + 1);
+          if (!line) continue;
+          const message = JSON.parse(line);
+          if (message.id === 1) {
+            send({ jsonrpc: "2.0", method: "notifications/initialized" });
+            send({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
+          } else if (message.id === 2) {
+            clearTimeout(timer);
+            if (message.error) {
+              reject(new Error(`tools/list failed: ${message.error.message}`));
+            } else {
+              resolve(message.result.tools.map((tool) => tool.name).sort());
+            }
+          }
+        }
+      });
+      send({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-06-18",
+          capabilities: {},
+          clientInfo: { name: "agent-link-approval-config-check", version: "0" }
+        }
+      });
+    });
+  } catch (error) {
+    console.error(`Could not read tools from ${SERVER_ENTRY}: ${error.message}`);
+    process.exit(1);
+  } finally {
+    child.removeAllListeners("exit");
+    child.stdin.end();
+    child.kill("SIGTERM");
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
 }
