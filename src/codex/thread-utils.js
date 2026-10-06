@@ -308,9 +308,26 @@ export function rankThreadSummaries(threads, query, limit) {
       if (b.match.score !== a.match.score) {
         return b.match.score - a.match.score;
       }
-      return Date.parse(b.updatedAt ?? 0) - Date.parse(a.updatedAt ?? 0);
+      return timestampMs(b.updatedAt) - timestampMs(a.updatedAt);
     })
     .slice(0, limit);
+}
+
+// updatedAt arrives as Unix seconds (app-server, local transcripts), Unix
+// milliseconds, or an ISO string (summarized threads). Date.parse() of a
+// number is NaN, which made every recency tie-break a no-op.
+export function timestampMs(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value < 1e12 ? value * 1000 : value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    if (/^\d+(\.\d+)?$/.test(value.trim())) {
+      return timestampMs(Number(value));
+    }
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
 }
 
 export function suggestThreadIds(threads, threadId, limit = 3) {

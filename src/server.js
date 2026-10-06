@@ -10,6 +10,7 @@ import {
   AppServerError,
   CodexAppServerClient,
   asUserTextInput,
+  describeCodexInstall,
   reapOrphanedManagedAppServers
 } from "./codex/app-server-client.js";
 import {
@@ -44,7 +45,13 @@ import {
   checkCoordinationObligations,
   registerDependencyHandoff
 } from "./codex/dependency-handoff.js";
-import { archiveLocalThread, listLocalThreads, readLocalThread } from "./codex/session-index.js";
+import {
+  archiveLocalThread,
+  findLocalThreadFile,
+  listLocalThreadIds,
+  listLocalThreads,
+  readLocalThread
+} from "./codex/session-index.js";
 import {
   activeTurnWarning,
   analyzeThreadWaitState,
@@ -136,6 +143,10 @@ const server = new Server(
 );
 
 const appServer = new CodexAppServerClient();
+
+// Local transcript fallbacks read at most this many of the newest transcripts
+// when a search has to be answered from disk (they used to read up to 2,000).
+const LOCAL_SEARCH_SCAN_LIMIT = 300;
 
 const receiptInputSchema = {
   type: "object",
@@ -314,7 +325,7 @@ const tools = [
         },
         recentItems: {
           type: "number",
-          description: "When includeTurns is true, return at most this many recent summarized items. Defaults to 20."
+          description: "Number of recent ITEMS (messages, tool calls, reasoning, commands), not turns, when includeTurns is true. Returned as thread.recentItems (oldest first, each with its turnId) on both the app-server and the local-transcript fallback paths; app-server results also include thread.turns trimmed to the turns those items belong to. Defaults to 20; caps at 100."
         },
         includeReceipts: {
           type: "boolean",
@@ -488,16 +499,16 @@ const tools = [
         },
         cwd: {
           type: "string",
-          description: "Optional cwd override for the target turn."
+          description: "Optional cwd override for the target turn. Rejected when it differs from the thread's own cwd unless allowTargetOverride is true."
         },
         model: {
           type: "string",
-          description: "Optional model override for the target turn."
+          description: "Optional model override for the target turn. Rejected when it differs from (or cannot be compared with) the thread's own model unless allowTargetOverride is true."
         },
         effort: {
           type: "string",
           enum: ["minimal", "low", "medium", "high", "xhigh"],
-          description: "Optional reasoning effort override for the target turn."
+          description: "Optional reasoning effort override for the target turn. Rejected when it differs from (or cannot be compared with) the thread's own effort unless allowTargetOverride is true."
         },
         allowParallelTurn: {
           type: "boolean",
@@ -517,7 +528,11 @@ const tools = [
         },
         recentItems: {
           type: "number",
-          description: "Recent summarized transcript items to inspect when waitForReply is true. Defaults to 10."
+          description: "When waitForReply is true, include up to this many recent ITEMS (not turns) of the target thread in replyConfirmation.recentItems, oldest first, each with its turnId. Defaults to 10; caps at 100."
+        },
+        allowTargetOverride: {
+          type: "boolean",
+          description: "Messaging an existing thread normally runs the turn with that thread's own cwd, model, and reasoning effort; a cwd/model/effort here that differs from the thread's own (or that cannot be compared because app-server does not report it) is rejected. Set true only when you intend to change the target thread's working directory, model, or effort. Defaults to false."
         },
         receipt: receiptInputSchema
       },
@@ -596,7 +611,8 @@ const tools = [
         },
         projectId: {
           type: "string",
-          description: "Stable project identifier used as a project-orchestrator fallback search signal."
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+          description: "Stable project identifier (a slug: letters, digits, '.', '_', '-') used as a project-orchestrator fallback search signal."
         },
         orchestratorThreadId: {
           type: "string",
@@ -621,7 +637,7 @@ const tools = [
         },
         callbackThreadId: {
           type: "string",
-          description: "Thread to message when ready or blocked. Defaults to caller thread context."
+          description: "Thread to message when ready or blocked. The caller's own thread (from runtime caller context) wins when it is available; a different value here is ignored and flagged in the handoff message. Used as given only when caller context is unavailable."
         },
         deadline: {
           type: "string",
@@ -653,7 +669,14 @@ const tools = [
         waitForReply: { type: "boolean" },
         timeoutMs: { type: "number" },
         pollIntervalMs: { type: "number" },
-        recentItems: { type: "number" },
+        recentItems: {
+          type: "number",
+          description: "When waitForReply is true, include up to this many recent ITEMS (not turns) of the target thread in replyConfirmation.recentItems, oldest first, each with its turnId. Defaults to 10; caps at 100."
+        },
+        allowTargetOverride: {
+          type: "boolean",
+          description: "Allow cwd/model/effort values that differ from the target thread's own. Defaults to false; see message_codex_thread."
+        },
         archiveScope: {
           type: "string",
           enum: ["active", "archived", "all"]
@@ -728,7 +751,14 @@ const tools = [
         waitForReply: { type: "boolean" },
         timeoutMs: { type: "number" },
         pollIntervalMs: { type: "number" },
-        recentItems: { type: "number" },
+        recentItems: {
+          type: "number",
+          description: "When waitForReply is true, include up to this many recent ITEMS (not turns) of the target thread in replyConfirmation.recentItems, oldest first, each with its turnId. Defaults to 10; caps at 100."
+        },
+        allowTargetOverride: {
+          type: "boolean",
+          description: "Allow cwd/model/effort values that differ from the target thread's own. Defaults to false; see message_codex_thread."
+        },
         archiveScope: {
           type: "string",
           enum: ["active", "archived", "all"]
@@ -863,7 +893,14 @@ const tools = [
         waitForReply: { type: "boolean" },
         timeoutMs: { type: "number" },
         pollIntervalMs: { type: "number" },
-        recentItems: { type: "number" },
+        recentItems: {
+          type: "number",
+          description: "When waitForReply is true, include up to this many recent ITEMS (not turns) of the target thread in replyConfirmation.recentItems, oldest first, each with its turnId. Defaults to 10; caps at 100."
+        },
+        allowTargetOverride: {
+          type: "boolean",
+          description: "Allow cwd/model/effort values that differ from the target thread's own. Defaults to false; see message_codex_thread."
+        },
         archiveScope: {
           type: "string",
           enum: ["active", "archived", "all"]
@@ -895,7 +932,7 @@ const tools = [
         },
         recentItems: {
           type: "number",
-          description: "Recent summarized transcript items to return. Defaults to 10."
+          description: "Number of recent ITEMS (not turns) to return as thread.recentItems, oldest first, each with its turnId; thread.turns is trimmed to the turns those items belong to. Defaults to 10; caps at 100."
         }
       },
       additionalProperties: false
@@ -983,9 +1020,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       ok: false,
       error: error.message,
       details: error.details ?? null,
-      hint: error instanceof AppServerError
-        ? "Set CODEX_AGENT_LINK_URL/CODEX_APP_SERVER_URL to a reachable Codex app-server, or leave CODEX_AGENT_LINK_AUTOSTART enabled."
-        : null
+      hint: appServerErrorHint(error)
     }, true);
   }
 });
@@ -1021,33 +1056,99 @@ async function health(args, toolContext = {}) {
   const callerContext = args.includeCallerContext === true
     ? summarizeRuntimeCallerContext(toolContext.callerContext)
     : null;
-  if (args.startAppServer === false) {
-    return {
-      ok: true,
-      appServer: appServer.getConnectionSummary(),
-      stateSemantics: loadedStateSemantics(),
-      receiptIndex: receiptIndexSummary(),
-      claude: claudeHealthSummary(),
-      callerContextContract: callerContextContract(),
-      ...(callerContext ? { callerContext } : {}),
-      configuredEndpoint: configuredEndpointSummary(),
-      autoStartEnabled: process.env.CODEX_AGENT_LINK_AUTOSTART !== "0"
-    };
-  }
-
-  const init = await appServer.request("thread/loaded/list", { limit: 1 });
-  return {
-    ok: true,
-    appServer: appServer.getConnectionSummary(),
-    loadedThreadProbe: init,
+  const configuredEndpoint = configuredEndpointSummary();
+  const usesManagedAppServer = !Object.values(configuredEndpoint).some(Boolean);
+  const autoStartEnabled = process.env.CODEX_AGENT_LINK_AUTOSTART !== "0";
+  const codex = {
+    ...describeCodexInstall(),
+    usedForManagedAppServer: usesManagedAppServer
+  };
+  const common = {
+    host: HOST_INFO.host,
+    hostDetection: HOST_INFO.reason,
     stateSemantics: loadedStateSemantics(),
     receiptIndex: receiptIndexSummary(),
     claude: claudeHealthSummary(),
     callerContextContract: callerContextContract(),
     ...(callerContext ? { callerContext } : {}),
-    configuredEndpoint: configuredEndpointSummary(),
-    autoStartEnabled: process.env.CODEX_AGENT_LINK_AUTOSTART !== "0"
+    configuredEndpoint,
+    autoStartEnabled
   };
+
+  if (args.startAppServer === false) {
+    return { ok: true, codex, appServer: appServer.getConnectionSummary(), ...common };
+  }
+
+  // No Codex on this machine is a normal state (for example a Claude-only
+  // install), not a health failure.
+  if (usesManagedAppServer && autoStartEnabled && !codex.available) {
+    return {
+      ok: true,
+      codex: { ...codex, available: false },
+      appServer: appServer.getConnectionSummary(),
+      hint: appServerErrorHint(new AppServerError(codex.reason ?? "Codex binary not found", { code: "codex-binary-not-found" })),
+      ...common
+    };
+  }
+
+  let init;
+  try {
+    init = await appServer.request("thread/loaded/list", { limit: 1 });
+  } catch (error) {
+    const code = error?.code === "startup-failure-cached" ? error.details?.cachedCode : error?.code;
+    if (code === "codex-binary-not-found") {
+      return {
+        ok: true,
+        codex: {
+          ...codex,
+          available: false,
+          reason: error.details?.reason ?? error.message,
+          searched: error.details?.searched ?? codex.searched
+        },
+        appServer: appServer.getConnectionSummary(),
+        hint: appServerErrorHint(error),
+        ...common
+      };
+    }
+    throw error;
+  }
+  return {
+    ok: true,
+    codex,
+    appServer: appServer.getConnectionSummary(),
+    loadedThreadProbe: init,
+    ...common
+  };
+}
+
+// Specific next steps for the ways reaching Codex fails. App-server JSON-RPC
+// errors (unknown thread, bad params) get no transport hint.
+function appServerErrorHint(error) {
+  if (!(error instanceof AppServerError)) {
+    return null;
+  }
+  const cached = error.code === "startup-failure-cached";
+  const code = cached ? error.details?.cachedCode : error.code;
+  const hints = {
+    "codex-binary-not-found": "No Codex binary was found (details.searched lists where Agent Link looked). Install Codex Desktop (ChatGPT.app) or the codex CLI, or set CODEX_AGENT_LINK_CODEX_BIN to the binary's absolute path.",
+    "spawn-failed": "The Codex binary could not be executed. Check its permissions, or set CODEX_AGENT_LINK_CODEX_BIN to a working binary.",
+    "app-server-exited-during-startup": "The Codex binary exited while starting `app-server` (see details.command and details.logs). If it is an old install, point CODEX_AGENT_LINK_CODEX_BIN at a current Codex.",
+    "readiness-timeout": "The managed Codex app-server did not accept connections before the startup timeout. Raise CODEX_AGENT_LINK_APP_SERVER_STARTUP_MS (milliseconds) or check details.logs.",
+    "autostart-disabled": "CODEX_AGENT_LINK_AUTOSTART=0 turns off the managed app-server. Unset it, or set CODEX_AGENT_LINK_URL / CODEX_AGENT_LINK_SOCK to a running Codex app-server.",
+    "state-dir-unsafe": "The managed app-server state directory is not private to this user. Fix its ownership or set CODEX_AGENT_LINK_STATE_DIR to a directory you own.",
+    "client-closed": "Agent Link is shutting down; retry once the MCP server has restarted.",
+    "open-failed": "Could not connect to the Codex app-server. Check CODEX_AGENT_LINK_URL / CODEX_AGENT_LINK_SOCK, or unset them to let Agent Link manage its own app-server.",
+    "open-timeout": "Timed out connecting to the Codex app-server. Check CODEX_AGENT_LINK_URL / CODEX_AGENT_LINK_SOCK, or unset them to let Agent Link manage its own app-server.",
+    "connection-lost": "The Codex app-server connection dropped. Retry; a managed app-server is restarted on the next call.",
+    "request-timeout": "The Codex app-server did not answer in time. Retry, or check that the app-server is not overloaded."
+  };
+  const hint = hints[code] ?? null;
+  if (!hint) {
+    return null;
+  }
+  return cached
+    ? `${hint} This startup failure is cached; Agent Link will try again after details.retryAfterMs.`
+    : hint;
 }
 
 function claudeHealthSummary() {
@@ -1143,7 +1244,7 @@ async function listThreads(args) {
       throw error;
     }
     const local = await listLocalThreads({
-      limit: searchTerm ? 2000 : limit,
+      limit: searchTerm ? LOCAL_SEARCH_SCAN_LIMIT : limit,
       archiveScope,
       searchTerm: null,
       cwd: args.cwd ?? null
@@ -1152,12 +1253,14 @@ async function listThreads(args) {
       limit,
       searchTerm
     });
+    // Spread first: local.source ("local-jsonl") must not replace the
+    // fallback label.
     return {
+      ...local,
       ok: true,
       source: "local-jsonl-fallback",
       appServerError: error.message,
       stateSemantics: loadedStateSemantics(),
-      ...local,
       data
     };
   }
@@ -1252,13 +1355,13 @@ async function supplementSearchResultsFromLocalJsonl({ data, archiveScope, limit
 
   try {
     const local = await listLocalThreads({
-      limit: 2000,
+      limit: LOCAL_SEARCH_SCAN_LIMIT,
       archiveScope,
       searchTerm: null,
       cwd
     });
     const localData = finalizeThreadResults(local.data.map(summarizeThread), {
-      limit: 2000,
+      limit: LOCAL_SEARCH_SCAN_LIMIT,
       searchTerm
     });
     const originalIds = new Set(data.map((thread) => thread.id));
@@ -1776,17 +1879,31 @@ async function archiveThreadViaAppServer(threadId) {
   };
 }
 
+// Prefer the app-server's view. Look on disk only when the app-server cannot
+// read the thread or does not report its transcript path, and then by
+// filename rather than by scanning transcripts.
 async function readArchiveSnapshot(threadId) {
+  let fromAppServer = null;
   try {
     const read = await appServer.request("thread/read", { threadId, includeTurns: false });
-    return summarizeThread(read.thread);
+    fromAppServer = summarizeThread(read.thread);
   } catch {
-    try {
-      const local = await readLocalThread(threadId);
-      return summarizeThread(local.thread);
-    } catch {
-      return null;
-    }
+    fromAppServer = null;
+  }
+  if (fromAppServer?.path) {
+    return fromAppServer;
+  }
+  if (fromAppServer) {
+    const located = await findLocalThreadFile(threadId).catch(() => null);
+    return located
+      ? { ...fromAppServer, path: located.file, archiveState: inferArchiveState(located.file) }
+      : fromAppServer;
+  }
+  try {
+    const local = await readLocalThread(threadId);
+    return summarizeThread(local.thread);
+  } catch {
+    return null;
   }
 }
 
@@ -1919,6 +2036,16 @@ async function messageThread(args, toolContext = {}) {
     throw await enrichThreadLookupError(error, threadId);
   }
   const initialThread = read.thread;
+  const targetOverrides = checkTargetOverrides(initialThread, args);
+  if (targetOverrides.conflicts.length > 0 && args.allowTargetOverride !== true) {
+    const error = new Error(`Refusing to change ${targetOverrides.conflicts.map((conflict) => conflict.field).join(", ")} of existing thread ${threadId}; pass allowTargetOverride=true to do it intentionally`);
+    error.details = {
+      code: "target-override-rejected",
+      conflicts: targetOverrides.conflicts,
+      hint: "Omit cwd/model/effort to run the turn with the thread's own settings, or set allowTargetOverride=true when changing them is intended."
+    };
+    throw error;
+  }
   let status = read.thread.status;
   let action = null;
   const warnings = warningsForMessageTarget(status, mode);
@@ -1968,7 +2095,7 @@ async function messageThread(args, toolContext = {}) {
       : null;
     const appServerSummary = appServer.getConnectionSummary();
     const actionName = action ? `${action}+steered_active_turn` : "steered_active_turn";
-    const replyConfirmation = buildReplyConfirmation(wait, response.turnId);
+    const replyConfirmation = buildReplyConfirmation(wait, response.turnId, args.recentItems ?? 10);
     const result = {
       ok: true,
       source: "app-server",
@@ -2041,7 +2168,7 @@ async function messageThread(args, toolContext = {}) {
     : null;
   const appServerSummary = appServer.getConnectionSummary();
   const actionName = action ? `${action}+started_turn` : "started_turn";
-  const replyConfirmation = buildReplyConfirmation(wait, summarizedTurn.id);
+  const replyConfirmation = buildReplyConfirmation(wait, summarizedTurn.id, args.recentItems ?? 10);
   const result = {
     ok: true,
     source: "app-server",
@@ -2313,7 +2440,7 @@ async function tryWaitForReply(args) {
   }
 }
 
-function buildReplyConfirmation(wait, targetTurnId) {
+function buildReplyConfirmation(wait, targetTurnId, recentItemsLimit = 10) {
   if (!wait) {
     return {
       waited: false
@@ -2344,6 +2471,7 @@ function buildReplyConfirmation(wait, targetTurnId) {
     finalResponseItem: finalResponse,
     waitState: wait.waitState ?? null,
     warnings: wait.waitState?.warnings ?? [],
+    recentItems: recentItemWindow(wait.thread?.turns ?? [], clamp(recentItemsLimit, 1, 100)).items,
     error: hasFinalResponse ? null : "No final agent response text was found in the completed target turn.",
     hint: hasFinalResponse
       ? null
@@ -2365,14 +2493,23 @@ async function enrichThreadLookupError(error, threadId) {
   return error;
 }
 
+// Rank by id similarity using transcript filenames only, then read just the
+// few winners for their names and previews.
 async function getThreadIdSuggestions(threadId) {
   try {
-    const local = await listLocalThreads({
-      limit: 2000,
-      archiveScope: "all",
-      searchTerm: null
-    });
-    return suggestThreadIds(local.data.map(summarizeThread), threadId);
+    const ids = await listLocalThreadIds();
+    const ranked = suggestThreadIds(ids.map((entry) => ({ id: entry.id, path: entry.path })), threadId);
+    const out = [];
+    for (const suggestion of ranked) {
+      try {
+        const local = await readLocalThread(suggestion.id);
+        const enriched = suggestThreadIds([summarizeThread(local.thread)], threadId)[0];
+        out.push(enriched ?? suggestion);
+      } catch {
+        out.push(suggestion);
+      }
+    }
+    return out;
   } catch {
     return [];
   }
@@ -2412,15 +2549,65 @@ function summarizeThread(thread, options = {}) {
   }
 
   if (options.includeTurns) {
+    const limit = clamp(options.recentItems ?? 20, 1, 100);
     if (thread.recentItems) {
-      summary.recentItems = thread.recentItems;
+      summary.recentItems = thread.recentItems.slice(-limit);
     } else {
-      const turns = thread.turns ?? [];
-      summary.turns = turns.map(summarizeTurn).slice(-clamp(options.recentItems ?? 20, 1, 100));
+      const window = recentItemWindow(thread.turns ?? [], limit);
+      summary.recentItems = window.items;
+      summary.turns = window.turns;
     }
   }
 
   return summary;
+}
+
+// The newest `limit` items across turns (oldest first, each tagged with its
+// turn), plus those turns with their items trimmed to the same window.
+function recentItemWindow(turns, limit) {
+  const items = [];
+  const windowTurns = [];
+  for (let index = turns.length - 1; index >= 0 && items.length < limit; index -= 1) {
+    const turn = turns[index];
+    const turnItems = (turn.items ?? []).map(summarizeItem);
+    const kept = turnItems.slice(Math.max(0, turnItems.length - (limit - items.length)));
+    items.unshift(...kept.map((item) => ({ ...item, turnId: turn.id ?? null })));
+    windowTurns.unshift({
+      ...summarizeTurn({ ...turn, items: [] }),
+      items: kept,
+      ...(kept.length < turnItems.length ? { itemsOmitted: turnItems.length - kept.length } : {})
+    });
+  }
+  return { items, turns: windowTurns };
+}
+
+// cwd/model/effort a caller asks for that differ from what the existing
+// thread already uses. A value the app-server does not report cannot be
+// compared and counts as a change.
+function checkTargetOverrides(thread, args) {
+  const conflicts = [];
+  const requestedCwd = optionalString(args.cwd).trim();
+  if (requestedCwd) {
+    const own = optionalString(thread?.cwd).trim();
+    if (!own || path.resolve(own) !== path.resolve(requestedCwd)) {
+      conflicts.push({ field: "cwd", requested: requestedCwd, threadValue: own || null });
+    }
+  }
+  const requestedModel = optionalString(args.model).trim();
+  if (requestedModel) {
+    const own = optionalString(thread?.model).trim();
+    if (own !== requestedModel) {
+      conflicts.push({ field: "model", requested: requestedModel, threadValue: own || null });
+    }
+  }
+  const requestedEffort = optionalString(args.effort).trim();
+  if (requestedEffort) {
+    const own = optionalString(thread?.reasoningEffort ?? thread?.effort).trim();
+    if (own !== requestedEffort) {
+      conflicts.push({ field: "effort", requested: requestedEffort, threadValue: own || null });
+    }
+  }
+  return { conflicts };
 }
 
 function summarizeTurn(turn) {

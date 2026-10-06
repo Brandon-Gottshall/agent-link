@@ -31,8 +31,9 @@ export async function resolveProjectOrchestrator(args = {}, deps = {}) {
   }
 
   const binding = projectRoot ? await readProjectOrchestratorBinding(projectRoot) : null;
+  const bindingVerification = binding ? await verifyThreadReadable(binding.orchestratorThreadId, deps) : null;
   if (binding) {
-    const verification = await verifyThreadReadable(binding.orchestratorThreadId, deps);
+    const verification = bindingVerification;
     if (verification.readable) {
       return {
         ok: true,
@@ -63,7 +64,7 @@ export async function resolveProjectOrchestrator(args = {}, deps = {}) {
     archiveScope: args.archiveScope ?? "all",
     limit: 100,
     searchTerm: query,
-    cwd: args.cwd ?? projectRoot ?? null,
+    cwd: cleanString(args.cwd) || projectRoot || null,
     useLocalFallback: args.useLocalFallback
   });
   const candidates = rankThreadSummaries(listed.data ?? [], query, limit);
@@ -98,7 +99,7 @@ export async function resolveProjectOrchestrator(args = {}, deps = {}) {
     projectRoot: projectRoot || best.cwd || null,
     projectId: cleanString(args.projectId) || binding?.projectId || null,
     binding,
-    bindingVerification: binding ? await verifyThreadReadable(binding.orchestratorThreadId, deps) : null,
+    bindingVerification,
     verification,
     query,
     selection,
@@ -128,7 +129,10 @@ export async function messageProjectOrchestrator(args = {}, deps = {}, toolConte
 }
 
 export async function launchProjectWorker(args = {}, deps = {}, toolContext = {}) {
-  const resolution = await resolveProjectOrchestrator(args, deps);
+  // `name` titles the new worker thread; it must not steer which orchestrator
+  // is resolved.
+  const { name: _workerName, ...resolveArgs } = args;
+  const resolution = await resolveProjectOrchestrator(resolveArgs, deps);
   const projectRoot = cleanString(args.projectRoot || args.cwd) || resolution.projectRoot || null;
   const workerRole = cleanString(args.workerRole || args.role) || "project worker";
   const task = requiredString(args.task || args.message, "task").trim();
@@ -139,7 +143,8 @@ export async function launchProjectWorker(args = {}, deps = {}, toolContext = {}
     workerRole,
     task,
     orchestratorThreadId: resolution.threadId,
-    projectId: resolution.projectId
+    projectId: resolution.projectId,
+    policyVersion: resolution.binding?.policyVersion
   });
   const result = await deps.launchThread({
     ...forwardLaunchOptions(args),
@@ -341,7 +346,7 @@ async function verifyThreadReadable(threadId, deps) {
 }
 
 function buildFallbackQuery(args) {
-  const explicitQuery = cleanString(args.query || args.projectName || args.name);
+  const explicitQuery = cleanString(args.query || args.projectName);
   if (explicitQuery) {
     return explicitQuery;
   }
@@ -373,7 +378,9 @@ function buildSelection(candidates) {
 
 function forwardMessageOptions(args) {
   const out = {};
-  for (const key of ["mode", "resumeIfNeeded", "expectedTurnId", "cwd", "model", "effort", "allowParallelTurn", "waitForReply", "timeoutMs", "pollIntervalMs", "recentItems"]) {
+  // cwd is deliberately absent: on these tools it filters the orchestrator
+  // search; it is never the orchestrator turn's working directory.
+  for (const key of ["mode", "resumeIfNeeded", "expectedTurnId", "model", "effort", "allowParallelTurn", "allowTargetOverride", "waitForReply", "timeoutMs", "pollIntervalMs", "recentItems"]) {
     if (args[key] !== undefined) {
       out[key] = args[key];
     }

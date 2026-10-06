@@ -36,10 +36,13 @@ const groups = {
     "tests/shared/runtime-context.test.js"
   ],
   codex: [
+    "tests/codex/app-server-client.test.js",
     "tests/codex/app-server-lifecycle.test.js",
     "tests/codex/chat-style-close.test.js",
     "tests/codex/codex-binary.test.js",
     "tests/codex/server-idle-churn.test.js",
+    "tests/codex/server-tools.test.js",
+    "tests/codex/session-index.test.js",
     "scripts/archive-exdev-regression-test.js",
     "scripts/dependency-handoff-regression-test.js",
     "scripts/feedback-regression-test.js",

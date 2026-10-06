@@ -419,11 +419,11 @@ var require_codegen = __commonJS({
         const rhs = this.rhs === void 0 ? "" : ` = ${this.rhs}`;
         return `${varKind} ${this.name}${rhs};` + _n;
       }
-      optimizeNames(names, constants) {
+      optimizeNames(names, constants2) {
         if (!names[this.name.str])
           return;
         if (this.rhs)
-          this.rhs = optimizeExpr(this.rhs, names, constants);
+          this.rhs = optimizeExpr(this.rhs, names, constants2);
         return this;
       }
       get names() {
@@ -440,10 +440,10 @@ var require_codegen = __commonJS({
       render({ _n }) {
         return `${this.lhs} = ${this.rhs};` + _n;
       }
-      optimizeNames(names, constants) {
+      optimizeNames(names, constants2) {
         if (this.lhs instanceof code_1.Name && !names[this.lhs.str] && !this.sideEffects)
           return;
-        this.rhs = optimizeExpr(this.rhs, names, constants);
+        this.rhs = optimizeExpr(this.rhs, names, constants2);
         return this;
       }
       get names() {
@@ -504,8 +504,8 @@ var require_codegen = __commonJS({
       optimizeNodes() {
         return `${this.code}` ? this : void 0;
       }
-      optimizeNames(names, constants) {
-        this.code = optimizeExpr(this.code, names, constants);
+      optimizeNames(names, constants2) {
+        this.code = optimizeExpr(this.code, names, constants2);
         return this;
       }
       get names() {
@@ -534,12 +534,12 @@ var require_codegen = __commonJS({
         }
         return nodes.length > 0 ? this : void 0;
       }
-      optimizeNames(names, constants) {
+      optimizeNames(names, constants2) {
         const { nodes } = this;
         let i = nodes.length;
         while (i--) {
           const n = nodes[i];
-          if (n.optimizeNames(names, constants))
+          if (n.optimizeNames(names, constants2))
             continue;
           subtractNames(names, n.names);
           nodes.splice(i, 1);
@@ -592,12 +592,12 @@ var require_codegen = __commonJS({
           return void 0;
         return this;
       }
-      optimizeNames(names, constants) {
+      optimizeNames(names, constants2) {
         var _a3;
-        this.else = (_a3 = this.else) === null || _a3 === void 0 ? void 0 : _a3.optimizeNames(names, constants);
-        if (!(super.optimizeNames(names, constants) || this.else))
+        this.else = (_a3 = this.else) === null || _a3 === void 0 ? void 0 : _a3.optimizeNames(names, constants2);
+        if (!(super.optimizeNames(names, constants2) || this.else))
           return;
-        this.condition = optimizeExpr(this.condition, names, constants);
+        this.condition = optimizeExpr(this.condition, names, constants2);
         return this;
       }
       get names() {
@@ -620,10 +620,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.iteration})` + super.render(opts);
       }
-      optimizeNames(names, constants) {
-        if (!super.optimizeNames(names, constants))
+      optimizeNames(names, constants2) {
+        if (!super.optimizeNames(names, constants2))
           return;
-        this.iteration = optimizeExpr(this.iteration, names, constants);
+        this.iteration = optimizeExpr(this.iteration, names, constants2);
         return this;
       }
       get names() {
@@ -659,10 +659,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.varKind} ${this.name} ${this.loop} ${this.iterable})` + super.render(opts);
       }
-      optimizeNames(names, constants) {
-        if (!super.optimizeNames(names, constants))
+      optimizeNames(names, constants2) {
+        if (!super.optimizeNames(names, constants2))
           return;
-        this.iterable = optimizeExpr(this.iterable, names, constants);
+        this.iterable = optimizeExpr(this.iterable, names, constants2);
         return this;
       }
       get names() {
@@ -704,11 +704,11 @@ var require_codegen = __commonJS({
         (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNodes();
         return this;
       }
-      optimizeNames(names, constants) {
+      optimizeNames(names, constants2) {
         var _a3, _b;
-        super.optimizeNames(names, constants);
-        (_a3 = this.catch) === null || _a3 === void 0 ? void 0 : _a3.optimizeNames(names, constants);
-        (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNames(names, constants);
+        super.optimizeNames(names, constants2);
+        (_a3 = this.catch) === null || _a3 === void 0 ? void 0 : _a3.optimizeNames(names, constants2);
+        (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNames(names, constants2);
         return this;
       }
       get names() {
@@ -1009,7 +1009,7 @@ var require_codegen = __commonJS({
     function addExprNames(names, from) {
       return from instanceof code_1._CodeOrName ? addNames(names, from.names) : names;
     }
-    function optimizeExpr(expr, names, constants) {
+    function optimizeExpr(expr, names, constants2) {
       if (expr instanceof code_1.Name)
         return replaceName(expr);
       if (!canOptimize(expr))
@@ -1024,14 +1024,14 @@ var require_codegen = __commonJS({
         return items;
       }, []));
       function replaceName(n) {
-        const c = constants[n.str];
+        const c = constants2[n.str];
         if (c === void 0 || names[n.str] !== 1)
           return n;
         delete names[n.str];
         return c;
       }
       function canOptimize(e) {
-        return e instanceof code_1._Code && e._items.some((c) => c instanceof code_1.Name && names[c.str] === 1 && constants[c.str] !== void 0);
+        return e instanceof code_1._Code && e._items.some((c) => c instanceof code_1.Name && names[c.str] === 1 && constants2[c.str] !== void 0);
       }
     }
     function subtractNames(names, from) {
@@ -3238,8 +3238,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path10) {
-      let input = path10;
+    function removeDotSegments(path12) {
+      let input = path12;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3491,8 +3491,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path10, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path10 && path10 !== "/" ? path10 : void 0;
+        const [path12, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path12 && path12 !== "/" ? path12 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -9101,7 +9101,7 @@ var require_websocket = __commonJS({
     var http2 = __require("http");
     var net2 = __require("net");
     var tls = __require("tls");
-    var { randomBytes, createHash } = __require("crypto");
+    var { randomBytes: randomBytes2, createHash } = __require("crypto");
     var { Duplex, Readable } = __require("stream");
     var { URL: URL2 } = __require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
@@ -9631,7 +9631,7 @@ var require_websocket = __commonJS({
         }
       }
       const defaultPort = isSecure ? 443 : 80;
-      const key = randomBytes(16).toString("base64");
+      const key = randomBytes2(16).toString("base64");
       const request = isSecure ? https.request : http2.request;
       const protocolSet = /* @__PURE__ */ new Set();
       let perMessageDeflate;
@@ -10516,6 +10516,7 @@ var require_websocket_server = __commonJS({
 
 // src/server.js
 import { spawn as spawn2 } from "node:child_process";
+import path11 from "node:path";
 
 // node_modules/zod/v4/core/core.js
 var _a;
@@ -10757,10 +10758,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path10) {
-  if (!path10)
+function getElementAtPath(obj, path12) {
+  if (!path12)
     return obj;
-  return path10.reduce((acc, key) => acc?.[key], obj);
+  return path12.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -11169,11 +11170,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path10, issues) {
+function prefixIssues(path12, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path10);
+    iss.path.unshift(path12);
     return iss;
   });
 }
@@ -11320,16 +11321,16 @@ function flattenError(error2, mapper = (issue2) => issue2.message) {
 }
 function formatError(error2, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error3, path10 = []) => {
+  const processError = (error3, path12 = []) => {
     for (const issue2 of error3.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path10, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path12, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path10, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path12, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path10, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path12, ...issue2.path]);
       } else {
-        const fullpath = [...path10, ...issue2.path];
+        const fullpath = [...path12, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -19072,12 +19073,13 @@ var StdioServerTransport = class {
 };
 
 // src/codex/app-server-client.js
-import { spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync as spawnSync2 } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import http from "node:http";
 import net from "node:net";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync as statSync2, writeFileSync } from "node:fs";
+import os2 from "node:os";
+import path2 from "node:path";
 
 // node_modules/ws/wrapper.mjs
 var import_stream = __toESM(require_stream(), 1);
@@ -19090,37 +19092,204 @@ var import_websocket = __toESM(require_websocket(), 1);
 var import_websocket_server = __toESM(require_websocket_server(), 1);
 var wrapper_default = import_websocket.default;
 
+// src/codex/install-layout.js
+import { spawnSync } from "node:child_process";
+import { accessSync, constants, statSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+var APP_BUNDLES = [
+  {
+    app: "ChatGPT.app",
+    binaries: [
+      "Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+      "Contents/Resources/codex"
+    ]
+  },
+  {
+    app: "Codex.app",
+    binaries: ["Contents/Resources/codex"]
+  }
+];
+function codexInstallLayout(options = {}) {
+  const home = options.home ?? os.homedir();
+  const platform = options.platform ?? process.platform;
+  const applicationDirs = options.applicationDirs ?? (platform === "darwin" ? ["/Applications", path.join(home, "Applications")] : []);
+  const executable = platform === "win32" ? "codex.exe" : "codex";
+  return {
+    platform,
+    executable,
+    envVars: ["CODEX_AGENT_LINK_CODEX_BIN", "CODEX_BIN"],
+    appBundles: applicationDirs.flatMap((dir) => APP_BUNDLES.map((bundle) => ({
+      app: bundle.app,
+      appPath: path.join(dir, bundle.app),
+      binaries: bundle.binaries.map((relative) => path.join(dir, bundle.app, relative))
+    }))),
+    pathDirs: options.pathDirs ?? splitPath(options.pathEnv ?? process.env.PATH ?? ""),
+    wellKnownDirs: options.wellKnownDirs ?? (platform === "win32" ? [] : [path.join(home, ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin"])
+  };
+}
+function codexBinaryCandidateEntries(options = {}) {
+  const env = options.env ?? process.env;
+  const layout = options.layout ?? codexInstallLayout(options);
+  const entries = [];
+  for (const name of layout.envVars) {
+    if (env[name]) {
+      entries.push({ path: env[name], source: `env:${name}`, explicit: true });
+    }
+  }
+  for (const bundle of layout.appBundles) {
+    for (const binary of bundle.binaries) {
+      entries.push({ path: binary, source: `app:${bundle.app}` });
+    }
+  }
+  for (const dir of layout.pathDirs) {
+    entries.push({ path: path.join(dir, layout.executable), source: "PATH" });
+  }
+  for (const dir of layout.wellKnownDirs) {
+    entries.push({ path: path.join(dir, layout.executable), source: "well-known" });
+  }
+  const seen = /* @__PURE__ */ new Set();
+  return entries.filter((entry) => {
+    if (seen.has(entry.path)) {
+      return false;
+    }
+    seen.add(entry.path);
+    return true;
+  });
+}
+function discoverCodexBinary(options = {}) {
+  const entries = codexBinaryCandidateEntries(options);
+  const isExecutable = options.isExecutable ?? defaultIsExecutable;
+  const searched = [];
+  for (const entry of entries) {
+    searched.push(entry.path);
+    if (entry.explicit && !entry.path.includes(path.sep)) {
+      const layout = options.layout ?? codexInstallLayout(options);
+      const resolved = layout.pathDirs.map((dir) => path.join(dir, entry.path)).find((candidate) => isExecutable(candidate));
+      if (resolved) {
+        return { found: true, path: resolved, source: entry.source, searched };
+      }
+      return {
+        found: false,
+        path: null,
+        source: entry.source,
+        searched,
+        reason: `${entry.source.slice(4)}=${entry.path} was not found on PATH`
+      };
+    }
+    if (isExecutable(entry.path)) {
+      return { found: true, path: entry.path, source: entry.source, searched };
+    }
+    if (entry.explicit) {
+      return {
+        found: false,
+        path: null,
+        source: entry.source,
+        searched,
+        reason: `${entry.source.slice(4)} points at ${entry.path}, which does not exist or is not executable`
+      };
+    }
+  }
+  return {
+    found: false,
+    path: null,
+    source: null,
+    searched,
+    reason: "No Codex binary was found in the app bundles, on PATH, or in the well-known install directories"
+  };
+}
+var versionCache = /* @__PURE__ */ new Map();
+function codexBinaryVersion(binaryPath, { timeoutMs = 3e3 } = {}) {
+  if (!binaryPath) {
+    return null;
+  }
+  let key = binaryPath;
+  try {
+    key = `${binaryPath}:${statSync(binaryPath).mtimeMs}`;
+  } catch {
+  }
+  if (versionCache.has(key)) {
+    return versionCache.get(key);
+  }
+  const result = spawnSync(binaryPath, ["--version"], { encoding: "utf8", timeout: timeoutMs });
+  const version2 = result.status === 0 && !result.error ? (result.stdout || "").trim().split("\n")[0] || null : null;
+  versionCache.set(key, version2);
+  return version2;
+}
+function defaultIsExecutable(candidate) {
+  try {
+    if (!statSync(candidate).isFile()) {
+      return false;
+    }
+    accessSync(candidate, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function splitPath(value) {
+  return String(value).split(path.delimiter).filter((dir) => dir && path.isAbsolute(dir));
+}
+
 // src/codex/app-server-client.js
 var DEFAULT_REQUEST_TIMEOUT_MS = 3e4;
 var DEFAULT_STARTUP_TIMEOUT_MS = 15e3;
 var DEFAULT_IDLE_TIMEOUT_MS = 5 * 60 * 1e3;
 var DEFAULT_KILL_GRACE_MS = 1500;
+var DEFAULT_STARTUP_FAILURE_CACHE_MS = 60 * 1e3;
+var MAX_UNIX_SOCKET_PATH_BYTES = 100;
+var RECENT_NOTIFICATIONS = 20;
+var MAX_TRACKED_METHODS = 64;
+var AGENT_LINK_VERSION = true ? "0.3.0" : readPackageVersion();
+var SERVER_REQUEST_DECLINES = Object.freeze({
+  "item/commandExecution/requestApproval": { decision: "decline" },
+  "item/fileChange/requestApproval": { decision: "decline" },
+  execCommandApproval: { decision: "denied" },
+  applyPatchApproval: { decision: "denied" },
+  "mcpServer/elicitation/request": { action: "decline" },
+  "item/permissions/requestApproval": { permissions: {} }
+});
+var METHOD_NOT_HANDLED = -32601;
 var AppServerError = class extends Error {
   constructor(message, details = {}) {
     super(message);
     this.name = "AppServerError";
     this.details = details;
+    this.code = details.code ?? null;
   }
 };
 function managedAppServerStateDir() {
-  return process.env.CODEX_AGENT_LINK_STATE_DIR || path.join(os.homedir(), ".claude", "agent-link", "managed-app-servers");
+  return process.env.CODEX_AGENT_LINK_STATE_DIR || path2.join(os2.homedir(), ".claude", "agent-link", "managed-app-servers");
 }
-function envIdleTimeoutMs() {
-  const raw = process.env.CODEX_AGENT_LINK_APP_SERVER_IDLE_MS;
+function envNonNegativeMs(name, fallback) {
+  const raw = process.env[name];
   if (raw === void 0 || raw === "") {
-    return DEFAULT_IDLE_TIMEOUT_MS;
+    return fallback;
   }
   const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_IDLE_TIMEOUT_MS;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+function envPositiveMs(name, fallback) {
+  const value = envNonNegativeMs(name, fallback);
+  return value > 0 ? value : fallback;
+}
+function envTransport() {
+  const raw = process.env.CODEX_AGENT_LINK_APP_SERVER_TRANSPORT;
+  if (raw === "ws-token" || raw === "unix") {
+    return raw;
+  }
+  return process.platform === "win32" ? "ws-token" : "unix";
 }
 var CodexAppServerClient = class {
   constructor(options = {}) {
     this.options = {
       requestTimeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
-      startupTimeoutMs: DEFAULT_STARTUP_TIMEOUT_MS,
+      startupTimeoutMs: envPositiveMs("CODEX_AGENT_LINK_APP_SERVER_STARTUP_MS", DEFAULT_STARTUP_TIMEOUT_MS),
       autoStart: process.env.CODEX_AGENT_LINK_AUTOSTART !== "0",
-      idleTimeoutMs: envIdleTimeoutMs(),
+      idleTimeoutMs: envNonNegativeMs("CODEX_AGENT_LINK_APP_SERVER_IDLE_MS", DEFAULT_IDLE_TIMEOUT_MS),
       killGraceMs: DEFAULT_KILL_GRACE_MS,
+      startupFailureCacheMs: DEFAULT_STARTUP_FAILURE_CACHE_MS,
+      transport: envTransport(),
       stateDir: null,
       ...options
     };
@@ -19129,9 +19298,8 @@ var CodexAppServerClient = class {
     this.pending = /* @__PURE__ */ new Map();
     this.initialized = false;
     this.managedProcess = null;
-    this.managedUrl = null;
+    this.managedEndpoint = null;
     this.managedLaunch = null;
-    this.lastNotifications = [];
     this.connectionInfo = null;
     this.managedProcessExitCleanup = null;
     this.managedRecordPath = null;
@@ -19143,35 +19311,62 @@ var CodexAppServerClient = class {
     this.idleShutdowns = 0;
     this.reapedOrphans = false;
     this.closed = false;
+    this.lastStartupFailure = null;
+    this.notifications = { total: 0, parseErrors: 0, byMethod: {}, recent: [] };
+    this.serverRequests = { total: 0, declined: 0, rejected: 0, byMethod: {}, last: null };
   }
   async request(method, params = {}) {
+    if (this.closed) {
+      throw closedError(method);
+    }
     this.clearIdleTimer();
     this.activeRequests += 1;
     try {
       await this.ensureConnected();
-      const id = `agent-link-${this.nextId++}`;
-      const payload = { id, method, params };
-      return await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          this.pending.delete(id);
-          reject(new AppServerError(`Timed out waiting for ${method}`, { method }));
-        }, this.options.requestTimeoutMs);
-        this.pending.set(id, { resolve, reject, timeout, method });
-        this.ws.send(JSON.stringify(payload), (error2) => {
-          if (!error2) {
-            return;
-          }
-          clearTimeout(timeout);
-          this.pending.delete(id);
-          reject(new AppServerError(`Failed to send ${method}: ${error2.message}`, { method }));
-        });
-      });
+      return await this.sendRequest(this.ws, method, params);
     } finally {
       this.activeRequests -= 1;
       this.scheduleIdleShutdown();
     }
   }
+  // The only place a JSON-RPC request is written. `ws` is captured by the
+  // caller so a reconnect in between cannot redirect this request.
+  sendRequest(ws, method, params) {
+    return new Promise((resolve, reject) => {
+      if (this.closed) {
+        reject(closedError(method));
+        return;
+      }
+      if (!ws || ws.readyState !== wrapper_default.OPEN) {
+        reject(new AppServerError(`Codex app-server connection is not open for ${method}`, { method, code: "not-connected" }));
+        return;
+      }
+      const id = `agent-link-${this.nextId++}`;
+      const timeout = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new AppServerError(`Timed out waiting for ${method}`, { method, code: "request-timeout" }));
+      }, this.options.requestTimeoutMs);
+      const fail = (error2) => {
+        clearTimeout(timeout);
+        this.pending.delete(id);
+        reject(new AppServerError(`Failed to send ${method}: ${error2.message}`, { method, code: "send-failed" }));
+      };
+      this.pending.set(id, { resolve, reject, timeout, method });
+      try {
+        ws.send(JSON.stringify({ id, method, params }), (error2) => {
+          if (error2) {
+            fail(error2);
+          }
+        });
+      } catch (error2) {
+        fail(error2);
+      }
+    });
+  }
   async ensureConnected() {
+    if (this.closed) {
+      throw closedError();
+    }
     if (this.ws?.readyState === wrapper_default.OPEN && this.initialized) {
       return;
     }
@@ -19181,18 +19376,25 @@ var CodexAppServerClient = class {
       });
     }
     await this.connectPromise;
+    if (this.closed) {
+      throw closedError();
+    }
   }
   async connect() {
     const target = await this.resolveTarget();
+    if (this.closed) {
+      throw closedError();
+    }
     const previous = this.ws;
     if (previous && previous.readyState !== wrapper_default.CLOSED) {
       previous.terminate();
     }
-    const ws = target.socketPath ? new wrapper_default("ws://localhost/", { socketPath: target.socketPath }) : new wrapper_default(target.url);
+    const ws = target.socketPath ? new wrapper_default(`ws+unix://${target.socketPath}:/`) : new wrapper_default(target.url, target.headers ? { headers: target.headers } : void 0);
     this.ws = ws;
     this.initialized = false;
-    this.connectionInfo = target;
-    ws.on("message", (raw) => this.handleMessage(raw));
+    const { headers: _headers, ...publicTarget } = target;
+    this.connectionInfo = publicTarget;
+    ws.on("message", (raw) => this.handleMessage(ws, raw));
     ws.on("close", () => {
       if (this.ws === ws) {
         this.failAllPending("Codex app-server websocket closed");
@@ -19205,12 +19407,20 @@ var CodexAppServerClient = class {
     });
     try {
       await waitForOpen(ws, this.options.requestTimeoutMs);
-      await this.initialize();
-    } catch (error2) {
-      if (this.ws === ws) {
-        ws.terminate();
+      if (this.closed || this.ws !== ws) {
+        throw closedError();
       }
-      throw error2;
+      await this.initialize(ws);
+      if (this.closed || this.ws !== ws) {
+        throw closedError();
+      }
+    } catch (error2) {
+      ws.terminate();
+      if (this.ws === ws) {
+        this.ws = null;
+        this.initialized = false;
+      }
+      throw this.closed ? closedError() : error2;
     }
   }
   clearIdleTimer() {
@@ -19261,53 +19471,41 @@ var CodexAppServerClient = class {
       ws.terminate();
     }
   }
-  async initialize() {
-    const id = `agent-link-${this.nextId++}`;
-    const params = {
+  async initialize(ws) {
+    const result = await this.sendRequest(ws, "initialize", {
       clientInfo: {
         name: "codex-agent-link",
         title: "Codex Agent Link",
-        version: "0.1.0"
+        version: AGENT_LINK_VERSION
       },
       capabilities: {
         experimentalApi: true
       }
-    };
-    const result = await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new AppServerError("Timed out during app-server initialize"));
-      }, this.options.requestTimeoutMs);
-      this.pending.set(id, { resolve, reject, timeout, method: "initialize" });
-      this.ws.send(JSON.stringify({ id, method: "initialize", params }), (error2) => {
-        if (!error2) {
-          return;
-        }
-        clearTimeout(timeout);
-        this.pending.delete(id);
-        reject(new AppServerError(`Failed to initialize app-server: ${error2.message}`));
-      });
     });
     this.initialized = true;
-    this.ws.send(JSON.stringify({ method: "initialized", params: {} }));
+    try {
+      ws.send(JSON.stringify({ method: "initialized", params: {} }));
+    } catch {
+    }
     this.connectionInfo = {
       ...this.connectionInfo,
       initialized: true,
-      userAgent: result.userAgent,
-      codexHome: result.codexHome,
-      platformOs: result.platformOs
+      userAgent: result?.userAgent,
+      codexHome: result?.codexHome,
+      platformOs: result?.platformOs
     };
     return result;
   }
-  handleMessage(raw) {
+  handleMessage(ws, raw) {
     let message;
     try {
       message = JSON.parse(raw.toString());
-    } catch (error2) {
-      this.lastNotifications.push({
-        method: "parse-error",
-        params: { error: error2.message, raw: raw.toString() }
-      });
+    } catch {
+      this.notifications.parseErrors += 1;
+      return;
+    }
+    if (message.method && message.id !== void 0 && message.id !== null) {
+      this.answerServerRequest(ws, message);
       return;
     }
     if (message.id !== void 0 && this.pending.has(message.id)) {
@@ -19326,20 +19524,45 @@ var CodexAppServerClient = class {
       return;
     }
     if (message.method) {
-      this.lastNotifications.push({
-        method: message.method,
-        params: message.params ?? null,
-        receivedAt: (/* @__PURE__ */ new Date()).toISOString()
-      });
-      if (this.lastNotifications.length > 100) {
-        this.lastNotifications.shift();
+      this.notifications.total += 1;
+      countMethod(this.notifications.byMethod, message.method);
+      this.notifications.recent.push({ method: message.method, receivedAt: (/* @__PURE__ */ new Date()).toISOString() });
+      if (this.notifications.recent.length > RECENT_NOTIFICATIONS) {
+        this.notifications.recent.shift();
       }
     }
   }
-  failAllPending(message) {
+  answerServerRequest(ws, message) {
+    const method = String(message.method);
+    const decline = Object.prototype.hasOwnProperty.call(SERVER_REQUEST_DECLINES, method) ? SERVER_REQUEST_DECLINES[method] : null;
+    this.serverRequests.total += 1;
+    countMethod(this.serverRequests.byMethod, method);
+    const reply = decline ? { id: message.id, result: decline } : {
+      id: message.id,
+      error: {
+        code: METHOD_NOT_HANDLED,
+        message: `Agent Link cannot answer app-server request ${method}; it was refused automatically so the turn does not wait on it.`
+      }
+    };
+    if (decline) {
+      this.serverRequests.declined += 1;
+    } else {
+      this.serverRequests.rejected += 1;
+    }
+    this.serverRequests.last = {
+      method,
+      answer: decline ? "declined" : "error",
+      at: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    try {
+      ws.send(JSON.stringify(reply));
+    } catch {
+    }
+  }
+  failAllPending(message, code = "connection-lost") {
     for (const [id, pending] of this.pending.entries()) {
       clearTimeout(pending.timeout);
-      pending.reject(new AppServerError(message, { method: pending.method }));
+      pending.reject(new AppServerError(message, { method: pending.method, code }));
       this.pending.delete(id);
     }
     this.initialized = false;
@@ -19355,24 +19578,94 @@ var CodexAppServerClient = class {
     }
     if (!this.options.autoStart) {
       throw new AppServerError(
-        "No Codex app-server endpoint is configured. Set CODEX_AGENT_LINK_URL, CODEX_APP_SERVER_URL, CODEX_AGENT_LINK_SOCK, or enable CODEX_AGENT_LINK_AUTOSTART."
+        "No Codex app-server endpoint is configured. Set CODEX_AGENT_LINK_URL, CODEX_APP_SERVER_URL, CODEX_AGENT_LINK_SOCK, or enable CODEX_AGENT_LINK_AUTOSTART.",
+        { code: "autostart-disabled" }
       );
     }
     if (this.closed) {
-      throw new AppServerError("Codex app-server client is closed; not starting a managed app-server");
+      throw closedError();
     }
-    if (!this.managedUrl) {
+    if (!this.managedEndpoint) {
+      this.throwIfStartupFailureCached();
       if (!this.managedStartPromise) {
-        this.managedStartPromise = this.startManagedAppServer().finally(() => {
+        this.managedStartPromise = this.startManagedAppServer().catch((error2) => {
+          if (!this.closed && error2?.details?.cacheable) {
+            this.lastStartupFailure = { error: error2, at: Date.now() };
+          }
+          throw error2;
+        }).finally(() => {
           this.managedStartPromise = null;
         });
       }
       await this.managedStartPromise;
     }
-    return { kind: "managed", url: this.managedUrl, managed: true };
+    const endpoint = this.managedEndpoint;
+    if (!endpoint) {
+      throw new AppServerError("Managed Codex app-server was stopped during startup", { code: "stopped-during-startup" });
+    }
+    return {
+      kind: "managed",
+      managed: true,
+      transport: endpoint.transport,
+      url: endpoint.url ?? null,
+      socketPath: endpoint.socketPath ?? null,
+      headers: endpoint.headers
+    };
+  }
+  throwIfStartupFailureCached() {
+    const failure = this.lastStartupFailure;
+    if (!failure) {
+      return;
+    }
+    const ageMs = Date.now() - failure.at;
+    const cacheMs = this.options.startupFailureCacheMs;
+    if (!(cacheMs > 0) || ageMs >= cacheMs) {
+      this.lastStartupFailure = null;
+      return;
+    }
+    throw new AppServerError(`${failure.error.message} (cached startup failure; not retrying for another ${Math.ceil((cacheMs - ageMs) / 1e3)} s)`, {
+      ...failure.error.details,
+      code: "startup-failure-cached",
+      cachedCode: failure.error.details?.code ?? null,
+      retryAfterMs: cacheMs - ageMs
+    });
   }
   stateDir() {
     return this.options.stateDir || managedAppServerStateDir();
+  }
+  // Where the managed app-server listens. Unix socket in a 0700 directory by
+  // default; a capability-token websocket only when Unix sockets are not an
+  // option. Either way no other local user can drive the app-server.
+  allocateEndpoint() {
+    const stateDir = ensurePrivateDir(this.stateDir());
+    const stem = `${process.pid}-${this.managedSpawnCount + 1}`;
+    if (this.options.transport === "ws-token") {
+      const token = randomBytes(32).toString("hex");
+      const tokenFile = path2.join(stateDir, `${stem}.token`);
+      writeFileSync(tokenFile, token, { mode: 384 });
+      chmodSync(tokenFile, 384);
+      return {
+        transport: "ws-token",
+        tokenFile,
+        headers: { Authorization: `Bearer ${token}` },
+        // The port is chosen just before spawn; the token keeps a process that
+        // wins the port race from being driven by us or driving our server.
+        pendingPort: true,
+        args: ["--ws-auth", "capability-token", "--ws-token-file", tokenFile]
+      };
+    }
+    let socketDir = stateDir;
+    if (Buffer.byteLength(path2.join(socketDir, `${stem}.sock`)) > MAX_UNIX_SOCKET_PATH_BYTES) {
+      socketDir = ensurePrivateDir(path2.join("/tmp", `agent-link-${process.getuid?.() ?? "user"}`));
+    }
+    const socketPath = path2.join(socketDir, `${stem}.sock`);
+    rmSync(socketPath, { force: true });
+    return {
+      transport: "unix",
+      socketPath,
+      listen: `unix://${socketPath}`,
+      args: []
+    };
   }
   async startManagedAppServer() {
     if (!this.reapedOrphans) {
@@ -19382,10 +19675,16 @@ var CodexAppServerClient = class {
       } catch {
       }
     }
-    const port = await getFreePort();
-    const url = `ws://127.0.0.1:${port}`;
     const launch = findAppServerLaunch();
-    const child = spawn(launch.command, [...launch.args, "--listen", url], {
+    const endpoint = this.allocateEndpoint();
+    if (endpoint.pendingPort) {
+      const port = await getFreePort();
+      endpoint.url = `ws://127.0.0.1:${port}`;
+      endpoint.listen = endpoint.url;
+      endpoint.readyUrl = `http://127.0.0.1:${port}/readyz`;
+      delete endpoint.pendingPort;
+    }
+    const child = spawn(launch.command, [...launch.args, "--listen", endpoint.listen, ...endpoint.args], {
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
       env: {
@@ -19393,6 +19692,7 @@ var CodexAppServerClient = class {
         CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "Codex Agent Link"
       }
     });
+    child.__agentLinkEndpoint = endpoint;
     this.managedSpawnCount += 1;
     this.managedLaunch = launch;
     this.managedProcess = child;
@@ -19413,6 +19713,7 @@ var CodexAppServerClient = class {
     });
     child.on("exit", (code, signal) => {
       removeManagedRecord(child.__agentLinkRecordPath);
+      removeEndpointFiles(child.__agentLinkEndpoint);
       if (this.managedProcess !== child) {
         return;
       }
@@ -19420,7 +19721,7 @@ var CodexAppServerClient = class {
         process.removeListener("exit", this.managedProcessExitCleanup);
         this.managedProcessExitCleanup = null;
       }
-      this.managedUrl = null;
+      this.managedEndpoint = null;
       this.managedProcess = null;
       this.managedLaunch = null;
       this.managedRecordPath = null;
@@ -19435,34 +19736,58 @@ var CodexAppServerClient = class {
         ownerPid: process.pid,
         pid: child.pid,
         pgid: child.pid,
-        url,
+        url: endpoint.listen,
+        transport: endpoint.transport,
+        socketPath: endpoint.socketPath ?? null,
+        tokenFile: endpoint.tokenFile ?? null,
         command: launch.command,
         startedAt: (/* @__PURE__ */ new Date()).toISOString()
       });
       this.managedRecordPath = child.__agentLinkRecordPath;
     }
+    const checkAbort = () => {
+      if (spawnError) {
+        return tagged(spawnError, spawnError.code === "ENOENT" ? "codex-binary-not-found" : "spawn-failed");
+      }
+      if (child.exitCode !== null || child.signalCode !== null) {
+        return tagged(
+          new Error(`app-server exited during startup (code ${child.exitCode ?? "null"} signal ${child.signalCode ?? "null"})`),
+          "app-server-exited-during-startup"
+        );
+      }
+      return null;
+    };
     try {
-      await waitForReady(`http://127.0.0.1:${port}/readyz`, this.options.startupTimeoutMs, () => {
-        if (spawnError) {
-          return spawnError;
-        }
-        if (child.exitCode !== null || child.signalCode !== null) {
-          return new Error(`app-server exited during startup (code ${child.exitCode ?? "null"} signal ${child.signalCode ?? "null"})`);
-        }
-        return null;
-      });
+      if (endpoint.socketPath) {
+        await waitForSocket(endpoint.socketPath, this.options.startupTimeoutMs, checkAbort);
+      } else {
+        await waitForReady(endpoint.readyUrl, this.options.startupTimeoutMs, checkAbort);
+      }
     } catch (error2) {
       await this.stopManagedAppServer(child);
+      if (this.closed) {
+        throw closedError();
+      }
+      const code = error2.agentLinkCode ?? "readiness-timeout";
       throw new AppServerError("Managed Codex app-server did not become ready", {
+        code,
+        cacheable: this.managedProcess === null && !this.closed,
         cause: error2.message,
+        command: launch.command,
+        launchSource: launch.source ?? null,
+        startupTimeoutMs: this.options.startupTimeoutMs,
         logs: logs.join("")
       });
     }
-    if (this.managedProcess !== child) {
-      throw new AppServerError("Managed Codex app-server was stopped during startup");
+    if (this.closed) {
+      throw closedError();
     }
-    this.managedUrl = url;
-    return url;
+    if (this.managedProcess !== child) {
+      throw new AppServerError("Managed Codex app-server was stopped during startup", { code: "stopped-during-startup" });
+    }
+    this.lastStartupFailure = null;
+    this.managedEndpoint = endpoint;
+    return endpoint;
   }
   // Stop the managed app-server's whole process group: SIGTERM, bounded wait,
   // then SIGKILL for the leader and any group members left behind.
@@ -19476,7 +19801,7 @@ var CodexAppServerClient = class {
         this.managedProcessExitCleanup = null;
       }
       this.managedProcess = null;
-      this.managedUrl = null;
+      this.managedEndpoint = null;
       this.managedLaunch = null;
       this.managedRecordPath = null;
     }
@@ -19496,6 +19821,7 @@ var CodexAppServerClient = class {
       }
     }
     removeManagedRecord(child.__agentLinkRecordPath);
+    removeEndpointFiles(child.__agentLinkEndpoint);
     child.stdout?.destroy();
     child.stderr?.destroy();
     child.unref();
@@ -19510,21 +19836,44 @@ var CodexAppServerClient = class {
     signalProcessGroup(child, signal);
   }
   getConnectionSummary() {
+    const failure = this.lastStartupFailure;
+    const failureAgeMs = failure ? Date.now() - failure.at : null;
     return {
       connected: this.ws?.readyState === wrapper_default.OPEN && this.initialized,
       ...this.connectionInfo,
+      closed: this.closed,
+      clientVersion: AGENT_LINK_VERSION,
       managedPid: this.managedProcess?.pid ?? null,
       managedLaunch: this.managedLaunch ?? null,
+      managedTransport: this.managedEndpoint?.transport ?? this.options.transport,
       managedSpawnCount: this.managedSpawnCount,
       idleTimeoutMs: this.options.idleTimeoutMs,
       idleShutdowns: this.idleShutdowns,
-      notificationsBuffered: this.lastNotifications.length
+      startupTimeoutMs: this.options.startupTimeoutMs,
+      startupFailure: failure && failureAgeMs < this.options.startupFailureCacheMs ? {
+        code: failure.error.details?.code ?? null,
+        message: failure.error.message,
+        retryAfterMs: this.options.startupFailureCacheMs - failureAgeMs
+      } : null,
+      notifications: {
+        total: this.notifications.total,
+        parseErrors: this.notifications.parseErrors,
+        byMethod: { ...this.notifications.byMethod },
+        recent: [...this.notifications.recent]
+      },
+      serverRequests: {
+        total: this.serverRequests.total,
+        declined: this.serverRequests.declined,
+        rejected: this.serverRequests.rejected,
+        byMethod: { ...this.serverRequests.byMethod },
+        last: this.serverRequests.last
+      }
     };
   }
   async close() {
     this.closed = true;
     this.clearIdleTimer();
-    this.failAllPending("Codex app-server client closed");
+    this.failAllPending("Codex app-server client is closed", "client-closed");
     this.closeSocket();
     const starting = this.managedStartPromise;
     await this.stopManagedAppServer();
@@ -19534,6 +19883,49 @@ var CodexAppServerClient = class {
     }
   }
 };
+function closedError(method = null) {
+  return new AppServerError("Codex app-server client is closed", { method, code: "client-closed" });
+}
+function tagged(error2, code) {
+  error2.agentLinkCode = code;
+  return error2;
+}
+function countMethod(table, method) {
+  if (Object.prototype.hasOwnProperty.call(table, method)) {
+    table[method] += 1;
+  } else if (Object.keys(table).length < MAX_TRACKED_METHODS) {
+    table[method] = 1;
+  } else {
+    table["(other)"] = (table["(other)"] ?? 0) + 1;
+  }
+}
+function ensurePrivateDir(dir) {
+  mkdirSync(dir, { recursive: true, mode: 448 });
+  const stat = statSync2(dir);
+  if (!stat.isDirectory()) {
+    throw new AppServerError(`Managed app-server state path is not a directory: ${dir}`, { code: "state-dir-unsafe" });
+  }
+  if (typeof process.getuid === "function" && stat.uid !== process.getuid()) {
+    throw new AppServerError(`Managed app-server state directory is owned by another user: ${dir}`, { code: "state-dir-unsafe" });
+  }
+  if ((stat.mode & 511) !== 448) {
+    chmodSync(dir, 448);
+  }
+  return dir;
+}
+function removeEndpointFiles(endpoint) {
+  if (!endpoint) {
+    return;
+  }
+  for (const file of [endpoint.socketPath, endpoint.tokenFile]) {
+    if (file) {
+      try {
+        rmSync(file, { force: true });
+      } catch {
+      }
+    }
+  }
+}
 function signalProcessGroup(child, signal, { groupOnly = false } = {}) {
   const pid = typeof child === "number" ? child : child?.pid;
   if (!pid) {
@@ -19568,10 +19960,10 @@ function processGroupAlive(pgid) {
 }
 function writeManagedRecord(stateDir, record2) {
   try {
-    mkdirSync(stateDir, { recursive: true });
-    const file = path.join(stateDir, `${record2.pid}.json`);
+    mkdirSync(stateDir, { recursive: true, mode: 448 });
+    const file = path2.join(stateDir, `${record2.pid}.json`);
     writeFileSync(file, `${JSON.stringify(record2)}
-`);
+`, { mode: 384 });
     return file;
   } catch {
     return null;
@@ -19598,7 +19990,7 @@ function reapOrphanedManagedAppServers({ stateDir = managedAppServerStateDir(), 
     if (!name.endsWith(".json")) {
       continue;
     }
-    const file = path.join(stateDir, name);
+    const file = path2.join(stateDir, name);
     let record2;
     try {
       record2 = JSON.parse(readFileSync(file, "utf8"));
@@ -19618,8 +20010,13 @@ function reapOrphanedManagedAppServers({ stateDir = managedAppServerStateDir(), 
       result.kept.push({ file, pid, ownerPid });
       continue;
     }
+    const recordEndpoint = {
+      socketPath: typeof record2.socketPath === "string" ? record2.socketPath : null,
+      tokenFile: typeof record2.tokenFile === "string" ? record2.tokenFile : null
+    };
     if (!pidIsAlive(pid)) {
       removeManagedRecord(file);
+      removeEndpointFiles(recordEndpoint);
       result.removed.push({ file, pid, reason: "not-running" });
       continue;
     }
@@ -19635,6 +20032,7 @@ function reapOrphanedManagedAppServers({ stateDir = managedAppServerStateDir(), 
       if (pidIsAlive(pid) && processCommand(pid).includes(record2.url)) {
         signalProcessGroup(pgid, "SIGKILL");
       }
+      removeEndpointFiles(recordEndpoint);
     }, graceMs);
     escalate.unref?.();
     removeManagedRecord(file);
@@ -19645,45 +20043,59 @@ function reapOrphanedManagedAppServers({ stateDir = managedAppServerStateDir(), 
 function asUserTextInput(text) {
   return [{ type: "text", text, text_elements: [] }];
 }
-function codexBinaryCandidates() {
-  return [
-    process.env.CODEX_AGENT_LINK_CODEX_BIN,
-    process.env.CODEX_BIN,
-    // The live Codex Desktop ships inside ChatGPT.app; /Applications/Codex.app can be a stale
-    // older copy whose app-server rejects current models (threads end in systemError at once)
-    // and cannot resume threads written by newer Codex versions.
-    "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
-    "/Applications/ChatGPT.app/Contents/Resources/codex",
-    "/Applications/Codex.app/Contents/Resources/codex",
-    "/opt/homebrew/bin/codex",
-    "codex"
-  ].filter(Boolean);
-}
-function findCodexBinary() {
-  const candidates = codexBinaryCandidates();
-  for (const candidate of candidates) {
-    if (candidate.includes("/") && !existsSync(candidate)) {
-      continue;
-    }
-    return candidate;
+function describeCodexInstall(options = {}) {
+  const appServerBin = process.env.CODEX_AGENT_LINK_APP_SERVER_BIN || process.env.CODEX_APP_SERVER_BIN;
+  if (appServerBin) {
+    const exists = !appServerBin.includes("/") || existsSync(appServerBin);
+    return {
+      available: exists,
+      path: appServerBin,
+      source: "env:CODEX_AGENT_LINK_APP_SERVER_BIN",
+      version: null,
+      searched: [appServerBin],
+      reason: exists ? null : `Configured Codex app-server binary does not exist: ${appServerBin}`
+    };
   }
-  return "codex";
+  const found = discoverCodexBinary(options);
+  return {
+    available: found.found,
+    path: found.path,
+    source: found.source,
+    version: found.found ? codexBinaryVersion(found.path) : null,
+    searched: found.searched,
+    reason: found.found ? null : found.reason
+  };
 }
 function findAppServerLaunch() {
   const appServerBin = process.env.CODEX_AGENT_LINK_APP_SERVER_BIN || process.env.CODEX_APP_SERVER_BIN;
   if (appServerBin) {
     if (appServerBin.includes("/") && !existsSync(appServerBin)) {
-      throw new AppServerError(`Configured Codex app-server binary does not exist: ${appServerBin}`);
+      throw new AppServerError(`Configured Codex app-server binary does not exist: ${appServerBin}`, {
+        code: "codex-binary-not-found",
+        cacheable: true,
+        searched: [appServerBin]
+      });
     }
     return {
       kind: "app-server-bin",
       command: appServerBin,
+      source: "env:CODEX_AGENT_LINK_APP_SERVER_BIN",
       args: []
     };
   }
+  const found = discoverCodexBinary();
+  if (!found.found) {
+    throw new AppServerError(`No Codex binary found: ${found.reason}`, {
+      code: "codex-binary-not-found",
+      cacheable: true,
+      reason: found.reason,
+      searched: found.searched
+    });
+  }
   return {
     kind: "codex-bin",
-    command: findCodexBinary(),
+    command: found.path,
+    source: found.source,
     args: ["app-server"]
   };
 }
@@ -19696,7 +20108,7 @@ function pidIsAlive(pid) {
   }
 }
 function processCommand(pid) {
-  const result = spawnSync("ps", ["-p", String(pid), "-o", "command="], {
+  const result = spawnSync2("ps", ["-p", String(pid), "-o", "command="], {
     encoding: "utf8",
     timeout: 1e3
   });
@@ -19712,12 +20124,13 @@ async function waitForOpen(ws, timeoutMs) {
   await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       cleanup();
-      reject(new AppServerError("Timed out opening Codex app-server websocket"));
+      reject(new AppServerError("Timed out opening Codex app-server websocket", { code: "open-timeout" }));
     }, timeoutMs);
     const cleanup = () => {
       clearTimeout(timeout);
       ws.off("open", onOpen);
       ws.off("error", onError);
+      ws.off("close", onClose);
     };
     const onOpen = () => {
       cleanup();
@@ -19725,10 +20138,15 @@ async function waitForOpen(ws, timeoutMs) {
     };
     const onError = (error2) => {
       cleanup();
-      reject(new AppServerError(`Codex app-server websocket failed: ${error2.message}`));
+      reject(new AppServerError(`Codex app-server websocket failed: ${error2.message}`, { code: "open-failed" }));
+    };
+    const onClose = () => {
+      cleanup();
+      reject(new AppServerError("Codex app-server websocket closed before it opened", { code: "open-failed" }));
     };
     ws.on("open", onOpen);
     ws.on("error", onError);
+    ws.on("close", onClose);
   });
 }
 async function getFreePort() {
@@ -19761,7 +20179,33 @@ async function waitForReady(url, timeoutMs, checkAbort = () => null) {
     }
     await sleep(150);
   }
-  throw lastError ?? new Error("readyz timed out");
+  throw tagged(lastError ?? new Error("readyz timed out"), "readiness-timeout");
+}
+async function waitForSocket(socketPath, timeoutMs, checkAbort = () => null) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = null;
+  while (Date.now() < deadline) {
+    const abort = checkAbort();
+    if (abort) {
+      throw abort;
+    }
+    try {
+      await new Promise((resolve, reject) => {
+        const socket = net.connect(socketPath);
+        socket.setTimeout(1e3, () => socket.destroy(new Error("connect timed out")));
+        socket.once("connect", () => {
+          socket.destroy();
+          resolve();
+        });
+        socket.once("error", reject);
+      });
+      return;
+    } catch (error2) {
+      lastError = error2;
+    }
+    await sleep(100);
+  }
+  throw tagged(lastError ?? new Error("socket did not accept connections"), "readiness-timeout");
 }
 async function waitForProcessExit(child, timeoutMs) {
   if (child.exitCode !== null || child.signalCode !== null) {
@@ -19963,17 +20407,17 @@ function cleanText(value, max) {
 }
 
 // src/shared/host-detect.js
-import path2 from "node:path";
+import path3 from "node:path";
 import { homedir } from "node:os";
 function currentClaudeSessionId({ env = process.env } = {}) {
   return env.CLAUDE_SESSION_ID || env.CLAUDE_CODE_SESSION_ID || void 0;
 }
 function claudeConfigDir({ env = process.env } = {}) {
   const configured = typeof env.CLAUDE_CONFIG_DIR === "string" ? env.CLAUDE_CONFIG_DIR.trim() : "";
-  return configured ? path2.resolve(configured) : path2.join(homedir(), ".claude");
+  return configured ? path3.resolve(configured) : path3.join(homedir(), ".claude");
 }
 function claudeProjectsRoot({ env = process.env } = {}) {
-  return path2.join(claudeConfigDir({ env }), "projects");
+  return path3.join(claudeConfigDir({ env }), "projects");
 }
 function detectHost({ env = process.env } = {}) {
   const claude = !!(env.CLAUDE_PROJECT_DIR || env.CLAUDE_PLUGIN_ROOT || env.CLAUDE_SESSION_ID || env.CLAUDE_CODE_SESSION_ID);
@@ -19985,17 +20429,17 @@ function detectHost({ env = process.env } = {}) {
 
 // src/claude/session-index.js
 import fs2 from "node:fs";
-import path4 from "node:path";
+import path5 from "node:path";
 import { homedir as homedir3 } from "node:os";
-import { spawnSync as spawnSync2 } from "node:child_process";
+import { spawnSync as spawnSync3 } from "node:child_process";
 
 // src/claude/desktop-registry.js
 import fs from "node:fs";
-import path3 from "node:path";
+import path4 from "node:path";
 import { homedir as homedir2 } from "node:os";
 var DEFAULT_SIDECAR_ROOTS = [
-  path3.join(homedir2(), "Library/Application Support/Claude/local-agent-mode-sessions"),
-  path3.join(homedir2(), "Library/Application Support/Claude/claude-code-sessions")
+  path4.join(homedir2(), "Library/Application Support/Claude/local-agent-mode-sessions"),
+  path4.join(homedir2(), "Library/Application Support/Claude/claude-code-sessions")
 ];
 var REQUIRED = ["sessionId"];
 var OPTIONAL = [
@@ -20031,8 +20475,8 @@ function parseSidecar(filePath) {
 }
 
 // src/claude/session-index.js
-var DEFAULT_DESKTOP_ROOT = path4.join(homedir3(), "Library/Application Support/Claude/local-agent-mode-sessions");
-var DEFAULT_CODE_ROOT = path4.join(homedir3(), "Library/Application Support/Claude/claude-code-sessions");
+var DEFAULT_DESKTOP_ROOT = path5.join(homedir3(), "Library/Application Support/Claude/local-agent-mode-sessions");
+var DEFAULT_CODE_ROOT = path5.join(homedir3(), "Library/Application Support/Claude/claude-code-sessions");
 function defaultProjectsRoot() {
   return claudeProjectsRoot();
 }
@@ -20109,7 +20553,7 @@ function isClaudeSessionLoaded(cliSessionId, { psOutput } = {}) {
 function findTranscriptSessionByCliId(cliSessionId, { transcriptPath, projectsRoot = defaultProjectsRoot() } = {}) {
   if (!cliSessionId) return null;
   let file = null;
-  if (transcriptPath && path4.basename(transcriptPath, ".jsonl") === cliSessionId && fs2.existsSync(transcriptPath)) {
+  if (transcriptPath && path5.basename(transcriptPath, ".jsonl") === cliSessionId && fs2.existsSync(transcriptPath)) {
     file = transcriptPath;
   } else {
     file = findTranscriptFileByCliId(cliSessionId, projectsRoot);
@@ -20148,7 +20592,7 @@ function findTranscriptFileByCliId(cliSessionId, projectsRoot) {
   const target = `${cliSessionId}.jsonl`;
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    const candidate = path4.join(projectsRoot, entry.name, target);
+    const candidate = path5.join(projectsRoot, entry.name, target);
     try {
       if (fs2.existsSync(candidate)) return candidate;
     } catch {
@@ -20165,7 +20609,7 @@ function findSidecarFileById(root, sessionId, { maxDepth = 3 } = {}) {
   if (!root || !sessionId || !/^local_[0-9A-Za-z-]+$/.test(sessionId)) return null;
   const name = `${sessionId}.json`;
   const visit = (dir, depth) => {
-    const direct = path4.join(dir, name);
+    const direct = path5.join(dir, name);
     try {
       if (fs2.statSync(direct).isFile()) return direct;
     } catch {
@@ -20179,7 +20623,7 @@ function findSidecarFileById(root, sessionId, { maxDepth = 3 } = {}) {
     }
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
-      const found = visit(path4.join(dir, entry.name), depth + 1);
+      const found = visit(path5.join(dir, entry.name), depth + 1);
       if (found) return found;
     }
     return null;
@@ -20207,7 +20651,7 @@ function filterSidecars(root, predicate) {
   return out;
 }
 function isSidecarFile(file) {
-  return /^local_[0-9a-zA-Z-]+\.json$/.test(path4.basename(file));
+  return /^local_[0-9a-zA-Z-]+\.json$/.test(path5.basename(file));
 }
 function listSidecarSessions(root, surface) {
   if (!root || !fs2.existsSync(root)) return [];
@@ -20260,7 +20704,7 @@ function listTranscriptSessions(projectsRoot) {
   }
   for (const project of projects) {
     if (!project.isDirectory()) continue;
-    const dir = path4.join(projectsRoot, project.name);
+    const dir = path5.join(projectsRoot, project.name);
     let entries;
     try {
       entries = fs2.readdirSync(dir, { withFileTypes: true });
@@ -20269,7 +20713,7 @@ function listTranscriptSessions(projectsRoot) {
     }
     for (const entry of entries) {
       if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
-      const session = parseTranscriptSummary(path4.join(dir, entry.name), projectsRoot);
+      const session = parseTranscriptSummary(path5.join(dir, entry.name), projectsRoot);
       if (session) out.push(session);
     }
   }
@@ -20328,17 +20772,17 @@ function buildTranscriptSummary(file, projectsRoot, stat) {
   } catch {
     return null;
   }
-  const cliSessionId = path4.basename(file, ".jsonl");
+  const cliSessionId = path5.basename(file, ".jsonl");
   if (!cliSessionId) return null;
   const cwd = firstRecord?.cwd ?? inferCwdFromProjectPath(file, projectsRoot);
   const createdAt = Date.parse(firstRecord?.timestamp ?? firstRecord?.createdAt ?? "");
   return {
     sessionId: cliSessionId.startsWith("local_") ? cliSessionId : `local_${cliSessionId}`,
     cliSessionId,
-    processName: path4.basename(path4.dirname(file)),
+    processName: path5.basename(path5.dirname(file)),
     cwd,
     model: firstRecord?.model ?? "unknown",
-    title: firstRecord?.title ?? firstRecord?.content?.title ?? path4.basename(path4.dirname(file)),
+    title: firstRecord?.title ?? firstRecord?.content?.title ?? path5.basename(path5.dirname(file)),
     isArchived: false,
     createdAt: Number.isFinite(createdAt) ? createdAt : null,
     lastActivityAt: stat.mtimeMs,
@@ -20352,7 +20796,7 @@ function buildTranscriptSummary(file, projectsRoot, stat) {
   };
 }
 function inferCwdFromProjectPath(file, projectsRoot) {
-  const rel = path4.relative(projectsRoot, path4.dirname(file));
+  const rel = path5.relative(projectsRoot, path5.dirname(file));
   if (!rel || rel.startsWith("..")) return "";
   return rel.replace(/-/g, "/");
 }
@@ -20393,7 +20837,7 @@ function sourceRank(source) {
   return 1;
 }
 var psErrorReported = false;
-function safePs({ spawn: spawn3 = spawnSync2 } = {}) {
+function safePs({ spawn: spawn3 = spawnSync3 } = {}) {
   let result;
   try {
     result = spawn3("ps", ["-Awwo", "command"], { encoding: "utf8", maxBuffer: PS_MAX_BUFFER });
@@ -20431,7 +20875,7 @@ function walk(dir, visit, stop = () => false) {
   }
   for (const entry of entries) {
     if (stop()) return;
-    const fp = path4.join(dir, entry.name);
+    const fp = path5.join(dir, entry.name);
     if (entry.isDirectory()) walk(fp, visit, stop);
     else if (entry.isFile()) visit(fp);
   }
@@ -20662,14 +21106,14 @@ function makeClaudeListingHandlers() {
 }
 
 // src/claude/mailbox.js
-import path5 from "node:path";
+import path6 from "node:path";
 import fs3 from "node:fs";
 import { homedir as homedir4 } from "node:os";
-import { spawnSync as spawnSync3 } from "node:child_process";
+import { spawnSync as spawnSync4 } from "node:child_process";
 import crypto from "node:crypto";
-var DEFAULT_DIR = path5.join(homedir4(), ".claude/agent-link");
-var DEFAULT_MAILBOX_PATH = path5.join(DEFAULT_DIR, "mailbox.jsonl");
-var DEFAULT_LEGACY_DB_PATH = path5.join(DEFAULT_DIR, "mailbox.sqlite");
+var DEFAULT_DIR = path6.join(homedir4(), ".claude/agent-link");
+var DEFAULT_MAILBOX_PATH = path6.join(DEFAULT_DIR, "mailbox.jsonl");
+var DEFAULT_LEGACY_DB_PATH = path6.join(DEFAULT_DIR, "mailbox.sqlite");
 var MAX_MESSAGE_BODY_BYTES = 64 * 1024;
 var MAX_EVENT_LINE_BYTES = 512 * 1024;
 var DIR_MODE = 448;
@@ -20700,9 +21144,9 @@ function resolveLegacyDbPath({ mailboxPath, dbPath } = {}) {
   return process.env.AGENT_LINK_MAILBOX_DB ?? null;
 }
 function ensurePrivateMailbox(mailboxPath) {
-  const dir = path5.dirname(mailboxPath);
+  const dir = path6.dirname(mailboxPath);
   fs3.mkdirSync(dir, { recursive: true, mode: DIR_MODE });
-  if (path5.resolve(dir) === path5.resolve(DEFAULT_DIR)) tightenMode(dir, DIR_MODE);
+  if (path6.resolve(dir) === path6.resolve(DEFAULT_DIR)) tightenMode(dir, DIR_MODE);
   tightenMode(mailboxPath, FILE_MODE);
 }
 function tightenMode(target, mode) {
@@ -20727,10 +21171,10 @@ function mailboxStatus(options = {}) {
       pendingMessagesCount = null;
     }
   }
-  return { path: mailboxPath, exists, readable, writable: canWrite(exists ? mailboxPath : path5.dirname(mailboxPath)), pendingMessagesCount };
+  return { path: mailboxPath, exists, readable, writable: canWrite(exists ? mailboxPath : path6.dirname(mailboxPath)), pendingMessagesCount };
 }
 function canWrite(target) {
-  let current = path5.resolve(target);
+  let current = path6.resolve(target);
   while (true) {
     if (fs3.existsSync(current)) {
       try {
@@ -20740,7 +21184,7 @@ function canWrite(target) {
         return false;
       }
     }
-    const parent = path5.dirname(current);
+    const parent = path6.dirname(current);
     if (parent === current) return false;
     current = parent;
   }
@@ -20930,7 +21374,7 @@ function normalizeMessage(message, eventAt) {
 function importLegacySqliteIfNeeded({ mailboxPath, legacyDbPath }) {
   if (fs3.existsSync(mailboxPath) && fs3.statSync(mailboxPath).size > 0) return;
   if (!legacyDbPath || !legacyDbPath.endsWith(".sqlite") || !fs3.existsSync(legacyDbPath)) return;
-  const result = spawnSync3("sqlite3", [
+  const result = spawnSync4("sqlite3", [
     "-json",
     legacyDbPath,
     "SELECT id, from_session_id, from_session_kind, to_session_id, to_session_kind, body, metadata_json, sent_at, delivered_at, acknowledged_at, reply_to_message_id FROM messages ORDER BY sent_at"
@@ -21017,15 +21461,15 @@ function onActiveWaitEnded(listener) {
 // src/shared/receipt-index.js
 import { randomUUID } from "node:crypto";
 import { promises as fs4 } from "node:fs";
-import os2 from "node:os";
-import path6 from "node:path";
+import os3 from "node:os";
+import path7 from "node:path";
 var RECEIPT_VERSION = 1;
 var DEFAULT_LIMIT = 20;
 var MAX_LIMIT = 500;
 var MAX_TEXT2 = 700;
 function receiptLogPath(options = {}) {
-  const codexHome = options.codexHome || process.env.CODEX_HOME || path6.join(os2.homedir(), ".codex");
-  return options.path || process.env.CODEX_AGENT_LINK_RECEIPT_LOG || path6.join(codexHome, "agent-link-receipts.jsonl");
+  const codexHome = options.codexHome || process.env.CODEX_HOME || path7.join(os3.homedir(), ".codex");
+  return options.path || process.env.CODEX_AGENT_LINK_RECEIPT_LOG || path7.join(codexHome, "agent-link-receipts.jsonl");
 }
 function receiptIndexSummary(options = {}) {
   return {
@@ -21147,7 +21591,7 @@ async function tightenFileMode(target, mode) {
 }
 async function appendReceipt(receipt, options = {}) {
   const logPath = receiptLogPath(options);
-  await fs4.mkdir(path6.dirname(logPath), { recursive: true, mode: 448 });
+  await fs4.mkdir(path7.dirname(logPath), { recursive: true, mode: 448 });
   await fs4.appendFile(logPath, `${JSON.stringify(receipt)}
 `, { encoding: "utf8", mode: 384 });
   await tightenFileMode(logPath, 384);
@@ -22003,7 +22447,7 @@ function makeReplyAgentLinkMessageHandler({
 
 // src/claude/channel-bridge.js
 import fs5 from "node:fs";
-import path7 from "node:path";
+import path8 from "node:path";
 var DEFAULT_POLL_INTERVAL_MS3 = 1e3;
 var DEFAULT_MAX_POLL_INTERVAL_MS = 3e4;
 var WAKE_DEBOUNCE_MS = 50;
@@ -22144,8 +22588,8 @@ function makeAgentLinkChannelBridge({
   function startWatcher() {
     if (!watch || !signaturePath) return;
     try {
-      const dir = path7.dirname(signaturePath);
-      const base = path7.basename(signaturePath);
+      const dir = path8.dirname(signaturePath);
+      const base = path8.basename(signaturePath);
       watcher = fs5.watch(dir, { persistent: false }, (_event, filename) => {
         if (!filename || String(filename) === base) wake();
       });
@@ -22182,7 +22626,7 @@ function makeAgentLinkChannelBridge({
 
 // src/codex/project-orchestrator.js
 import { promises as fs6 } from "node:fs";
-import path8 from "node:path";
+import path9 from "node:path";
 
 // src/codex/thread-utils.js
 var MAX_REASON_TEXT = 160;
@@ -22193,32 +22637,32 @@ function normalizeArchiveScope(args = {}) {
   return args.archived === true ? "archived" : "active";
 }
 function inferArchiveState(threadOrPath) {
-  const path10 = typeof threadOrPath === "string" ? threadOrPath : threadOrPath?.path ?? null;
-  if (!path10) {
+  const path12 = typeof threadOrPath === "string" ? threadOrPath : threadOrPath?.path ?? null;
+  if (!path12) {
     return {
       scope: "unknown",
       inferredFrom: "missingPath",
       path: null
     };
   }
-  if (path10.includes("/archived_sessions/")) {
+  if (path12.includes("/archived_sessions/")) {
     return {
       scope: "archived",
       inferredFrom: "path",
-      path: path10
+      path: path12
     };
   }
-  if (path10.includes("/sessions/")) {
+  if (path12.includes("/sessions/")) {
     return {
       scope: "active",
       inferredFrom: "path",
-      path: path10
+      path: path12
     };
   }
   return {
     scope: "unknown",
     inferredFrom: "path",
-    path: path10
+    path: path12
   };
 }
 function desktopVisibilityContract(appServerSummary = {}) {
@@ -22450,8 +22894,21 @@ function rankThreadSummaries(threads, query, limit) {
     if (b.match.score !== a.match.score) {
       return b.match.score - a.match.score;
     }
-    return Date.parse(b.updatedAt ?? 0) - Date.parse(a.updatedAt ?? 0);
+    return timestampMs(b.updatedAt) - timestampMs(a.updatedAt);
   }).slice(0, limit);
+}
+function timestampMs(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value < 1e12 ? value * 1e3 : value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    if (/^\d+(\.\d+)?$/.test(value.trim())) {
+      return timestampMs(Number(value));
+    }
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
 }
 function suggestThreadIds(threads, threadId, limit = 3) {
   const needle = normalizeId(threadId);
@@ -22700,7 +23157,7 @@ function truncate(value, max) {
 }
 
 // src/codex/project-orchestrator.js
-var PROJECT_ORCHESTRATOR_BINDING_PATH = path8.join(".codex", "project-orchestrator.json");
+var PROJECT_ORCHESTRATOR_BINDING_PATH = path9.join(".codex", "project-orchestrator.json");
 var DEFAULT_POLICY_VERSION = "v0";
 var ALLOWED_RETURN_STATUSES = /* @__PURE__ */ new Set(["done", "done_with_concerns", "blocked"]);
 async function resolveProjectOrchestrator(args = {}, deps = {}) {
@@ -22726,8 +23183,9 @@ async function resolveProjectOrchestrator(args = {}, deps = {}) {
     };
   }
   const binding = projectRoot ? await readProjectOrchestratorBinding(projectRoot) : null;
+  const bindingVerification = binding ? await verifyThreadReadable(binding.orchestratorThreadId, deps) : null;
   if (binding) {
-    const verification2 = await verifyThreadReadable(binding.orchestratorThreadId, deps);
+    const verification2 = bindingVerification;
     if (verification2.readable) {
       return {
         ok: true,
@@ -22756,7 +23214,7 @@ async function resolveProjectOrchestrator(args = {}, deps = {}) {
     archiveScope: args.archiveScope ?? "all",
     limit: 100,
     searchTerm: query,
-    cwd: args.cwd ?? projectRoot ?? null,
+    cwd: cleanString(args.cwd) || projectRoot || null,
     useLocalFallback: args.useLocalFallback
   });
   const candidates = rankThreadSummaries(listed.data ?? [], query, limit);
@@ -22789,7 +23247,7 @@ async function resolveProjectOrchestrator(args = {}, deps = {}) {
     projectRoot: projectRoot || best.cwd || null,
     projectId: cleanString(args.projectId) || binding?.projectId || null,
     binding,
-    bindingVerification: binding ? await verifyThreadReadable(binding.orchestratorThreadId, deps) : null,
+    bindingVerification,
     verification,
     query,
     selection,
@@ -22817,7 +23275,8 @@ async function messageProjectOrchestrator(args = {}, deps = {}, toolContext = {}
   };
 }
 async function launchProjectWorker(args = {}, deps = {}, toolContext = {}) {
-  const resolution = await resolveProjectOrchestrator(args, deps);
+  const { name: _workerName, ...resolveArgs } = args;
+  const resolution = await resolveProjectOrchestrator(resolveArgs, deps);
   const projectRoot = cleanString(args.projectRoot || args.cwd) || resolution.projectRoot || null;
   const workerRole = cleanString(args.workerRole || args.role) || "project worker";
   const task = requiredString(args.task || args.message, "task").trim();
@@ -22828,7 +23287,8 @@ async function launchProjectWorker(args = {}, deps = {}, toolContext = {}) {
     workerRole,
     task,
     orchestratorThreadId: resolution.threadId,
-    projectId: resolution.projectId
+    projectId: resolution.projectId,
+    policyVersion: resolution.binding?.policyVersion
   });
   const result = await deps.launchThread({
     ...forwardLaunchOptions(args),
@@ -22880,7 +23340,7 @@ async function returnProjectWorkResult(args = {}, deps = {}, toolContext = {}) {
   };
 }
 async function readProjectOrchestratorBinding(projectRoot) {
-  const bindingPath = path8.join(requiredString(projectRoot, "projectRoot"), PROJECT_ORCHESTRATOR_BINDING_PATH);
+  const bindingPath = path9.join(requiredString(projectRoot, "projectRoot"), PROJECT_ORCHESTRATOR_BINDING_PATH);
   let raw;
   try {
     raw = await fs6.readFile(bindingPath, "utf8");
@@ -22957,8 +23417,8 @@ function validateBinding(value, { bindingPath, requestedProjectRoot }) {
       throwBindingError(`Binding field ${field} is required`, { bindingPath, field });
     }
   }
-  const resolvedBindingRoot = path8.resolve(value.projectRoot);
-  const resolvedRequestedRoot = path8.resolve(requestedProjectRoot);
+  const resolvedBindingRoot = path9.resolve(value.projectRoot);
+  const resolvedRequestedRoot = path9.resolve(requestedProjectRoot);
   if (resolvedBindingRoot !== resolvedRequestedRoot) {
     throwBindingError("Binding projectRoot does not match the source root that contains it", {
       bindingPath,
@@ -23022,7 +23482,7 @@ async function verifyThreadReadable(threadId, deps) {
   }
 }
 function buildFallbackQuery(args) {
-  const explicitQuery = cleanString(args.query || args.projectName || args.name);
+  const explicitQuery = cleanString(args.query || args.projectName);
   if (explicitQuery) {
     return explicitQuery;
   }
@@ -23034,7 +23494,7 @@ function buildFallbackQuery(args) {
     return `Project Orchestrator ${projectId}`;
   }
   if (args.projectRoot) {
-    return `${path8.basename(args.projectRoot)} Project Orchestrator`;
+    return `${path9.basename(args.projectRoot)} Project Orchestrator`;
   }
   return "";
 }
@@ -23052,7 +23512,7 @@ function buildSelection(candidates) {
 }
 function forwardMessageOptions(args) {
   const out = {};
-  for (const key of ["mode", "resumeIfNeeded", "expectedTurnId", "cwd", "model", "effort", "allowParallelTurn", "waitForReply", "timeoutMs", "pollIntervalMs", "recentItems"]) {
+  for (const key of ["mode", "resumeIfNeeded", "expectedTurnId", "model", "effort", "allowParallelTurn", "allowTargetOverride", "waitForReply", "timeoutMs", "pollIntervalMs", "recentItems"]) {
     if (args[key] !== void 0) {
       out[key] = args[key];
     }
@@ -23110,6 +23570,7 @@ function clamp2(value, min, max) {
 }
 
 // src/codex/dependency-handoff.js
+var PROJECT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var THREAD_ID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 var DEPENDENCY_PHRASES = [
   /\bwhen (?:it|that|this|the .{0,40}) (?:is )?(?:ready|shipped|implemented|callable|available|done|complete|lands?)\b/i,
@@ -23127,10 +23588,19 @@ var DEPENDENCY_PHRASES = [
 async function registerDependencyHandoff(args = {}, deps = {}, toolContext = {}) {
   const dependencyName = requiredString2(args.dependencyName || args.dependency, "dependencyName").trim();
   const readinessContract = requiredString2(args.readinessContract, "readinessContract").trim();
-  const callbackThreadId = cleanString2(args.callbackThreadId || args.originThreadId || toolContext.callerContext?.threadId);
+  const callerThreadId = cleanString2(toolContext.callerContext?.threadId);
+  const suppliedCallbackThreadId = cleanString2(args.callbackThreadId || args.originThreadId);
+  const callbackThreadId = callerThreadId || suppliedCallbackThreadId;
   if (!callbackThreadId) {
     const error2 = new Error("callbackThreadId is required when caller thread context is unavailable");
     error2.details = { callerContext: toolContext.callerContext ?? null };
+    throw error2;
+  }
+  const callbackMismatch = callerThreadId && suppliedCallbackThreadId && suppliedCallbackThreadId !== callerThreadId ? { supplied: suppliedCallbackThreadId, used: callerThreadId, reason: "caller context thread id takes precedence over callbackThreadId" } : null;
+  const projectId = cleanString2(args.projectId);
+  if (projectId && !PROJECT_ID_RE.test(projectId)) {
+    const error2 = new Error("projectId must be a slug: letters, digits, '.', '_' or '-', starting with a letter or digit, at most 128 characters");
+    error2.details = { code: "invalid-project-id", projectId };
     throw error2;
   }
   const target = await resolveDependencyTarget(args, deps);
@@ -23141,7 +23611,8 @@ async function registerDependencyHandoff(args = {}, deps = {}, toolContext = {})
     deadline: cleanString2(args.deadline),
     evidenceRequirements: normalizeStringList2(args.evidenceRequirements),
     context: cleanString2(args.context),
-    sourceThreadId: cleanString2(toolContext.callerContext?.threadId)
+    sourceThreadId: callerThreadId,
+    callbackMismatch
   });
   const tags = [
     "dependency-handoff",
@@ -23157,6 +23628,7 @@ async function registerDependencyHandoff(args = {}, deps = {}, toolContext = {})
     model: args.model,
     effort: args.effort,
     allowParallelTurn: args.allowParallelTurn,
+    allowTargetOverride: args.allowTargetOverride,
     waitForReply: args.waitForReply,
     timeoutMs: args.timeoutMs,
     pollIntervalMs: args.pollIntervalMs,
@@ -23175,6 +23647,7 @@ async function registerDependencyHandoff(args = {}, deps = {}, toolContext = {})
       name: dependencyName,
       readinessContract,
       callbackThreadId,
+      callbackMismatch,
       deadline: cleanString2(args.deadline) || null,
       evidenceRequirements: normalizeStringList2(args.evidenceRequirements)
     },
@@ -23360,7 +23833,9 @@ function buildDependencyHandoffMessage(args) {
   if (args.context) {
     lines.push("", "Context:", args.context);
   }
-  if (args.sourceThreadId && args.sourceThreadId !== args.callbackThreadId) {
+  if (args.callbackMismatch) {
+    lines.push("", `Note: the request named callback thread \`${args.callbackMismatch.supplied}\`, but the caller's runtime context is thread \`${args.callbackMismatch.used}\`; reply to \`${args.callbackMismatch.used}\` only.`);
+  } else if (args.sourceThreadId && args.sourceThreadId !== args.callbackThreadId) {
     lines.push("", `Source thread observed by caller context: \`${args.sourceThreadId}\`.`);
   }
   return lines.join("\n");
@@ -23406,11 +23881,31 @@ function isPlainObject5(value) {
 
 // src/codex/session-index.js
 import { promises as fs7 } from "node:fs";
-import os3 from "node:os";
-import path9 from "node:path";
+import os4 from "node:os";
+import path10 from "node:path";
 var MAX_PREVIEW_CHARS = 500;
+var HEAD_WINDOW_BYTES = 64 * 1024;
+var MAX_HEAD_BYTES = 4 * 1024 * 1024;
+var TAIL_WINDOW_BYTES = 256 * 1024;
+var MAX_TAIL_BYTES = 4 * 1024 * 1024;
+var MAX_RECENT_ITEMS_BYTES = 32 * 1024 * 1024;
+var SUMMARY_CACHE_LIMIT = 5e3;
+var LOCAL_LIFECYCLE_EVENTS = Object.freeze({
+  task_started: "possiblyActive",
+  turn_started: "possiblyActive",
+  task_complete: "idle",
+  turn_aborted: "idle",
+  // Older transcript spellings.
+  task_completed: "idle",
+  turn_complete: "idle",
+  turn_completed: "idle"
+});
+var summaryCache = /* @__PURE__ */ new Map();
+function resolveCodexHome(options = {}) {
+  return options.codexHome || process.env.CODEX_HOME || path10.join(os4.homedir(), ".codex");
+}
 async function listLocalThreads(options = {}) {
-  const codexHome = options.codexHome || process.env.CODEX_HOME || path9.join(os3.homedir(), ".codex");
+  const codexHome = resolveCodexHome(options);
   const archiveScope = normalizeArchiveScope(options);
   const roots = rootsForArchiveScope(codexHome, archiveScope);
   const sessionIndex = await readSessionIndex(codexHome);
@@ -23418,10 +23913,14 @@ async function listLocalThreads(options = {}) {
   for (const root of roots) {
     files.push(...await collectJsonlFiles(root));
   }
-  const withStats = await Promise.all(files.map(async (file) => {
-    const stat = await fs7.stat(file);
-    return { file, mtimeMs: stat.mtimeMs, size: stat.size };
-  }));
+  const withStats = (await Promise.all(files.map(async (file) => {
+    try {
+      const stat = await fs7.stat(file);
+      return { file, mtimeMs: stat.mtimeMs, size: stat.size };
+    } catch {
+      return null;
+    }
+  }))).filter(Boolean);
   withStats.sort((a, b) => b.mtimeMs - a.mtimeMs);
   const limit = clampNumber(options.limit ?? 20, 1, 2e3);
   const searchTerm = options.searchTerm?.toLowerCase() || null;
@@ -23451,36 +23950,74 @@ async function listLocalThreads(options = {}) {
     scannedFiles: withStats.length
   };
 }
-async function readLocalThread(threadId, options = {}) {
-  const codexHome = options.codexHome || process.env.CODEX_HOME || path9.join(os3.homedir(), ".codex");
-  const roots = [path9.join(codexHome, "sessions"), path9.join(codexHome, "archived_sessions")];
-  const sessionIndex = await readSessionIndex(codexHome);
-  for (const root of roots) {
-    const files = await collectJsonlFiles(root);
-    for (const file of files) {
-      const summary = await readLocalThreadSummary(file, { file }, sessionIndex);
-      if (summary?.id === threadId) {
-        if (!options.includeTurns) {
-          return { thread: summary, source: "local-jsonl" };
-        }
-        const transcript = await readRecentTranscriptItems(file, options.recentItems ?? 20);
-        return {
-          thread: {
-            ...summary,
-            recentItems: transcript
-          },
-          source: "local-jsonl"
-        };
+async function listLocalThreadIds(options = {}) {
+  const codexHome = resolveCodexHome(options);
+  const out = [];
+  for (const root of [path10.join(codexHome, "sessions"), path10.join(codexHome, "archived_sessions")]) {
+    for (const file of await collectJsonlFiles(root)) {
+      const id = threadIdFromFilename(path10.basename(file));
+      if (id) {
+        out.push({ id, path: file });
       }
     }
   }
-  throw new Error(`Thread ${threadId} was not found under ${codexHome}`);
+  return out;
+}
+async function readLocalThread(threadId, options = {}) {
+  const codexHome = resolveCodexHome(options);
+  const located = await findLocalThreadFile(threadId, { codexHome });
+  if (!located) {
+    throw new Error(`Thread ${threadId} was not found under ${codexHome}`);
+  }
+  const sessionIndex = await readSessionIndex(codexHome);
+  const summary = await readLocalThreadSummary(located.file, located.stat, sessionIndex);
+  if (!summary) {
+    throw new Error(`Thread ${threadId} transcript is unreadable: ${located.file}`);
+  }
+  const thread = { ...summary, lookup: located.lookup };
+  if (!options.includeTurns) {
+    return { thread, source: "local-jsonl" };
+  }
+  return {
+    thread: {
+      ...thread,
+      recentItems: await readRecentTranscriptItems(located.file, options.recentItems ?? 20)
+    },
+    source: "local-jsonl"
+  };
+}
+async function findLocalThreadFile(threadId, options = {}) {
+  const codexHome = resolveCodexHome(options);
+  const id = typeof threadId === "string" ? threadId.trim() : "";
+  if (!id || id.includes("/") || id.includes("\\") || id.includes("..")) {
+    return null;
+  }
+  const roots = options.roots ?? [path10.join(codexHome, "sessions"), path10.join(codexHome, "archived_sessions")];
+  const suffix = `-${id}.jsonl`;
+  for (const root of roots) {
+    const file = await findNewestFirst(root, (name) => name.endsWith(suffix) || name === `${id}.jsonl`, async (candidate) => {
+      const meta2 = await readSessionMeta(candidate);
+      return meta2?.id === id;
+    });
+    if (file) {
+      return { file, root, lookup: "filename", stat: await statInfo(file) };
+    }
+  }
+  for (const root of roots) {
+    for (const file of await collectJsonlFiles(root)) {
+      const meta2 = await readSessionMeta(file);
+      if (meta2?.id === id) {
+        return { file, root, lookup: "scan", stat: await statInfo(file) };
+      }
+    }
+  }
+  return null;
 }
 async function archiveLocalThread(threadId, options = {}) {
-  const codexHome = options.codexHome || process.env.CODEX_HOME || path9.join(os3.homedir(), ".codex");
+  const codexHome = resolveCodexHome(options);
   const located = await findLocalThread(threadId, { codexHome });
-  const activeRoot = path9.join(codexHome, "sessions");
-  const archivedRoot = path9.join(codexHome, "archived_sessions");
+  const activeRoot = path10.join(codexHome, "sessions");
+  const archivedRoot = path10.join(codexHome, "archived_sessions");
   const before = located.thread.archiveState ?? inferArchiveState(located.path);
   if (before.scope === "archived") {
     return {
@@ -23495,21 +24032,13 @@ async function archiveLocalThread(threadId, options = {}) {
       codexHome
     };
   }
-  const relative = path9.relative(activeRoot, located.path);
-  if (relative.startsWith("..") || path9.isAbsolute(relative)) {
+  const relative = path10.relative(activeRoot, located.path);
+  if (relative.startsWith("..") || path10.isAbsolute(relative)) {
     throw new Error(`Thread ${threadId} is not under ${activeRoot}; refusing to archive ${located.path}`);
   }
-  const destination = path9.join(archivedRoot, relative);
-  try {
-    await fs7.access(destination);
-    throw new Error(`Archive destination already exists for thread ${threadId}: ${destination}`);
-  } catch (error2) {
-    if (error2.code !== "ENOENT") {
-      throw error2;
-    }
-  }
-  await fs7.mkdir(path9.dirname(destination), { recursive: true });
-  await moveFileAcrossDevices(located.path, destination);
+  const destination = path10.join(archivedRoot, relative);
+  await fs7.mkdir(path10.dirname(destination), { recursive: true });
+  await moveFileWithoutOverwrite(located.path, destination, threadId);
   const afterThread = {
     ...located.thread,
     path: destination,
@@ -23526,6 +24055,25 @@ async function archiveLocalThread(threadId, options = {}) {
     archiveStateAfter: afterThread.archiveState,
     codexHome
   };
+}
+async function moveFileWithoutOverwrite(source, destination, threadId) {
+  let placeholder;
+  try {
+    placeholder = await fs7.open(destination, "wx");
+  } catch (error2) {
+    if (error2.code === "EEXIST") {
+      throw new Error(`Archive destination already exists for thread ${threadId}: ${destination}`);
+    }
+    throw error2;
+  }
+  await placeholder.close();
+  try {
+    await moveFileAcrossDevices(source, destination);
+  } catch (error2) {
+    await fs7.rm(destination, { force: true }).catch(() => {
+    });
+    throw error2;
+  }
 }
 async function moveFileAcrossDevices(source, destination) {
   try {
@@ -23549,7 +24097,7 @@ async function moveFileAcrossDevices(source, destination) {
   await fs7.unlink(source);
 }
 async function findLocalThread(threadId, options = {}) {
-  const codexHome = options.codexHome || process.env.CODEX_HOME || path9.join(os3.homedir(), ".codex");
+  const codexHome = resolveCodexHome(options);
   const found = await readLocalThread(threadId, { codexHome });
   return {
     thread: found.thread,
@@ -23557,19 +24105,54 @@ async function findLocalThread(threadId, options = {}) {
     codexHome
   };
 }
-async function collectJsonlFiles(root) {
+async function findNewestFirst(root, nameMatches, confirm) {
+  let entries;
   try {
-    const stat = await fs7.stat(root);
-    if (!stat.isDirectory()) {
-      return [];
+    entries = await fs7.readdir(root, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  entries.sort((a, b) => a.name < b.name ? 1 : a.name > b.name ? -1 : 0);
+  for (const entry of entries) {
+    if (entry.isFile() && entry.name.endsWith(".jsonl") && nameMatches(entry.name)) {
+      const full = path10.join(root, entry.name);
+      if (await confirm(full)) {
+        return full;
+      }
     }
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      const found = await findNewestFirst(path10.join(root, entry.name), nameMatches, confirm);
+      if (found) {
+        return found;
+      }
+    }
+  }
+  return null;
+}
+async function statInfo(file) {
+  try {
+    const stat = await fs7.stat(file);
+    return { file, mtimeMs: stat.mtimeMs, size: stat.size };
+  } catch {
+    return { file };
+  }
+}
+var THREAD_ID_IN_NAME = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i;
+function threadIdFromFilename(name) {
+  return THREAD_ID_IN_NAME.exec(name)?.[1] ?? null;
+}
+async function collectJsonlFiles(root) {
+  let entries;
+  try {
+    entries = await fs7.readdir(root, { withFileTypes: true });
   } catch {
     return [];
   }
   const out = [];
-  const entries = await fs7.readdir(root, { withFileTypes: true });
   for (const entry of entries) {
-    const fullPath = path9.join(root, entry.name);
+    const fullPath = path10.join(root, entry.name);
     if (entry.isDirectory()) {
       out.push(...await collectJsonlFiles(fullPath));
     } else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
@@ -23579,7 +24162,7 @@ async function collectJsonlFiles(root) {
   return out;
 }
 async function readSessionIndex(codexHome) {
-  const indexPath = path9.join(codexHome, "session_index.jsonl");
+  const indexPath = path10.join(codexHome, "session_index.jsonl");
   let raw;
   try {
     raw = await fs7.readFile(indexPath, "utf8");
@@ -23606,73 +24189,200 @@ async function readSessionIndex(codexHome) {
   }
   return index;
 }
-async function readLocalThreadSummary(file, fileInfo = {}, sessionIndex = /* @__PURE__ */ new Map()) {
-  let raw;
+async function readRange(handle, start, length) {
+  const buffer = Buffer.alloc(length);
+  let offset = 0;
+  while (offset < length) {
+    const { bytesRead } = await handle.read(buffer, offset, length - offset, start + offset);
+    if (bytesRead === 0) {
+      break;
+    }
+    offset += bytesRead;
+  }
+  return offset === length ? buffer : buffer.subarray(0, offset);
+}
+function completeLines(buffer, { atStart, atEnd }) {
+  const lines = [];
+  let begin = 0;
+  if (!atStart) {
+    const first = buffer.indexOf(10);
+    if (first < 0) {
+      return lines;
+    }
+    begin = first + 1;
+  }
+  while (begin < buffer.length) {
+    const next = buffer.indexOf(10, begin);
+    if (next < 0) {
+      if (atEnd) {
+        lines.push(buffer.toString("utf8", begin));
+      }
+      break;
+    }
+    lines.push(buffer.toString("utf8", begin, next));
+    begin = next + 1;
+  }
+  return lines;
+}
+function parseLine(line) {
+  if (!line) {
+    return null;
+  }
   try {
-    raw = await fs7.readFile(file, "utf8");
+    return JSON.parse(line);
   } catch {
     return null;
   }
-  const lines = raw.trimEnd().split("\n");
+}
+async function readSessionMeta(file) {
+  let handle;
+  try {
+    handle = await fs7.open(file, "r");
+    const { size } = await handle.stat();
+    let window = Math.min(HEAD_WINDOW_BYTES, size);
+    while (window > 0) {
+      const buffer = await readRange(handle, 0, window);
+      const newline = buffer.indexOf(10);
+      if (newline >= 0 || window >= size) {
+        const record2 = parseLine(buffer.toString("utf8", 0, newline >= 0 ? newline : buffer.length));
+        return record2?.type === "session_meta" ? record2.payload ?? null : null;
+      }
+      if (window >= MAX_HEAD_BYTES) {
+        return null;
+      }
+      window = Math.min(window * 4, MAX_HEAD_BYTES, size);
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    await handle?.close();
+  }
+}
+async function readHeadRecords(handle, size) {
+  let window = Math.min(HEAD_WINDOW_BYTES, size);
+  while (true) {
+    const buffer = await readRange(handle, 0, window);
+    const lines = completeLines(buffer, { atStart: true, atEnd: window >= size });
+    const records = lines.map(parseLine).filter(Boolean);
+    const hasMeta = records.some((record2) => record2.type === "session_meta");
+    const hasUser = records.some((record2) => userTextFromRecord(record2) !== null);
+    if (hasMeta && hasUser || window >= size || window >= MAX_HEAD_BYTES) {
+      return { records, coveredBytes: window };
+    }
+    window = Math.min(window * 4, MAX_HEAD_BYTES, size);
+  }
+}
+async function readTailRecords(handle, size, skipBefore) {
+  let window = Math.min(TAIL_WINDOW_BYTES, size - skipBefore);
+  while (window > 0) {
+    const start = size - window;
+    const buffer = await readRange(handle, start, window);
+    const lines = completeLines(buffer, { atStart: start <= skipBefore, atEnd: true });
+    const records = lines.map(parseLine).filter(Boolean);
+    const hasLifecycle = records.some((record2) => lifecycleEventType(record2));
+    if (hasLifecycle || start <= skipBefore || window >= MAX_TAIL_BYTES) {
+      return records;
+    }
+    window = Math.min(window * 4, MAX_TAIL_BYTES, size - skipBefore);
+  }
+  return [];
+}
+function cachedSummary(file, size, mtimeMs) {
+  const cached2 = summaryCache.get(file);
+  if (!cached2 || cached2.size !== size || cached2.mtimeMs !== mtimeMs) {
+    return null;
+  }
+  summaryCache.delete(file);
+  summaryCache.set(file, cached2);
+  return cached2;
+}
+async function readLocalThreadSummary(file, fileInfo = {}, sessionIndex = /* @__PURE__ */ new Map()) {
+  if (Number.isFinite(fileInfo.size) && Number.isFinite(fileInfo.mtimeMs)) {
+    const hit = cachedSummary(file, fileInfo.size, fileInfo.mtimeMs);
+    if (hit) {
+      return finalizeSummary(hit.parsed, file, fileInfo, sessionIndex);
+    }
+  }
+  let handle;
+  try {
+    handle = await fs7.open(file, "r");
+    const stat = await handle.stat();
+    const cacheKey = file;
+    const cached2 = cachedSummary(file, stat.size, stat.mtimeMs);
+    if (cached2) {
+      return finalizeSummary(cached2.parsed, file, { size: stat.size, mtimeMs: stat.mtimeMs }, sessionIndex);
+    }
+    const head = await readHeadRecords(handle, stat.size);
+    const tail = head.coveredBytes >= stat.size ? [] : await readTailRecords(handle, stat.size, head.coveredBytes);
+    const parsed = summarizeRecords([...head.records, ...tail]);
+    summaryCache.set(cacheKey, { size: stat.size, mtimeMs: stat.mtimeMs, parsed });
+    if (summaryCache.size > SUMMARY_CACHE_LIMIT) {
+      summaryCache.delete(summaryCache.keys().next().value);
+    }
+    return finalizeSummary(parsed, file, { size: stat.size, mtimeMs: stat.mtimeMs }, sessionIndex);
+  } catch {
+    return null;
+  } finally {
+    await handle?.close().catch(() => {
+    });
+  }
+}
+function summarizeRecords(records) {
   let meta2 = null;
   let firstUserMessage = null;
   let lastEventType = null;
+  let lastLifecycleEvent = null;
   let lastTimestamp = null;
   let lastAgentMessage = null;
   let threadName = null;
-  for (const line of lines) {
-    let record2;
-    try {
-      record2 = JSON.parse(line);
-    } catch {
-      continue;
-    }
+  for (const record2 of records) {
     lastTimestamp = record2.timestamp ?? lastTimestamp;
     if (record2.type === "session_meta") {
       meta2 ??= record2.payload;
       continue;
     }
+    const userText = userTextFromRecord(record2);
+    if (userText !== null && firstUserMessage === null) {
+      firstUserMessage = userText;
+    }
+    const agentText = agentTextFromRecord(record2);
+    if (agentText !== null) {
+      lastAgentMessage = agentText;
+    }
     if (record2.type === "event_msg" && record2.payload?.type) {
       lastEventType = record2.payload.type;
-      if (record2.payload.type === "user_message" && !firstUserMessage) {
-        firstUserMessage = record2.payload.message;
-      }
-      if (record2.payload.type === "agent_message") {
-        lastAgentMessage = record2.payload.message;
+      const lifecycle = lifecycleEventType(record2);
+      if (lifecycle) {
+        lastLifecycleEvent = lifecycle;
       }
       if (record2.payload.type === "thread_name_updated" && record2.payload.thread_name) {
         threadName = record2.payload.thread_name;
       }
-      continue;
-    }
-    if (record2.type === "response_item" && record2.payload?.type === "message") {
-      const role = record2.payload.role;
-      const text = contentText(record2.payload.content);
-      if (role === "user" && !firstUserMessage) {
-        firstUserMessage = text;
-      }
-      if (role === "assistant") {
-        lastAgentMessage = text;
-      }
     }
   }
+  return { meta: meta2, firstUserMessage, lastEventType, lastLifecycleEvent, lastTimestamp, lastAgentMessage, threadName };
+}
+function finalizeSummary(parsed, file, fileInfo, sessionIndex) {
+  const { meta: meta2 } = parsed;
   if (!meta2?.id) {
     return null;
   }
   const indexed = sessionIndex.get(meta2.id) ?? null;
-  const updatedAt = Math.max(
-    parseDateSeconds(lastTimestamp) ?? 0,
+  const updatedAt = Math.floor(Math.max(
+    parseDateSeconds(parsed.lastTimestamp) ?? 0,
     parseDateSeconds(indexed?.updatedAt) ?? 0,
-    Math.floor((fileInfo.mtimeMs ?? Date.now()) / 1e3)
-  );
+    (fileInfo.mtimeMs ?? Date.now()) / 1e3
+  ));
+  const createdSeconds = parseDateSeconds(meta2.timestamp);
   return {
     id: meta2.id,
-    name: threadName ?? indexed?.name ?? null,
-    preview: truncate2(firstUserMessage || "", MAX_PREVIEW_CHARS),
+    name: parsed.threadName ?? indexed?.name ?? null,
+    preview: truncate2(parsed.firstUserMessage || "", MAX_PREVIEW_CHARS),
     cwd: meta2.cwd ?? null,
-    createdAt: Math.floor(Date.parse(meta2.timestamp) / 1e3),
+    createdAt: createdSeconds === null ? null : Math.floor(createdSeconds),
     updatedAt,
-    status: localStatus(lastEventType),
+    status: localStatus(parsed.lastLifecycleEvent, parsed.lastEventType),
     path: file,
     archiveState: inferArchiveState(file),
     source: meta2.source ?? null,
@@ -23682,50 +24392,76 @@ async function readLocalThreadSummary(file, fileInfo = {}, sessionIndex = /* @__
     agentNickname: null,
     agentRole: null,
     localOnly: true,
-    lastEventType,
-    lastAgentMessage: truncate2(lastAgentMessage || "", MAX_PREVIEW_CHARS),
+    lastEventType: parsed.lastEventType,
+    lastAgentMessage: truncate2(parsed.lastAgentMessage || "", MAX_PREVIEW_CHARS),
     size: fileInfo.size ?? null
   };
 }
 async function readRecentTranscriptItems(file, limit) {
-  const raw = await fs7.readFile(file, "utf8");
-  const items = [];
-  for (const line of raw.trimEnd().split("\n")) {
-    let record2;
-    try {
-      record2 = JSON.parse(line);
-    } catch {
+  const wanted = clampNumber(limit, 1, 100);
+  let handle;
+  try {
+    handle = await fs7.open(file, "r");
+    const { size } = await handle.stat();
+    let end = size;
+    let carry = Buffer.alloc(0);
+    let bytesRead = 0;
+    const newestFirst = [];
+    while (end > 0 && newestFirst.length < wanted + 1 && bytesRead < MAX_RECENT_ITEMS_BYTES) {
+      const length = Math.min(TAIL_WINDOW_BYTES, end);
+      const start = end - length;
+      const chunk = Buffer.concat([await readRange(handle, start, length), carry]);
+      bytesRead += length;
+      const lines = completeLines(chunk, { atStart: start === 0, atEnd: true });
+      const firstNewline = chunk.indexOf(10);
+      carry = start === 0 || firstNewline < 0 ? start === 0 ? Buffer.alloc(0) : chunk : chunk.subarray(0, firstNewline);
+      for (let index = lines.length - 1; index >= 0; index -= 1) {
+        const item = summarizeRecord(parseLine(lines[index]));
+        if (item) {
+          newestFirst.push(item);
+        }
+      }
+      end = start;
+    }
+    return dedupeAdjacent(newestFirst.reverse()).slice(-wanted);
+  } finally {
+    await handle?.close().catch(() => {
+    });
+  }
+}
+function dedupeAdjacent(items) {
+  const out = [];
+  for (const item of items) {
+    const previous = out.at(-1);
+    if (previous && previous.text !== void 0 && previous.type === item.type && previous.text === item.text) {
       continue;
     }
-    const item = summarizeRecord(record2);
-    if (item) {
-      items.push(item);
-    }
+    out.push(item);
   }
-  return items.slice(-clampNumber(limit, 1, 100));
+  return out;
 }
 function summarizeRecord(record2) {
+  if (!record2) {
+    return null;
+  }
+  const userText = userTextFromRecord(record2);
+  if (userText !== null) {
+    return { timestamp: record2.timestamp, type: "userMessage", text: truncate2(userText, MAX_PREVIEW_CHARS) };
+  }
+  const agentText = agentTextFromRecord(record2);
+  if (agentText !== null) {
+    return { timestamp: record2.timestamp, type: "agentMessage", text: truncate2(agentText, MAX_PREVIEW_CHARS) };
+  }
   if (record2.type === "event_msg") {
     const type = record2.payload?.type;
-    if (type === "user_message") {
-      return {
-        timestamp: record2.timestamp,
-        type: "userMessage",
-        text: truncate2(record2.payload.message || "", MAX_PREVIEW_CHARS)
-      };
+    if (type === "item_completed" && record2.payload.item?.type) {
+      return { timestamp: record2.timestamp, type: lowerFirst(record2.payload.item.type) };
     }
-    if (type === "agent_message") {
-      return {
-        timestamp: record2.timestamp,
-        type: "agentMessage",
-        text: truncate2(record2.payload.message || "", MAX_PREVIEW_CHARS)
-      };
+    if (type && LOCAL_LIFECYCLE_EVENTS[type]) {
+      return { timestamp: record2.timestamp, type };
     }
-    if (type?.includes("exec") || type?.includes("tool") || type?.includes("turn") || type?.includes("task")) {
-      return {
-        timestamp: record2.timestamp,
-        type
-      };
+    if (type?.includes("exec") || type?.includes("tool")) {
+      return { timestamp: record2.timestamp, type };
     }
   }
   if (record2.type === "response_item" && record2.payload?.type === "message") {
@@ -23737,23 +24473,56 @@ function summarizeRecord(record2) {
   }
   return null;
 }
-function localStatus(lastEventType) {
-  if (!lastEventType) {
-    return { type: "unknown", source: "local-jsonl" };
+function userTextFromRecord(record2) {
+  if (record2?.type === "event_msg") {
+    if (record2.payload?.type === "user_message") {
+      return String(record2.payload.message ?? "");
+    }
+    if (record2.payload?.type === "item_completed" && record2.payload.item?.type === "UserMessage") {
+      return contentText(record2.payload.item.content);
+    }
   }
-  if (["task_completed", "turn_completed", "agent_message", "thread_name_updated"].includes(lastEventType)) {
-    return { type: "idle", source: "local-jsonl", lastEventType };
+  if (record2?.type === "response_item" && record2.payload?.type === "message" && record2.payload.role === "user") {
+    return contentText(record2.payload.content);
   }
-  if (["task_started", "turn_started"].includes(lastEventType)) {
-    return { type: "possiblyActive", source: "local-jsonl", lastEventType };
+  return null;
+}
+function agentTextFromRecord(record2) {
+  if (record2?.type === "event_msg") {
+    if (record2.payload?.type === "agent_message") {
+      return String(record2.payload.message ?? "");
+    }
+    if (record2.payload?.type === "item_completed" && record2.payload.item?.type === "AgentMessage") {
+      return contentText(record2.payload.item.content);
+    }
   }
-  return { type: "unknown", source: "local-jsonl", lastEventType };
+  if (record2?.type === "response_item" && record2.payload?.type === "message" && record2.payload.role === "assistant") {
+    return contentText(record2.payload.content);
+  }
+  return null;
+}
+function lifecycleEventType(record2) {
+  const type = record2?.type === "event_msg" ? record2.payload?.type : null;
+  return type && Object.prototype.hasOwnProperty.call(LOCAL_LIFECYCLE_EVENTS, type) ? type : null;
+}
+function localStatus(lastLifecycleEvent, lastEventType = lastLifecycleEvent) {
+  const mapped = lastLifecycleEvent ? LOCAL_LIFECYCLE_EVENTS[lastLifecycleEvent] : null;
+  return {
+    type: mapped ?? "unknown",
+    source: "local-jsonl",
+    lastLifecycleEvent: lastLifecycleEvent ?? null,
+    lastEventType: lastEventType ?? null
+  };
 }
 function contentText(content) {
   if (!Array.isArray(content)) {
     return "";
   }
   return content.map((item) => item?.text ?? "").filter(Boolean).join("\n");
+}
+function lowerFirst(value) {
+  const text = String(value);
+  return text.charAt(0).toLowerCase() + text.slice(1);
 }
 function parseDateSeconds(value) {
   if (!value) {
@@ -23767,15 +24536,15 @@ function threadMatches(thread, searchTerm) {
 }
 function rootsForArchiveScope(codexHome, archiveScope) {
   if (archiveScope === "archived") {
-    return [path9.join(codexHome, "archived_sessions")];
+    return [path10.join(codexHome, "archived_sessions")];
   }
   if (archiveScope === "all") {
     return [
-      path9.join(codexHome, "sessions"),
-      path9.join(codexHome, "archived_sessions")
+      path10.join(codexHome, "sessions"),
+      path10.join(codexHome, "archived_sessions")
     ];
   }
-  return [path9.join(codexHome, "sessions")];
+  return [path10.join(codexHome, "sessions")];
 }
 function normalizeCwdFilter(cwd) {
   if (!cwd) {
@@ -23859,6 +24628,7 @@ var server = new Server(
   }
 );
 var appServer = new CodexAppServerClient();
+var LOCAL_SEARCH_SCAN_LIMIT = 300;
 var receiptInputSchema2 = {
   type: "object",
   description: "Optional provenance metadata for the local Agent Link receipt index. Receipts are recorded by default for launch/message/archive actions; set record=false to opt out.",
@@ -24035,7 +24805,7 @@ var tools = [
         },
         recentItems: {
           type: "number",
-          description: "When includeTurns is true, return at most this many recent summarized items. Defaults to 20."
+          description: "Number of recent ITEMS (messages, tool calls, reasoning, commands), not turns, when includeTurns is true. Returned as thread.recentItems (oldest first, each with its turnId) on both the app-server and the local-transcript fallback paths; app-server results also include thread.turns trimmed to the turns those items belong to. Defaults to 20; caps at 100."
         },
         includeReceipts: {
           type: "boolean",
@@ -24209,16 +24979,16 @@ var tools = [
         },
         cwd: {
           type: "string",
-          description: "Optional cwd override for the target turn."
+          description: "Optional cwd override for the target turn. Rejected when it differs from the thread's own cwd unless allowTargetOverride is true."
         },
         model: {
           type: "string",
-          description: "Optional model override for the target turn."
+          description: "Optional model override for the target turn. Rejected when it differs from (or cannot be compared with) the thread's own model unless allowTargetOverride is true."
         },
         effort: {
           type: "string",
           enum: ["minimal", "low", "medium", "high", "xhigh"],
-          description: "Optional reasoning effort override for the target turn."
+          description: "Optional reasoning effort override for the target turn. Rejected when it differs from (or cannot be compared with) the thread's own effort unless allowTargetOverride is true."
         },
         allowParallelTurn: {
           type: "boolean",
@@ -24238,7 +25008,11 @@ var tools = [
         },
         recentItems: {
           type: "number",
-          description: "Recent summarized transcript items to inspect when waitForReply is true. Defaults to 10."
+          description: "When waitForReply is true, include up to this many recent ITEMS (not turns) of the target thread in replyConfirmation.recentItems, oldest first, each with its turnId. Defaults to 10; caps at 100."
+        },
+        allowTargetOverride: {
+          type: "boolean",
+          description: "Messaging an existing thread normally runs the turn with that thread's own cwd, model, and reasoning effort; a cwd/model/effort here that differs from the thread's own (or that cannot be compared because app-server does not report it) is rejected. Set true only when you intend to change the target thread's working directory, model, or effort. Defaults to false."
         },
         receipt: receiptInputSchema2
       },
@@ -24317,7 +25091,8 @@ var tools = [
         },
         projectId: {
           type: "string",
-          description: "Stable project identifier used as a project-orchestrator fallback search signal."
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+          description: "Stable project identifier (a slug: letters, digits, '.', '_', '-') used as a project-orchestrator fallback search signal."
         },
         orchestratorThreadId: {
           type: "string",
@@ -24342,7 +25117,7 @@ var tools = [
         },
         callbackThreadId: {
           type: "string",
-          description: "Thread to message when ready or blocked. Defaults to caller thread context."
+          description: "Thread to message when ready or blocked. The caller's own thread (from runtime caller context) wins when it is available; a different value here is ignored and flagged in the handoff message. Used as given only when caller context is unavailable."
         },
         deadline: {
           type: "string",
@@ -24374,7 +25149,14 @@ var tools = [
         waitForReply: { type: "boolean" },
         timeoutMs: { type: "number" },
         pollIntervalMs: { type: "number" },
-        recentItems: { type: "number" },
+        recentItems: {
+          type: "number",
+          description: "When waitForReply is true, include up to this many recent ITEMS (not turns) of the target thread in replyConfirmation.recentItems, oldest first, each with its turnId. Defaults to 10; caps at 100."
+        },
+        allowTargetOverride: {
+          type: "boolean",
+          description: "Allow cwd/model/effort values that differ from the target thread's own. Defaults to false; see message_codex_thread."
+        },
         archiveScope: {
           type: "string",
           enum: ["active", "archived", "all"]
@@ -24449,7 +25231,14 @@ var tools = [
         waitForReply: { type: "boolean" },
         timeoutMs: { type: "number" },
         pollIntervalMs: { type: "number" },
-        recentItems: { type: "number" },
+        recentItems: {
+          type: "number",
+          description: "When waitForReply is true, include up to this many recent ITEMS (not turns) of the target thread in replyConfirmation.recentItems, oldest first, each with its turnId. Defaults to 10; caps at 100."
+        },
+        allowTargetOverride: {
+          type: "boolean",
+          description: "Allow cwd/model/effort values that differ from the target thread's own. Defaults to false; see message_codex_thread."
+        },
         archiveScope: {
           type: "string",
           enum: ["active", "archived", "all"]
@@ -24584,7 +25373,14 @@ var tools = [
         waitForReply: { type: "boolean" },
         timeoutMs: { type: "number" },
         pollIntervalMs: { type: "number" },
-        recentItems: { type: "number" },
+        recentItems: {
+          type: "number",
+          description: "When waitForReply is true, include up to this many recent ITEMS (not turns) of the target thread in replyConfirmation.recentItems, oldest first, each with its turnId. Defaults to 10; caps at 100."
+        },
+        allowTargetOverride: {
+          type: "boolean",
+          description: "Allow cwd/model/effort values that differ from the target thread's own. Defaults to false; see message_codex_thread."
+        },
         archiveScope: {
           type: "string",
           enum: ["active", "archived", "all"]
@@ -24616,7 +25412,7 @@ var tools = [
         },
         recentItems: {
           type: "number",
-          description: "Recent summarized transcript items to return. Defaults to 10."
+          description: "Number of recent ITEMS (not turns) to return as thread.recentItems, oldest first, each with its turnId; thread.turns is trimmed to the turns those items belong to. Defaults to 10; caps at 100."
         }
       },
       additionalProperties: false
@@ -24701,7 +25497,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       ok: false,
       error: error2.message,
       details: error2.details ?? null,
-      hint: error2 instanceof AppServerError ? "Set CODEX_AGENT_LINK_URL/CODEX_APP_SERVER_URL to a reachable Codex app-server, or leave CODEX_AGENT_LINK_AUTOSTART enabled." : null
+      hint: appServerErrorHint(error2)
     }, true);
   }
 });
@@ -24732,32 +25528,89 @@ function dependencyHandoffDeps(args = {}) {
 }
 async function health(args, toolContext = {}) {
   const callerContext = args.includeCallerContext === true ? summarizeRuntimeCallerContext(toolContext.callerContext) : null;
-  if (args.startAppServer === false) {
-    return {
-      ok: true,
-      appServer: appServer.getConnectionSummary(),
-      stateSemantics: loadedStateSemantics(),
-      receiptIndex: receiptIndexSummary(),
-      claude: claudeHealthSummary(),
-      callerContextContract: callerContextContract(),
-      ...callerContext ? { callerContext } : {},
-      configuredEndpoint: configuredEndpointSummary(),
-      autoStartEnabled: process.env.CODEX_AGENT_LINK_AUTOSTART !== "0"
-    };
-  }
-  const init = await appServer.request("thread/loaded/list", { limit: 1 });
-  return {
-    ok: true,
-    appServer: appServer.getConnectionSummary(),
-    loadedThreadProbe: init,
+  const configuredEndpoint = configuredEndpointSummary();
+  const usesManagedAppServer = !Object.values(configuredEndpoint).some(Boolean);
+  const autoStartEnabled = process.env.CODEX_AGENT_LINK_AUTOSTART !== "0";
+  const codex = {
+    ...describeCodexInstall(),
+    usedForManagedAppServer: usesManagedAppServer
+  };
+  const common = {
+    host: HOST_INFO.host,
+    hostDetection: HOST_INFO.reason,
     stateSemantics: loadedStateSemantics(),
     receiptIndex: receiptIndexSummary(),
     claude: claudeHealthSummary(),
     callerContextContract: callerContextContract(),
     ...callerContext ? { callerContext } : {},
-    configuredEndpoint: configuredEndpointSummary(),
-    autoStartEnabled: process.env.CODEX_AGENT_LINK_AUTOSTART !== "0"
+    configuredEndpoint,
+    autoStartEnabled
   };
+  if (args.startAppServer === false) {
+    return { ok: true, codex, appServer: appServer.getConnectionSummary(), ...common };
+  }
+  if (usesManagedAppServer && autoStartEnabled && !codex.available) {
+    return {
+      ok: true,
+      codex: { ...codex, available: false },
+      appServer: appServer.getConnectionSummary(),
+      hint: appServerErrorHint(new AppServerError(codex.reason ?? "Codex binary not found", { code: "codex-binary-not-found" })),
+      ...common
+    };
+  }
+  let init;
+  try {
+    init = await appServer.request("thread/loaded/list", { limit: 1 });
+  } catch (error2) {
+    const code = error2?.code === "startup-failure-cached" ? error2.details?.cachedCode : error2?.code;
+    if (code === "codex-binary-not-found") {
+      return {
+        ok: true,
+        codex: {
+          ...codex,
+          available: false,
+          reason: error2.details?.reason ?? error2.message,
+          searched: error2.details?.searched ?? codex.searched
+        },
+        appServer: appServer.getConnectionSummary(),
+        hint: appServerErrorHint(error2),
+        ...common
+      };
+    }
+    throw error2;
+  }
+  return {
+    ok: true,
+    codex,
+    appServer: appServer.getConnectionSummary(),
+    loadedThreadProbe: init,
+    ...common
+  };
+}
+function appServerErrorHint(error2) {
+  if (!(error2 instanceof AppServerError)) {
+    return null;
+  }
+  const cached2 = error2.code === "startup-failure-cached";
+  const code = cached2 ? error2.details?.cachedCode : error2.code;
+  const hints = {
+    "codex-binary-not-found": "No Codex binary was found (details.searched lists where Agent Link looked). Install Codex Desktop (ChatGPT.app) or the codex CLI, or set CODEX_AGENT_LINK_CODEX_BIN to the binary's absolute path.",
+    "spawn-failed": "The Codex binary could not be executed. Check its permissions, or set CODEX_AGENT_LINK_CODEX_BIN to a working binary.",
+    "app-server-exited-during-startup": "The Codex binary exited while starting `app-server` (see details.command and details.logs). If it is an old install, point CODEX_AGENT_LINK_CODEX_BIN at a current Codex.",
+    "readiness-timeout": "The managed Codex app-server did not accept connections before the startup timeout. Raise CODEX_AGENT_LINK_APP_SERVER_STARTUP_MS (milliseconds) or check details.logs.",
+    "autostart-disabled": "CODEX_AGENT_LINK_AUTOSTART=0 turns off the managed app-server. Unset it, or set CODEX_AGENT_LINK_URL / CODEX_AGENT_LINK_SOCK to a running Codex app-server.",
+    "state-dir-unsafe": "The managed app-server state directory is not private to this user. Fix its ownership or set CODEX_AGENT_LINK_STATE_DIR to a directory you own.",
+    "client-closed": "Agent Link is shutting down; retry once the MCP server has restarted.",
+    "open-failed": "Could not connect to the Codex app-server. Check CODEX_AGENT_LINK_URL / CODEX_AGENT_LINK_SOCK, or unset them to let Agent Link manage its own app-server.",
+    "open-timeout": "Timed out connecting to the Codex app-server. Check CODEX_AGENT_LINK_URL / CODEX_AGENT_LINK_SOCK, or unset them to let Agent Link manage its own app-server.",
+    "connection-lost": "The Codex app-server connection dropped. Retry; a managed app-server is restarted on the next call.",
+    "request-timeout": "The Codex app-server did not answer in time. Retry, or check that the app-server is not overloaded."
+  };
+  const hint = hints[code] ?? null;
+  if (!hint) {
+    return null;
+  }
+  return cached2 ? `${hint} This startup failure is cached; Agent Link will try again after details.retryAfterMs.` : hint;
 }
 function claudeHealthSummary() {
   let sessions = [];
@@ -24843,7 +25696,7 @@ async function listThreads(args) {
       throw error2;
     }
     const local = await listLocalThreads({
-      limit: searchTerm ? 2e3 : limit,
+      limit: searchTerm ? LOCAL_SEARCH_SCAN_LIMIT : limit,
       archiveScope,
       searchTerm: null,
       cwd: args.cwd ?? null
@@ -24853,11 +25706,11 @@ async function listThreads(args) {
       searchTerm
     });
     return {
+      ...local,
       ok: true,
       source: "local-jsonl-fallback",
       appServerError: error2.message,
       stateSemantics: loadedStateSemantics(),
-      ...local,
       data
     };
   }
@@ -24938,13 +25791,13 @@ async function supplementSearchResultsFromLocalJsonl({ data, archiveScope, limit
   }
   try {
     const local = await listLocalThreads({
-      limit: 2e3,
+      limit: LOCAL_SEARCH_SCAN_LIMIT,
       archiveScope,
       searchTerm: null,
       cwd
     });
     const localData = finalizeThreadResults(local.data.map(summarizeThread), {
-      limit: 2e3,
+      limit: LOCAL_SEARCH_SCAN_LIMIT,
       searchTerm
     });
     const originalIds = new Set(data.map((thread) => thread.id));
@@ -25418,16 +26271,25 @@ async function archiveThreadViaAppServer(threadId) {
   };
 }
 async function readArchiveSnapshot(threadId) {
+  let fromAppServer = null;
   try {
     const read = await appServer.request("thread/read", { threadId, includeTurns: false });
-    return summarizeThread(read.thread);
+    fromAppServer = summarizeThread(read.thread);
   } catch {
-    try {
-      const local = await readLocalThread(threadId);
-      return summarizeThread(local.thread);
-    } catch {
-      return null;
-    }
+    fromAppServer = null;
+  }
+  if (fromAppServer?.path) {
+    return fromAppServer;
+  }
+  if (fromAppServer) {
+    const located = await findLocalThreadFile(threadId).catch(() => null);
+    return located ? { ...fromAppServer, path: located.file, archiveState: inferArchiveState(located.file) } : fromAppServer;
+  }
+  try {
+    const local = await readLocalThread(threadId);
+    return summarizeThread(local.thread);
+  } catch {
+    return null;
   }
 }
 async function buildArchiveThreadResult({ source, action, threadId, reason, loadedCheck, archive, args, toolContext }) {
@@ -25546,6 +26408,16 @@ async function messageThread(args, toolContext = {}) {
     throw await enrichThreadLookupError(error2, threadId);
   }
   const initialThread = read.thread;
+  const targetOverrides = checkTargetOverrides(initialThread, args);
+  if (targetOverrides.conflicts.length > 0 && args.allowTargetOverride !== true) {
+    const error2 = new Error(`Refusing to change ${targetOverrides.conflicts.map((conflict) => conflict.field).join(", ")} of existing thread ${threadId}; pass allowTargetOverride=true to do it intentionally`);
+    error2.details = {
+      code: "target-override-rejected",
+      conflicts: targetOverrides.conflicts,
+      hint: "Omit cwd/model/effort to run the turn with the thread's own settings, or set allowTargetOverride=true when changing them is intended."
+    };
+    throw error2;
+  }
   let status = read.thread.status;
   let action = null;
   const warnings = warningsForMessageTarget(status, mode);
@@ -25591,7 +26463,7 @@ async function messageThread(args, toolContext = {}) {
     }) : null;
     const appServerSummary2 = appServer.getConnectionSummary();
     const actionName2 = action ? `${action}+steered_active_turn` : "steered_active_turn";
-    const replyConfirmation2 = buildReplyConfirmation(wait2, response2.turnId);
+    const replyConfirmation2 = buildReplyConfirmation(wait2, response2.turnId, args.recentItems ?? 10);
     const result2 = {
       ok: true,
       source: "app-server",
@@ -25659,7 +26531,7 @@ async function messageThread(args, toolContext = {}) {
   }) : null;
   const appServerSummary = appServer.getConnectionSummary();
   const actionName = action ? `${action}+started_turn` : "started_turn";
-  const replyConfirmation = buildReplyConfirmation(wait, summarizedTurn.id);
+  const replyConfirmation = buildReplyConfirmation(wait, summarizedTurn.id, args.recentItems ?? 10);
   const result = {
     ok: true,
     source: "app-server",
@@ -25902,7 +26774,7 @@ async function tryWaitForReply(args) {
     };
   }
 }
-function buildReplyConfirmation(wait, targetTurnId) {
+function buildReplyConfirmation(wait, targetTurnId, recentItemsLimit = 10) {
   if (!wait) {
     return {
       waited: false
@@ -25933,6 +26805,7 @@ function buildReplyConfirmation(wait, targetTurnId) {
     finalResponseItem: finalResponse,
     waitState: wait.waitState ?? null,
     warnings: wait.waitState?.warnings ?? [],
+    recentItems: recentItemWindow(wait.thread?.turns ?? [], clamp3(recentItemsLimit, 1, 100)).items,
     error: hasFinalResponse ? null : "No final agent response text was found in the completed target turn.",
     hint: hasFinalResponse ? null : "Delivery/completion was observed, but this does not prove the target agent responded with text. Inspect the target turn or retry with a prompt that requires a final answer."
   };
@@ -25950,12 +26823,19 @@ async function enrichThreadLookupError(error2, threadId) {
 }
 async function getThreadIdSuggestions(threadId) {
   try {
-    const local = await listLocalThreads({
-      limit: 2e3,
-      archiveScope: "all",
-      searchTerm: null
-    });
-    return suggestThreadIds(local.data.map(summarizeThread), threadId);
+    const ids = await listLocalThreadIds();
+    const ranked = suggestThreadIds(ids.map((entry) => ({ id: entry.id, path: entry.path })), threadId);
+    const out = [];
+    for (const suggestion of ranked) {
+      try {
+        const local = await readLocalThread(suggestion.id);
+        const enriched = suggestThreadIds([summarizeThread(local.thread)], threadId)[0];
+        out.push(enriched ?? suggestion);
+      } catch {
+        out.push(suggestion);
+      }
+    }
+    return out;
   } catch {
     return [];
   }
@@ -25991,14 +26871,57 @@ function summarizeThread(thread, options = {}) {
     summary.lastAgentMessage = thread.lastAgentMessage ?? null;
   }
   if (options.includeTurns) {
+    const limit = clamp3(options.recentItems ?? 20, 1, 100);
     if (thread.recentItems) {
-      summary.recentItems = thread.recentItems;
+      summary.recentItems = thread.recentItems.slice(-limit);
     } else {
-      const turns = thread.turns ?? [];
-      summary.turns = turns.map(summarizeTurn).slice(-clamp3(options.recentItems ?? 20, 1, 100));
+      const window = recentItemWindow(thread.turns ?? [], limit);
+      summary.recentItems = window.items;
+      summary.turns = window.turns;
     }
   }
   return summary;
+}
+function recentItemWindow(turns, limit) {
+  const items = [];
+  const windowTurns = [];
+  for (let index = turns.length - 1; index >= 0 && items.length < limit; index -= 1) {
+    const turn = turns[index];
+    const turnItems = (turn.items ?? []).map(summarizeItem);
+    const kept = turnItems.slice(Math.max(0, turnItems.length - (limit - items.length)));
+    items.unshift(...kept.map((item) => ({ ...item, turnId: turn.id ?? null })));
+    windowTurns.unshift({
+      ...summarizeTurn({ ...turn, items: [] }),
+      items: kept,
+      ...kept.length < turnItems.length ? { itemsOmitted: turnItems.length - kept.length } : {}
+    });
+  }
+  return { items, turns: windowTurns };
+}
+function checkTargetOverrides(thread, args) {
+  const conflicts = [];
+  const requestedCwd = optionalString(args.cwd).trim();
+  if (requestedCwd) {
+    const own = optionalString(thread?.cwd).trim();
+    if (!own || path11.resolve(own) !== path11.resolve(requestedCwd)) {
+      conflicts.push({ field: "cwd", requested: requestedCwd, threadValue: own || null });
+    }
+  }
+  const requestedModel = optionalString(args.model).trim();
+  if (requestedModel) {
+    const own = optionalString(thread?.model).trim();
+    if (own !== requestedModel) {
+      conflicts.push({ field: "model", requested: requestedModel, threadValue: own || null });
+    }
+  }
+  const requestedEffort = optionalString(args.effort).trim();
+  if (requestedEffort) {
+    const own = optionalString(thread?.reasoningEffort ?? thread?.effort).trim();
+    if (own !== requestedEffort) {
+      conflicts.push({ field: "effort", requested: requestedEffort, threadValue: own || null });
+    }
+  }
+  return { conflicts };
 }
 function summarizeTurn(turn) {
   return {

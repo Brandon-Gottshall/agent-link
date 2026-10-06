@@ -1,10 +1,16 @@
 import { spawn, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import http from "node:http";
 import net from "node:net";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import WebSocket from "ws";
+import {
+  codexBinaryCandidateEntries,
+  codexBinaryVersion,
+  discoverCodexBinary
+} from "./install-layout.js";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 const DEFAULT_STARTUP_TIMEOUT_MS = 15000;
@@ -14,12 +20,41 @@ const DEFAULT_STARTUP_TIMEOUT_MS = 15000;
 // fresh one. Override with CODEX_AGENT_LINK_APP_SERVER_IDLE_MS (0 disables).
 const DEFAULT_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_KILL_GRACE_MS = 1500;
+// A Codex binary that hangs or crashes at startup would otherwise cost every
+// Codex tool call a full startup timeout. Remember the failure for this long.
+const DEFAULT_STARTUP_FAILURE_CACHE_MS = 60 * 1000;
+// sun_path is 104 bytes on macOS and 108 on Linux, including the NUL.
+const MAX_UNIX_SOCKET_PATH_BYTES = 100;
+const RECENT_NOTIFICATIONS = 20;
+const MAX_TRACKED_METHODS = 64;
+
+// Same source as the MCP server's own version: scripts/build.mjs defines
+// __AGENT_LINK_VERSION__ from package.json when it bundles dist/server.mjs.
+// Running from source (tests, dev) falls back to reading package.json.
+export const AGENT_LINK_VERSION = typeof __AGENT_LINK_VERSION__ === "string"
+  ? __AGENT_LINK_VERSION__
+  : readPackageVersion();
+
+// Requests the app-server sends to its client (approval prompts, user-input
+// prompts, elicitation). Agent Link has no human to ask, so each one is
+// answered at once: approvals are declined, anything else gets a JSON-RPC
+// error. An unanswered request would leave the target turn waiting forever.
+export const SERVER_REQUEST_DECLINES = Object.freeze({
+  "item/commandExecution/requestApproval": { decision: "decline" },
+  "item/fileChange/requestApproval": { decision: "decline" },
+  execCommandApproval: { decision: "denied" },
+  applyPatchApproval: { decision: "denied" },
+  "mcpServer/elicitation/request": { action: "decline" },
+  "item/permissions/requestApproval": { permissions: {} }
+});
+const METHOD_NOT_HANDLED = -32601;
 
 export class AppServerError extends Error {
   constructor(message, details = {}) {
     super(message);
     this.name = "AppServerError";
     this.details = details;
+    this.code = details.code ?? null;
   }
 }
 
@@ -28,23 +63,41 @@ export function managedAppServerStateDir() {
     || path.join(os.homedir(), ".claude", "agent-link", "managed-app-servers");
 }
 
-function envIdleTimeoutMs() {
-  const raw = process.env.CODEX_AGENT_LINK_APP_SERVER_IDLE_MS;
+function envNonNegativeMs(name, fallback) {
+  const raw = process.env[name];
   if (raw === undefined || raw === "") {
-    return DEFAULT_IDLE_TIMEOUT_MS;
+    return fallback;
   }
   const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_IDLE_TIMEOUT_MS;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function envPositiveMs(name, fallback) {
+  const value = envNonNegativeMs(name, fallback);
+  return value > 0 ? value : fallback;
+}
+
+// unix (default): the managed app-server listens on a Unix socket inside a
+// 0700 state directory, so only this user can reach it. ws-token: loopback
+// websocket gated by a capability token (for platforms without Unix sockets).
+function envTransport() {
+  const raw = process.env.CODEX_AGENT_LINK_APP_SERVER_TRANSPORT;
+  if (raw === "ws-token" || raw === "unix") {
+    return raw;
+  }
+  return process.platform === "win32" ? "ws-token" : "unix";
 }
 
 export class CodexAppServerClient {
   constructor(options = {}) {
     this.options = {
       requestTimeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
-      startupTimeoutMs: DEFAULT_STARTUP_TIMEOUT_MS,
+      startupTimeoutMs: envPositiveMs("CODEX_AGENT_LINK_APP_SERVER_STARTUP_MS", DEFAULT_STARTUP_TIMEOUT_MS),
       autoStart: process.env.CODEX_AGENT_LINK_AUTOSTART !== "0",
-      idleTimeoutMs: envIdleTimeoutMs(),
+      idleTimeoutMs: envNonNegativeMs("CODEX_AGENT_LINK_APP_SERVER_IDLE_MS", DEFAULT_IDLE_TIMEOUT_MS),
       killGraceMs: DEFAULT_KILL_GRACE_MS,
+      startupFailureCacheMs: DEFAULT_STARTUP_FAILURE_CACHE_MS,
+      transport: envTransport(),
       stateDir: null,
       ...options
     };
@@ -53,9 +106,8 @@ export class CodexAppServerClient {
     this.pending = new Map();
     this.initialized = false;
     this.managedProcess = null;
-    this.managedUrl = null;
+    this.managedEndpoint = null;
     this.managedLaunch = null;
-    this.lastNotifications = [];
     this.connectionInfo = null;
     this.managedProcessExitCleanup = null;
     this.managedRecordPath = null;
@@ -67,40 +119,66 @@ export class CodexAppServerClient {
     this.idleShutdowns = 0;
     this.reapedOrphans = false;
     this.closed = false;
+    this.lastStartupFailure = null;
+    this.notifications = { total: 0, parseErrors: 0, byMethod: {}, recent: [] };
+    this.serverRequests = { total: 0, declined: 0, rejected: 0, byMethod: {}, last: null };
   }
 
   async request(method, params = {}) {
+    if (this.closed) {
+      throw closedError(method);
+    }
     this.clearIdleTimer();
     this.activeRequests += 1;
     try {
       await this.ensureConnected();
-
-      const id = `agent-link-${this.nextId++}`;
-      const payload = { id, method, params };
-
-      return await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          this.pending.delete(id);
-          reject(new AppServerError(`Timed out waiting for ${method}`, { method }));
-        }, this.options.requestTimeoutMs);
-
-        this.pending.set(id, { resolve, reject, timeout, method });
-        this.ws.send(JSON.stringify(payload), (error) => {
-          if (!error) {
-            return;
-          }
-          clearTimeout(timeout);
-          this.pending.delete(id);
-          reject(new AppServerError(`Failed to send ${method}: ${error.message}`, { method }));
-        });
-      });
+      return await this.sendRequest(this.ws, method, params);
     } finally {
       this.activeRequests -= 1;
       this.scheduleIdleShutdown();
     }
   }
 
+  // The only place a JSON-RPC request is written. `ws` is captured by the
+  // caller so a reconnect in between cannot redirect this request.
+  sendRequest(ws, method, params) {
+    return new Promise((resolve, reject) => {
+      if (this.closed) {
+        reject(closedError(method));
+        return;
+      }
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        reject(new AppServerError(`Codex app-server connection is not open for ${method}`, { method, code: "not-connected" }));
+        return;
+      }
+      const id = `agent-link-${this.nextId++}`;
+      const timeout = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new AppServerError(`Timed out waiting for ${method}`, { method, code: "request-timeout" }));
+      }, this.options.requestTimeoutMs);
+      const fail = (error) => {
+        clearTimeout(timeout);
+        this.pending.delete(id);
+        reject(new AppServerError(`Failed to send ${method}: ${error.message}`, { method, code: "send-failed" }));
+      };
+
+      this.pending.set(id, { resolve, reject, timeout, method });
+      try {
+        ws.send(JSON.stringify({ id, method, params }), (error) => {
+          if (error) {
+            fail(error);
+          }
+        });
+      } catch (error) {
+        fail(error);
+      }
+    });
+  }
+
   async ensureConnected() {
+    if (this.closed) {
+      throw closedError();
+    }
     if (this.ws?.readyState === WebSocket.OPEN && this.initialized) {
       return;
     }
@@ -115,23 +193,32 @@ export class CodexAppServerClient {
       });
     }
     await this.connectPromise;
+    if (this.closed) {
+      throw closedError();
+    }
   }
 
   async connect() {
     const target = await this.resolveTarget();
+    if (this.closed) {
+      throw closedError();
+    }
     const previous = this.ws;
     if (previous && previous.readyState !== WebSocket.CLOSED) {
       previous.terminate();
     }
+    // ws only honours Unix sockets through the ws+unix: scheme; a socketPath
+    // option is ignored and the client silently dials localhost:80 instead.
     const ws = target.socketPath
-      ? new WebSocket("ws://localhost/", { socketPath: target.socketPath })
-      : new WebSocket(target.url);
+      ? new WebSocket(`ws+unix://${target.socketPath}:/`)
+      : new WebSocket(target.url, target.headers ? { headers: target.headers } : undefined);
 
     this.ws = ws;
     this.initialized = false;
-    this.connectionInfo = target;
+    const { headers: _headers, ...publicTarget } = target;
+    this.connectionInfo = publicTarget;
 
-    ws.on("message", (raw) => this.handleMessage(raw));
+    ws.on("message", (raw) => this.handleMessage(ws, raw));
     ws.on("close", () => {
       if (this.ws === ws) {
         this.failAllPending("Codex app-server websocket closed");
@@ -145,12 +232,22 @@ export class CodexAppServerClient {
 
     try {
       await waitForOpen(ws, this.options.requestTimeoutMs);
-      await this.initialize();
-    } catch (error) {
-      if (this.ws === ws) {
-        ws.terminate();
+      if (this.closed || this.ws !== ws) {
+        throw closedError();
       }
-      throw error;
+      await this.initialize(ws);
+      if (this.closed || this.ws !== ws) {
+        throw closedError();
+      }
+    } catch (error) {
+      ws.terminate();
+      if (this.ws === ws) {
+        this.ws = null;
+        this.initialized = false;
+      }
+      // close() tears the socket down mid-connect; report that, not the
+      // transport error it caused.
+      throw this.closed ? closedError() : error;
     }
   }
 
@@ -205,57 +302,45 @@ export class CodexAppServerClient {
     }
   }
 
-  async initialize() {
-    const id = `agent-link-${this.nextId++}`;
-    const params = {
+  async initialize(ws) {
+    const result = await this.sendRequest(ws, "initialize", {
       clientInfo: {
         name: "codex-agent-link",
         title: "Codex Agent Link",
-        version: "0.1.0"
+        version: AGENT_LINK_VERSION
       },
       capabilities: {
         experimentalApi: true
       }
-    };
-
-    const result = await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new AppServerError("Timed out during app-server initialize"));
-      }, this.options.requestTimeoutMs);
-
-      this.pending.set(id, { resolve, reject, timeout, method: "initialize" });
-      this.ws.send(JSON.stringify({ id, method: "initialize", params }), (error) => {
-        if (!error) {
-          return;
-        }
-        clearTimeout(timeout);
-        this.pending.delete(id);
-        reject(new AppServerError(`Failed to initialize app-server: ${error.message}`));
-      });
     });
 
     this.initialized = true;
-    this.ws.send(JSON.stringify({ method: "initialized", params: {} }));
+    try {
+      ws.send(JSON.stringify({ method: "initialized", params: {} }));
+    } catch {
+      // The close handler fails pending work; nothing else to do here.
+    }
     this.connectionInfo = {
       ...this.connectionInfo,
       initialized: true,
-      userAgent: result.userAgent,
-      codexHome: result.codexHome,
-      platformOs: result.platformOs
+      userAgent: result?.userAgent,
+      codexHome: result?.codexHome,
+      platformOs: result?.platformOs
     };
     return result;
   }
 
-  handleMessage(raw) {
+  handleMessage(ws, raw) {
     let message;
     try {
       message = JSON.parse(raw.toString());
-    } catch (error) {
-      this.lastNotifications.push({
-        method: "parse-error",
-        params: { error: error.message, raw: raw.toString() }
-      });
+    } catch {
+      this.notifications.parseErrors += 1;
+      return;
+    }
+
+    if (message.method && message.id !== undefined && message.id !== null) {
+      this.answerServerRequest(ws, message);
       return;
     }
 
@@ -277,21 +362,52 @@ export class CodexAppServerClient {
     }
 
     if (message.method) {
-      this.lastNotifications.push({
-        method: message.method,
-        params: message.params ?? null,
-        receivedAt: new Date().toISOString()
-      });
-      if (this.lastNotifications.length > 100) {
-        this.lastNotifications.shift();
+      this.notifications.total += 1;
+      countMethod(this.notifications.byMethod, message.method);
+      this.notifications.recent.push({ method: message.method, receivedAt: new Date().toISOString() });
+      if (this.notifications.recent.length > RECENT_NOTIFICATIONS) {
+        this.notifications.recent.shift();
       }
     }
   }
 
-  failAllPending(message) {
+  answerServerRequest(ws, message) {
+    const method = String(message.method);
+    const decline = Object.prototype.hasOwnProperty.call(SERVER_REQUEST_DECLINES, method)
+      ? SERVER_REQUEST_DECLINES[method]
+      : null;
+    this.serverRequests.total += 1;
+    countMethod(this.serverRequests.byMethod, method);
+    const reply = decline
+      ? { id: message.id, result: decline }
+      : {
+          id: message.id,
+          error: {
+            code: METHOD_NOT_HANDLED,
+            message: `Agent Link cannot answer app-server request ${method}; it was refused automatically so the turn does not wait on it.`
+          }
+        };
+    if (decline) {
+      this.serverRequests.declined += 1;
+    } else {
+      this.serverRequests.rejected += 1;
+    }
+    this.serverRequests.last = {
+      method,
+      answer: decline ? "declined" : "error",
+      at: new Date().toISOString()
+    };
+    try {
+      ws.send(JSON.stringify(reply));
+    } catch {
+      // Socket already gone; the app-server drops the request with it.
+    }
+  }
+
+  failAllPending(message, code = "connection-lost") {
     for (const [id, pending] of this.pending.entries()) {
       clearTimeout(pending.timeout);
-      pending.reject(new AppServerError(message, { method: pending.method }));
+      pending.reject(new AppServerError(message, { method: pending.method, code }));
       this.pending.delete(id);
     }
     this.initialized = false;
@@ -310,27 +426,101 @@ export class CodexAppServerClient {
 
     if (!this.options.autoStart) {
       throw new AppServerError(
-        "No Codex app-server endpoint is configured. Set CODEX_AGENT_LINK_URL, CODEX_APP_SERVER_URL, CODEX_AGENT_LINK_SOCK, or enable CODEX_AGENT_LINK_AUTOSTART."
+        "No Codex app-server endpoint is configured. Set CODEX_AGENT_LINK_URL, CODEX_APP_SERVER_URL, CODEX_AGENT_LINK_SOCK, or enable CODEX_AGENT_LINK_AUTOSTART.",
+        { code: "autostart-disabled" }
       );
     }
 
     if (this.closed) {
-      throw new AppServerError("Codex app-server client is closed; not starting a managed app-server");
+      throw closedError();
     }
 
-    if (!this.managedUrl) {
+    if (!this.managedEndpoint) {
+      this.throwIfStartupFailureCached();
       if (!this.managedStartPromise) {
-        this.managedStartPromise = this.startManagedAppServer().finally(() => {
-          this.managedStartPromise = null;
-        });
+        this.managedStartPromise = this.startManagedAppServer()
+          .catch((error) => {
+            if (!this.closed && error?.details?.cacheable) {
+              this.lastStartupFailure = { error, at: Date.now() };
+            }
+            throw error;
+          })
+          .finally(() => {
+            this.managedStartPromise = null;
+          });
       }
       await this.managedStartPromise;
     }
-    return { kind: "managed", url: this.managedUrl, managed: true };
+    const endpoint = this.managedEndpoint;
+    if (!endpoint) {
+      throw new AppServerError("Managed Codex app-server was stopped during startup", { code: "stopped-during-startup" });
+    }
+    return {
+      kind: "managed",
+      managed: true,
+      transport: endpoint.transport,
+      url: endpoint.url ?? null,
+      socketPath: endpoint.socketPath ?? null,
+      headers: endpoint.headers
+    };
+  }
+
+  throwIfStartupFailureCached() {
+    const failure = this.lastStartupFailure;
+    if (!failure) {
+      return;
+    }
+    const ageMs = Date.now() - failure.at;
+    const cacheMs = this.options.startupFailureCacheMs;
+    if (!(cacheMs > 0) || ageMs >= cacheMs) {
+      this.lastStartupFailure = null;
+      return;
+    }
+    throw new AppServerError(`${failure.error.message} (cached startup failure; not retrying for another ${Math.ceil((cacheMs - ageMs) / 1000)} s)`, {
+      ...failure.error.details,
+      code: "startup-failure-cached",
+      cachedCode: failure.error.details?.code ?? null,
+      retryAfterMs: cacheMs - ageMs
+    });
   }
 
   stateDir() {
     return this.options.stateDir || managedAppServerStateDir();
+  }
+
+  // Where the managed app-server listens. Unix socket in a 0700 directory by
+  // default; a capability-token websocket only when Unix sockets are not an
+  // option. Either way no other local user can drive the app-server.
+  allocateEndpoint() {
+    const stateDir = ensurePrivateDir(this.stateDir());
+    const stem = `${process.pid}-${this.managedSpawnCount + 1}`;
+    if (this.options.transport === "ws-token") {
+      const token = randomBytes(32).toString("hex");
+      const tokenFile = path.join(stateDir, `${stem}.token`);
+      writeFileSync(tokenFile, token, { mode: 0o600 });
+      chmodSync(tokenFile, 0o600);
+      return {
+        transport: "ws-token",
+        tokenFile,
+        headers: { Authorization: `Bearer ${token}` },
+        // The port is chosen just before spawn; the token keeps a process that
+        // wins the port race from being driven by us or driving our server.
+        pendingPort: true,
+        args: ["--ws-auth", "capability-token", "--ws-token-file", tokenFile]
+      };
+    }
+    let socketDir = stateDir;
+    if (Buffer.byteLength(path.join(socketDir, `${stem}.sock`)) > MAX_UNIX_SOCKET_PATH_BYTES) {
+      socketDir = ensurePrivateDir(path.join("/tmp", `agent-link-${process.getuid?.() ?? "user"}`));
+    }
+    const socketPath = path.join(socketDir, `${stem}.sock`);
+    rmSync(socketPath, { force: true });
+    return {
+      transport: "unix",
+      socketPath,
+      listen: `unix://${socketPath}`,
+      args: []
+    };
   }
 
   async startManagedAppServer() {
@@ -343,14 +533,20 @@ export class CodexAppServerClient {
       }
     }
 
-    const port = await getFreePort();
-    const url = `ws://127.0.0.1:${port}`;
     const launch = findAppServerLaunch();
+    const endpoint = this.allocateEndpoint();
+    if (endpoint.pendingPort) {
+      const port = await getFreePort();
+      endpoint.url = `ws://127.0.0.1:${port}`;
+      endpoint.listen = endpoint.url;
+      endpoint.readyUrl = `http://127.0.0.1:${port}/readyz`;
+      delete endpoint.pendingPort;
+    }
 
     // detached: the app-server leads its own process group, so shutdown can
     // signal the whole group (app-server plus anything it launches) instead of
     // only the direct child.
-    const child = spawn(launch.command, [...launch.args, "--listen", url], {
+    const child = spawn(launch.command, [...launch.args, "--listen", endpoint.listen, ...endpoint.args], {
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
       env: {
@@ -358,6 +554,7 @@ export class CodexAppServerClient {
         CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "Codex Agent Link"
       }
     });
+    child.__agentLinkEndpoint = endpoint;
     this.managedSpawnCount += 1;
     this.managedLaunch = launch;
     this.managedProcess = child;
@@ -379,6 +576,7 @@ export class CodexAppServerClient {
 
     child.on("exit", (code, signal) => {
       removeManagedRecord(child.__agentLinkRecordPath);
+      removeEndpointFiles(child.__agentLinkEndpoint);
       if (this.managedProcess !== child) {
         return;
       }
@@ -386,7 +584,7 @@ export class CodexAppServerClient {
         process.removeListener("exit", this.managedProcessExitCleanup);
         this.managedProcessExitCleanup = null;
       }
-      this.managedUrl = null;
+      this.managedEndpoint = null;
       this.managedProcess = null;
       this.managedLaunch = null;
       this.managedRecordPath = null;
@@ -402,36 +600,60 @@ export class CodexAppServerClient {
         ownerPid: process.pid,
         pid: child.pid,
         pgid: child.pid,
-        url,
+        url: endpoint.listen,
+        transport: endpoint.transport,
+        socketPath: endpoint.socketPath ?? null,
+        tokenFile: endpoint.tokenFile ?? null,
         command: launch.command,
         startedAt: new Date().toISOString()
       });
       this.managedRecordPath = child.__agentLinkRecordPath;
     }
 
+    const checkAbort = () => {
+      if (spawnError) {
+        return tagged(spawnError, spawnError.code === "ENOENT" ? "codex-binary-not-found" : "spawn-failed");
+      }
+      if (child.exitCode !== null || child.signalCode !== null) {
+        return tagged(
+          new Error(`app-server exited during startup (code ${child.exitCode ?? "null"} signal ${child.signalCode ?? "null"})`),
+          "app-server-exited-during-startup"
+        );
+      }
+      return null;
+    };
     try {
-      await waitForReady(`http://127.0.0.1:${port}/readyz`, this.options.startupTimeoutMs, () => {
-        if (spawnError) {
-          return spawnError;
-        }
-        if (child.exitCode !== null || child.signalCode !== null) {
-          return new Error(`app-server exited during startup (code ${child.exitCode ?? "null"} signal ${child.signalCode ?? "null"})`);
-        }
-        return null;
-      });
+      if (endpoint.socketPath) {
+        await waitForSocket(endpoint.socketPath, this.options.startupTimeoutMs, checkAbort);
+      } else {
+        await waitForReady(endpoint.readyUrl, this.options.startupTimeoutMs, checkAbort);
+      }
     } catch (error) {
       await this.stopManagedAppServer(child);
+      if (this.closed) {
+        throw closedError();
+      }
+      const code = error.agentLinkCode ?? "readiness-timeout";
       throw new AppServerError("Managed Codex app-server did not become ready", {
+        code,
+        cacheable: this.managedProcess === null && !this.closed,
         cause: error.message,
+        command: launch.command,
+        launchSource: launch.source ?? null,
+        startupTimeoutMs: this.options.startupTimeoutMs,
         logs: logs.join("")
       });
     }
 
-    if (this.managedProcess !== child) {
-      throw new AppServerError("Managed Codex app-server was stopped during startup");
+    if (this.closed) {
+      throw closedError();
     }
-    this.managedUrl = url;
-    return url;
+    if (this.managedProcess !== child) {
+      throw new AppServerError("Managed Codex app-server was stopped during startup", { code: "stopped-during-startup" });
+    }
+    this.lastStartupFailure = null;
+    this.managedEndpoint = endpoint;
+    return endpoint;
   }
 
   // Stop the managed app-server's whole process group: SIGTERM, bounded wait,
@@ -446,7 +668,7 @@ export class CodexAppServerClient {
         this.managedProcessExitCleanup = null;
       }
       this.managedProcess = null;
-      this.managedUrl = null;
+      this.managedEndpoint = null;
       this.managedLaunch = null;
       this.managedRecordPath = null;
     }
@@ -466,6 +688,7 @@ export class CodexAppServerClient {
       }
     }
     removeManagedRecord(child.__agentLinkRecordPath);
+    removeEndpointFiles(child.__agentLinkEndpoint);
     child.stdout?.destroy();
     child.stderr?.destroy();
     child.unref();
@@ -482,22 +705,47 @@ export class CodexAppServerClient {
   }
 
   getConnectionSummary() {
+    const failure = this.lastStartupFailure;
+    const failureAgeMs = failure ? Date.now() - failure.at : null;
     return {
       connected: this.ws?.readyState === WebSocket.OPEN && this.initialized,
       ...this.connectionInfo,
+      closed: this.closed,
+      clientVersion: AGENT_LINK_VERSION,
       managedPid: this.managedProcess?.pid ?? null,
       managedLaunch: this.managedLaunch ?? null,
+      managedTransport: this.managedEndpoint?.transport ?? this.options.transport,
       managedSpawnCount: this.managedSpawnCount,
       idleTimeoutMs: this.options.idleTimeoutMs,
       idleShutdowns: this.idleShutdowns,
-      notificationsBuffered: this.lastNotifications.length
+      startupTimeoutMs: this.options.startupTimeoutMs,
+      startupFailure: failure && failureAgeMs < this.options.startupFailureCacheMs
+        ? {
+            code: failure.error.details?.code ?? null,
+            message: failure.error.message,
+            retryAfterMs: this.options.startupFailureCacheMs - failureAgeMs
+          }
+        : null,
+      notifications: {
+        total: this.notifications.total,
+        parseErrors: this.notifications.parseErrors,
+        byMethod: { ...this.notifications.byMethod },
+        recent: [...this.notifications.recent]
+      },
+      serverRequests: {
+        total: this.serverRequests.total,
+        declined: this.serverRequests.declined,
+        rejected: this.serverRequests.rejected,
+        byMethod: { ...this.serverRequests.byMethod },
+        last: this.serverRequests.last
+      }
     };
   }
 
   async close() {
     this.closed = true;
     this.clearIdleTimer();
-    this.failAllPending("Codex app-server client closed");
+    this.failAllPending("Codex app-server client is closed", "client-closed");
     this.closeSocket();
     const starting = this.managedStartPromise;
     await this.stopManagedAppServer();
@@ -505,6 +753,64 @@ export class CodexAppServerClient {
       // A spawn in flight when close() was called stops itself once it sees
       // it is no longer the current managed process; wait for it to settle.
       await starting.catch(() => {});
+    }
+  }
+}
+
+function closedError(method = null) {
+  return new AppServerError("Codex app-server client is closed", { method, code: "client-closed" });
+}
+
+function tagged(error, code) {
+  error.agentLinkCode = code;
+  return error;
+}
+
+function countMethod(table, method) {
+  if (Object.prototype.hasOwnProperty.call(table, method)) {
+    table[method] += 1;
+  } else if (Object.keys(table).length < MAX_TRACKED_METHODS) {
+    table[method] = 1;
+  } else {
+    table["(other)"] = (table["(other)"] ?? 0) + 1;
+  }
+}
+
+function readPackageVersion() {
+  try {
+    return JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version || "0.0.0-dev";
+  } catch {
+    return "0.0.0-dev";
+  }
+}
+
+// Create (or tighten) a directory only this user can enter.
+function ensurePrivateDir(dir) {
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const stat = statSync(dir);
+  if (!stat.isDirectory()) {
+    throw new AppServerError(`Managed app-server state path is not a directory: ${dir}`, { code: "state-dir-unsafe" });
+  }
+  if (typeof process.getuid === "function" && stat.uid !== process.getuid()) {
+    throw new AppServerError(`Managed app-server state directory is owned by another user: ${dir}`, { code: "state-dir-unsafe" });
+  }
+  if ((stat.mode & 0o777) !== 0o700) {
+    chmodSync(dir, 0o700);
+  }
+  return dir;
+}
+
+function removeEndpointFiles(endpoint) {
+  if (!endpoint) {
+    return;
+  }
+  for (const file of [endpoint.socketPath, endpoint.tokenFile]) {
+    if (file) {
+      try {
+        rmSync(file, { force: true });
+      } catch {
+        // ignore
+      }
     }
   }
 }
@@ -545,9 +851,9 @@ function processGroupAlive(pgid) {
 
 function writeManagedRecord(stateDir, record) {
   try {
-    mkdirSync(stateDir, { recursive: true });
+    mkdirSync(stateDir, { recursive: true, mode: 0o700 });
     const file = path.join(stateDir, `${record.pid}.json`);
-    writeFileSync(file, `${JSON.stringify(record)}\n`);
+    writeFileSync(file, `${JSON.stringify(record)}\n`, { mode: 0o600 });
     return file;
   } catch {
     return null;
@@ -602,8 +908,13 @@ export function reapOrphanedManagedAppServers({ stateDir = managedAppServerState
       result.kept.push({ file, pid, ownerPid });
       continue;
     }
+    const recordEndpoint = {
+      socketPath: typeof record.socketPath === "string" ? record.socketPath : null,
+      tokenFile: typeof record.tokenFile === "string" ? record.tokenFile : null
+    };
     if (!pidIsAlive(pid)) {
       removeManagedRecord(file);
+      removeEndpointFiles(recordEndpoint);
       result.removed.push({ file, pid, reason: "not-running" });
       continue;
     }
@@ -619,6 +930,7 @@ export function reapOrphanedManagedAppServers({ stateDir = managedAppServerState
       if (pidIsAlive(pid) && processCommand(pid).includes(record.url)) {
         signalProcessGroup(pgid, "SIGKILL");
       }
+      removeEndpointFiles(recordEndpoint);
     }, graceMs);
     escalate.unref?.();
     removeManagedRecord(file);
@@ -631,49 +943,73 @@ export function asUserTextInput(text) {
   return [{ type: "text", text, text_elements: [] }];
 }
 
-export function codexBinaryCandidates() {
-  return [
-    process.env.CODEX_AGENT_LINK_CODEX_BIN,
-    process.env.CODEX_BIN,
-    // The live Codex Desktop ships inside ChatGPT.app; /Applications/Codex.app can be a stale
-    // older copy whose app-server rejects current models (threads end in systemError at once)
-    // and cannot resume threads written by newer Codex versions.
-    "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
-    "/Applications/ChatGPT.app/Contents/Resources/codex",
-    "/Applications/Codex.app/Contents/Resources/codex",
-    "/opt/homebrew/bin/codex",
-    "codex"
-  ].filter(Boolean);
+// Ordered candidate paths: env overrides, app bundles (ChatGPT.app first),
+// PATH, then well-known install dirs. See install-layout.js.
+export function codexBinaryCandidates(options = {}) {
+  return codexBinaryCandidateEntries(options).map((entry) => entry.path);
 }
 
-export function findCodexBinary() {
-  const candidates = codexBinaryCandidates();
+export function findCodexBinary(options = {}) {
+  return discoverCodexBinary(options);
+}
 
-  for (const candidate of candidates) {
-    if (candidate.includes("/") && !existsSync(candidate)) {
-      continue;
-    }
-    return candidate;
+// What health reports about the local Codex install: which binary would be
+// launched, where it came from, its version, and what was searched.
+export function describeCodexInstall(options = {}) {
+  const appServerBin = process.env.CODEX_AGENT_LINK_APP_SERVER_BIN || process.env.CODEX_APP_SERVER_BIN;
+  if (appServerBin) {
+    const exists = !appServerBin.includes("/") || existsSync(appServerBin);
+    return {
+      available: exists,
+      path: appServerBin,
+      source: "env:CODEX_AGENT_LINK_APP_SERVER_BIN",
+      version: null,
+      searched: [appServerBin],
+      reason: exists ? null : `Configured Codex app-server binary does not exist: ${appServerBin}`
+    };
   }
-  return "codex";
+  const found = discoverCodexBinary(options);
+  return {
+    available: found.found,
+    path: found.path,
+    source: found.source,
+    version: found.found ? codexBinaryVersion(found.path) : null,
+    searched: found.searched,
+    reason: found.found ? null : found.reason
+  };
 }
 
 export function findAppServerLaunch() {
   const appServerBin = process.env.CODEX_AGENT_LINK_APP_SERVER_BIN || process.env.CODEX_APP_SERVER_BIN;
   if (appServerBin) {
     if (appServerBin.includes("/") && !existsSync(appServerBin)) {
-      throw new AppServerError(`Configured Codex app-server binary does not exist: ${appServerBin}`);
+      throw new AppServerError(`Configured Codex app-server binary does not exist: ${appServerBin}`, {
+        code: "codex-binary-not-found",
+        cacheable: true,
+        searched: [appServerBin]
+      });
     }
     return {
       kind: "app-server-bin",
       command: appServerBin,
+      source: "env:CODEX_AGENT_LINK_APP_SERVER_BIN",
       args: []
     };
   }
 
+  const found = discoverCodexBinary();
+  if (!found.found) {
+    throw new AppServerError(`No Codex binary found: ${found.reason}`, {
+      code: "codex-binary-not-found",
+      cacheable: true,
+      reason: found.reason,
+      searched: found.searched
+    });
+  }
   return {
     kind: "codex-bin",
-    command: findCodexBinary(),
+    command: found.path,
+    source: found.source,
     args: ["app-server"]
   };
 }
@@ -706,13 +1042,14 @@ async function waitForOpen(ws, timeoutMs) {
   await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       cleanup();
-      reject(new AppServerError("Timed out opening Codex app-server websocket"));
+      reject(new AppServerError("Timed out opening Codex app-server websocket", { code: "open-timeout" }));
     }, timeoutMs);
 
     const cleanup = () => {
       clearTimeout(timeout);
       ws.off("open", onOpen);
       ws.off("error", onError);
+      ws.off("close", onClose);
     };
     const onOpen = () => {
       cleanup();
@@ -720,11 +1057,16 @@ async function waitForOpen(ws, timeoutMs) {
     };
     const onError = (error) => {
       cleanup();
-      reject(new AppServerError(`Codex app-server websocket failed: ${error.message}`));
+      reject(new AppServerError(`Codex app-server websocket failed: ${error.message}`, { code: "open-failed" }));
+    };
+    const onClose = () => {
+      cleanup();
+      reject(new AppServerError("Codex app-server websocket closed before it opened", { code: "open-failed" }));
     };
 
     ws.on("open", onOpen);
     ws.on("error", onError);
+    ws.on("close", onClose);
   });
 }
 
@@ -761,7 +1103,36 @@ async function waitForReady(url, timeoutMs, checkAbort = () => null) {
     await sleep(150);
   }
 
-  throw lastError ?? new Error("readyz timed out");
+  throw tagged(lastError ?? new Error("readyz timed out"), "readiness-timeout");
+}
+
+// The Unix-socket listener has no /readyz; it is ready once it accepts a
+// connection.
+async function waitForSocket(socketPath, timeoutMs, checkAbort = () => null) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = null;
+  while (Date.now() < deadline) {
+    const abort = checkAbort();
+    if (abort) {
+      throw abort;
+    }
+    try {
+      await new Promise((resolve, reject) => {
+        const socket = net.connect(socketPath);
+        socket.setTimeout(1000, () => socket.destroy(new Error("connect timed out")));
+        socket.once("connect", () => {
+          socket.destroy();
+          resolve();
+        });
+        socket.once("error", reject);
+      });
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+    await sleep(100);
+  }
+  throw tagged(lastError ?? new Error("socket did not accept connections"), "readiness-timeout");
 }
 
 async function waitForProcessExit(child, timeoutMs) {

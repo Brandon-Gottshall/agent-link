@@ -108,4 +108,49 @@ const notApplicable = await checkCoordinationObligations({
 assert.equal(notApplicable.status, "not_applicable");
 assert.equal(notApplicable.ok, true);
 
+// W2A-16: the runtime caller thread wins over a caller-supplied
+// callbackThreadId, and the mismatch is visible to the dependency owner.
+const spoofedCallback = "4ae1fe3d-0000-7000-8000-000000000bad";
+calls.length = 0;
+const mismatched = await registerDependencyHandoff({
+  targetThreadId,
+  dependencyName: "Mismatch check",
+  readinessContract: "ready when done",
+  callbackThreadId: spoofedCallback,
+  allowTargetOverride: true
+}, registerDeps, {
+  callerContext: { available: true, threadId: originThreadId }
+});
+assert.equal(mismatched.dependency.callbackThreadId, originThreadId);
+assert.deepEqual(mismatched.dependency.callbackMismatch, {
+  supplied: spoofedCallback,
+  used: originThreadId,
+  reason: "caller context thread id takes precedence over callbackThreadId"
+});
+assert.match(calls[0].message, new RegExp(`Dependency callback request from thread \`${originThreadId}\``));
+assert.match(calls[0].message, new RegExp(`named callback thread \`${spoofedCallback}\``));
+assert.ok(calls[0].receipt.tags.includes(`callback:${originThreadId}`));
+assert.equal(calls[0].allowTargetOverride, true, "allowTargetOverride is forwarded");
+
+// Without caller context the supplied callbackThreadId is used as given.
+calls.length = 0;
+const noContext = await registerDependencyHandoff({
+  targetThreadId,
+  dependencyName: "No context",
+  readinessContract: "ready when done",
+  callbackThreadId: spoofedCallback
+}, registerDeps, {});
+assert.equal(noContext.dependency.callbackThreadId, spoofedCallback);
+assert.equal(noContext.dependency.callbackMismatch, null);
+
+// projectId must be a slug.
+await assert.rejects(
+  () => registerDependencyHandoff({
+    projectId: "../../etc/passwd",
+    dependencyName: "Bad project",
+    readinessContract: "ready"
+  }, registerDeps, { callerContext: { available: true, threadId: originThreadId } }),
+  (error) => error.details?.code === "invalid-project-id"
+);
+
 console.log("Dependency handoff regression test passed");

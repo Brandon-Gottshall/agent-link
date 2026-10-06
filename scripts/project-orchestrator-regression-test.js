@@ -179,6 +179,74 @@ try {
     /ambiguous/i
   );
 
+  // W2B-03: cwd on the orchestrator tools filters the search; it is never
+  // forwarded as the orchestrator turn's working directory.
+  calls.length = 0;
+  await messageProjectOrchestrator({
+    projectRoot,
+    cwd: "/tmp/some-other-dir",
+    message: "status?",
+    model: "gpt-test",
+    allowTargetOverride: true,
+    recentItems: 3
+  }, deps);
+  const forwarded = calls.find((call) => call[0] === "messageThread")[1];
+  assert.equal(Object.hasOwn(forwarded, "cwd"), false, "cwd is not forwarded as a turn override");
+  assert.equal(forwarded.model, "gpt-test");
+  assert.equal(forwarded.allowTargetOverride, true);
+  assert.equal(forwarded.recentItems, 3);
+
+  // P3-15: the binding is verified once, and its policyVersion reaches the
+  // worker prompt.
+  const policyRoot = path.join(tempRoot, "policy-project");
+  await mkdir(path.join(policyRoot, ".codex"), { recursive: true });
+  await writeFile(path.join(policyRoot, ".codex", "project-orchestrator.json"), JSON.stringify({
+    ...binding,
+    projectRoot: policyRoot,
+    orchestratorThreadId: "thread-unreadable-binding",
+    policyVersion: "v7-test"
+  }));
+  const searchDeps = {
+    ...deps,
+    readThread: async (threadId) => {
+      calls.push(["readThread", threadId]);
+      if (threadId === "thread-search-hit") {
+        return { ok: true, thread: { id: threadId, status: { type: "idle" } } };
+      }
+      throw new Error(`missing thread ${threadId}`);
+    },
+    listThreads: async (listArgs) => {
+      calls.push(["listThreads", listArgs]);
+      return {
+        ok: true,
+        data: [{ id: "thread-search-hit", name: "Project Orchestrator codex-agent-link", cwd: policyRoot, updatedAt: 1779086400 }]
+      };
+    }
+  };
+  calls.length = 0;
+  const viaSearch = await resolveProjectOrchestrator({ projectRoot: policyRoot }, searchDeps);
+  assert.equal(viaSearch.threadId, "thread-search-hit");
+  assert.equal(calls.filter((call) => call[0] === "readThread" && call[1] === "thread-unreadable-binding").length, 1, "binding verified once");
+  assert.equal(viaSearch.bindingVerification.readable, false);
+
+  // W2B-04: the worker's name never becomes the orchestrator search query.
+  calls.length = 0;
+  const worker = await launchProjectWorker({
+    projectRoot: policyRoot,
+    name: "Worker Title That Matches Nothing",
+    task: "Do the thing."
+  }, searchDeps);
+  const listCall = calls.find((call) => call[0] === "listThreads")[1];
+  assert.equal(listCall.searchTerm, "Project Orchestrator codex-agent-link");
+  assert.doesNotMatch(listCall.searchTerm, /Worker Title/);
+  assert.match(worker.workerPrompt, /Policy version: v7-test/);
+  assert.equal(calls.find((call) => call[0] === "launchThread")[1].name, "Worker Title That Matches Nothing");
+
+  // P3-15: an absent projectRoot/cwd is null, not "", in the search filter.
+  calls.length = 0;
+  await resolveProjectOrchestrator({ query: "Project Orchestrator codex-agent-link" }, searchDeps);
+  assert.equal(calls.find((call) => call[0] === "listThreads")[1].cwd, null);
+
   console.log("Project orchestrator regression test passed");
 } finally {
   await rm(tempRoot, { recursive: true, force: true });

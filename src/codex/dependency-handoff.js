@@ -1,3 +1,4 @@
+const PROJECT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const THREAD_ID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 
 const DEPENDENCY_PHRASES = [
@@ -17,10 +18,25 @@ const DEPENDENCY_PHRASES = [
 export async function registerDependencyHandoff(args = {}, deps = {}, toolContext = {}) {
   const dependencyName = requiredString(args.dependencyName || args.dependency, "dependencyName").trim();
   const readinessContract = requiredString(args.readinessContract, "readinessContract").trim();
-  const callbackThreadId = cleanString(args.callbackThreadId || args.originThreadId || toolContext.callerContext?.threadId);
+  // The caller's own thread, as seen by the runtime, is the callback target.
+  // A different caller-supplied callbackThreadId cannot redirect the
+  // dependency owner's reply to some other thread; it is recorded as a
+  // mismatch instead.
+  const callerThreadId = cleanString(toolContext.callerContext?.threadId);
+  const suppliedCallbackThreadId = cleanString(args.callbackThreadId || args.originThreadId);
+  const callbackThreadId = callerThreadId || suppliedCallbackThreadId;
   if (!callbackThreadId) {
     const error = new Error("callbackThreadId is required when caller thread context is unavailable");
     error.details = { callerContext: toolContext.callerContext ?? null };
+    throw error;
+  }
+  const callbackMismatch = callerThreadId && suppliedCallbackThreadId && suppliedCallbackThreadId !== callerThreadId
+    ? { supplied: suppliedCallbackThreadId, used: callerThreadId, reason: "caller context thread id takes precedence over callbackThreadId" }
+    : null;
+  const projectId = cleanString(args.projectId);
+  if (projectId && !PROJECT_ID_RE.test(projectId)) {
+    const error = new Error("projectId must be a slug: letters, digits, '.', '_' or '-', starting with a letter or digit, at most 128 characters");
+    error.details = { code: "invalid-project-id", projectId };
     throw error;
   }
 
@@ -32,7 +48,8 @@ export async function registerDependencyHandoff(args = {}, deps = {}, toolContex
     deadline: cleanString(args.deadline),
     evidenceRequirements: normalizeStringList(args.evidenceRequirements),
     context: cleanString(args.context),
-    sourceThreadId: cleanString(toolContext.callerContext?.threadId)
+    sourceThreadId: callerThreadId,
+    callbackMismatch
   });
   const tags = [
     "dependency-handoff",
@@ -48,6 +65,7 @@ export async function registerDependencyHandoff(args = {}, deps = {}, toolContex
     model: args.model,
     effort: args.effort,
     allowParallelTurn: args.allowParallelTurn,
+    allowTargetOverride: args.allowTargetOverride,
     waitForReply: args.waitForReply,
     timeoutMs: args.timeoutMs,
     pollIntervalMs: args.pollIntervalMs,
@@ -67,6 +85,7 @@ export async function registerDependencyHandoff(args = {}, deps = {}, toolContex
       name: dependencyName,
       readinessContract,
       callbackThreadId,
+      callbackMismatch,
       deadline: cleanString(args.deadline) || null,
       evidenceRequirements: normalizeStringList(args.evidenceRequirements)
     },
@@ -270,7 +289,9 @@ function buildDependencyHandoffMessage(args) {
   if (args.context) {
     lines.push("", "Context:", args.context);
   }
-  if (args.sourceThreadId && args.sourceThreadId !== args.callbackThreadId) {
+  if (args.callbackMismatch) {
+    lines.push("", `Note: the request named callback thread \`${args.callbackMismatch.supplied}\`, but the caller's runtime context is thread \`${args.callbackMismatch.used}\`; reply to \`${args.callbackMismatch.used}\` only.`);
+  } else if (args.sourceThreadId && args.sourceThreadId !== args.callbackThreadId) {
     lines.push("", `Source thread observed by caller context: \`${args.sourceThreadId}\`.`);
   }
   return lines.join("\n");
