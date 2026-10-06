@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// First import: installs the process error handlers before anything else
+// loads (src/server/process-guard.js).
+import { setFatalHandler } from "./server/process-guard.js";
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import path from "node:path";
@@ -197,8 +200,7 @@ function fatal(event, error) {
   });
   shutdown(1);
 }
-process.on("unhandledRejection", (reason) => fatal("process.unhandled_rejection", reason));
-process.on("uncaughtException", (error) => fatal("process.uncaught_exception", error));
+setFatalHandler(fatal);
 
 // Local transcript fallbacks read at most this many of the newest transcripts
 // when a search has to be answered from disk (they used to read up to 2,000).

@@ -8855,9 +8855,9 @@ var require_event_target = __commonJS({
        *     the listener would be automatically removed when invoked.
        * @public
        */
-      addEventListener(type, handler, options = {}) {
+      addEventListener(type, handler2, options = {}) {
         for (const listener of this.listeners(type)) {
-          if (!options[kForOnEventAttribute] && listener[kListener] === handler && !listener[kForOnEventAttribute]) {
+          if (!options[kForOnEventAttribute] && listener[kListener] === handler2 && !listener[kForOnEventAttribute]) {
             return;
           }
         }
@@ -8868,7 +8868,7 @@ var require_event_target = __commonJS({
               data: isBinary ? data : data.toString()
             });
             event[kTarget] = this;
-            callListener(handler, this, event);
+            callListener(handler2, this, event);
           };
         } else if (type === "close") {
           wrapper = function onClose(code, message) {
@@ -8878,7 +8878,7 @@ var require_event_target = __commonJS({
               wasClean: this._closeFrameReceived && this._closeFrameSent
             });
             event[kTarget] = this;
-            callListener(handler, this, event);
+            callListener(handler2, this, event);
           };
         } else if (type === "error") {
           wrapper = function onError(error2) {
@@ -8887,19 +8887,19 @@ var require_event_target = __commonJS({
               message: error2.message
             });
             event[kTarget] = this;
-            callListener(handler, this, event);
+            callListener(handler2, this, event);
           };
         } else if (type === "open") {
           wrapper = function onOpen() {
             const event = new Event("open");
             event[kTarget] = this;
-            callListener(handler, this, event);
+            callListener(handler2, this, event);
           };
         } else {
           return;
         }
         wrapper[kForOnEventAttribute] = !!options[kForOnEventAttribute];
-        wrapper[kListener] = handler;
+        wrapper[kListener] = handler2;
         if (options.once) {
           this.once(type, wrapper);
         } else {
@@ -8913,9 +8913,9 @@ var require_event_target = __commonJS({
        * @param {(Function|Object)} handler The listener to remove
        * @public
        */
-      removeEventListener(type, handler) {
+      removeEventListener(type, handler2) {
         for (const listener of this.listeners(type)) {
-          if (listener[kListener] === handler && !listener[kForOnEventAttribute]) {
+          if (listener[kListener] === handler2 && !listener[kForOnEventAttribute]) {
             this.removeListener(type, listener);
             break;
           }
@@ -9550,15 +9550,15 @@ var require_websocket = __commonJS({
           }
           return null;
         },
-        set(handler) {
+        set(handler2) {
           for (const listener of this.listeners(method)) {
             if (listener[kForOnEventAttribute]) {
               this.removeListener(method, listener);
               break;
             }
           }
-          if (typeof handler !== "function") return;
-          this.addEventListener(method, handler, {
+          if (typeof handler2 !== "function") return;
+          this.addEventListener(method, handler2, {
             [kForOnEventAttribute]: true
           });
         }
@@ -10513,6 +10513,512 @@ var require_websocket_server = __commonJS({
     }
   }
 });
+
+// src/shared/log.js
+import fs2 from "node:fs";
+import path3 from "node:path";
+
+// src/shared/env.js
+var ENV_ALIASES = Object.freeze({
+  AGENT_LINK_HOST: [],
+  AGENT_LINK_STATE_DIR: [],
+  AGENT_LINK_CODEX_URL: ["CODEX_AGENT_LINK_URL", "CODEX_APP_SERVER_URL"],
+  AGENT_LINK_CODEX_SOCK: ["CODEX_AGENT_LINK_SOCK", "CODEX_APP_SERVER_SOCK"],
+  AGENT_LINK_CODEX_AUTOSTART: ["CODEX_AGENT_LINK_AUTOSTART"],
+  AGENT_LINK_CODEX_BIN: ["CODEX_AGENT_LINK_CODEX_BIN", "CODEX_BIN"],
+  AGENT_LINK_CODEX_APP_SERVER_BIN: ["CODEX_AGENT_LINK_APP_SERVER_BIN", "CODEX_APP_SERVER_BIN"],
+  AGENT_LINK_CODEX_TRANSPORT: ["CODEX_AGENT_LINK_APP_SERVER_TRANSPORT"],
+  AGENT_LINK_CODEX_IDLE_MS: ["CODEX_AGENT_LINK_APP_SERVER_IDLE_MS"],
+  AGENT_LINK_CODEX_STARTUP_TIMEOUT_MS: ["CODEX_AGENT_LINK_APP_SERVER_STARTUP_MS"],
+  AGENT_LINK_MANAGED_DIR: ["CODEX_AGENT_LINK_STATE_DIR"],
+  AGENT_LINK_RECEIPT_LOG: ["CODEX_AGENT_LINK_RECEIPT_LOG", "CLAUDE_AGENT_LINK_RECEIPT_LOG"],
+  AGENT_LINK_INFER_RECEIPT_ORIGIN: ["CODEX_AGENT_LINK_INFER_RECEIPT_ORIGIN"],
+  AGENT_LINK_MAILBOX_PATH: [],
+  AGENT_LINK_MAILBOX_DB: [],
+  AGENT_LINK_DISABLE_CHANNEL: [],
+  AGENT_LINK_INSPECT_ALL: [],
+  AGENT_LINK_DEBUG: [],
+  AGENT_LINK_LOG_LEVEL: [],
+  AGENT_LINK_LOG_FILE: [],
+  AGENT_LINK_GUI_OPEN_DRY_RUN: ["CODEX_AGENT_LINK_GUI_OPEN_DRY_RUN"]
+});
+var HOST_PROVIDED_ENV = Object.freeze([
+  "HOME",
+  "CODEX_HOME",
+  "CODEX_THREAD_ID",
+  "CODEX_TURN_ID",
+  "CLAUDE_SESSION_ID",
+  "CLAUDE_CODE_SESSION_ID",
+  "CLAUDE_PROJECT_DIR",
+  "CLAUDE_PLUGIN_ROOT",
+  "CLAUDE_CONFIG_DIR"
+]);
+var HOST_PROVIDED_SET = new Set(HOST_PROVIDED_ENV);
+function present(value) {
+  return value !== void 0 && value !== "";
+}
+function env(name, source = process.env) {
+  if (HOST_PROVIDED_SET.has(name)) {
+    const value = source[name];
+    return present(value) ? { value, source: name } : { value: void 0, source: null };
+  }
+  const aliases = ENV_ALIASES[name];
+  if (!aliases) {
+    throw new TypeError(`Unknown Agent Link environment variable: ${name}`);
+  }
+  for (const candidate of [name, ...aliases]) {
+    const value = source[candidate];
+    if (present(value)) {
+      return { value, source: candidate };
+    }
+  }
+  return { value: void 0, source: null };
+}
+function envValue(name, fallback = void 0, source = process.env) {
+  return env(name, source).value ?? fallback;
+}
+function envFlag(name, fallback, source = process.env) {
+  const raw = env(name, source).value;
+  if (raw === void 0) return fallback;
+  const text = raw.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(text)) return true;
+  if (["0", "false", "no", "off"].includes(text)) return false;
+  return fallback;
+}
+function envReport(source = process.env) {
+  const report = { deprecated: [], conflicts: [] };
+  for (const [canonical, aliases] of Object.entries(ENV_ALIASES)) {
+    const resolved = env(canonical, source);
+    if (resolved.source && resolved.source !== canonical) {
+      report.deprecated.push({ name: resolved.source, canonical });
+    }
+    for (const alias of aliases) {
+      const value = source[alias];
+      if (present(value) && resolved.source !== alias && value !== resolved.value) {
+        report.conflicts.push({ canonical, winner: (
+          /** @type {string} */
+          resolved.source
+        ), ignored: alias });
+      }
+    }
+  }
+  return report;
+}
+
+// src/shared/jsonl.js
+import fsp from "node:fs/promises";
+import path from "node:path";
+var FILE_MODE = 384;
+var DIR_MODE = 448;
+function parseJsonlLines(raw) {
+  const records = [];
+  for (const line of String(raw ?? "").split("\n")) {
+    if (!line.trim()) {
+      continue;
+    }
+    try {
+      records.push(JSON.parse(line));
+    } catch {
+    }
+  }
+  return records;
+}
+function toJsonl(records) {
+  return records.map((record2) => `${JSON.stringify(record2)}
+`).join("");
+}
+async function appendJsonl(filePath, records) {
+  const text = toJsonl(Array.isArray(records) ? records : [records]);
+  await fsp.mkdir(path.dirname(filePath), { recursive: true, mode: DIR_MODE });
+  await fsp.appendFile(filePath, text, { encoding: "utf8", mode: FILE_MODE });
+}
+
+// src/shared/paths.js
+import os from "node:os";
+import path2 from "node:path";
+
+// src/shared/errors.js
+var ERROR_CODES = Object.freeze([
+  "invalid_arguments",
+  "unknown_tool",
+  "not_found",
+  "ambiguous",
+  "archived",
+  "wrong_recipient",
+  "no_current_session",
+  "body_too_large",
+  "permission_denied",
+  "active_turn_conflict",
+  "codex_unavailable",
+  "claude_unavailable",
+  "upstream_error",
+  "unsupported",
+  "state_io_error",
+  "internal_error"
+]);
+var ERROR_CODE_SET = new Set(ERROR_CODES);
+function isErrorCode(code) {
+  return typeof code === "string" && ERROR_CODE_SET.has(
+    /** @type {AgentLinkErrorCode} */
+    code
+  );
+}
+var AgentLinkError = class extends Error {
+  /**
+   * @param {AgentLinkErrorCode} code
+   * @param {string} message
+   * @param {AgentLinkErrorOptions} [options]
+   */
+  constructor(code, message, { details = null, hint = null, cause } = {}) {
+    super(message, cause === void 0 ? void 0 : { cause });
+    if (!isErrorCode(code)) {
+      throw new TypeError(`Unknown Agent Link error code: ${String(code)}`);
+    }
+    this.name = "AgentLinkError";
+    this.errorCode = code;
+    this.code = code;
+    this.details = details;
+    this.hint = hint;
+  }
+};
+function toErrorPayload(error2) {
+  if (error2 instanceof AgentLinkError && isErrorCode(error2.errorCode)) {
+    const payload = { code: error2.errorCode, message: error2.message };
+    const details = (
+      /** @type {{envelopeDetails?: Record<string, unknown>}} */
+      error2.envelopeDetails ?? error2.details
+    );
+    if (details && Object.keys(details).length > 0) payload.details = details;
+    if (error2.hint) payload.hint = error2.hint;
+    return payload;
+  }
+  const cause = error2 instanceof Error ? error2.constructor?.name || "Error" : typeof error2;
+  return {
+    code: "internal_error",
+    message: "Agent Link hit an internal error.",
+    details: { cause }
+  };
+}
+
+// src/shared/paths.js
+var AGENT_LINK_PATH_SETTINGS = /* @__PURE__ */ new Set([
+  "AGENT_LINK_STATE_DIR",
+  "AGENT_LINK_MAILBOX_PATH",
+  "AGENT_LINK_MAILBOX_DB",
+  "AGENT_LINK_RECEIPT_LOG",
+  "AGENT_LINK_MANAGED_DIR",
+  "AGENT_LINK_LOG_FILE"
+]);
+function resolveOptions(options = {}) {
+  return {
+    source: options.env ?? process.env,
+    home: options.homedir ?? os.homedir()
+  };
+}
+function expandHome(value, home) {
+  if (value === "~") return home;
+  if (value.startsWith("~/")) return path2.join(home, value.slice(2));
+  return path2.isAbsolute(value) ? path2.normalize(value) : null;
+}
+var PathConfigError = class extends AgentLinkError {
+  /**
+   * @param {string} variable
+   * @param {string} value
+   */
+  constructor(variable, value) {
+    super(
+      "state_io_error",
+      `${variable} must be an absolute path or start with ~/ (got the relative path ${JSON.stringify(value)}). The Claude hook and the MCP server run from different working directories, so a relative path would name two different files.`,
+      {
+        details: { variable, value },
+        hint: `Set ${variable} to an absolute path, or unset it to use the default under ~/.agent-link.`
+      }
+    );
+    this.name = "PathConfigError";
+  }
+};
+function configuredPath(name, options) {
+  const { source, home } = resolveOptions(options);
+  const found = env(name, source);
+  const value = found.value?.trim();
+  if (!value) return null;
+  const expanded = expandHome(value, home);
+  if (expanded) return expanded;
+  if (AGENT_LINK_PATH_SETTINGS.has(name)) {
+    throw new PathConfigError(
+      /** @type {string} */
+      found.source,
+      value
+    );
+  }
+  return path2.resolve(value);
+}
+function isConfigured(name, options = {}) {
+  return Boolean(env(name, resolveOptions(options).source).value?.trim());
+}
+function stateDir(options = {}) {
+  return configuredPath("AGENT_LINK_STATE_DIR", options) ?? path2.join(resolveOptions(options).home, ".agent-link");
+}
+function claudeConfigDir(options = {}) {
+  return configuredPath("CLAUDE_CONFIG_DIR", options) ?? path2.join(resolveOptions(options).home, ".claude");
+}
+function codexHome(options = {}) {
+  return configuredPath("CODEX_HOME", options) ?? path2.join(resolveOptions(options).home, ".codex");
+}
+function mailboxPath(options = {}) {
+  const explicit = configuredPath("AGENT_LINK_MAILBOX_PATH", options);
+  if (explicit) return explicit;
+  const legacyDb = configuredPath("AGENT_LINK_MAILBOX_DB", options);
+  if (legacyDb) return sqliteToJsonl(legacyDb);
+  return path2.join(stateDir(options), "mailbox.jsonl");
+}
+function mailboxDbPath(options = {}) {
+  return configuredPath("AGENT_LINK_MAILBOX_DB", options);
+}
+function sqliteToJsonl(file) {
+  return file.endsWith(".sqlite") ? `${file.slice(0, -".sqlite".length)}.jsonl` : file;
+}
+function receiptLogPath(options = {}) {
+  return configuredPath("AGENT_LINK_RECEIPT_LOG", options) ?? path2.join(stateDir(options), "receipts.jsonl");
+}
+function managedAppServerDir(options = {}) {
+  return configuredPath("AGENT_LINK_MANAGED_DIR", options) ?? path2.join(stateDir(options), "managed-app-servers");
+}
+function logDir(options = {}) {
+  return path2.join(stateDir(options), "logs");
+}
+function logFilePath(options = {}) {
+  return configuredPath("AGENT_LINK_LOG_FILE", options) ?? path2.join(logDir(options), "agent-link.log");
+}
+function migrationRecordPath(options = {}) {
+  return path2.join(stateDir(options), "migration.json");
+}
+function legacyPaths(options = {}) {
+  const { home } = resolveOptions(options);
+  const legacyClaudeDir = path2.join(home, ".claude", "agent-link");
+  return {
+    mailbox: path2.join(legacyClaudeDir, "mailbox.jsonl"),
+    mailboxDb: path2.join(legacyClaudeDir, "mailbox.sqlite"),
+    receipts: path2.join(codexHome(options), "agent-link-receipts.jsonl"),
+    managedAppServers: path2.join(legacyClaudeDir, "managed-app-servers")
+  };
+}
+function legacyClaudeStateDir(options = {}) {
+  return path2.join(claudeConfigDir(options), "agent-link");
+}
+function legacyMailboxPaths(options = {}) {
+  if (isConfigured("AGENT_LINK_MAILBOX_PATH", options) || isConfigured("AGENT_LINK_MAILBOX_DB", options)) return [];
+  return without(unique([
+    legacyPaths(options).mailbox,
+    path2.join(legacyClaudeStateDir(options), "mailbox.jsonl")
+  ]), mailboxPath(options));
+}
+function legacyReceiptPaths(options = {}) {
+  if (isConfigured("AGENT_LINK_RECEIPT_LOG", options)) return [];
+  return without([path2.resolve(legacyPaths(options).receipts)], receiptLogPath(options));
+}
+function legacyManagedAppServerDirs(options = {}) {
+  if (isConfigured("AGENT_LINK_MANAGED_DIR", options)) return [];
+  return without(unique([
+    legacyPaths(options).managedAppServers,
+    path2.join(legacyClaudeStateDir(options), "managed-app-servers")
+  ]), managedAppServerDir(options));
+}
+function unique(paths) {
+  return [...new Set(paths.map((p) => path2.resolve(p)))];
+}
+function without(paths, current) {
+  const resolved = path2.resolve(current);
+  return paths.filter((p) => p !== resolved);
+}
+
+// src/shared/state.js
+import fs from "node:fs";
+function pluginVersion() {
+  if (true) return "0.4.0";
+  try {
+    const pkg = JSON.parse(fs.readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
+    return typeof pkg.version === "string" ? pkg.version : null;
+  } catch {
+    return null;
+  }
+}
+function tightenMode(target, mode) {
+  try {
+    const stat = fs.statSync(target);
+    const uid = typeof process.getuid === "function" ? process.getuid() : null;
+    if (uid !== null && stat.uid !== uid) return;
+    if ((stat.mode & 511 & ~mode) !== 0) fs.chmodSync(target, mode);
+  } catch {
+  }
+}
+function ensureStateDir(options = {}) {
+  const dir = stateDir(options);
+  fs.mkdirSync(dir, { recursive: true, mode: DIR_MODE });
+  tightenMode(dir, DIR_MODE);
+  writeMigrationRecord(options);
+  return dir;
+}
+function writeMigrationRecord(options) {
+  const file = migrationRecordPath(options);
+  if (fs.existsSync(file)) return;
+  const from = [
+    ...legacyMailboxPaths(options),
+    ...legacyReceiptPaths(options),
+    ...legacyManagedAppServerDirs(options)
+  ].filter((candidate) => fs.existsSync(candidate));
+  const record2 = { from, at: (/* @__PURE__ */ new Date()).toISOString(), version: pluginVersion() };
+  try {
+    fs.writeFileSync(file, `${JSON.stringify(record2, null, 2)}
+`, { encoding: "utf8", mode: FILE_MODE, flag: "wx" });
+  } catch {
+  }
+}
+
+// src/shared/log.js
+var LOG_LEVELS = Object.freeze({ error: 0, warn: 1, info: 2, debug: 3 });
+var DEFAULT_RING_SIZE = 200;
+var DEFAULT_MAX_FILE_BYTES = 5 * 1024 * 1024;
+var MAX_STRING_FIELD = 4e3;
+function isLevel(value) {
+  return typeof value === "string" && Object.prototype.hasOwnProperty.call(LOG_LEVELS, value);
+}
+function resolveLogLevel(source = process.env) {
+  const configured = env("AGENT_LINK_LOG_LEVEL", source).value?.trim().toLowerCase();
+  if (isLevel(configured)) return configured;
+  return envFlag("AGENT_LINK_DEBUG", false, source) ? "debug" : "warn";
+}
+function cleanFields(fields) {
+  if (!fields) return void 0;
+  const out2 = {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === void 0) continue;
+    if (value instanceof Error) {
+      const code = (
+        /** @type {{code?: unknown}} */
+        value.code
+      );
+      out2[key] = { name: value.name, message: value.message, ...code !== void 0 ? { code } : {} };
+    } else if (typeof value === "string" && value.length > MAX_STRING_FIELD) {
+      out2[key] = `${value.slice(0, MAX_STRING_FIELD)}...`;
+    } else {
+      out2[key] = value;
+    }
+  }
+  return out2;
+}
+function createLogger(options = {}) {
+  const source = options.env ?? process.env;
+  const stderr = options.stderr ?? process.stderr;
+  const clock = options.clock ?? (() => /* @__PURE__ */ new Date());
+  const ringSize = options.ringSize ?? DEFAULT_RING_SIZE;
+  const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
+  const level = resolveLogLevel(source);
+  const threshold = LOG_LEVELS[level];
+  const fileWanted = Boolean(env("AGENT_LINK_LOG_FILE", source).value) || level === "debug";
+  let filePath = null;
+  if (fileWanted) {
+    try {
+      filePath = logFilePath({ env: source, homedir: options.homedir });
+    } catch (error2) {
+      try {
+        stderr.write(`agent-link: [warn] log.file_disabled ${JSON.stringify({ error: (
+          /** @type {Error} */
+          error2.message
+        ) })}
+`);
+      } catch {
+      }
+    }
+  }
+  let fileChecked = false;
+  const ring = [];
+  function writeFile(line) {
+    if (!filePath) return;
+    try {
+      fs2.mkdirSync(path3.dirname(filePath), { recursive: true, mode: DIR_MODE });
+      if (!fileChecked) {
+        fileChecked = true;
+        tightenMode(filePath, FILE_MODE);
+      }
+      let size = 0;
+      try {
+        size = fs2.statSync(filePath).size;
+      } catch {
+      }
+      if (size > 0 && size + Buffer.byteLength(line) > maxFileBytes) {
+        fs2.renameSync(filePath, `${filePath}.1`);
+      }
+      fs2.appendFileSync(filePath, line, { encoding: "utf8", mode: FILE_MODE });
+    } catch (error2) {
+      const failed = filePath;
+      filePath = null;
+      try {
+        stderr.write(`agent-link: [warn] log.file_disabled ${JSON.stringify({ path: failed, error: (
+          /** @type {Error} */
+          error2.message
+        ) })}
+`);
+      } catch {
+      }
+    }
+  }
+  function log(eventLevel, event, fields) {
+    const rank = LOG_LEVELS[eventLevel];
+    const shown = rank <= threshold;
+    if (!shown && rank > LOG_LEVELS.info) return;
+    const entry = { at: clock().toISOString(), level: eventLevel, event };
+    const cleaned = cleanFields(fields);
+    if (cleaned && Object.keys(cleaned).length > 0) entry.fields = cleaned;
+    ring.push(entry);
+    if (ring.length > ringSize) ring.splice(0, ring.length - ringSize);
+    if (!shown) return;
+    try {
+      stderr.write(`agent-link: [${eventLevel}] ${event}${entry.fields ? ` ${JSON.stringify(entry.fields)}` : ""}
+`);
+    } catch {
+    }
+    writeFile(`${JSON.stringify(entry)}
+`);
+  }
+  return {
+    level,
+    get filePath() {
+      return filePath;
+    },
+    enabled: (eventLevel) => LOG_LEVELS[eventLevel] <= threshold,
+    log,
+    error: (event, fields) => log("error", event, fields),
+    warn: (event, fields) => log("warn", event, fields),
+    info: (event, fields) => log("info", event, fields),
+    debug: (event, fields) => log("debug", event, fields),
+    recentEvents: (limit2 = ringSize) => (limit2 > 0 ? ring.slice(-limit2) : []).map((entry) => ({ ...entry }))
+  };
+}
+var shared = null;
+function getLogger() {
+  shared ??= createLogger();
+  return shared;
+}
+
+// src/server/process-guard.js
+var handler = null;
+function setFatalHandler(fn) {
+  handler = fn;
+}
+function fatal(event, error2) {
+  if (handler) {
+    handler(event, error2);
+    return;
+  }
+  getLogger().error(event, {
+    error: error2 instanceof Error ? error2 : String(error2),
+    stack: error2 instanceof Error ? error2.stack : void 0
+  });
+  process.exit(1);
+}
+process.on("unhandledRejection", (reason) => fatal("process.unhandled_rejection", reason));
+process.on("uncaughtException", (error2) => fatal("process.uncaught_exception", error2));
 
 // src/server.js
 import { spawn as spawn2 } from "node:child_process";
@@ -17554,25 +18060,25 @@ var Protocol = class {
     const error2 = McpError.fromError(ErrorCode.ConnectionClosed, "Connection closed");
     this._transport = void 0;
     this.onclose?.();
-    for (const handler of responseHandlers.values()) {
-      handler(error2);
+    for (const handler2 of responseHandlers.values()) {
+      handler2(error2);
     }
   }
   _onerror(error2) {
     this.onerror?.(error2);
   }
   _onnotification(notification) {
-    const handler = this._notificationHandlers.get(notification.method) ?? this.fallbackNotificationHandler;
-    if (handler === void 0) {
+    const handler2 = this._notificationHandlers.get(notification.method) ?? this.fallbackNotificationHandler;
+    if (handler2 === void 0) {
       return;
     }
-    Promise.resolve().then(() => handler(notification)).catch((error2) => this._onerror(new Error(`Uncaught error in notification handler: ${error2}`)));
+    Promise.resolve().then(() => handler2(notification)).catch((error2) => this._onerror(new Error(`Uncaught error in notification handler: ${error2}`)));
   }
   _onrequest(request, extra) {
-    const handler = this._requestHandlers.get(request.method) ?? this.fallbackRequestHandler;
+    const handler2 = this._requestHandlers.get(request.method) ?? this.fallbackRequestHandler;
     const capturedTransport = this._transport;
     const relatedTaskId = request.params?._meta?.[RELATED_TASK_META_KEY]?.taskId;
-    if (handler === void 0) {
+    if (handler2 === void 0) {
       const errorResponse = {
         jsonrpc: "2.0",
         id: request.id,
@@ -17636,7 +18142,7 @@ var Protocol = class {
       if (taskCreationParams) {
         this.assertTaskHandlerCapability(request.method);
       }
-    }).then(() => handler(request, fullExtra)).then(async (result) => {
+    }).then(() => handler2(request, fullExtra)).then(async (result) => {
       if (abortController.signal.aborted) {
         return;
       }
@@ -17685,8 +18191,8 @@ var Protocol = class {
   _onprogress(notification) {
     const { progressToken, ...params } = notification.params;
     const messageId = Number(progressToken);
-    const handler = this._progressHandlers.get(messageId);
-    if (!handler) {
+    const handler2 = this._progressHandlers.get(messageId);
+    if (!handler2) {
       this._onerror(new Error(`Received a progress notification for an unknown token: ${JSON.stringify(notification)}`));
       return;
     }
@@ -17703,7 +18209,7 @@ var Protocol = class {
         return;
       }
     }
-    handler(params);
+    handler2(params);
   }
   _onresponse(response) {
     const messageId = Number(response.id);
@@ -17718,8 +18224,8 @@ var Protocol = class {
       }
       return;
     }
-    const handler = this._responseHandlers.get(messageId);
-    if (handler === void 0) {
+    const handler2 = this._responseHandlers.get(messageId);
+    if (handler2 === void 0) {
       this._onerror(new Error(`Received a response for an unknown message ID: ${JSON.stringify(response)}`));
       return;
     }
@@ -17740,10 +18246,10 @@ var Protocol = class {
       this._progressHandlers.delete(messageId);
     }
     if (isJSONRPCResultResponse(response)) {
-      handler(response);
+      handler2(response);
     } else {
       const error2 = McpError.fromError(response.error.code, response.error.message, response.error.data);
-      handler(error2);
+      handler2(error2);
     }
   }
   get transport() {
@@ -17941,9 +18447,9 @@ var Protocol = class {
       const relatedTaskId = relatedTask?.taskId;
       if (relatedTaskId) {
         const responseResolver = (response) => {
-          const handler = this._responseHandlers.get(messageId);
-          if (handler) {
-            handler(response);
+          const handler2 = this._responseHandlers.get(messageId);
+          if (handler2) {
+            handler2(response);
           } else {
             this._onerror(new Error(`Response handler missing for side-channeled request ${messageId}`));
           }
@@ -18080,12 +18586,12 @@ var Protocol = class {
    *
    * Note that this will replace any previous request handler for the same method.
    */
-  setRequestHandler(requestSchema, handler) {
+  setRequestHandler(requestSchema, handler2) {
     const method = getMethodLiteral(requestSchema);
     this.assertRequestHandlerCapability(method);
     this._requestHandlers.set(method, (request, extra) => {
       const parsed = parseWithCompat(requestSchema, request);
-      return Promise.resolve(handler(parsed, extra));
+      return Promise.resolve(handler2(parsed, extra));
     });
   }
   /**
@@ -18107,11 +18613,11 @@ var Protocol = class {
    *
    * Note that this will replace any previous notification handler for the same method.
    */
-  setNotificationHandler(notificationSchema, handler) {
+  setNotificationHandler(notificationSchema, handler2) {
     const method = getMethodLiteral(notificationSchema);
     this._notificationHandlers.set(method, (notification) => {
       const parsed = parseWithCompat(notificationSchema, notification);
-      return Promise.resolve(handler(parsed));
+      return Promise.resolve(handler2(parsed));
     });
   }
   /**
@@ -18661,7 +19167,7 @@ var Server = class extends Protocol {
   /**
    * Override request handler registration to enforce server-side validation for tools/call.
    */
-  setRequestHandler(requestSchema, handler) {
+  setRequestHandler(requestSchema, handler2) {
     const shape = getObjectShape(requestSchema);
     const methodSchema = shape?.method;
     if (!methodSchema) {
@@ -18689,7 +19195,7 @@ var Server = class extends Protocol {
           throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${errorMessage}`);
         }
         const { params } = validatedRequest.data;
-        const result = await Promise.resolve(handler(request, extra));
+        const result = await Promise.resolve(handler2(request, extra));
         if (params.task) {
           const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
           if (!taskValidationResult.success) {
@@ -18707,7 +19213,7 @@ var Server = class extends Protocol {
       };
       return super.setRequestHandler(requestSchema, wrappedHandler);
     }
-    return super.setRequestHandler(requestSchema, handler);
+    return super.setRequestHandler(requestSchema, handler2);
   }
   assertCapabilityForMethod(method) {
     switch (method) {
@@ -19072,491 +19578,6 @@ var StdioServerTransport = class {
     });
   }
 };
-
-// src/shared/errors.js
-var ERROR_CODES = Object.freeze([
-  "invalid_arguments",
-  "unknown_tool",
-  "not_found",
-  "ambiguous",
-  "archived",
-  "wrong_recipient",
-  "no_current_session",
-  "body_too_large",
-  "permission_denied",
-  "active_turn_conflict",
-  "codex_unavailable",
-  "claude_unavailable",
-  "upstream_error",
-  "unsupported",
-  "state_io_error",
-  "internal_error"
-]);
-var ERROR_CODE_SET = new Set(ERROR_CODES);
-function isErrorCode(code) {
-  return typeof code === "string" && ERROR_CODE_SET.has(
-    /** @type {AgentLinkErrorCode} */
-    code
-  );
-}
-var AgentLinkError = class extends Error {
-  /**
-   * @param {AgentLinkErrorCode} code
-   * @param {string} message
-   * @param {AgentLinkErrorOptions} [options]
-   */
-  constructor(code, message, { details = null, hint = null, cause } = {}) {
-    super(message, cause === void 0 ? void 0 : { cause });
-    if (!isErrorCode(code)) {
-      throw new TypeError(`Unknown Agent Link error code: ${String(code)}`);
-    }
-    this.name = "AgentLinkError";
-    this.errorCode = code;
-    this.code = code;
-    this.details = details;
-    this.hint = hint;
-  }
-};
-function toErrorPayload(error2) {
-  if (error2 instanceof AgentLinkError && isErrorCode(error2.errorCode)) {
-    const payload = { code: error2.errorCode, message: error2.message };
-    const details = (
-      /** @type {{envelopeDetails?: Record<string, unknown>}} */
-      error2.envelopeDetails ?? error2.details
-    );
-    if (details && Object.keys(details).length > 0) payload.details = details;
-    if (error2.hint) payload.hint = error2.hint;
-    return payload;
-  }
-  const cause = error2 instanceof Error ? error2.constructor?.name || "Error" : typeof error2;
-  return {
-    code: "internal_error",
-    message: "Agent Link hit an internal error.",
-    details: { cause }
-  };
-}
-
-// src/shared/log.js
-import fs2 from "node:fs";
-import path3 from "node:path";
-
-// src/shared/env.js
-var ENV_ALIASES = Object.freeze({
-  AGENT_LINK_HOST: [],
-  AGENT_LINK_STATE_DIR: [],
-  AGENT_LINK_CODEX_URL: ["CODEX_AGENT_LINK_URL", "CODEX_APP_SERVER_URL"],
-  AGENT_LINK_CODEX_SOCK: ["CODEX_AGENT_LINK_SOCK", "CODEX_APP_SERVER_SOCK"],
-  AGENT_LINK_CODEX_AUTOSTART: ["CODEX_AGENT_LINK_AUTOSTART"],
-  AGENT_LINK_CODEX_BIN: ["CODEX_AGENT_LINK_CODEX_BIN", "CODEX_BIN"],
-  AGENT_LINK_CODEX_APP_SERVER_BIN: ["CODEX_AGENT_LINK_APP_SERVER_BIN", "CODEX_APP_SERVER_BIN"],
-  AGENT_LINK_CODEX_TRANSPORT: ["CODEX_AGENT_LINK_APP_SERVER_TRANSPORT"],
-  AGENT_LINK_CODEX_IDLE_MS: ["CODEX_AGENT_LINK_APP_SERVER_IDLE_MS"],
-  AGENT_LINK_CODEX_STARTUP_TIMEOUT_MS: ["CODEX_AGENT_LINK_APP_SERVER_STARTUP_MS"],
-  AGENT_LINK_MANAGED_DIR: ["CODEX_AGENT_LINK_STATE_DIR"],
-  AGENT_LINK_RECEIPT_LOG: ["CODEX_AGENT_LINK_RECEIPT_LOG", "CLAUDE_AGENT_LINK_RECEIPT_LOG"],
-  AGENT_LINK_INFER_RECEIPT_ORIGIN: ["CODEX_AGENT_LINK_INFER_RECEIPT_ORIGIN"],
-  AGENT_LINK_MAILBOX_PATH: [],
-  AGENT_LINK_MAILBOX_DB: [],
-  AGENT_LINK_DISABLE_CHANNEL: [],
-  AGENT_LINK_INSPECT_ALL: [],
-  AGENT_LINK_DEBUG: [],
-  AGENT_LINK_LOG_LEVEL: [],
-  AGENT_LINK_LOG_FILE: [],
-  AGENT_LINK_GUI_OPEN_DRY_RUN: ["CODEX_AGENT_LINK_GUI_OPEN_DRY_RUN"]
-});
-var HOST_PROVIDED_ENV = Object.freeze([
-  "HOME",
-  "CODEX_HOME",
-  "CODEX_THREAD_ID",
-  "CODEX_TURN_ID",
-  "CLAUDE_SESSION_ID",
-  "CLAUDE_CODE_SESSION_ID",
-  "CLAUDE_PROJECT_DIR",
-  "CLAUDE_PLUGIN_ROOT",
-  "CLAUDE_CONFIG_DIR"
-]);
-var HOST_PROVIDED_SET = new Set(HOST_PROVIDED_ENV);
-function present(value) {
-  return value !== void 0 && value !== "";
-}
-function env(name, source = process.env) {
-  if (HOST_PROVIDED_SET.has(name)) {
-    const value = source[name];
-    return present(value) ? { value, source: name } : { value: void 0, source: null };
-  }
-  const aliases = ENV_ALIASES[name];
-  if (!aliases) {
-    throw new TypeError(`Unknown Agent Link environment variable: ${name}`);
-  }
-  for (const candidate of [name, ...aliases]) {
-    const value = source[candidate];
-    if (present(value)) {
-      return { value, source: candidate };
-    }
-  }
-  return { value: void 0, source: null };
-}
-function envValue(name, fallback = void 0, source = process.env) {
-  return env(name, source).value ?? fallback;
-}
-function envFlag(name, fallback, source = process.env) {
-  const raw = env(name, source).value;
-  if (raw === void 0) return fallback;
-  const text = raw.trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(text)) return true;
-  if (["0", "false", "no", "off"].includes(text)) return false;
-  return fallback;
-}
-function envReport(source = process.env) {
-  const report = { deprecated: [], conflicts: [] };
-  for (const [canonical, aliases] of Object.entries(ENV_ALIASES)) {
-    const resolved = env(canonical, source);
-    if (resolved.source && resolved.source !== canonical) {
-      report.deprecated.push({ name: resolved.source, canonical });
-    }
-    for (const alias of aliases) {
-      const value = source[alias];
-      if (present(value) && resolved.source !== alias && value !== resolved.value) {
-        report.conflicts.push({ canonical, winner: (
-          /** @type {string} */
-          resolved.source
-        ), ignored: alias });
-      }
-    }
-  }
-  return report;
-}
-
-// src/shared/jsonl.js
-import fsp from "node:fs/promises";
-import path from "node:path";
-var FILE_MODE = 384;
-var DIR_MODE = 448;
-function parseJsonlLines(raw) {
-  const records = [];
-  for (const line of String(raw ?? "").split("\n")) {
-    if (!line.trim()) {
-      continue;
-    }
-    try {
-      records.push(JSON.parse(line));
-    } catch {
-    }
-  }
-  return records;
-}
-function toJsonl(records) {
-  return records.map((record2) => `${JSON.stringify(record2)}
-`).join("");
-}
-async function appendJsonl(filePath, records) {
-  const text = toJsonl(Array.isArray(records) ? records : [records]);
-  await fsp.mkdir(path.dirname(filePath), { recursive: true, mode: DIR_MODE });
-  await fsp.appendFile(filePath, text, { encoding: "utf8", mode: FILE_MODE });
-}
-
-// src/shared/paths.js
-import os from "node:os";
-import path2 from "node:path";
-var AGENT_LINK_PATH_SETTINGS = /* @__PURE__ */ new Set([
-  "AGENT_LINK_STATE_DIR",
-  "AGENT_LINK_MAILBOX_PATH",
-  "AGENT_LINK_MAILBOX_DB",
-  "AGENT_LINK_RECEIPT_LOG",
-  "AGENT_LINK_MANAGED_DIR",
-  "AGENT_LINK_LOG_FILE"
-]);
-function resolveOptions(options = {}) {
-  return {
-    source: options.env ?? process.env,
-    home: options.homedir ?? os.homedir()
-  };
-}
-function expandHome(value, home) {
-  if (value === "~") return home;
-  if (value.startsWith("~/")) return path2.join(home, value.slice(2));
-  return path2.isAbsolute(value) ? path2.normalize(value) : null;
-}
-var PathConfigError = class extends AgentLinkError {
-  /**
-   * @param {string} variable
-   * @param {string} value
-   */
-  constructor(variable, value) {
-    super(
-      "state_io_error",
-      `${variable} must be an absolute path or start with ~/ (got the relative path ${JSON.stringify(value)}). The Claude hook and the MCP server run from different working directories, so a relative path would name two different files.`,
-      {
-        details: { variable, value },
-        hint: `Set ${variable} to an absolute path, or unset it to use the default under ~/.agent-link.`
-      }
-    );
-    this.name = "PathConfigError";
-  }
-};
-function configuredPath(name, options) {
-  const { source, home } = resolveOptions(options);
-  const found = env(name, source);
-  const value = found.value?.trim();
-  if (!value) return null;
-  const expanded = expandHome(value, home);
-  if (expanded) return expanded;
-  if (AGENT_LINK_PATH_SETTINGS.has(name)) {
-    throw new PathConfigError(
-      /** @type {string} */
-      found.source,
-      value
-    );
-  }
-  return path2.resolve(value);
-}
-function isConfigured(name, options = {}) {
-  return Boolean(env(name, resolveOptions(options).source).value?.trim());
-}
-function stateDir(options = {}) {
-  return configuredPath("AGENT_LINK_STATE_DIR", options) ?? path2.join(resolveOptions(options).home, ".agent-link");
-}
-function claudeConfigDir(options = {}) {
-  return configuredPath("CLAUDE_CONFIG_DIR", options) ?? path2.join(resolveOptions(options).home, ".claude");
-}
-function codexHome(options = {}) {
-  return configuredPath("CODEX_HOME", options) ?? path2.join(resolveOptions(options).home, ".codex");
-}
-function mailboxPath(options = {}) {
-  const explicit = configuredPath("AGENT_LINK_MAILBOX_PATH", options);
-  if (explicit) return explicit;
-  const legacyDb = configuredPath("AGENT_LINK_MAILBOX_DB", options);
-  if (legacyDb) return sqliteToJsonl(legacyDb);
-  return path2.join(stateDir(options), "mailbox.jsonl");
-}
-function mailboxDbPath(options = {}) {
-  return configuredPath("AGENT_LINK_MAILBOX_DB", options);
-}
-function sqliteToJsonl(file) {
-  return file.endsWith(".sqlite") ? `${file.slice(0, -".sqlite".length)}.jsonl` : file;
-}
-function receiptLogPath(options = {}) {
-  return configuredPath("AGENT_LINK_RECEIPT_LOG", options) ?? path2.join(stateDir(options), "receipts.jsonl");
-}
-function managedAppServerDir(options = {}) {
-  return configuredPath("AGENT_LINK_MANAGED_DIR", options) ?? path2.join(stateDir(options), "managed-app-servers");
-}
-function logDir(options = {}) {
-  return path2.join(stateDir(options), "logs");
-}
-function logFilePath(options = {}) {
-  return configuredPath("AGENT_LINK_LOG_FILE", options) ?? path2.join(logDir(options), "agent-link.log");
-}
-function migrationRecordPath(options = {}) {
-  return path2.join(stateDir(options), "migration.json");
-}
-function legacyPaths(options = {}) {
-  const { home } = resolveOptions(options);
-  const legacyClaudeDir = path2.join(home, ".claude", "agent-link");
-  return {
-    mailbox: path2.join(legacyClaudeDir, "mailbox.jsonl"),
-    mailboxDb: path2.join(legacyClaudeDir, "mailbox.sqlite"),
-    receipts: path2.join(codexHome(options), "agent-link-receipts.jsonl"),
-    managedAppServers: path2.join(legacyClaudeDir, "managed-app-servers")
-  };
-}
-function legacyClaudeStateDir(options = {}) {
-  return path2.join(claudeConfigDir(options), "agent-link");
-}
-function legacyMailboxPaths(options = {}) {
-  if (isConfigured("AGENT_LINK_MAILBOX_PATH", options) || isConfigured("AGENT_LINK_MAILBOX_DB", options)) return [];
-  return without(unique([
-    legacyPaths(options).mailbox,
-    path2.join(legacyClaudeStateDir(options), "mailbox.jsonl")
-  ]), mailboxPath(options));
-}
-function legacyReceiptPaths(options = {}) {
-  if (isConfigured("AGENT_LINK_RECEIPT_LOG", options)) return [];
-  return without([path2.resolve(legacyPaths(options).receipts)], receiptLogPath(options));
-}
-function legacyManagedAppServerDirs(options = {}) {
-  if (isConfigured("AGENT_LINK_MANAGED_DIR", options)) return [];
-  return without(unique([
-    legacyPaths(options).managedAppServers,
-    path2.join(legacyClaudeStateDir(options), "managed-app-servers")
-  ]), managedAppServerDir(options));
-}
-function unique(paths) {
-  return [...new Set(paths.map((p) => path2.resolve(p)))];
-}
-function without(paths, current) {
-  const resolved = path2.resolve(current);
-  return paths.filter((p) => p !== resolved);
-}
-
-// src/shared/state.js
-import fs from "node:fs";
-function pluginVersion() {
-  if (true) return "0.4.0";
-  try {
-    const pkg = JSON.parse(fs.readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
-    return typeof pkg.version === "string" ? pkg.version : null;
-  } catch {
-    return null;
-  }
-}
-function tightenMode(target, mode) {
-  try {
-    const stat = fs.statSync(target);
-    const uid = typeof process.getuid === "function" ? process.getuid() : null;
-    if (uid !== null && stat.uid !== uid) return;
-    if ((stat.mode & 511 & ~mode) !== 0) fs.chmodSync(target, mode);
-  } catch {
-  }
-}
-function ensureStateDir(options = {}) {
-  const dir = stateDir(options);
-  fs.mkdirSync(dir, { recursive: true, mode: DIR_MODE });
-  tightenMode(dir, DIR_MODE);
-  writeMigrationRecord(options);
-  return dir;
-}
-function writeMigrationRecord(options) {
-  const file = migrationRecordPath(options);
-  if (fs.existsSync(file)) return;
-  const from = [
-    ...legacyMailboxPaths(options),
-    ...legacyReceiptPaths(options),
-    ...legacyManagedAppServerDirs(options)
-  ].filter((candidate) => fs.existsSync(candidate));
-  const record2 = { from, at: (/* @__PURE__ */ new Date()).toISOString(), version: pluginVersion() };
-  try {
-    fs.writeFileSync(file, `${JSON.stringify(record2, null, 2)}
-`, { encoding: "utf8", mode: FILE_MODE, flag: "wx" });
-  } catch {
-  }
-}
-
-// src/shared/log.js
-var LOG_LEVELS = Object.freeze({ error: 0, warn: 1, info: 2, debug: 3 });
-var DEFAULT_RING_SIZE = 200;
-var DEFAULT_MAX_FILE_BYTES = 5 * 1024 * 1024;
-var MAX_STRING_FIELD = 4e3;
-function isLevel(value) {
-  return typeof value === "string" && Object.prototype.hasOwnProperty.call(LOG_LEVELS, value);
-}
-function resolveLogLevel(source = process.env) {
-  const configured = env("AGENT_LINK_LOG_LEVEL", source).value?.trim().toLowerCase();
-  if (isLevel(configured)) return configured;
-  return envFlag("AGENT_LINK_DEBUG", false, source) ? "debug" : "warn";
-}
-function cleanFields(fields) {
-  if (!fields) return void 0;
-  const out2 = {};
-  for (const [key, value] of Object.entries(fields)) {
-    if (value === void 0) continue;
-    if (value instanceof Error) {
-      const code = (
-        /** @type {{code?: unknown}} */
-        value.code
-      );
-      out2[key] = { name: value.name, message: value.message, ...code !== void 0 ? { code } : {} };
-    } else if (typeof value === "string" && value.length > MAX_STRING_FIELD) {
-      out2[key] = `${value.slice(0, MAX_STRING_FIELD)}...`;
-    } else {
-      out2[key] = value;
-    }
-  }
-  return out2;
-}
-function createLogger(options = {}) {
-  const source = options.env ?? process.env;
-  const stderr = options.stderr ?? process.stderr;
-  const clock = options.clock ?? (() => /* @__PURE__ */ new Date());
-  const ringSize = options.ringSize ?? DEFAULT_RING_SIZE;
-  const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
-  const level = resolveLogLevel(source);
-  const threshold = LOG_LEVELS[level];
-  const fileWanted = Boolean(env("AGENT_LINK_LOG_FILE", source).value) || level === "debug";
-  let filePath = null;
-  if (fileWanted) {
-    try {
-      filePath = logFilePath({ env: source, homedir: options.homedir });
-    } catch (error2) {
-      try {
-        stderr.write(`agent-link: [warn] log.file_disabled ${JSON.stringify({ error: (
-          /** @type {Error} */
-          error2.message
-        ) })}
-`);
-      } catch {
-      }
-    }
-  }
-  let fileChecked = false;
-  const ring = [];
-  function writeFile(line) {
-    if (!filePath) return;
-    try {
-      fs2.mkdirSync(path3.dirname(filePath), { recursive: true, mode: DIR_MODE });
-      if (!fileChecked) {
-        fileChecked = true;
-        tightenMode(filePath, FILE_MODE);
-      }
-      let size = 0;
-      try {
-        size = fs2.statSync(filePath).size;
-      } catch {
-      }
-      if (size > 0 && size + Buffer.byteLength(line) > maxFileBytes) {
-        fs2.renameSync(filePath, `${filePath}.1`);
-      }
-      fs2.appendFileSync(filePath, line, { encoding: "utf8", mode: FILE_MODE });
-    } catch (error2) {
-      const failed = filePath;
-      filePath = null;
-      try {
-        stderr.write(`agent-link: [warn] log.file_disabled ${JSON.stringify({ path: failed, error: (
-          /** @type {Error} */
-          error2.message
-        ) })}
-`);
-      } catch {
-      }
-    }
-  }
-  function log(eventLevel, event, fields) {
-    const rank = LOG_LEVELS[eventLevel];
-    const shown = rank <= threshold;
-    if (!shown && rank > LOG_LEVELS.info) return;
-    const entry = { at: clock().toISOString(), level: eventLevel, event };
-    const cleaned = cleanFields(fields);
-    if (cleaned && Object.keys(cleaned).length > 0) entry.fields = cleaned;
-    ring.push(entry);
-    if (ring.length > ringSize) ring.splice(0, ring.length - ringSize);
-    if (!shown) return;
-    try {
-      stderr.write(`agent-link: [${eventLevel}] ${event}${entry.fields ? ` ${JSON.stringify(entry.fields)}` : ""}
-`);
-    } catch {
-    }
-    writeFile(`${JSON.stringify(entry)}
-`);
-  }
-  return {
-    level,
-    get filePath() {
-      return filePath;
-    },
-    enabled: (eventLevel) => LOG_LEVELS[eventLevel] <= threshold,
-    log,
-    error: (event, fields) => log("error", event, fields),
-    warn: (event, fields) => log("warn", event, fields),
-    info: (event, fields) => log("info", event, fields),
-    debug: (event, fields) => log("debug", event, fields),
-    recentEvents: (limit2 = ringSize) => (limit2 > 0 ? ring.slice(-limit2) : []).map((entry) => ({ ...entry }))
-  };
-}
-var shared = null;
-function getLogger() {
-  shared ??= createLogger();
-  return shared;
-}
 
 // src/server/validate.js
 function typeOf(value) {
@@ -27042,15 +27063,14 @@ function shutdown(exitCode) {
   });
   return shutdownPromise;
 }
-function fatal(event, error2) {
+function fatal2(event, error2) {
   getLogger().error(event, {
     error: error2 instanceof Error ? error2 : String(error2),
     stack: error2 instanceof Error ? error2.stack : void 0
   });
   shutdown(1);
 }
-process.on("unhandledRejection", (reason) => fatal("process.unhandled_rejection", reason));
-process.on("uncaughtException", (error2) => fatal("process.uncaught_exception", error2));
+setFatalHandler(fatal2);
 var LOCAL_SEARCH_SCAN_LIMIT = 300;
 var claudeDeps = { host: HOST_INFO.host, resolveCurrentSession: currentClaudeSession };
 var registry2 = createRegistry([
