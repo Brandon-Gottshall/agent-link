@@ -1,7 +1,17 @@
 {
   "name": "agent-link",
   "version": "0.4.0",
-  "description": "Cross-host Agent Link MCP plugin for Codex threads and Claude sessions.",
+  "description": "Cross-host agent link: inspect, resolve, message, and audit Codex threads plus Claude Desktop and Claude Code sessions.",
+  "license": "MIT",
+  "author": "Brandon Gottshall",
+  "homepage": "https://github.com/Brandon-Gottshall/agent-link",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Brandon-Gottshall/agent-link.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Brandon-Gottshall/agent-link/issues"
+  },
   "private": true,
   "type": "module",
   "scripts": {

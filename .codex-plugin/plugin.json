@@ -3,7 +3,8 @@
   "version": "0.4.0",
   "description": "Cross-host agent link: inspect, resolve, message, and audit Codex threads plus Claude Desktop and Claude Code sessions.",
   "author": {
-    "name": "Brandon"
+    "name": "Brandon Gottshall",
+    "url": "https://github.com/Brandon-Gottshall"
   },
   "homepage": "https://github.com/Brandon-Gottshall/agent-link",
   "repository": "https://github.com/Brandon-Gottshall/agent-link",
@@ -23,16 +24,14 @@
     "displayName": "Agent Link",
     "shortDescription": "Inspect, resolve, message, and audit Codex and Claude sessions",
     "longDescription": "Agent Link gives agents one MCP surface for cross-host coordination. It lists, resolves, messages, and audits Codex threads plus Claude Desktop and Claude Code sessions. Claude delivery uses a pure-JS JSONL mailbox, Desktop hook/inbox visibility, and Claude Code Channel events when enabled. Both hosts share one receipt log at $CODEX_HOME/agent-link-receipts.jsonl. Cross-host messaging is first-class.",
-    "developerName": "Brandon",
-    "category": "Engineering",
+    "developerName": "Brandon Gottshall",
+    "category": "Developer Tools",
     "capabilities": [
       "Interactive",
       "Read",
       "Write"
     ],
     "websiteURL": "https://github.com/Brandon-Gottshall/agent-link",
-    "privacyPolicyURL": "https://openai.com/policies/row-privacy-policy/",
-    "termsOfServiceURL": "https://openai.com/policies/row-terms-of-use/",
     "defaultPrompt": [
       "List recent Codex threads and Claude sessions",
       "Resolve a session by title",

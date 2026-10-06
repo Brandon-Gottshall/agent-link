@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Manifests: removed `privacyPolicyURL` and `termsOfServiceURL` from the Codex manifest. They pointed at OpenAI's own policies, and Codex treats both as optional.
+- Manifests: author is "Brandon Gottshall" with a GitHub URL in both host manifests, and the Codex `developerName` matches.
+- Manifests: the Codex manifest and Codex marketplace entry both use the category `Developer Tools`, the value Codex's curated catalog uses. The Claude marketplace keeps `development`.
+- Removed `.plugin/plugin.json`. No host read it, and its generator was not part of this repo. The host manifests are now edited directly, and `tests/manifest.test.js` keeps them, the marketplace files, and `package.json` consistent: version, name mapping (`agent-link`, Codex alias `codex-agent-link`), description, author, homepage, repository, license, the `dist/server.mjs` launch path, and hook targets. `check:approval-config` no longer looks for the removed file.
+- `package.json` now declares `license`, `author`, `homepage`, `repository`, and `bugs`, and its description matches the manifests.
+
 ## 0.4.0 - 2026-10-06 Routing, Codex correctness, and hardening
 
 Breaking for some callers: `agent_link_mailbox_inspect` returns only the caller's mail unless `scope:"all"`; `wait_for_claude_session` matches only mail addressed to the caller; `replyToMessageId` must reference mail addressed to the caller; peers can no longer silently change another thread's cwd/model/effort without `allowTargetOverride:true`.

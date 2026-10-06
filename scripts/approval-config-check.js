@@ -77,8 +77,7 @@ function hasSetting(sectionName, key, expectedValue) {
 
 function validatePluginEnvelope(root) {
   const manifestPaths = [
-    ".codex-plugin/plugin.json",
-    ".plugin/plugin.json"
+    ".codex-plugin/plugin.json"
   ];
   const problems = [];
 
