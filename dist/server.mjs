@@ -6885,12 +6885,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs9, exportName) {
+    function addFormats(ajv, list, fs10, exportName) {
       var _a3;
       var _b;
       (_a3 = (_b = ajv.opts.code).formats) !== null && _a3 !== void 0 ? _a3 : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs9[f]);
+        ajv.addFormat(f, fs10[f]);
     }
     module.exports = exports = formatsPlugin;
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -19098,6 +19098,76 @@ import { spawnSync } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+
+// src/shared/env.js
+var ENV_ALIASES = Object.freeze({
+  AGENT_LINK_HOST: [],
+  AGENT_LINK_STATE_DIR: [],
+  AGENT_LINK_CODEX_URL: ["CODEX_AGENT_LINK_URL", "CODEX_APP_SERVER_URL"],
+  AGENT_LINK_CODEX_SOCK: ["CODEX_AGENT_LINK_SOCK", "CODEX_APP_SERVER_SOCK"],
+  AGENT_LINK_CODEX_AUTOSTART: ["CODEX_AGENT_LINK_AUTOSTART"],
+  AGENT_LINK_CODEX_BIN: ["CODEX_AGENT_LINK_CODEX_BIN", "CODEX_BIN"],
+  AGENT_LINK_CODEX_APP_SERVER_BIN: ["CODEX_AGENT_LINK_APP_SERVER_BIN", "CODEX_APP_SERVER_BIN"],
+  AGENT_LINK_CODEX_TRANSPORT: ["CODEX_AGENT_LINK_APP_SERVER_TRANSPORT"],
+  AGENT_LINK_CODEX_IDLE_MS: ["CODEX_AGENT_LINK_APP_SERVER_IDLE_MS"],
+  AGENT_LINK_CODEX_STARTUP_TIMEOUT_MS: ["CODEX_AGENT_LINK_APP_SERVER_STARTUP_MS"],
+  AGENT_LINK_MANAGED_DIR: ["CODEX_AGENT_LINK_STATE_DIR"],
+  AGENT_LINK_RECEIPT_LOG: ["CODEX_AGENT_LINK_RECEIPT_LOG", "CLAUDE_AGENT_LINK_RECEIPT_LOG"],
+  AGENT_LINK_INFER_RECEIPT_ORIGIN: ["CODEX_AGENT_LINK_INFER_RECEIPT_ORIGIN"],
+  AGENT_LINK_MAILBOX_PATH: [],
+  AGENT_LINK_MAILBOX_DB: [],
+  AGENT_LINK_DISABLE_CHANNEL: [],
+  AGENT_LINK_INSPECT_ALL: [],
+  AGENT_LINK_DEBUG: [],
+  AGENT_LINK_LOG_LEVEL: [],
+  AGENT_LINK_LOG_FILE: [],
+  AGENT_LINK_GUI_OPEN_DRY_RUN: ["CODEX_AGENT_LINK_GUI_OPEN_DRY_RUN"]
+});
+var HOST_PROVIDED_ENV = Object.freeze([
+  "HOME",
+  "CODEX_HOME",
+  "CODEX_THREAD_ID",
+  "CODEX_TURN_ID",
+  "CLAUDE_SESSION_ID",
+  "CLAUDE_CODE_SESSION_ID",
+  "CLAUDE_PROJECT_DIR",
+  "CLAUDE_PLUGIN_ROOT",
+  "CLAUDE_CONFIG_DIR"
+]);
+var HOST_PROVIDED_SET = new Set(HOST_PROVIDED_ENV);
+function present(value) {
+  return value !== void 0 && value !== "";
+}
+function env(name, source = process.env) {
+  if (HOST_PROVIDED_SET.has(name)) {
+    const value = source[name];
+    return present(value) ? { value, source: name } : { value: void 0, source: null };
+  }
+  const aliases = ENV_ALIASES[name];
+  if (!aliases) {
+    throw new TypeError(`Unknown Agent Link environment variable: ${name}`);
+  }
+  for (const candidate of [name, ...aliases]) {
+    const value = source[candidate];
+    if (present(value)) {
+      return { value, source: candidate };
+    }
+  }
+  return { value: void 0, source: null };
+}
+function envValue(name, fallback = void 0, source = process.env) {
+  return env(name, source).value ?? fallback;
+}
+function envFlag(name, fallback, source = process.env) {
+  const raw = env(name, source).value;
+  if (raw === void 0) return fallback;
+  const text = raw.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(text)) return true;
+  if (["0", "false", "no", "off"].includes(text)) return false;
+  return fallback;
+}
+
+// src/codex/install-layout.js
 var APP_BUNDLES = [
   {
     app: "ChatGPT.app",
@@ -19119,7 +19189,7 @@ function codexInstallLayout(options = {}) {
   return {
     platform,
     executable,
-    envVars: ["CODEX_AGENT_LINK_CODEX_BIN", "CODEX_BIN"],
+    envVars: ["AGENT_LINK_CODEX_BIN", ...ENV_ALIASES.AGENT_LINK_CODEX_BIN],
     appBundles: applicationDirs.flatMap((dir) => APP_BUNDLES.map((bundle) => ({
       app: bundle.app,
       appPath: path.join(dir, bundle.app),
@@ -19281,65 +19351,8 @@ var AgentLinkError = class extends Error {
 };
 
 // src/shared/log.js
-import fs from "node:fs";
+import fs2 from "node:fs";
 import path4 from "node:path";
-
-// src/shared/env.js
-var ENV_ALIASES = Object.freeze({
-  AGENT_LINK_HOST: [],
-  AGENT_LINK_STATE_DIR: [],
-  AGENT_LINK_CODEX_URL: ["CODEX_AGENT_LINK_URL", "CODEX_APP_SERVER_URL"],
-  AGENT_LINK_CODEX_SOCK: ["CODEX_AGENT_LINK_SOCK", "CODEX_APP_SERVER_SOCK"],
-  AGENT_LINK_CODEX_AUTOSTART: ["CODEX_AGENT_LINK_AUTOSTART"],
-  AGENT_LINK_CODEX_BIN: ["CODEX_AGENT_LINK_CODEX_BIN", "CODEX_BIN"],
-  AGENT_LINK_CODEX_APP_SERVER_BIN: ["CODEX_AGENT_LINK_APP_SERVER_BIN", "CODEX_APP_SERVER_BIN"],
-  AGENT_LINK_CODEX_TRANSPORT: ["CODEX_AGENT_LINK_APP_SERVER_TRANSPORT"],
-  AGENT_LINK_CODEX_IDLE_MS: ["CODEX_AGENT_LINK_APP_SERVER_IDLE_MS"],
-  AGENT_LINK_CODEX_STARTUP_TIMEOUT_MS: ["CODEX_AGENT_LINK_APP_SERVER_STARTUP_MS"],
-  AGENT_LINK_MANAGED_DIR: ["CODEX_AGENT_LINK_STATE_DIR"],
-  AGENT_LINK_RECEIPT_LOG: ["CODEX_AGENT_LINK_RECEIPT_LOG", "CLAUDE_AGENT_LINK_RECEIPT_LOG"],
-  AGENT_LINK_INFER_RECEIPT_ORIGIN: ["CODEX_AGENT_LINK_INFER_RECEIPT_ORIGIN"],
-  AGENT_LINK_MAILBOX_PATH: [],
-  AGENT_LINK_MAILBOX_DB: [],
-  AGENT_LINK_DISABLE_CHANNEL: [],
-  AGENT_LINK_INSPECT_ALL: [],
-  AGENT_LINK_DEBUG: [],
-  AGENT_LINK_LOG_LEVEL: [],
-  AGENT_LINK_LOG_FILE: [],
-  AGENT_LINK_GUI_OPEN_DRY_RUN: ["CODEX_AGENT_LINK_GUI_OPEN_DRY_RUN"]
-});
-var HOST_PROVIDED_ENV = Object.freeze([
-  "HOME",
-  "CODEX_HOME",
-  "CODEX_THREAD_ID",
-  "CODEX_TURN_ID",
-  "CLAUDE_SESSION_ID",
-  "CLAUDE_CODE_SESSION_ID",
-  "CLAUDE_PROJECT_DIR",
-  "CLAUDE_PLUGIN_ROOT",
-  "CLAUDE_CONFIG_DIR"
-]);
-var HOST_PROVIDED_SET = new Set(HOST_PROVIDED_ENV);
-function present(value) {
-  return value !== void 0 && value !== "";
-}
-function env(name, source = process.env) {
-  if (HOST_PROVIDED_SET.has(name)) {
-    const value = source[name];
-    return present(value) ? { value, source: name } : { value: void 0, source: null };
-  }
-  const aliases = ENV_ALIASES[name];
-  if (!aliases) {
-    throw new TypeError(`Unknown Agent Link environment variable: ${name}`);
-  }
-  for (const candidate of [name, ...aliases]) {
-    const value = source[candidate];
-    if (present(value)) {
-      return { value, source: candidate };
-    }
-  }
-  return { value: void 0, source: null };
-}
 
 // src/shared/jsonl.js
 import fsp from "node:fs/promises";
@@ -19372,6 +19385,14 @@ async function appendJsonl(filePath, records) {
 // src/shared/paths.js
 import os2 from "node:os";
 import path3 from "node:path";
+var AGENT_LINK_PATH_SETTINGS = /* @__PURE__ */ new Set([
+  "AGENT_LINK_STATE_DIR",
+  "AGENT_LINK_MAILBOX_PATH",
+  "AGENT_LINK_MAILBOX_DB",
+  "AGENT_LINK_RECEIPT_LOG",
+  "AGENT_LINK_MANAGED_DIR",
+  "AGENT_LINK_LOG_FILE"
+]);
 function resolveOptions(options = {}) {
   return {
     source: options.env ?? process.env,
@@ -19381,21 +19402,153 @@ function resolveOptions(options = {}) {
 function expandHome(value, home) {
   if (value === "~") return home;
   if (value.startsWith("~/")) return path3.join(home, value.slice(2));
-  return path3.resolve(value);
+  return path3.isAbsolute(value) ? path3.normalize(value) : null;
 }
+var PathConfigError = class extends AgentLinkError {
+  /**
+   * @param {string} variable
+   * @param {string} value
+   */
+  constructor(variable, value) {
+    super(
+      "state_io_error",
+      `${variable} must be an absolute path or start with ~/ (got the relative path ${JSON.stringify(value)}). The Claude hook and the MCP server run from different working directories, so a relative path would name two different files.`,
+      {
+        details: { variable, value },
+        hint: `Set ${variable} to an absolute path, or unset it to use the default under ~/.agent-link.`
+      }
+    );
+    this.name = "PathConfigError";
+  }
+};
 function configuredPath(name, options) {
   const { source, home } = resolveOptions(options);
-  const value = env(name, source).value;
-  return value ? expandHome(value, home) : null;
+  const found = env(name, source);
+  const value = found.value?.trim();
+  if (!value) return null;
+  const expanded = expandHome(value, home);
+  if (expanded) return expanded;
+  if (AGENT_LINK_PATH_SETTINGS.has(name)) {
+    throw new PathConfigError(
+      /** @type {string} */
+      found.source,
+      value
+    );
+  }
+  return path3.resolve(value);
+}
+function isConfigured(name, options = {}) {
+  return Boolean(env(name, resolveOptions(options).source).value?.trim());
 }
 function stateDir(options = {}) {
   return configuredPath("AGENT_LINK_STATE_DIR", options) ?? path3.join(resolveOptions(options).home, ".agent-link");
+}
+function claudeConfigDir(options = {}) {
+  return configuredPath("CLAUDE_CONFIG_DIR", options) ?? path3.join(resolveOptions(options).home, ".claude");
+}
+function codexHome(options = {}) {
+  return configuredPath("CODEX_HOME", options) ?? path3.join(resolveOptions(options).home, ".codex");
+}
+function mailboxPath(options = {}) {
+  const explicit = configuredPath("AGENT_LINK_MAILBOX_PATH", options);
+  if (explicit) return explicit;
+  const legacyDb = configuredPath("AGENT_LINK_MAILBOX_DB", options);
+  if (legacyDb) return sqliteToJsonl(legacyDb);
+  return path3.join(stateDir(options), "mailbox.jsonl");
+}
+function mailboxDbPath(options = {}) {
+  return configuredPath("AGENT_LINK_MAILBOX_DB", options);
+}
+function sqliteToJsonl(file) {
+  return file.endsWith(".sqlite") ? `${file.slice(0, -".sqlite".length)}.jsonl` : file;
+}
+function receiptLogPath(options = {}) {
+  return configuredPath("AGENT_LINK_RECEIPT_LOG", options) ?? path3.join(stateDir(options), "receipts.jsonl");
+}
+function managedAppServerDir(options = {}) {
+  return configuredPath("AGENT_LINK_MANAGED_DIR", options) ?? path3.join(stateDir(options), "managed-app-servers");
 }
 function logDir(options = {}) {
   return path3.join(stateDir(options), "logs");
 }
 function logFilePath(options = {}) {
   return configuredPath("AGENT_LINK_LOG_FILE", options) ?? path3.join(logDir(options), "agent-link.log");
+}
+function migrationRecordPath(options = {}) {
+  return path3.join(stateDir(options), "migration.json");
+}
+function legacyPaths(options = {}) {
+  const { home } = resolveOptions(options);
+  const legacyClaudeDir = path3.join(home, ".claude", "agent-link");
+  return {
+    mailbox: path3.join(legacyClaudeDir, "mailbox.jsonl"),
+    mailboxDb: path3.join(legacyClaudeDir, "mailbox.sqlite"),
+    receipts: path3.join(codexHome(options), "agent-link-receipts.jsonl"),
+    managedAppServers: path3.join(legacyClaudeDir, "managed-app-servers")
+  };
+}
+function legacyClaudeStateDir(options = {}) {
+  return path3.join(claudeConfigDir(options), "agent-link");
+}
+function legacyMailboxPaths(options = {}) {
+  if (isConfigured("AGENT_LINK_MAILBOX_PATH", options) || isConfigured("AGENT_LINK_MAILBOX_DB", options)) return [];
+  return without(unique([
+    legacyPaths(options).mailbox,
+    path3.join(legacyClaudeStateDir(options), "mailbox.jsonl")
+  ]), mailboxPath(options));
+}
+function legacyReceiptPaths(options = {}) {
+  if (isConfigured("AGENT_LINK_RECEIPT_LOG", options)) return [];
+  return without([path3.resolve(legacyPaths(options).receipts)], receiptLogPath(options));
+}
+function legacyManagedAppServerDirs(options = {}) {
+  if (isConfigured("AGENT_LINK_MANAGED_DIR", options)) return [];
+  return without(unique([
+    legacyPaths(options).managedAppServers,
+    path3.join(legacyClaudeStateDir(options), "managed-app-servers")
+  ]), managedAppServerDir(options));
+}
+function unique(paths) {
+  return [...new Set(paths.map((p) => path3.resolve(p)))];
+}
+function without(paths, current) {
+  const resolved = path3.resolve(current);
+  return paths.filter((p) => p !== resolved);
+}
+
+// src/shared/state.js
+import fs from "node:fs";
+var VERSION = true ? "0.4.0" : null;
+function tightenMode(target, mode) {
+  try {
+    const stat = fs.statSync(target);
+    const uid = typeof process.getuid === "function" ? process.getuid() : null;
+    if (uid !== null && stat.uid !== uid) return;
+    if ((stat.mode & 511 & ~mode) !== 0) fs.chmodSync(target, mode);
+  } catch {
+  }
+}
+function ensureStateDir(options = {}) {
+  const dir = stateDir(options);
+  fs.mkdirSync(dir, { recursive: true, mode: DIR_MODE });
+  tightenMode(dir, DIR_MODE);
+  writeMigrationRecord(options);
+  return dir;
+}
+function writeMigrationRecord(options) {
+  const file = migrationRecordPath(options);
+  if (fs.existsSync(file)) return;
+  const from = [
+    ...legacyMailboxPaths(options),
+    ...legacyReceiptPaths(options),
+    ...legacyManagedAppServerDirs(options)
+  ].filter((candidate) => fs.existsSync(candidate));
+  const record2 = { from, at: (/* @__PURE__ */ new Date()).toISOString(), version: VERSION };
+  try {
+    fs.writeFileSync(file, `${JSON.stringify(record2, null, 2)}
+`, { encoding: "utf8", mode: FILE_MODE, flag: "wx" });
+  } catch {
+  }
 }
 
 // src/shared/log.js
@@ -19409,7 +19562,7 @@ function isLevel(value) {
 function resolveLogLevel(source = process.env) {
   const configured = env("AGENT_LINK_LOG_LEVEL", source).value?.trim().toLowerCase();
   if (isLevel(configured)) return configured;
-  return env("AGENT_LINK_DEBUG", source).value === "1" ? "debug" : "warn";
+  return envFlag("AGENT_LINK_DEBUG", false, source) ? "debug" : "warn";
 }
 function cleanFields(fields) {
   if (!fields) return void 0;
@@ -19439,21 +19592,40 @@ function createLogger(options = {}) {
   const level = resolveLogLevel(source);
   const threshold = LOG_LEVELS[level];
   const fileWanted = Boolean(env("AGENT_LINK_LOG_FILE", source).value) || level === "debug";
-  let filePath = fileWanted ? logFilePath({ env: source, homedir: options.homedir }) : null;
+  let filePath = null;
+  if (fileWanted) {
+    try {
+      filePath = logFilePath({ env: source, homedir: options.homedir });
+    } catch (error2) {
+      try {
+        stderr.write(`agent-link: [warn] log.file_disabled ${JSON.stringify({ error: (
+          /** @type {Error} */
+          error2.message
+        ) })}
+`);
+      } catch {
+      }
+    }
+  }
+  let fileChecked = false;
   const ring = [];
   function writeFile(line) {
     if (!filePath) return;
     try {
-      fs.mkdirSync(path4.dirname(filePath), { recursive: true, mode: DIR_MODE });
+      fs2.mkdirSync(path4.dirname(filePath), { recursive: true, mode: DIR_MODE });
+      if (!fileChecked) {
+        fileChecked = true;
+        tightenMode(filePath, FILE_MODE);
+      }
       let size = 0;
       try {
-        size = fs.statSync(filePath).size;
+        size = fs2.statSync(filePath).size;
       } catch {
       }
       if (size > 0 && size + Buffer.byteLength(line) > maxFileBytes) {
-        fs.renameSync(filePath, `${filePath}.1`);
+        fs2.renameSync(filePath, `${filePath}.1`);
       }
-      fs.appendFileSync(filePath, line, { encoding: "utf8", mode: FILE_MODE });
+      fs2.appendFileSync(filePath, line, { encoding: "utf8", mode: FILE_MODE });
     } catch (error2) {
       const failed = filePath;
       filePath = null;
@@ -19533,11 +19705,14 @@ var AppServerError = class extends AgentLinkError {
   }
 };
 function managedAppServerStateDir() {
-  return process.env.CODEX_AGENT_LINK_STATE_DIR || path5.join(os3.homedir(), ".claude", "agent-link", "managed-app-servers");
+  return managedAppServerDir();
+}
+function managedAppServerReapDirs() {
+  return [managedAppServerDir(), ...legacyManagedAppServerDirs()];
 }
 function envNonNegativeMs(name, fallback) {
-  const raw = process.env[name];
-  if (raw === void 0 || raw === "") {
+  const raw = envValue(name);
+  if (raw === void 0) {
     return fallback;
   }
   const parsed = Number(raw);
@@ -19548,7 +19723,7 @@ function envPositiveMs(name, fallback) {
   return value > 0 ? value : fallback;
 }
 function envTransport() {
-  const raw = process.env.CODEX_AGENT_LINK_APP_SERVER_TRANSPORT;
+  const raw = envValue("AGENT_LINK_CODEX_TRANSPORT");
   if (raw === "ws-token" || raw === "unix") {
     return raw;
   }
@@ -19558,9 +19733,9 @@ var CodexAppServerClient = class {
   constructor(options = {}) {
     this.options = {
       requestTimeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
-      startupTimeoutMs: envPositiveMs("CODEX_AGENT_LINK_APP_SERVER_STARTUP_MS", DEFAULT_STARTUP_TIMEOUT_MS),
-      autoStart: process.env.CODEX_AGENT_LINK_AUTOSTART !== "0",
-      idleTimeoutMs: envNonNegativeMs("CODEX_AGENT_LINK_APP_SERVER_IDLE_MS", DEFAULT_IDLE_TIMEOUT_MS),
+      startupTimeoutMs: envPositiveMs("AGENT_LINK_CODEX_STARTUP_TIMEOUT_MS", DEFAULT_STARTUP_TIMEOUT_MS),
+      autoStart: envFlag("AGENT_LINK_CODEX_AUTOSTART", true),
+      idleTimeoutMs: envNonNegativeMs("AGENT_LINK_CODEX_IDLE_MS", DEFAULT_IDLE_TIMEOUT_MS),
       killGraceMs: DEFAULT_KILL_GRACE_MS,
       startupFailureCacheMs: DEFAULT_STARTUP_FAILURE_CACHE_MS,
       transport: envTransport(),
@@ -19808,7 +19983,7 @@ var CodexAppServerClient = class {
     }
   }
   // Only an app-server Agent Link started itself is answered automatically.
-  // An explicitly configured endpoint (CODEX_AGENT_LINK_URL / _SOCK) may be a
+  // An explicitly configured endpoint (AGENT_LINK_CODEX_URL / _SOCK) may be a
   // Desktop or IDE app-server whose prompts belong to a human; those requests
   // are counted and left for that app-server's other clients.
   answerServerRequest(ws, message) {
@@ -19852,17 +20027,17 @@ var CodexAppServerClient = class {
     this.initialized = false;
   }
   async resolveTarget() {
-    const explicitUrl = process.env.CODEX_AGENT_LINK_URL || process.env.CODEX_APP_SERVER_URL;
+    const explicitUrl = envValue("AGENT_LINK_CODEX_URL");
     if (explicitUrl) {
       return { kind: "url", url: explicitUrl, managed: false };
     }
-    const explicitSocket = process.env.CODEX_AGENT_LINK_SOCK || process.env.CODEX_APP_SERVER_SOCK;
+    const explicitSocket = envValue("AGENT_LINK_CODEX_SOCK");
     if (explicitSocket) {
       return { kind: "socket", socketPath: path5.resolve(explicitSocket), managed: false };
     }
     if (!this.options.autoStart) {
       throw new AppServerError(
-        "No Codex app-server endpoint is configured. Set CODEX_AGENT_LINK_URL, CODEX_APP_SERVER_URL, CODEX_AGENT_LINK_SOCK, or enable CODEX_AGENT_LINK_AUTOSTART.",
+        "No Codex app-server endpoint is configured. Set AGENT_LINK_CODEX_URL or AGENT_LINK_CODEX_SOCK, or remove AGENT_LINK_CODEX_AUTOSTART=0 (legacy CODEX_AGENT_LINK_AUTOSTART) so Agent Link manages its own app-server.",
         { code: "autostart-disabled" }
       );
     }
@@ -19926,6 +20101,9 @@ var CodexAppServerClient = class {
   // The name is fixed per Agent Link process (<pid>.sock): Codex keeps
   // per-socket lock files, so a fresh name per spawn would pile them up.
   allocateEndpoint() {
+    if (path5.resolve(path5.dirname(this.stateDir())) === path5.resolve(stateDir())) {
+      ensureStateDir();
+    }
     const stateDir2 = ensurePrivateDir(this.stateDir());
     const stem = `${process.pid}`;
     if (this.options.transport === "ws-token") {
@@ -19961,7 +20139,10 @@ var CodexAppServerClient = class {
     if (!this.reapedOrphans) {
       this.reapedOrphans = true;
       try {
-        reapOrphanedManagedAppServers({ stateDir: this.stateDir() });
+        const dirs = this.options.stateDir ? [this.options.stateDir] : managedAppServerReapDirs();
+        for (const dir of dirs) {
+          reapOrphanedManagedAppServers({ stateDir: dir });
+        }
       } catch {
       }
     }
@@ -20360,13 +20541,13 @@ function asUserTextInput(text) {
 }
 function describeCodexInstall(options = {}) {
   const probeVersion = options.probeVersion !== false;
-  const appServerBin = process.env.CODEX_AGENT_LINK_APP_SERVER_BIN || process.env.CODEX_APP_SERVER_BIN;
+  const { value: appServerBin, source: appServerBinSource } = env("AGENT_LINK_CODEX_APP_SERVER_BIN");
   if (appServerBin) {
     const exists = !appServerBin.includes("/") || existsSync(appServerBin);
     return {
       available: exists,
       path: appServerBin,
-      source: "env:CODEX_AGENT_LINK_APP_SERVER_BIN",
+      source: `env:${appServerBinSource}`,
       version: null,
       versionProbed: false,
       searched: [appServerBin],
@@ -20386,7 +20567,7 @@ function describeCodexInstall(options = {}) {
   };
 }
 function findAppServerLaunch() {
-  const appServerBin = process.env.CODEX_AGENT_LINK_APP_SERVER_BIN || process.env.CODEX_APP_SERVER_BIN;
+  const { value: appServerBin, source: appServerBinSource } = env("AGENT_LINK_CODEX_APP_SERVER_BIN");
   if (appServerBin) {
     if (appServerBin.includes("/") && !existsSync(appServerBin)) {
       throw new AppServerError(`Configured Codex app-server binary does not exist: ${appServerBin}`, {
@@ -20398,7 +20579,7 @@ function findAppServerLaunch() {
     return {
       kind: "app-server-bin",
       command: appServerBin,
-      source: "env:CODEX_AGENT_LINK_APP_SERVER_BIN",
+      source: `env:${appServerBinSource}`,
       args: []
     };
   }
@@ -20727,38 +20908,43 @@ function cleanText(value, max) {
 
 // src/shared/host-detect.js
 import path6 from "node:path";
-import { homedir } from "node:os";
 function currentClaudeSessionId({ env: env2 = process.env } = {}) {
-  return env2.CLAUDE_SESSION_ID || env2.CLAUDE_CODE_SESSION_ID || void 0;
+  return env("CLAUDE_SESSION_ID", env2).value || env("CLAUDE_CODE_SESSION_ID", env2).value || void 0;
 }
-function claudeConfigDir({ env: env2 = process.env } = {}) {
-  const configured = typeof env2.CLAUDE_CONFIG_DIR === "string" ? env2.CLAUDE_CONFIG_DIR.trim() : "";
-  return configured ? path6.resolve(configured) : path6.join(homedir(), ".claude");
+function claudeConfigDir2({ env: env2 = process.env } = {}) {
+  return claudeConfigDir({ env: env2 });
 }
 function claudeProjectsRoot({ env: env2 = process.env } = {}) {
-  return path6.join(claudeConfigDir({ env: env2 }), "projects");
+  return path6.join(claudeConfigDir2({ env: env2 }), "projects");
 }
+var HOSTS = /* @__PURE__ */ new Set(["claude", "codex"]);
 function detectHost({ env: env2 = process.env } = {}) {
-  const claude = !!(env2.CLAUDE_PROJECT_DIR || env2.CLAUDE_PLUGIN_ROOT || env2.CLAUDE_SESSION_ID || env2.CLAUDE_CODE_SESSION_ID);
-  const codex = !!(env2.CODEX_HOME || env2.CODEX_THREAD_ID);
-  if (claude) return { host: "claude", reason: "claude env vars present" };
-  if (codex) return { host: "codex", reason: "codex env vars present" };
-  return { host: "unknown", reason: "no host env vars detected" };
+  const declared = env("AGENT_LINK_HOST", env2).value?.trim().toLowerCase();
+  if (declared && HOSTS.has(declared)) {
+    return { host: declared, reason: `AGENT_LINK_HOST=${declared}` };
+  }
+  const ignored = declared ? ` (ignored unknown AGENT_LINK_HOST=${JSON.stringify(declared)})` : "";
+  const has = (name) => Boolean(env(name, env2).value);
+  const claude = has("CLAUDE_PROJECT_DIR") || has("CLAUDE_PLUGIN_ROOT") || has("CLAUDE_SESSION_ID") || has("CLAUDE_CODE_SESSION_ID");
+  const codex = has("CODEX_HOME") || has("CODEX_THREAD_ID");
+  if (claude) return { host: "claude", reason: `claude env vars present${ignored}` };
+  if (codex) return { host: "codex", reason: `codex env vars present${ignored}` };
+  return { host: "unknown", reason: `no host env vars detected${ignored}` };
 }
 
 // src/claude/session-index.js
-import fs3 from "node:fs";
+import fs4 from "node:fs";
 import path8 from "node:path";
-import { homedir as homedir3 } from "node:os";
+import { homedir as homedir2 } from "node:os";
 import { spawnSync as spawnSync3 } from "node:child_process";
 
 // src/claude/desktop-registry.js
-import fs2 from "node:fs";
+import fs3 from "node:fs";
 import path7 from "node:path";
-import { homedir as homedir2 } from "node:os";
+import { homedir } from "node:os";
 var DEFAULT_SIDECAR_ROOTS = [
-  path7.join(homedir2(), "Library/Application Support/Claude/local-agent-mode-sessions"),
-  path7.join(homedir2(), "Library/Application Support/Claude/claude-code-sessions")
+  path7.join(homedir(), "Library/Application Support/Claude/local-agent-mode-sessions"),
+  path7.join(homedir(), "Library/Application Support/Claude/claude-code-sessions")
 ];
 var REQUIRED = ["sessionId"];
 var OPTIONAL = [
@@ -20777,7 +20963,7 @@ var OPTIONAL = [
   "slashCommands"
 ];
 function parseSidecar(filePath) {
-  const raw = JSON.parse(fs2.readFileSync(filePath, "utf8"));
+  const raw = JSON.parse(fs3.readFileSync(filePath, "utf8"));
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new Error(`sidecar ${filePath} is not a JSON object`);
   }
@@ -20794,8 +20980,8 @@ function parseSidecar(filePath) {
 }
 
 // src/claude/session-index.js
-var DEFAULT_DESKTOP_ROOT = path8.join(homedir3(), "Library/Application Support/Claude/local-agent-mode-sessions");
-var DEFAULT_CODE_ROOT = path8.join(homedir3(), "Library/Application Support/Claude/claude-code-sessions");
+var DEFAULT_DESKTOP_ROOT = path8.join(homedir2(), "Library/Application Support/Claude/local-agent-mode-sessions");
+var DEFAULT_CODE_ROOT = path8.join(homedir2(), "Library/Application Support/Claude/claude-code-sessions");
 function defaultProjectsRoot() {
   return claudeProjectsRoot();
 }
@@ -20872,7 +21058,7 @@ function isClaudeSessionLoaded(cliSessionId, { psOutput } = {}) {
 function findTranscriptSessionByCliId(cliSessionId, { transcriptPath, projectsRoot = defaultProjectsRoot() } = {}) {
   if (!cliSessionId) return null;
   let file = null;
-  if (transcriptPath && path8.basename(transcriptPath, ".jsonl") === cliSessionId && fs3.existsSync(transcriptPath)) {
+  if (transcriptPath && path8.basename(transcriptPath, ".jsonl") === cliSessionId && fs4.existsSync(transcriptPath)) {
     file = transcriptPath;
   } else {
     file = findTranscriptFileByCliId(cliSessionId, projectsRoot);
@@ -20880,7 +21066,7 @@ function findTranscriptSessionByCliId(cliSessionId, { transcriptPath, projectsRo
   if (!file) return null;
   let lastActivityAt = null;
   try {
-    lastActivityAt = fs3.statSync(file).mtimeMs;
+    lastActivityAt = fs4.statSync(file).mtimeMs;
   } catch {
   }
   return {
@@ -20901,10 +21087,10 @@ function findTranscriptSessionByCliId(cliSessionId, { transcriptPath, projectsRo
   };
 }
 function findTranscriptFileByCliId(cliSessionId, projectsRoot) {
-  if (!projectsRoot || !fs3.existsSync(projectsRoot)) return null;
+  if (!projectsRoot || !fs4.existsSync(projectsRoot)) return null;
   let entries;
   try {
-    entries = fs3.readdirSync(projectsRoot, { withFileTypes: true });
+    entries = fs4.readdirSync(projectsRoot, { withFileTypes: true });
   } catch {
     return null;
   }
@@ -20913,7 +21099,7 @@ function findTranscriptFileByCliId(cliSessionId, projectsRoot) {
     if (!entry.isDirectory()) continue;
     const candidate = path8.join(projectsRoot, entry.name, target);
     try {
-      if (fs3.existsSync(candidate)) return candidate;
+      if (fs4.existsSync(candidate)) return candidate;
     } catch {
     }
   }
@@ -20930,13 +21116,13 @@ function findSidecarFileById(root, sessionId, { maxDepth = 3 } = {}) {
   const visit = (dir, depth) => {
     const direct = path8.join(dir, name);
     try {
-      if (fs3.statSync(direct).isFile()) return direct;
+      if (fs4.statSync(direct).isFile()) return direct;
     } catch {
     }
     if (depth >= maxDepth) return null;
     let entries;
     try {
-      entries = fs3.readdirSync(dir, { withFileTypes: true });
+      entries = fs4.readdirSync(dir, { withFileTypes: true });
     } catch {
       return null;
     }
@@ -20950,7 +21136,7 @@ function findSidecarFileById(root, sessionId, { maxDepth = 3 } = {}) {
   return visit(root, 0);
 }
 function findSidecar(root, predicate) {
-  if (!root || !fs3.existsSync(root)) return null;
+  if (!root || !fs4.existsSync(root)) return null;
   let found = null;
   walk(root, (file) => {
     if (found || !isSidecarFile(file)) return;
@@ -20960,7 +21146,7 @@ function findSidecar(root, predicate) {
   return found;
 }
 function filterSidecars(root, predicate) {
-  if (!root || !fs3.existsSync(root)) return [];
+  if (!root || !fs4.existsSync(root)) return [];
   const out = [];
   walk(root, (file) => {
     if (!isSidecarFile(file)) return;
@@ -20973,7 +21159,7 @@ function isSidecarFile(file) {
   return /^local_[0-9a-zA-Z-]+\.json$/.test(path8.basename(file));
 }
 function listSidecarSessions(root, surface) {
-  if (!root || !fs3.existsSync(root)) return [];
+  if (!root || !fs4.existsSync(root)) return [];
   const out = [];
   walk(root, (file) => {
     if (!isSidecarFile(file)) return;
@@ -20985,7 +21171,7 @@ function listSidecarSessions(root, surface) {
 function parseSidecarCached(file) {
   let stat;
   try {
-    stat = fs3.statSync(file);
+    stat = fs4.statSync(file);
   } catch {
     return null;
   }
@@ -21013,11 +21199,11 @@ function normalizeSidecar(session, surface) {
   };
 }
 function listTranscriptSessions(projectsRoot) {
-  if (!projectsRoot || !fs3.existsSync(projectsRoot)) return [];
+  if (!projectsRoot || !fs4.existsSync(projectsRoot)) return [];
   const out = [];
   let projects;
   try {
-    projects = fs3.readdirSync(projectsRoot, { withFileTypes: true });
+    projects = fs4.readdirSync(projectsRoot, { withFileTypes: true });
   } catch {
     return [];
   }
@@ -21026,7 +21212,7 @@ function listTranscriptSessions(projectsRoot) {
     const dir = path8.join(projectsRoot, project.name);
     let entries;
     try {
-      entries = fs3.readdirSync(dir, { withFileTypes: true });
+      entries = fs4.readdirSync(dir, { withFileTypes: true });
     } catch {
       continue;
     }
@@ -21041,7 +21227,7 @@ function listTranscriptSessions(projectsRoot) {
 function parseTranscriptSummary(file, projectsRoot) {
   let stat;
   try {
-    stat = fs3.statSync(file);
+    stat = fs4.statSync(file);
   } catch {
     return null;
   }
@@ -21061,7 +21247,7 @@ function parseTranscriptSummary(file, projectsRoot) {
 function readPrefixLines(fd, size, limit) {
   const length = Math.min(limit, size);
   const buf = Buffer.allocUnsafe(length);
-  if (length) fs3.readSync(fd, buf, 0, length, 0);
+  if (length) fs4.readSync(fd, buf, 0, length, 0);
   const lines = buf.toString("utf8").split("\n");
   const atEof = length >= size;
   if (!atEof) lines.pop();
@@ -21070,7 +21256,7 @@ function readPrefixLines(fd, size, limit) {
 function buildTranscriptSummary(file, projectsRoot, stat) {
   let firstRecord = null;
   try {
-    const fd = fs3.openSync(file, "r");
+    const fd = fs4.openSync(file, "r");
     try {
       for (let limit = TRANSCRIPT_PREFIX_BYTES; ; limit *= 2) {
         const { lines, atEof } = readPrefixLines(fd, stat.size, limit);
@@ -21086,7 +21272,7 @@ function buildTranscriptSummary(file, projectsRoot, stat) {
         if (firstRecord || atEof || limit >= TRANSCRIPT_PREFIX_MAX_BYTES) break;
       }
     } finally {
-      fs3.closeSync(fd);
+      fs4.closeSync(fd);
     }
   } catch {
     return null;
@@ -21188,7 +21374,7 @@ function isLoaded(psLines, cliSessionId) {
 function walk(dir, visit, stop = () => false) {
   let entries;
   try {
-    entries = fs3.readdirSync(dir, { withFileTypes: true });
+    entries = fs4.readdirSync(dir, { withFileTypes: true });
   } catch {
     return;
   }
@@ -21325,7 +21511,7 @@ function resolveCallerIdentity({ host, runtimeCallerContext = null, currentSessi
     if (runtimeThreadId) {
       return { id: runtimeThreadId, kind: "codex", aliases: [runtimeThreadId], source: "runtime_context" };
     }
-    const envThread = env2.CODEX_THREAD_ID;
+    const envThread = env("CODEX_THREAD_ID", env2).value;
     if (isValidSenderId(envThread)) {
       return { id: envThread, kind: "codex", aliases: [envThread], source: "env" };
     }
@@ -21411,13 +21597,9 @@ function makeClaudeListingHandlers() {
 
 // src/claude/mailbox.js
 import path9 from "node:path";
-import fs4 from "node:fs";
-import { homedir as homedir4 } from "node:os";
+import fs5 from "node:fs";
 import { spawnSync as spawnSync4 } from "node:child_process";
 import crypto from "node:crypto";
-var DEFAULT_DIR = path9.join(homedir4(), ".claude/agent-link");
-var DEFAULT_MAILBOX_PATH = path9.join(DEFAULT_DIR, "mailbox.jsonl");
-var DEFAULT_LEGACY_DB_PATH = path9.join(DEFAULT_DIR, "mailbox.sqlite");
 var MAX_MESSAGE_BODY_BYTES = 64 * 1024;
 var MAX_EVENT_LINE_BYTES = 512 * 1024;
 var DIR_MODE2 = 448;
@@ -21432,57 +21614,62 @@ function messageBodyTooLarge(body) {
     maxBodyBytes: MAX_MESSAGE_BODY_BYTES
   };
 }
-function resolveMailboxPath({ mailboxPath, dbPath } = {}) {
-  if (mailboxPath) return mailboxPath;
-  if (dbPath) return legacyToJsonl(dbPath);
-  if (process.env.AGENT_LINK_MAILBOX_PATH) return process.env.AGENT_LINK_MAILBOX_PATH;
-  if (process.env.AGENT_LINK_MAILBOX_DB) return legacyToJsonl(process.env.AGENT_LINK_MAILBOX_DB);
-  return DEFAULT_MAILBOX_PATH;
+function resolveMailboxPath({ mailboxPath: mailboxPath2, dbPath } = {}) {
+  if (mailboxPath2) return mailboxPath2;
+  if (dbPath) return sqliteToJsonl(dbPath);
+  return mailboxPath();
 }
-function legacyToJsonl(legacy) {
-  return legacy.endsWith(".sqlite") ? legacy.slice(0, -".sqlite".length) + ".jsonl" : legacy;
+function mailboxReadPaths(options = {}) {
+  const writePath = resolveMailboxPath(options);
+  if (options.mailboxPath || options.dbPath) return [writePath];
+  return [...legacyMailboxPaths(), writePath];
 }
-function resolveLegacyDbPath({ mailboxPath, dbPath } = {}) {
+function resolveLegacyDbPath({ mailboxPath: mailboxPath2, dbPath } = {}) {
   if (dbPath) return dbPath;
-  if (mailboxPath) return null;
-  return process.env.AGENT_LINK_MAILBOX_DB ?? null;
+  if (mailboxPath2) return null;
+  return mailboxDbPath();
 }
-function ensurePrivateMailbox(mailboxPath) {
-  const dir = path9.dirname(mailboxPath);
-  fs4.mkdirSync(dir, { recursive: true, mode: DIR_MODE2 });
-  if (path9.resolve(dir) === path9.resolve(DEFAULT_DIR)) tightenMode(dir, DIR_MODE2);
-  tightenMode(mailboxPath, FILE_MODE2);
+function isDefaultMailbox(mailboxPath2) {
+  return path9.resolve(mailboxPath2) === path9.resolve(stateDir(), "mailbox.jsonl");
 }
-function tightenMode(target, mode) {
-  try {
-    const stat = fs4.statSync(target);
-    const uid = typeof process.getuid === "function" ? process.getuid() : null;
-    if (uid !== null && stat.uid !== uid) return;
-    if ((stat.mode & 511 & ~mode) !== 0) fs4.chmodSync(target, mode);
-  } catch {
+function ensurePrivateMailbox(mailboxPath2) {
+  if (isDefaultMailbox(mailboxPath2)) {
+    ensureStateDir();
+  } else {
+    fs5.mkdirSync(path9.dirname(mailboxPath2), { recursive: true, mode: DIR_MODE2 });
   }
+  tightenMode(mailboxPath2, FILE_MODE2);
 }
 function mailboxStatus(options = {}) {
-  const mailboxPath = resolveMailboxPath(options);
-  const exists = fs4.existsSync(mailboxPath);
+  const mailboxPath2 = resolveMailboxPath(options);
+  const readPaths = mailboxReadPaths(options);
+  const exists = fs5.existsSync(mailboxPath2);
+  const legacyReadPaths = readPaths.filter((p) => p !== mailboxPath2 && fs5.existsSync(p));
   let pendingMessagesCount = 0;
   let readable = true;
-  if (exists) {
+  if (exists || legacyReadPaths.length) {
     try {
-      pendingMessagesCount = view(mailboxPath).filter((m) => !m.delivered_at).length;
+      pendingMessagesCount = mergedView(readPaths).filter((m) => !m.delivered_at).length;
     } catch {
       readable = false;
       pendingMessagesCount = null;
     }
   }
-  return { path: mailboxPath, exists, readable, writable: canWrite(exists ? mailboxPath : path9.dirname(mailboxPath)), pendingMessagesCount };
+  return {
+    path: mailboxPath2,
+    exists,
+    readable,
+    writable: canWrite(exists ? mailboxPath2 : path9.dirname(mailboxPath2)),
+    pendingMessagesCount,
+    legacyReadPaths
+  };
 }
 function canWrite(target) {
   let current = path9.resolve(target);
   while (true) {
-    if (fs4.existsSync(current)) {
+    if (fs5.existsSync(current)) {
       try {
-        fs4.accessSync(current, fs4.constants.W_OK);
+        fs5.accessSync(current, fs5.constants.W_OK);
         return true;
       } catch {
         return false;
@@ -21494,19 +21681,22 @@ function canWrite(target) {
   }
 }
 function openMailbox(options = {}) {
-  const mailboxPath = resolveMailboxPath(options);
-  ensurePrivateMailbox(mailboxPath);
+  const mailboxPath2 = resolveMailboxPath(options);
+  const readPaths = mailboxReadPaths(options);
+  ensurePrivateMailbox(mailboxPath2);
   importLegacySqliteIfNeeded({
-    mailboxPath,
-    legacyDbPath: resolveLegacyDbPath(options) ?? (mailboxPath === DEFAULT_MAILBOX_PATH ? DEFAULT_LEGACY_DB_PATH : null)
+    mailboxPath: mailboxPath2,
+    readPaths,
+    legacyDbPath: resolveLegacyDbPath(options) ?? (isDefaultMailbox(mailboxPath2) ? legacyPaths().mailboxDb : null)
   });
+  const view = () => mergedView(readPaths);
   function appendEvent(event) {
     const line = JSON.stringify(event) + "\n";
     const bytes = Buffer.byteLength(line, "utf8");
     if (bytes > MAX_EVENT_LINE_BYTES) {
       throw new Error(`Agent Link mailbox event is ${bytes} bytes; one event is limited to ${MAX_EVENT_LINE_BYTES} bytes (512 KiB). Shorten the message or its metadata.`);
     }
-    fs4.appendFileSync(mailboxPath, line, { encoding: "utf8", mode: FILE_MODE2 });
+    fs5.appendFileSync(mailboxPath2, line, { encoding: "utf8", mode: FILE_MODE2 });
   }
   function insertMessage({
     fromSessionId,
@@ -21551,7 +21741,7 @@ function openMailbox(options = {}) {
   }
   function listPendingFor({ toSessionId, toSessionIds } = {}) {
     const recipients = idSet(toSessionId, toSessionIds);
-    return view(mailboxPath).filter((m) => recipients.has(m.to_session_id) && !m.delivered_at).sort((a, b) => a.sent_at - b.sent_at);
+    return view().filter((m) => recipients.has(m.to_session_id) && !m.delivered_at).sort((a, b) => a.sent_at - b.sent_at);
   }
   return {
     insertMessage,
@@ -21569,7 +21759,7 @@ function openMailbox(options = {}) {
     },
     // Returns the reply message id, or null when no reply was written.
     ackMessage({ messageId, body }) {
-      const original = view(mailboxPath).find((m) => m.id === messageId);
+      const original = view().find((m) => m.id === messageId);
       markAcknowledged({ messageId });
       if (body && original) {
         return insertMessage({
@@ -21584,10 +21774,10 @@ function openMailbox(options = {}) {
       return null;
     },
     getMessage({ messageId }) {
-      return view(mailboxPath).find((m) => m.id === messageId) ?? null;
+      return view().find((m) => m.id === messageId) ?? null;
     },
     inspect(filters = {}) {
-      let rows = view(mailboxPath);
+      let rows = view();
       if (filters.fromSessionId) rows = rows.filter((m) => m.from_session_id === filters.fromSessionId);
       if (filters.toSessionId) rows = rows.filter((m) => m.to_session_id === filters.toSessionId);
       if (Array.isArray(filters.fromSessionIds)) {
@@ -21621,12 +21811,27 @@ function idSet(single, many) {
   }
   return out;
 }
-function view(mailboxPath) {
+function mergedView(paths) {
   const messages = /* @__PURE__ */ new Map();
-  for (const event of readEvents(mailboxPath)) {
-    if (event.type === "message" && event.message?.id) {
-      messages.set(event.message.id, normalizeMessage(event.message, event.at));
-    } else if (event.type === "delivered" && event.messageId && messages.has(event.messageId)) {
+  const stateEvents = [];
+  let filesWithEvents = 0;
+  for (const file of paths) {
+    const events = readEvents(file);
+    if (events.length) filesWithEvents += 1;
+    for (const event of events) {
+      if (event?.type === "message" && event.message?.id) {
+        const id = String(event.message.id);
+        if (!messages.has(id)) messages.set(id, normalizeMessage(event.message, event.at));
+      } else if (event && typeof event === "object") {
+        stateEvents.push(event);
+      }
+    }
+  }
+  if (filesWithEvents > 1) {
+    stateEvents.sort((a, b) => normalizeTimestamp(a.at) - normalizeTimestamp(b.at));
+  }
+  for (const event of stateEvents) {
+    if (event.type === "delivered" && event.messageId && messages.has(event.messageId)) {
       const message = messages.get(event.messageId);
       message.delivered_at = event.at ?? Date.now();
     } else if (event.type === "acknowledged" && event.messageId && messages.has(event.messageId)) {
@@ -21638,9 +21843,9 @@ function view(mailboxPath) {
   }
   return [...messages.values()];
 }
-function readEvents(mailboxPath) {
-  if (!fs4.existsSync(mailboxPath)) return [];
-  const raw = fs4.readFileSync(mailboxPath, "utf8");
+function readEvents(mailboxPath2) {
+  if (!fs5.existsSync(mailboxPath2)) return [];
+  const raw = fs5.readFileSync(mailboxPath2, "utf8");
   if (!raw.trim()) return [];
   const events = [];
   for (const line of raw.split("\n")) {
@@ -21675,9 +21880,9 @@ function normalizeMessage(message, eventAt) {
     reply_to_message_id: message.reply_to_message_id ?? null
   };
 }
-function importLegacySqliteIfNeeded({ mailboxPath, legacyDbPath }) {
-  if (fs4.existsSync(mailboxPath) && fs4.statSync(mailboxPath).size > 0) return;
-  if (!legacyDbPath || !legacyDbPath.endsWith(".sqlite") || !fs4.existsSync(legacyDbPath)) return;
+function importLegacySqliteIfNeeded({ mailboxPath: mailboxPath2, readPaths = [mailboxPath2], legacyDbPath }) {
+  if (readPaths.some((file) => fs5.existsSync(file) && fs5.statSync(file).size > 0)) return;
+  if (!legacyDbPath || !legacyDbPath.endsWith(".sqlite") || !fs5.existsSync(legacyDbPath)) return;
   const result = spawnSync4("sqlite3", [
     "-json",
     legacyDbPath,
@@ -21701,7 +21906,7 @@ function importLegacySqliteIfNeeded({ mailboxPath, legacyDbPath }) {
     if (row.delivered_at) events.push({ type: "delivered", at: Number(row.delivered_at), messageId: row.id });
     if (row.acknowledged_at) events.push({ type: "acknowledged", at: Number(row.acknowledged_at), messageId: row.id });
   }
-  fs4.appendFileSync(mailboxPath, events.map((event) => JSON.stringify(event)).join("\n") + "\n", { encoding: "utf8", mode: FILE_MODE2 });
+  fs5.appendFileSync(mailboxPath2, events.map((event) => JSON.stringify(event)).join("\n") + "\n", { encoding: "utf8", mode: FILE_MODE2 });
 }
 function ulid2() {
   const ENC = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -22013,8 +22218,7 @@ function renderInbox(messages = []) {
 
 // src/shared/receipt-index.js
 import { randomUUID } from "node:crypto";
-import { promises as fs5 } from "node:fs";
-import os4 from "node:os";
+import { promises as fs6 } from "node:fs";
 import path10 from "node:path";
 
 // src/shared/args.js
@@ -22053,16 +22257,26 @@ var RECEIPT_VERSION = 1;
 var DEFAULT_LIMIT = 20;
 var MAX_LIMIT = 500;
 var MAX_TEXT2 = 700;
-function receiptLogPath(options = {}) {
-  const codexHome = options.codexHome || process.env.CODEX_HOME || path10.join(os4.homedir(), ".codex");
-  return options.path || process.env.CODEX_AGENT_LINK_RECEIPT_LOG || path10.join(codexHome, "agent-link-receipts.jsonl");
+function receiptWritePath(options = {}) {
+  return options.path || receiptLogPath();
+}
+function receiptReadPaths(options = {}) {
+  const writePath = receiptWritePath(options);
+  if (options.path) return [writePath];
+  return [...legacyReceiptPaths(), writePath];
 }
 function receiptIndexSummary(options = {}) {
+  let paths;
+  try {
+    paths = { path: receiptWritePath(options), readPaths: receiptReadPaths(options) };
+  } catch (error2) {
+    paths = { path: null, readPaths: [], error: error2.message };
+  }
   return {
-    path: receiptLogPath(options),
+    ...paths,
     format: "jsonl",
     version: RECEIPT_VERSION,
-    note: "Agent Link writes local action receipts for launch, message, and archive operations so later agents can query provenance by target or origin thread. Origin fields come from caller-supplied receipt data, MCP runtime caller context, or environment fallback."
+    note: "Agent Link writes local action receipts for launch, message, and archive operations so later agents can query provenance by target or origin thread. Origin fields come from caller-supplied receipt data, MCP runtime caller context, or environment fallback. Reads also merge the legacy log listed in readPaths; writes go only to path."
   };
 }
 function normalizeReceiptInput(value = {}, options = {}) {
@@ -22077,9 +22291,9 @@ function normalizeReceiptInput(value = {}, options = {}) {
   const runtimeOriginThreadId = cleanText2(runtimeCallerContext.threadId, 160);
   const runtimeOriginTurnId = cleanText2(runtimeCallerContext.turnId, 160);
   const runtimeOriginToolCallId = cleanText2(runtimeCallerContext.toolCallId, 160);
-  const canInferOrigin = process.env.CODEX_AGENT_LINK_INFER_RECEIPT_ORIGIN !== "0";
-  const inferredOriginThreadId = canInferOrigin ? cleanText2(process.env.CODEX_THREAD_ID, 160) : null;
-  const inferredOriginTurnId = canInferOrigin ? cleanText2(process.env.CODEX_TURN_ID, 160) : null;
+  const canInferOrigin = envFlag("AGENT_LINK_INFER_RECEIPT_ORIGIN", true);
+  const inferredOriginThreadId = canInferOrigin ? cleanText2(env("CODEX_THREAD_ID").value, 160) : null;
+  const inferredOriginTurnId = canInferOrigin ? cleanText2(env("CODEX_TURN_ID").value, 160) : null;
   const originThread = firstOriginValue([
     ["caller_supplied", callerOriginThreadId],
     ["runtime_context", runtimeOriginThreadId],
@@ -22168,15 +22382,16 @@ function buildReceipt({
 }
 async function tightenFileMode(target, mode) {
   try {
-    const stat = await fs5.stat(target);
+    const stat = await fs6.stat(target);
     const uid = typeof process.getuid === "function" ? process.getuid() : null;
     if (uid !== null && stat.uid !== uid) return;
-    if ((stat.mode & 511 & ~mode) !== 0) await fs5.chmod(target, mode);
+    if ((stat.mode & 511 & ~mode) !== 0) await fs6.chmod(target, mode);
   } catch {
   }
 }
 async function appendReceipt(receipt, options = {}) {
-  const logPath = receiptLogPath(options);
+  const logPath = receiptWritePath(options);
+  if (path10.resolve(path10.dirname(logPath)) === path10.resolve(stateDir())) ensureStateDir();
   await appendJsonl(logPath, receipt);
   await tightenFileMode(logPath, 384);
   return {
@@ -22193,14 +22408,30 @@ async function safeAppendReceipt(receipt, options = {}) {
     return {
       ok: false,
       id: receipt.id,
-      path: receiptLogPath(options),
+      path: safeWritePath(options),
       error: error2.message,
       receipt: receiptSummary(receipt)
     };
   }
 }
+function safeWritePath(options) {
+  try {
+    return receiptWritePath(options);
+  } catch {
+    return null;
+  }
+}
+async function readReceiptFile(file) {
+  try {
+    return parseJsonlLines(await fs6.readFile(file, "utf8"));
+  } catch (error2) {
+    if (error2.code === "ENOENT") return [];
+    throw error2;
+  }
+}
 async function listReceipts(options = {}) {
-  const logPath = receiptLogPath(options);
+  const logPath = receiptWritePath(options);
+  const readPaths = receiptReadPaths(options);
   const limit = clampInt(options.limit ?? DEFAULT_LIMIT, 1, MAX_LIMIT);
   const filters = {
     targetThreadId: cleanText2(options.targetThreadId, 160),
@@ -22211,22 +22442,16 @@ async function listReceipts(options = {}) {
     targetSessionId: cleanText2(options.targetSessionId, 160),
     searchTerm: normalizeSearch(options.searchTerm)
   };
-  let raw;
-  try {
-    raw = await fs5.readFile(logPath, "utf8");
-  } catch (error2) {
-    if (error2.code === "ENOENT") {
-      return {
-        ok: true,
-        path: logPath,
-        data: [],
-        scannedReceipts: 0,
-        filters
-      };
+  const seen = /* @__PURE__ */ new Set();
+  const receipts = [];
+  for (const file of readPaths) {
+    for (const receipt of await readReceiptFile(file)) {
+      const id = typeof receipt?.id === "string" ? receipt.id : null;
+      if (id && seen.has(id)) continue;
+      if (id) seen.add(id);
+      receipts.push(receipt);
     }
-    throw error2;
   }
-  const receipts = parseJsonlLines(raw);
   const data = receipts.filter((receipt) => receiptMatches(receipt, filters)).sort((a, b) => Date.parse(b.createdAt ?? 0) - Date.parse(a.createdAt ?? 0)).slice(0, limit).map(receiptSummary);
   return {
     ok: true,
@@ -23010,7 +23235,7 @@ function makeReplyAgentLinkMessageHandler({
 }
 
 // src/claude/channel-bridge.js
-import fs6 from "node:fs";
+import fs7 from "node:fs";
 import path11 from "node:path";
 var DEFAULT_POLL_INTERVAL_MS3 = 1e3;
 var DEFAULT_MAX_POLL_INTERVAL_MS = 3e4;
@@ -23031,7 +23256,7 @@ function renderChannelMessage(message) {
 function makeAgentLinkChannelBridge({
   resolveCurrentSession,
   mailboxOpener,
-  mailboxPath,
+  mailboxPath: mailboxPath2,
   notify,
   pollIntervalMs = DEFAULT_POLL_INTERVAL_MS3,
   maxPollIntervalMs = DEFAULT_MAX_POLL_INTERVAL_MS,
@@ -23039,7 +23264,7 @@ function makeAgentLinkChannelBridge({
 } = {}) {
   const customOpener = typeof mailboxOpener === "function";
   const openMb = customOpener ? mailboxOpener : () => openMailbox();
-  const signaturePath = mailboxPath ?? (customOpener ? null : resolveMailboxPath());
+  const signaturePath = mailboxPath2 ?? (customOpener ? null : resolveMailboxPath());
   const minDelay = Math.max(1, pollIntervalMs);
   const maxDelay = Math.max(minDelay, maxPollIntervalMs);
   let timer = null;
@@ -23062,7 +23287,7 @@ function makeAgentLinkChannelBridge({
   function mailboxSignature() {
     if (!signaturePath) return null;
     try {
-      const st = fs6.statSync(signaturePath);
+      const st = fs7.statSync(signaturePath);
       return `${st.ino}:${st.size}:${st.mtimeMs}`;
     } catch (error2) {
       return error2?.code === "ENOENT" ? "missing" : null;
@@ -23149,7 +23374,7 @@ function makeAgentLinkChannelBridge({
     try {
       const dir = path11.dirname(signaturePath);
       const base = path11.basename(signaturePath);
-      watcher = fs6.watch(dir, { persistent: false }, (_event, filename) => {
+      watcher = fs7.watch(dir, { persistent: false }, (_event, filename) => {
         if (!filename || String(filename) === base) wake();
       });
       watcher.on("error", () => {
@@ -23184,7 +23409,7 @@ function makeAgentLinkChannelBridge({
 }
 
 // src/codex/project-orchestrator.js
-import { promises as fs7 } from "node:fs";
+import { promises as fs8 } from "node:fs";
 import path12 from "node:path";
 
 // src/codex/thread-utils.js
@@ -23914,7 +24139,7 @@ async function readProjectOrchestratorBinding(projectRoot) {
   const bindingPath = path12.join(requiredString(projectRoot, "projectRoot"), PROJECT_ORCHESTRATOR_BINDING_PATH);
   let raw;
   try {
-    raw = await fs7.readFile(bindingPath, "utf8");
+    raw = await fs8.readFile(bindingPath, "utf8");
   } catch (error2) {
     if (error2.code === "ENOENT") {
       return null;
@@ -24615,8 +24840,7 @@ function isPlainObject5(value) {
 }
 
 // src/codex/session-index.js
-import { promises as fs8 } from "node:fs";
-import os5 from "node:os";
+import { promises as fs9 } from "node:fs";
 import path13 from "node:path";
 var MAX_PREVIEW_CHARS = 500;
 var HEAD_WINDOW_BYTES = 64 * 1024;
@@ -24637,20 +24861,20 @@ var LOCAL_LIFECYCLE_EVENTS = Object.freeze({
 });
 var summaryCache = /* @__PURE__ */ new Map();
 function resolveCodexHome(options = {}) {
-  return options.codexHome || process.env.CODEX_HOME || path13.join(os5.homedir(), ".codex");
+  return options.codexHome || codexHome();
 }
 async function listLocalThreads(options = {}) {
-  const codexHome = resolveCodexHome(options);
+  const codexHome2 = resolveCodexHome(options);
   const archiveScope = normalizeArchiveScope(options);
-  const roots = rootsForArchiveScope(codexHome, archiveScope);
-  const sessionIndex = await readSessionIndex(codexHome);
+  const roots = rootsForArchiveScope(codexHome2, archiveScope);
+  const sessionIndex = await readSessionIndex(codexHome2);
   const files = [];
   for (const root of roots) {
     files.push(...await collectJsonlFiles(root));
   }
   const withStats = (await Promise.all(files.map(async (file) => {
     try {
-      const stat = await fs8.stat(file);
+      const stat = await fs9.stat(file);
       return { file, mtimeMs: stat.mtimeMs, size: stat.size };
     } catch {
       return null;
@@ -24681,14 +24905,14 @@ async function listLocalThreads(options = {}) {
     data: results,
     source: "local-jsonl",
     archiveScope,
-    codexHome,
+    codexHome: codexHome2,
     scannedFiles: withStats.length
   };
 }
 async function listLocalThreadIds(options = {}) {
-  const codexHome = resolveCodexHome(options);
+  const codexHome2 = resolveCodexHome(options);
   const out = [];
-  for (const root of [path13.join(codexHome, "sessions"), path13.join(codexHome, "archived_sessions")]) {
+  for (const root of [path13.join(codexHome2, "sessions"), path13.join(codexHome2, "archived_sessions")]) {
     for (const file of await collectJsonlFiles(root)) {
       const id = threadIdFromFilename(path13.basename(file));
       if (id) {
@@ -24699,12 +24923,12 @@ async function listLocalThreadIds(options = {}) {
   return out;
 }
 async function readLocalThread(threadId, options = {}) {
-  const codexHome = resolveCodexHome(options);
-  const located = await findLocalThreadFile(threadId, { codexHome });
+  const codexHome2 = resolveCodexHome(options);
+  const located = await findLocalThreadFile(threadId, { codexHome: codexHome2 });
   if (!located) {
-    throw new Error(`Thread ${threadId} was not found under ${codexHome}`);
+    throw new Error(`Thread ${threadId} was not found under ${codexHome2}`);
   }
-  const sessionIndex = await readSessionIndex(codexHome);
+  const sessionIndex = await readSessionIndex(codexHome2);
   const summary = await readLocalThreadSummary(located.file, located.stat, sessionIndex);
   if (!summary) {
     throw new Error(`Thread ${threadId} transcript is unreadable: ${located.file}`);
@@ -24722,12 +24946,12 @@ async function readLocalThread(threadId, options = {}) {
   };
 }
 async function findLocalThreadFile(threadId, options = {}) {
-  const codexHome = resolveCodexHome(options);
+  const codexHome2 = resolveCodexHome(options);
   const id = typeof threadId === "string" ? threadId.trim() : "";
   if (!id || id.includes("/") || id.includes("\\") || id.includes("..")) {
     return null;
   }
-  const roots = options.roots ?? [path13.join(codexHome, "sessions"), path13.join(codexHome, "archived_sessions")];
+  const roots = options.roots ?? [path13.join(codexHome2, "sessions"), path13.join(codexHome2, "archived_sessions")];
   const suffix = `-${id}.jsonl`;
   for (const root of roots) {
     const file = await findNewestFirst(root, (name) => name.endsWith(suffix) || name === `${id}.jsonl`, async (candidate) => {
@@ -24749,10 +24973,10 @@ async function findLocalThreadFile(threadId, options = {}) {
   return null;
 }
 async function archiveLocalThread(threadId, options = {}) {
-  const codexHome = resolveCodexHome(options);
-  const located = await findLocalThread(threadId, { codexHome });
-  const activeRoot = path13.join(codexHome, "sessions");
-  const archivedRoot = path13.join(codexHome, "archived_sessions");
+  const codexHome2 = resolveCodexHome(options);
+  const located = await findLocalThread(threadId, { codexHome: codexHome2 });
+  const activeRoot = path13.join(codexHome2, "sessions");
+  const archivedRoot = path13.join(codexHome2, "archived_sessions");
   const before = located.thread.archiveState ?? inferArchiveState(located.path);
   if (before.scope === "archived") {
     return {
@@ -24764,7 +24988,7 @@ async function archiveLocalThread(threadId, options = {}) {
       thread: located.thread,
       archiveStateBefore: before,
       archiveStateAfter: before,
-      codexHome
+      codexHome: codexHome2
     };
   }
   const relative = path13.relative(activeRoot, located.path);
@@ -24772,7 +24996,7 @@ async function archiveLocalThread(threadId, options = {}) {
     throw new Error(`Thread ${threadId} is not under ${activeRoot}; refusing to archive ${located.path}`);
   }
   const destination = path13.join(archivedRoot, relative);
-  await fs8.mkdir(path13.dirname(destination), { recursive: true });
+  await fs9.mkdir(path13.dirname(destination), { recursive: true });
   await moveFileWithoutOverwrite(located.path, destination, threadId);
   const afterThread = {
     ...located.thread,
@@ -24788,13 +25012,13 @@ async function archiveLocalThread(threadId, options = {}) {
     thread: afterThread,
     archiveStateBefore: before,
     archiveStateAfter: afterThread.archiveState,
-    codexHome
+    codexHome: codexHome2
   };
 }
 async function moveFileWithoutOverwrite(source, destination, threadId) {
   let placeholder;
   try {
-    placeholder = await fs8.open(destination, "wx");
+    placeholder = await fs9.open(destination, "wx");
   } catch (error2) {
     if (error2.code === "EEXIST") {
       throw new Error(`Archive destination already exists for thread ${threadId}: ${destination}`);
@@ -24805,45 +25029,45 @@ async function moveFileWithoutOverwrite(source, destination, threadId) {
   try {
     await moveFileAcrossDevices(source, destination);
   } catch (error2) {
-    await fs8.rm(destination, { force: true }).catch(() => {
+    await fs9.rm(destination, { force: true }).catch(() => {
     });
     throw error2;
   }
 }
 async function moveFileAcrossDevices(source, destination) {
   try {
-    await fs8.rename(source, destination);
+    await fs9.rename(source, destination);
     return;
   } catch (error2) {
     if (error2.code !== "EXDEV") {
       throw error2;
     }
   }
-  const sourceStat = await fs8.stat(source);
+  const sourceStat = await fs9.stat(source);
   const staging = `${destination}.exdev-tmp-${process.pid}`;
   try {
-    await fs8.copyFile(source, staging);
-    await fs8.utimes(staging, sourceStat.atime, sourceStat.mtime);
-    await fs8.rename(staging, destination);
+    await fs9.copyFile(source, staging);
+    await fs9.utimes(staging, sourceStat.atime, sourceStat.mtime);
+    await fs9.rename(staging, destination);
   } catch (error2) {
-    await fs8.rm(staging, { force: true });
+    await fs9.rm(staging, { force: true });
     throw error2;
   }
-  await fs8.unlink(source);
+  await fs9.unlink(source);
 }
 async function findLocalThread(threadId, options = {}) {
-  const codexHome = resolveCodexHome(options);
-  const found = await readLocalThread(threadId, { codexHome });
+  const codexHome2 = resolveCodexHome(options);
+  const found = await readLocalThread(threadId, { codexHome: codexHome2 });
   return {
     thread: found.thread,
     path: found.thread.path,
-    codexHome
+    codexHome: codexHome2
   };
 }
 async function findNewestFirst(root, nameMatches, confirm) {
   let entries;
   try {
-    entries = await fs8.readdir(root, { withFileTypes: true });
+    entries = await fs9.readdir(root, { withFileTypes: true });
   } catch {
     return null;
   }
@@ -24868,7 +25092,7 @@ async function findNewestFirst(root, nameMatches, confirm) {
 }
 async function statInfo(file) {
   try {
-    const stat = await fs8.stat(file);
+    const stat = await fs9.stat(file);
     return { file, mtimeMs: stat.mtimeMs, size: stat.size };
   } catch {
     return { file };
@@ -24881,7 +25105,7 @@ function threadIdFromFilename(name) {
 async function collectJsonlFiles(root) {
   let entries;
   try {
-    entries = await fs8.readdir(root, { withFileTypes: true });
+    entries = await fs9.readdir(root, { withFileTypes: true });
   } catch {
     return [];
   }
@@ -24896,11 +25120,11 @@ async function collectJsonlFiles(root) {
   }
   return out;
 }
-async function readSessionIndex(codexHome) {
-  const indexPath = path13.join(codexHome, "session_index.jsonl");
+async function readSessionIndex(codexHome2) {
+  const indexPath = path13.join(codexHome2, "session_index.jsonl");
   let raw;
   try {
-    raw = await fs8.readFile(indexPath, "utf8");
+    raw = await fs9.readFile(indexPath, "utf8");
   } catch {
     return /* @__PURE__ */ new Map();
   }
@@ -24963,7 +25187,7 @@ function parseLine(line) {
 async function readSessionMeta(file) {
   let handle;
   try {
-    handle = await fs8.open(file, "r");
+    handle = await fs9.open(file, "r");
     const { size } = await handle.stat();
     let window = Math.min(HEAD_WINDOW_BYTES, size);
     while (window > 0) {
@@ -25033,7 +25257,7 @@ async function readLocalThreadSummary(file, fileInfo = {}, sessionIndex = /* @__
   }
   let handle;
   try {
-    handle = await fs8.open(file, "r");
+    handle = await fs9.open(file, "r");
     const stat = await handle.stat();
     const cacheKey = file;
     const cached2 = cachedSummary(file, stat.size, stat.mtimeMs);
@@ -25128,7 +25352,7 @@ async function readRecentTranscriptItems(file, limit) {
   const wanted = clampInt(limit, 1, 100);
   let handle;
   try {
-    handle = await fs8.open(file, "r");
+    handle = await fs9.open(file, "r");
     const { size } = await handle.stat();
     let end = size;
     let carry = Buffer.alloc(0);
@@ -25261,17 +25485,17 @@ function parseDateSeconds(value) {
 function threadMatches(thread, searchTerm) {
   return scoreThreadMatch(thread, searchTerm).score > 0;
 }
-function rootsForArchiveScope(codexHome, archiveScope) {
+function rootsForArchiveScope(codexHome2, archiveScope) {
   if (archiveScope === "archived") {
-    return [path13.join(codexHome, "archived_sessions")];
+    return [path13.join(codexHome2, "archived_sessions")];
   }
   if (archiveScope === "all") {
     return [
-      path13.join(codexHome, "sessions"),
-      path13.join(codexHome, "archived_sessions")
+      path13.join(codexHome2, "sessions"),
+      path13.join(codexHome2, "archived_sessions")
     ];
   }
-  return [path13.join(codexHome, "sessions")];
+  return [path13.join(codexHome2, "sessions")];
 }
 function normalizeCwdFilter(cwd) {
   if (!cwd) {
@@ -25336,7 +25560,7 @@ var server = new Server(
     instructions: "Agent Link messages may arrive as <agent-link-message> channel events. Use reply_agent_link_message with the messageId to reply to an inbound Agent Link message.",
     capabilities: {
       tools: {},
-      experimental: HOST_INFO.host === "claude" && process.env.AGENT_LINK_DISABLE_CHANNEL !== "1" ? { "claude/channel": {} } : {}
+      experimental: HOST_INFO.host === "claude" && !envFlag("AGENT_LINK_DISABLE_CHANNEL", false) ? { "claude/channel": {} } : {}
     }
   }
 );
@@ -26254,7 +26478,7 @@ async function health(args, toolContext = {}) {
   const callerContext = args.includeCallerContext === true ? summarizeRuntimeCallerContext(toolContext.callerContext) : null;
   const configuredEndpoint = configuredEndpointSummary();
   const usesManagedAppServer = !Object.values(configuredEndpoint).some(Boolean);
-  const autoStartEnabled = process.env.CODEX_AGENT_LINK_AUTOSTART !== "0";
+  const autoStartEnabled = envFlag("AGENT_LINK_CODEX_AUTOSTART", true);
   const codex = {
     // Skip the blocking `codex --version` when the caller asked for a cheap check.
     ...describeCodexInstall({ probeVersion: args.startAppServer !== false }),
@@ -26319,15 +26543,15 @@ function appServerErrorHint(error2) {
   const cached2 = error2.code === "startup-failure-cached";
   const code = cached2 ? error2.details?.cachedCode : error2.code;
   const hints = {
-    "codex-binary-not-found": "No Codex binary was found (details.searched lists where Agent Link looked). Install Codex Desktop (ChatGPT.app) or the codex CLI, or set CODEX_AGENT_LINK_CODEX_BIN to the binary's absolute path.",
-    "spawn-failed": "The Codex binary could not be executed. Check its permissions, or set CODEX_AGENT_LINK_CODEX_BIN to a working binary.",
-    "app-server-exited-during-startup": "The Codex binary exited while starting `app-server` (see details.command and details.logs). If it is an old install, point CODEX_AGENT_LINK_CODEX_BIN at a current Codex.",
-    "readiness-timeout": "The managed Codex app-server did not accept connections before the startup timeout. Raise CODEX_AGENT_LINK_APP_SERVER_STARTUP_MS (milliseconds) or check details.logs.",
-    "autostart-disabled": "CODEX_AGENT_LINK_AUTOSTART=0 turns off the managed app-server. Unset it, or set CODEX_AGENT_LINK_URL / CODEX_AGENT_LINK_SOCK to a running Codex app-server.",
-    "state-dir-unsafe": "The managed app-server state directory is not private to this user. Fix its ownership or set CODEX_AGENT_LINK_STATE_DIR to a directory you own.",
+    "codex-binary-not-found": "No Codex binary was found (details.searched lists where Agent Link looked). Install Codex Desktop (ChatGPT.app) or the codex CLI, or set AGENT_LINK_CODEX_BIN to the binary's absolute path.",
+    "spawn-failed": "The Codex binary could not be executed. Check its permissions, or set AGENT_LINK_CODEX_BIN to a working binary.",
+    "app-server-exited-during-startup": "The Codex binary exited while starting `app-server` (see details.command and details.logs). If it is an old install, point AGENT_LINK_CODEX_BIN at a current Codex.",
+    "readiness-timeout": "The managed Codex app-server did not accept connections before the startup timeout. Raise AGENT_LINK_CODEX_STARTUP_TIMEOUT_MS (milliseconds) or check details.logs.",
+    "autostart-disabled": "AGENT_LINK_CODEX_AUTOSTART=0 turns off the managed app-server. Unset it, or set AGENT_LINK_CODEX_URL / AGENT_LINK_CODEX_SOCK to a running Codex app-server.",
+    "state-dir-unsafe": "The managed app-server state directory is not private to this user. Fix its ownership or set AGENT_LINK_MANAGED_DIR to a directory you own.",
     "client-closed": "Agent Link is shutting down; retry once the MCP server has restarted.",
-    "open-failed": "Could not connect to the Codex app-server. Check CODEX_AGENT_LINK_URL / CODEX_AGENT_LINK_SOCK, or unset them to let Agent Link manage its own app-server.",
-    "open-timeout": "Timed out connecting to the Codex app-server. Check CODEX_AGENT_LINK_URL / CODEX_AGENT_LINK_SOCK, or unset them to let Agent Link manage its own app-server.",
+    "open-failed": "Could not connect to the Codex app-server. Check AGENT_LINK_CODEX_URL / AGENT_LINK_CODEX_SOCK, or unset them to let Agent Link manage its own app-server.",
+    "open-timeout": "Timed out connecting to the Codex app-server. Check AGENT_LINK_CODEX_URL / AGENT_LINK_CODEX_SOCK, or unset them to let Agent Link manage its own app-server.",
     "connection-lost": "The Codex app-server connection dropped. Retry; a managed app-server is restarted on the next call.",
     "request-timeout": "The Codex app-server did not answer in time. Retry, or check that the app-server is not overloaded."
   };
@@ -26344,10 +26568,11 @@ function claudeHealthSummary() {
   } catch {
     sessions = [];
   }
-  let status = { path: null, writable: false, pendingMessagesCount: null };
+  let status = { path: null, writable: false, pendingMessagesCount: null, error: null };
   try {
     status = mailboxStatus();
-  } catch {
+  } catch (error2) {
+    status = { ...status, error: error2?.message ?? String(error2) };
   }
   const current = currentClaudeSession();
   return {
@@ -26360,10 +26585,11 @@ function claudeHealthSummary() {
     mailbox: {
       path: status.path,
       writable: status.writable,
-      pendingMessagesCount: status.pendingMessagesCount
+      pendingMessagesCount: status.pendingMessagesCount,
+      ...status.error ? { error: status.error } : {}
     },
     channel: {
-      enabled: HOST_INFO.host === "claude" && process.env.AGENT_LINK_DISABLE_CHANNEL !== "1",
+      enabled: HOST_INFO.host === "claude" && !envFlag("AGENT_LINK_DISABLE_CHANNEL", false),
       currentSession: current ? {
         sessionId: current.sessionId,
         surface: current.surface,
@@ -27413,7 +27639,7 @@ async function openCodexDesktopThread({ threadId, ephemeral }) {
   const command = "open";
   const args = ["-g", deepLink];
   const commandDisplay = `${command} ${args.map(shellQuoteForDisplay).join(" ")}`;
-  if (process.env.CODEX_AGENT_LINK_GUI_OPEN_DRY_RUN === "1") {
+  if (envFlag("AGENT_LINK_GUI_OPEN_DRY_RUN", false)) {
     return {
       attempted: true,
       ok: true,
@@ -27831,10 +28057,8 @@ function summarizeUserContent(content) {
 }
 function configuredEndpointSummary() {
   return {
-    CODEX_AGENT_LINK_URL: Boolean(process.env.CODEX_AGENT_LINK_URL),
-    CODEX_APP_SERVER_URL: Boolean(process.env.CODEX_APP_SERVER_URL),
-    CODEX_AGENT_LINK_SOCK: Boolean(process.env.CODEX_AGENT_LINK_SOCK),
-    CODEX_APP_SERVER_SOCK: Boolean(process.env.CODEX_APP_SERVER_SOCK)
+    url: env("AGENT_LINK_CODEX_URL").source,
+    socket: env("AGENT_LINK_CODEX_SOCK").source
   };
 }
 function jsonResult(value, isError = false) {
@@ -27860,10 +28084,10 @@ function sleep4(ms) {
 var transport = new StdioServerTransport();
 await server.connect(transport);
 try {
-  reapOrphanedManagedAppServers();
+  for (const stateDir2 of managedAppServerReapDirs()) reapOrphanedManagedAppServers({ stateDir: stateDir2 });
 } catch {
 }
-var channelBridge = HOST_INFO.host === "claude" && process.env.AGENT_LINK_DISABLE_CHANNEL !== "1" ? makeAgentLinkChannelBridge({
+var channelBridge = HOST_INFO.host === "claude" && !envFlag("AGENT_LINK_DISABLE_CHANNEL", false) ? makeAgentLinkChannelBridge({
   resolveCurrentSession: currentClaudeSession,
   notify: async (notification) => {
     if (typeof server.notification !== "function") {

@@ -139,3 +139,24 @@ test("getLogger is a process-wide singleton that tests can replace", () => {
   assert.notEqual(fresh, replacement);
   assert.equal(getLogger(), fresh);
 });
+
+test("AGENT_LINK_DEBUG uses the shared flag semantics (1/true/yes/on)", () => {
+  for (const value of ["1", "true", "YES", "on"]) assert.equal(resolveLogLevel({ AGENT_LINK_DEBUG: value }), "debug", value);
+  for (const value of ["0", "false", "no", "off", "maybe"]) assert.equal(resolveLogLevel({ AGENT_LINK_DEBUG: value }), "warn", value);
+});
+
+test("an existing looser log file is tightened to 0600 on first write", () => {
+  const file = path.join(mkdtempSync(path.join(tmp, "loose-")), "old.log");
+  writeFileSync(file, "", { mode: 0o644 });
+  const log = createLogger({ env: { AGENT_LINK_LOG_FILE: file }, stderr: sink() });
+  log.warn("w.event");
+  assert.equal(statSync(file).mode & 0o777, 0o600);
+});
+
+test("a relative AGENT_LINK_LOG_FILE disables the file with one notice and never throws", () => {
+  const stderr = sink();
+  const log = createLogger({ env: { AGENT_LINK_LOG_FILE: "relative.log" }, stderr });
+  assert.equal(log.filePath, null);
+  log.warn("w.event");
+  assert.match(stderr.lines[0], /log\.file_disabled.*AGENT_LINK_LOG_FILE must be an absolute path/);
+});

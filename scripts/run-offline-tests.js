@@ -15,6 +15,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { hermeticEnv } from "../tests/helpers/env.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -43,6 +44,7 @@ const groups = {
     "tests/shared/log.test.js",
     "tests/shared/paths.test.js",
     "tests/shared/process-handlers.test.js",
+    "tests/shared/state-dir.test.js",
     "tests/shared/text.test.js"
   ],
   codex: [
@@ -111,7 +113,12 @@ if (unlisted.length) {
   process.stderr.write(`run-offline-tests: WARNING these files match node --test's default patterns but no group lists them:\n  ${unlisted.join("\n  ")}\n`);
 }
 
-const result = spawnSync(process.execPath, ["--test", ...passthrough, ...files], { cwd: root, stdio: "inherit" });
+// Every test process gets a throwaway HOME (and CODEX_HOME under it) with no
+// inherited CODEX_*, CLAUDE_* or AGENT_LINK_* settings, so a test that forgets
+// to pass an explicit path can never read or write the real ~/.agent-link,
+// ~/.claude or ~/.codex.
+const env = hermeticEnv();
+const result = spawnSync(process.execPath, ["--test", ...passthrough, ...files], { cwd: root, stdio: "inherit", env });
 if (unlisted.length) {
   process.stderr.write(`run-offline-tests: WARNING unlisted test files were not run: ${unlisted.join(", ")}\n`);
 }

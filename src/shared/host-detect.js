@@ -1,6 +1,7 @@
 // src/shared/host-detect.js
 import path from "node:path";
-import { homedir } from "node:os";
+import { env as lookup } from "./env.js";
+import { claudeConfigDir as resolveClaudeConfigDir } from "./paths.js";
 
 // The current Claude session id, however the host exposes it. Interactive
 // `claude` historically set CLAUDE_SESSION_ID, but the Claude Desktop host and
@@ -13,7 +14,7 @@ import { homedir } from "node:os";
 // the Desktop sidecar `local_<uuid>` id. Use canonicalClaudeSessionId() from
 // src/claude/identity.js when an addressable mailbox id is needed.
 export function currentClaudeSessionId({ env = process.env } = {}) {
-  return env.CLAUDE_SESSION_ID || env.CLAUDE_CODE_SESSION_ID || undefined;
+  return lookup("CLAUDE_SESSION_ID", env).value || lookup("CLAUDE_CODE_SESSION_ID", env).value || undefined;
 }
 
 // Claude Code's configuration directory. CLAUDE_CONFIG_DIR relocates
@@ -22,21 +23,31 @@ export function currentClaudeSessionId({ env = process.env } = {}) {
 // helper, or a relocated install sees the hook report pending mail while the
 // inbox tool cannot resolve the current session.
 //
-// The Agent Link mailbox/state directory intentionally stays at
-// ~/.claude/agent-link for now; moving it is a separate, owner-approved change.
+// Agent Link's own state lives in ~/.agent-link (src/shared/paths.js), not
+// here; <CLAUDE_CONFIG_DIR>/agent-link is only read as a legacy location.
 export function claudeConfigDir({ env = process.env } = {}) {
-  const configured = typeof env.CLAUDE_CONFIG_DIR === "string" ? env.CLAUDE_CONFIG_DIR.trim() : "";
-  return configured ? path.resolve(configured) : path.join(homedir(), ".claude");
+  return resolveClaudeConfigDir({ env });
 }
 
 export function claudeProjectsRoot({ env = process.env } = {}) {
   return path.join(claudeConfigDir({ env }), "projects");
 }
 
+const HOSTS = new Set(["claude", "codex"]);
+
+// AGENT_LINK_HOST, set in each host's plugin manifest, is authoritative.
+// Without it (an older manifest, a hand-written MCP config) the host is
+// inferred from the variables each host sets for its children.
 export function detectHost({ env = process.env } = {}) {
-  const claude = !!(env.CLAUDE_PROJECT_DIR || env.CLAUDE_PLUGIN_ROOT || env.CLAUDE_SESSION_ID || env.CLAUDE_CODE_SESSION_ID);
-  const codex  = !!(env.CODEX_HOME || env.CODEX_THREAD_ID);
-  if (claude) return { host: "claude", reason: "claude env vars present" };
-  if (codex)  return { host: "codex",  reason: "codex env vars present" };
-  return { host: "unknown", reason: "no host env vars detected" };
+  const declared = lookup("AGENT_LINK_HOST", env).value?.trim().toLowerCase();
+  if (declared && HOSTS.has(declared)) {
+    return { host: declared, reason: `AGENT_LINK_HOST=${declared}` };
+  }
+  const ignored = declared ? ` (ignored unknown AGENT_LINK_HOST=${JSON.stringify(declared)})` : "";
+  const has = (name) => Boolean(lookup(name, env).value);
+  const claude = has("CLAUDE_PROJECT_DIR") || has("CLAUDE_PLUGIN_ROOT") || has("CLAUDE_SESSION_ID") || has("CLAUDE_CODE_SESSION_ID");
+  const codex = has("CODEX_HOME") || has("CODEX_THREAD_ID");
+  if (claude) return { host: "claude", reason: `claude env vars present${ignored}` };
+  if (codex) return { host: "codex", reason: `codex env vars present${ignored}` };
+  return { host: "unknown", reason: `no host env vars detected${ignored}` };
 }

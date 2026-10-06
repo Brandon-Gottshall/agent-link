@@ -216,7 +216,7 @@ These tools are listed only when Agent Link runs inside Claude Code or Claude De
 Agent Link only reads Claude's own session state. All writes go to a mailbox that Agent Link owns.
 
 - **Session registry (read-only).** Desktop sidecars under `~/Library/Application Support/Claude/local-agent-mode-sessions/`, Code sidecars under `~/Library/Application Support/Claude/claude-code-sessions/`, and transcript metadata under `~/.claude/projects/`.
-- **Mailbox.** An append-only JSONL file at `~/.claude/agent-link/mailbox.jsonl`. Nothing leaves the machine.
+- **Mailbox.** An append-only JSONL file at `~/.agent-link/mailbox.jsonl` (see [State directory](#state-directory)). Nothing leaves the machine.
 - **Receiving in Claude Desktop.** The `SessionStart` and `UserPromptSubmit` hooks add a short "you have mail" note to the session's context. Message bodies appear only when the agent calls `read_agent_link_inbox`, so the user sees the same thing the agent does.
 - **Receiving in Claude Code.** When loaded as a channel, Agent Link polls the mailbox and emits `<agent-link-message>` events. The agent answers with `reply_agent_link_message`.
 - **Peer-message envelope.** Every message from another agent reaches the receiving model wrapped in one `<agent-link-message>` envelope: the channel event, each message in the `read_agent_link_inbox` result, and the text of every Codex turn Agent Link starts or steers for another agent (`message_codex_thread`, `launch_codex_thread` with a message, and the project-orchestrator and dependency-handoff tools). Tool results that return another agent's reply (`message_claude_session` and `message_codex_thread` with `waitForReply`, `wait_for_claude_session`, and `agent_link_mailbox_inspect` with `includeBodies`) carry it only in the same envelope. The envelope names the validated sender, says whether that identity came from the runtime (`fromVerified`), and carries a fixed notice that the content is not from the user. Bodies are limited to 64 KiB, and markup, control, bidi, and other invisible characters in them are escaped.
@@ -226,23 +226,59 @@ Agent Link only reads Claude's own session state. All writes go to a mailbox tha
 
 Everything works with no configuration. These environment variables override defaults.
 
-**Codex**
+Every setting has one `AGENT_LINK_*` name. Older names still work as aliases: when both are set, the `AGENT_LINK_*` name wins. Flags accept `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`. Path settings must be absolute (or start with `~/`); a relative path is rejected with an error naming the variable, because the Claude hook and the MCP server run from different working directories.
+
+### State directory
+
+Agent Link keeps its own files in `~/.agent-link` (directory `0700`, files `0600`):
+
+```
+~/.agent-link/
+  mailbox.jsonl          Claude mailbox
+  receipts.jsonl         receipt log shared by both hosts
+  managed-app-servers/   records of app-servers Agent Link started
+  logs/agent-link.log    only when debug logging is on
+  migration.json         written once, lists the legacy files found
+```
+
+`~/.agent-link` is used instead of an XDG path on purpose: apps launched from the Dock don't inherit shell exports, so an `XDG_STATE_HOME` set in a shell profile would give terminal-launched and Dock-launched hosts two different mailboxes.
+
+**Upgrading from 0.4.x and earlier.** Older releases kept the mailbox at `~/.claude/agent-link/mailbox.jsonl` and receipts at `$CODEX_HOME/agent-link-receipts.jsonl`. Unless you set an explicit mailbox or receipt path, reads merge those legacy files with the new ones (deduplicated by id), so pending mail and old receipts stay visible. New messages, delivery marks, and receipts are written only to `~/.agent-link`. The legacy files are never modified, moved, or deleted; remove them yourself once every host runs this version. Orphaned app-servers recorded under `~/.claude/agent-link/managed-app-servers` are still cleaned up.
+
+| Variable | Legacy aliases | Effect |
+| --- | --- | --- |
+| `AGENT_LINK_STATE_DIR` | | State directory. Default `~/.agent-link`. |
+| `AGENT_LINK_MAILBOX_PATH` | | Mailbox file. Default `<state>/mailbox.jsonl`. Setting it turns off the legacy merge. |
+| `AGENT_LINK_MAILBOX_DB` | | Deprecated. A 0.3.x SQLite path; its `.jsonl` sibling is used as the mailbox. |
+| `AGENT_LINK_RECEIPT_LOG` | `CODEX_AGENT_LINK_RECEIPT_LOG`, `CLAUDE_AGENT_LINK_RECEIPT_LOG` | Receipt log. Default `<state>/receipts.jsonl`. Setting it turns off the legacy merge. |
+| `AGENT_LINK_MANAGED_DIR` | `CODEX_AGENT_LINK_STATE_DIR` | Managed app-server records. Default `<state>/managed-app-servers`. (The legacy name only ever meant this directory.) |
+
+### Codex
+
+| Variable | Legacy aliases | Effect |
+| --- | --- | --- |
+| `AGENT_LINK_CODEX_URL` | `CODEX_AGENT_LINK_URL`, `CODEX_APP_SERVER_URL` | Use an existing app-server WebSocket, e.g. `ws://127.0.0.1:41987`. |
+| `AGENT_LINK_CODEX_SOCK` | `CODEX_AGENT_LINK_SOCK`, `CODEX_APP_SERVER_SOCK` | Use an existing app-server Unix socket. |
+| `AGENT_LINK_CODEX_AUTOSTART=0` | `CODEX_AGENT_LINK_AUTOSTART` | Never start a managed app-server. |
+| `AGENT_LINK_CODEX_BIN` | `CODEX_AGENT_LINK_CODEX_BIN`, `CODEX_BIN` | Codex binary to use for the managed app-server. |
+| `AGENT_LINK_CODEX_APP_SERVER_BIN` | `CODEX_AGENT_LINK_APP_SERVER_BIN`, `CODEX_APP_SERVER_BIN` | A separate app-server binary, run as `<bin> --listen ...`. |
+| `AGENT_LINK_CODEX_TRANSPORT` | `CODEX_AGENT_LINK_APP_SERVER_TRANSPORT` | Managed app-server transport: `unix` (default; `ws-token` on Windows) or `ws-token`. |
+| `AGENT_LINK_CODEX_IDLE_MS` | `CODEX_AGENT_LINK_APP_SERVER_IDLE_MS` | Stop an idle managed app-server after this many milliseconds. Default 300000; `0` never stops it. |
+| `AGENT_LINK_CODEX_STARTUP_TIMEOUT_MS` | `CODEX_AGENT_LINK_APP_SERVER_STARTUP_MS` | Managed app-server startup timeout. Default 15000. A failed start is remembered for 60 s. |
+| `AGENT_LINK_INFER_RECEIPT_ORIGIN=0` | `CODEX_AGENT_LINK_INFER_RECEIPT_ORIGIN` | Don't infer receipt origin from `CODEX_THREAD_ID` and `CODEX_TURN_ID`. |
+| `AGENT_LINK_GUI_OPEN_DRY_RUN=1` | `CODEX_AGENT_LINK_GUI_OPEN_DRY_RUN` | Testing: `openInGui` reports the `open` command without running it. |
+
+### Claude and general
 
 | Variable | Effect |
 | --- | --- |
-| `CODEX_AGENT_LINK_URL` or `CODEX_APP_SERVER_URL` | Use an existing app-server WebSocket, e.g. `ws://127.0.0.1:41987`. |
-| `CODEX_AGENT_LINK_SOCK` or `CODEX_APP_SERVER_SOCK` | Use an existing app-server Unix socket. |
-| `CODEX_AGENT_LINK_AUTOSTART=0` | Never start a managed app-server. |
-| `CODEX_AGENT_LINK_CODEX_BIN` | Codex binary to use for the managed app-server. |
-| `CODEX_AGENT_LINK_RECEIPT_LOG` | Receipt log path, shared by both hosts. Default: `$CODEX_HOME/agent-link-receipts.jsonl` (`~/.codex` when `CODEX_HOME` is unset). |
-| `CODEX_AGENT_LINK_INFER_RECEIPT_ORIGIN=0` | Don't infer receipt origin from `CODEX_THREAD_ID` and `CODEX_TURN_ID`. |
+| `AGENT_LINK_HOST` | `claude` or `codex`. Each plugin manifest sets it for its own host; without it the host is inferred from `CLAUDE_*` / `CODEX_*` variables. |
+| `AGENT_LINK_DISABLE_CHANNEL=1` | Don't push `<agent-link-message>` channel events in Claude Code. |
+| `AGENT_LINK_DEBUG=1` | Debug logging to stderr and to `<state>/logs/agent-link.log`. |
+| `AGENT_LINK_LOG_LEVEL` | `error`, `warn` (default), `info`, or `debug`. Overrides `AGENT_LINK_DEBUG`. |
+| `AGENT_LINK_LOG_FILE` | Log file path. Setting it also turns the file on at the current level. |
 
-**Claude**
-
-| Variable | Effect |
-| --- | --- |
-| `AGENT_LINK_MAILBOX_PATH` | Mailbox path. Default: `~/.claude/agent-link/mailbox.jsonl`. |
-| `AGENT_LINK_MAILBOX_DB` | Deprecated. Legacy SQLite paths are mapped to a `.jsonl` mailbox. |
+Agent Link also reads, but never renames, variables its hosts set: `HOME`, `CODEX_HOME`, `CODEX_THREAD_ID`, `CODEX_TURN_ID`, `CLAUDE_SESSION_ID`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_PROJECT_DIR`, `CLAUDE_PLUGIN_ROOT`, and `CLAUDE_CONFIG_DIR`.
 
 ## Behavior reference
 
@@ -275,7 +311,7 @@ What each tool does to real state, and what its results do and don't prove.
 - `sidebarMembership` is `in_sidebar_model`, `background_only`, or `unknown`. It's trustworthy only when `sidebarState.authority` is `rendererSidebarModel`. Otherwise it's `unknown`.
 - Loaded subagent threads missing from the sidebar are listed under `subagentRegistry.loadedSubagents`, grouped by parent in `subagentRegistry.byParentThreadId`.
 - `get_codex_sidebar_state` reports what Codex Desktop returns, with no guessing. Unsupported hosts show up in `sidebarState.unsupported`.
-- Sidebar state needs an app-server that supports `desktop/sidebar/state/read`. A plain `codex app-server` doesn't, so these fields report unsupported unless you point Agent Link at such a server with `CODEX_AGENT_LINK_URL`. Agent Link never discovers Desktop endpoints on its own.
+- Sidebar state needs an app-server that supports `desktop/sidebar/state/read`. A plain `codex app-server` doesn't, so these fields report unsupported unless you point Agent Link at such a server with `AGENT_LINK_CODEX_URL`. Agent Link never discovers Desktop endpoints on its own.
 
 ### Archiving
 
@@ -290,7 +326,7 @@ What each tool does to real state, and what its results do and don't prove.
 
 ## Receipts
 
-Launch, message, and archive calls write a receipt by default. Both hosts append to one shared log: `$CODEX_HOME/agent-link-receipts.jsonl` (`~/.codex/agent-link-receipts.jsonl` when `CODEX_HOME` is unset). Set `CODEX_AGENT_LINK_RECEIPT_LOG` to use a different file.
+Launch, message, and archive calls write a receipt by default. Both hosts append to one shared log: `~/.agent-link/receipts.jsonl`. Set `AGENT_LINK_RECEIPT_LOG` to use a different file. Receipts written by 0.4.x and earlier to `$CODEX_HOME/agent-link-receipts.jsonl` are still listed (read-only) until you set an explicit log path.
 
 Each receipt records the action, target, message preview, delivery state, any final response or reply-confirmation error, and evidence. Every receipt also has a top-level `host` and a `target.kind` (`codex_thread` or `claude_session`), so you can filter by host pair.
 

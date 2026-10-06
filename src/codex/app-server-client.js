@@ -11,15 +11,18 @@ import {
   codexBinaryVersion,
   discoverCodexBinary
 } from "./install-layout.js";
+import { env, envFlag, envValue } from "../shared/env.js";
 import { AgentLinkError } from "../shared/errors.js";
 import { getLogger } from "../shared/log.js";
+import { legacyManagedAppServerDirs, managedAppServerDir, stateDir as agentLinkStateDir } from "../shared/paths.js";
+import { ensureStateDir } from "../shared/state.js";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 const DEFAULT_STARTUP_TIMEOUT_MS = 15000;
 // A managed app-server is expensive (70-80% of a core while it boots, plus
 // steady RSS). Keep it only while it is being used: after this long with no
 // in-flight request it is shut down, and the next real tool call starts a
-// fresh one. Override with CODEX_AGENT_LINK_APP_SERVER_IDLE_MS (0 disables).
+// fresh one. Override with AGENT_LINK_CODEX_IDLE_MS (0 disables).
 const DEFAULT_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_KILL_GRACE_MS = 1500;
 // A Codex binary that hangs or crashes at startup would otherwise cost every
@@ -66,14 +69,21 @@ export class AppServerError extends AgentLinkError {
   }
 }
 
+// <state>/managed-app-servers, or AGENT_LINK_MANAGED_DIR (legacy alias
+// CODEX_AGENT_LINK_STATE_DIR). See src/shared/paths.js.
 export function managedAppServerStateDir() {
-  return process.env.CODEX_AGENT_LINK_STATE_DIR
-    || path.join(os.homedir(), ".claude", "agent-link", "managed-app-servers");
+  return managedAppServerDir();
+}
+
+// Orphan reaping scans the current directory plus, with no override, the
+// 0.4.x directory under ~/.claude/agent-link (R4.5).
+export function managedAppServerReapDirs() {
+  return [managedAppServerDir(), ...legacyManagedAppServerDirs()];
 }
 
 function envNonNegativeMs(name, fallback) {
-  const raw = process.env[name];
-  if (raw === undefined || raw === "") {
+  const raw = envValue(name);
+  if (raw === undefined) {
     return fallback;
   }
   const parsed = Number(raw);
@@ -89,7 +99,7 @@ function envPositiveMs(name, fallback) {
 // 0700 state directory, so only this user can reach it. ws-token: loopback
 // websocket gated by a capability token (for platforms without Unix sockets).
 function envTransport() {
-  const raw = process.env.CODEX_AGENT_LINK_APP_SERVER_TRANSPORT;
+  const raw = envValue("AGENT_LINK_CODEX_TRANSPORT");
   if (raw === "ws-token" || raw === "unix") {
     return raw;
   }
@@ -100,9 +110,9 @@ export class CodexAppServerClient {
   constructor(options = {}) {
     this.options = {
       requestTimeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
-      startupTimeoutMs: envPositiveMs("CODEX_AGENT_LINK_APP_SERVER_STARTUP_MS", DEFAULT_STARTUP_TIMEOUT_MS),
-      autoStart: process.env.CODEX_AGENT_LINK_AUTOSTART !== "0",
-      idleTimeoutMs: envNonNegativeMs("CODEX_AGENT_LINK_APP_SERVER_IDLE_MS", DEFAULT_IDLE_TIMEOUT_MS),
+      startupTimeoutMs: envPositiveMs("AGENT_LINK_CODEX_STARTUP_TIMEOUT_MS", DEFAULT_STARTUP_TIMEOUT_MS),
+      autoStart: envFlag("AGENT_LINK_CODEX_AUTOSTART", true),
+      idleTimeoutMs: envNonNegativeMs("AGENT_LINK_CODEX_IDLE_MS", DEFAULT_IDLE_TIMEOUT_MS),
       killGraceMs: DEFAULT_KILL_GRACE_MS,
       startupFailureCacheMs: DEFAULT_STARTUP_FAILURE_CACHE_MS,
       transport: envTransport(),
@@ -383,7 +393,7 @@ export class CodexAppServerClient {
   }
 
   // Only an app-server Agent Link started itself is answered automatically.
-  // An explicitly configured endpoint (CODEX_AGENT_LINK_URL / _SOCK) may be a
+  // An explicitly configured endpoint (AGENT_LINK_CODEX_URL / _SOCK) may be a
   // Desktop or IDE app-server whose prompts belong to a human; those requests
   // are counted and left for that app-server's other clients.
   answerServerRequest(ws, message) {
@@ -434,19 +444,19 @@ export class CodexAppServerClient {
   }
 
   async resolveTarget() {
-    const explicitUrl = process.env.CODEX_AGENT_LINK_URL || process.env.CODEX_APP_SERVER_URL;
+    const explicitUrl = envValue("AGENT_LINK_CODEX_URL");
     if (explicitUrl) {
       return { kind: "url", url: explicitUrl, managed: false };
     }
 
-    const explicitSocket = process.env.CODEX_AGENT_LINK_SOCK || process.env.CODEX_APP_SERVER_SOCK;
+    const explicitSocket = envValue("AGENT_LINK_CODEX_SOCK");
     if (explicitSocket) {
       return { kind: "socket", socketPath: path.resolve(explicitSocket), managed: false };
     }
 
     if (!this.options.autoStart) {
       throw new AppServerError(
-        "No Codex app-server endpoint is configured. Set CODEX_AGENT_LINK_URL, CODEX_APP_SERVER_URL, CODEX_AGENT_LINK_SOCK, or enable CODEX_AGENT_LINK_AUTOSTART.",
+        "No Codex app-server endpoint is configured. Set AGENT_LINK_CODEX_URL or AGENT_LINK_CODEX_SOCK, or remove AGENT_LINK_CODEX_AUTOSTART=0 (legacy CODEX_AGENT_LINK_AUTOSTART) so Agent Link manages its own app-server.",
         { code: "autostart-disabled" }
       );
     }
@@ -517,6 +527,11 @@ export class CodexAppServerClient {
   // The name is fixed per Agent Link process (<pid>.sock): Codex keeps
   // per-socket lock files, so a fresh name per spawn would pile them up.
   allocateEndpoint() {
+    // The default managed dir sits inside the Agent Link state dir; create
+    // that 0700 first (and record the migration) so its parent is private too.
+    if (path.resolve(path.dirname(this.stateDir())) === path.resolve(agentLinkStateDir())) {
+      ensureStateDir();
+    }
     const stateDir = ensurePrivateDir(this.stateDir());
     const stem = `${process.pid}`;
     if (this.options.transport === "ws-token") {
@@ -555,7 +570,10 @@ export class CodexAppServerClient {
     if (!this.reapedOrphans) {
       this.reapedOrphans = true;
       try {
-        reapOrphanedManagedAppServers({ stateDir: this.stateDir() });
+        const dirs = this.options.stateDir ? [this.options.stateDir] : managedAppServerReapDirs();
+        for (const dir of dirs) {
+          reapOrphanedManagedAppServers({ stateDir: dir });
+        }
       } catch {
         // Best effort only; never block a real tool call on orphan cleanup.
       }
@@ -1019,13 +1037,13 @@ export function findCodexBinary(options = {}) {
 // already-cached version is reported (versionProbed tells which).
 export function describeCodexInstall(options = {}) {
   const probeVersion = options.probeVersion !== false;
-  const appServerBin = process.env.CODEX_AGENT_LINK_APP_SERVER_BIN || process.env.CODEX_APP_SERVER_BIN;
+  const { value: appServerBin, source: appServerBinSource } = env("AGENT_LINK_CODEX_APP_SERVER_BIN");
   if (appServerBin) {
     const exists = !appServerBin.includes("/") || existsSync(appServerBin);
     return {
       available: exists,
       path: appServerBin,
-      source: "env:CODEX_AGENT_LINK_APP_SERVER_BIN",
+      source: `env:${appServerBinSource}`,
       version: null,
       versionProbed: false,
       searched: [appServerBin],
@@ -1046,7 +1064,7 @@ export function describeCodexInstall(options = {}) {
 }
 
 export function findAppServerLaunch() {
-  const appServerBin = process.env.CODEX_AGENT_LINK_APP_SERVER_BIN || process.env.CODEX_APP_SERVER_BIN;
+  const { value: appServerBin, source: appServerBinSource } = env("AGENT_LINK_CODEX_APP_SERVER_BIN");
   if (appServerBin) {
     if (appServerBin.includes("/") && !existsSync(appServerBin)) {
       throw new AppServerError(`Configured Codex app-server binary does not exist: ${appServerBin}`, {
@@ -1058,7 +1076,7 @@ export function findAppServerLaunch() {
     return {
       kind: "app-server-bin",
       command: appServerBin,
-      source: "env:CODEX_AGENT_LINK_APP_SERVER_BIN",
+      source: `env:${appServerBinSource}`,
       args: []
     };
   }

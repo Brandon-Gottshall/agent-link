@@ -15,6 +15,7 @@
 // to write ids, and claudeSessionAliases() to read them, so mail that older
 // versions queued under the raw CLI id or the other `local_` form is still
 // found.
+import { env as lookupEnv } from "../shared/env.js";
 import { currentClaudeSessionId } from "../shared/host-detect.js";
 
 // Write-time check: what may be stored as a from_session_id at all.
@@ -137,7 +138,7 @@ export function resolveCallerIdentity({ host, runtimeCallerContext = null, curre
     if (runtimeThreadId) {
       return { id: runtimeThreadId, kind: "codex", aliases: [runtimeThreadId], source: "runtime_context" };
     }
-    const envThread = env.CODEX_THREAD_ID;
+    const envThread = lookupEnv("CODEX_THREAD_ID", env).value;
     if (isValidSenderId(envThread)) {
       return { id: envThread, kind: "codex", aliases: [envThread], source: "env" };
     }

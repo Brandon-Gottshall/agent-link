@@ -82,6 +82,10 @@ test("both hosts launch the bundled server under the shared MCP key", () => {
   assert.equal(claudeServer.command, "node");
   assert.deepEqual(claudeServer.args, [`\${CLAUDE_PLUGIN_ROOT}/${SERVER}`]);
 
+  // Each host declares itself, so host detection never has to guess (W2C-08).
+  assert.deepEqual(codexServer.env, { AGENT_LINK_HOST: "codex" });
+  assert.deepEqual(claudeServer.env, { AGENT_LINK_HOST: "claude" });
+
   assert.ok(existsSync(path.join(root, SERVER)), `${SERVER} is committed`);
 });
 

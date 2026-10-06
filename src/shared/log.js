@@ -4,7 +4,8 @@
 // so nothing here ever writes to it.
 //
 // Levels, most to least severe: error < warn < info < debug. The threshold is
-// AGENT_LINK_LOG_LEVEL, else `debug` when AGENT_LINK_DEBUG=1, else `warn`.
+// AGENT_LINK_LOG_LEVEL, else `debug` when AGENT_LINK_DEBUG is on (1, true,
+// yes or on), else `warn`.
 // Events at or above the threshold go to stderr as one line, and to the log
 // file as JSON lines when AGENT_LINK_LOG_FILE is set or debug is on (default
 // file <state>/logs/agent-link.log). The file is capped at maxFileBytes and
@@ -14,9 +15,10 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { env as lookup } from "./env.js";
+import { env as lookup, envFlag } from "./env.js";
 import { DIR_MODE, FILE_MODE } from "./jsonl.js";
 import { logFilePath } from "./paths.js";
+import { tightenMode } from "./state.js";
 
 /** @typedef {"error" | "warn" | "info" | "debug"} LogLevel */
 
@@ -74,7 +76,7 @@ function isLevel(value) {
 export function resolveLogLevel(source = process.env) {
   const configured = lookup("AGENT_LINK_LOG_LEVEL", source).value?.trim().toLowerCase();
   if (isLevel(configured)) return configured;
-  return lookup("AGENT_LINK_DEBUG", source).value === "1" ? "debug" : "warn";
+  return envFlag("AGENT_LINK_DEBUG", false, source) ? "debug" : "warn";
 }
 
 /**
@@ -113,7 +115,21 @@ export function createLogger(options = {}) {
   const level = resolveLogLevel(source);
   const threshold = LOG_LEVELS[level];
   const fileWanted = Boolean(lookup("AGENT_LINK_LOG_FILE", source).value) || level === "debug";
-  let filePath = fileWanted ? logFilePath({ env: source, homedir: options.homedir }) : null;
+  /** @type {string | null} */
+  let filePath = null;
+  if (fileWanted) {
+    try {
+      filePath = logFilePath({ env: source, homedir: options.homedir });
+    } catch (error) {
+      // A relative AGENT_LINK_LOG_FILE: say so once and log to stderr only.
+      try {
+        stderr.write(`agent-link: [warn] log.file_disabled ${JSON.stringify({ error: /** @type {Error} */ (error).message })}\n`);
+      } catch {
+        // stderr closed
+      }
+    }
+  }
+  let fileChecked = false;
   /** @type {LogEvent[]} */
   const ring = [];
 
@@ -122,6 +138,11 @@ export function createLogger(options = {}) {
     if (!filePath) return;
     try {
       fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: DIR_MODE });
+      if (!fileChecked) {
+        // An existing log file from an older release may be looser than 0600.
+        fileChecked = true;
+        tightenMode(filePath, FILE_MODE);
+      }
       let size = 0;
       try {
         size = fs.statSync(filePath).size;

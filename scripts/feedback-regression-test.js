@@ -378,12 +378,14 @@ try {
       platformOs: "macos"
     }
   });
-  const appended = await appendReceipt(receipt, { codexHome: tempHome });
+  // Its own receipt log: never the inherited AGENT_LINK_RECEIPT_LOG or ~/.agent-link.
+  const receiptLog = path.join(tempHome, "receipts.jsonl");
+  const appended = await appendReceipt(receipt, { path: receiptLog });
   assert.equal(appended.ok, true);
-  assert.match(appended.path, /agent-link-receipts\.jsonl$/);
-  assert.equal(receiptIndexSummary({ codexHome: tempHome }).path, appended.path);
+  assert.equal(appended.path, receiptLog);
+  assert.equal(receiptIndexSummary({ path: receiptLog }).path, appended.path);
   const receiptsByTarget = await listReceipts({
-    codexHome: tempHome,
+    path: receiptLog,
     targetThreadId: "4ae84030-27a1-799b-bbf6-9301b8c60ffc",
     limit: 5
   });
@@ -392,7 +394,7 @@ try {
   assert.equal(receiptsByTarget.data[0].cleanupRecommendation, "archiveable");
   assert.equal(receiptsByTarget.data[0].replyConfirmation.ok, true);
   const receiptsBySearch = await listReceipts({
-    codexHome: tempHome,
+    path: receiptLog,
     searchTerm: "Created by regression test"
   });
   assert.equal(receiptsBySearch.data[0].target.name, "Link Receipts");
@@ -442,7 +444,14 @@ try {
     cwd: pluginRoot,
     env: {
       ...process.env,
+      HOME: tempHome,
       CODEX_HOME: tempHome,
+      AGENT_LINK_STATE_DIR: path.join(tempHome, ".agent-link"),
+      AGENT_LINK_RECEIPT_LOG: receiptLog,
+      AGENT_LINK_MAILBOX_PATH: path.join(tempHome, "mailbox.jsonl"),
+      AGENT_LINK_CODEX_URL: "",
+      AGENT_LINK_CODEX_SOCK: "",
+      AGENT_LINK_CODEX_APP_SERVER_BIN: "",
       CODEX_AGENT_LINK_AUTOSTART: "0",
       CODEX_AGENT_LINK_URL: "",
       CODEX_APP_SERVER_URL: "",

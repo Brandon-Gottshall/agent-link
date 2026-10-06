@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { ENV_ALIASES } from "../shared/env.js";
 
 // Codex Desktop ships inside ChatGPT.app today. /Applications/Codex.app can be
 // a stale older copy whose app-server rejects current models and cannot resume
@@ -32,7 +33,7 @@ export function codexInstallLayout(options = {}) {
   return {
     platform,
     executable,
-    envVars: ["CODEX_AGENT_LINK_CODEX_BIN", "CODEX_BIN"],
+    envVars: ["AGENT_LINK_CODEX_BIN", ...ENV_ALIASES.AGENT_LINK_CODEX_BIN],
     appBundles: applicationDirs.flatMap((dir) => APP_BUNDLES.map((bundle) => ({
       app: bundle.app,
       appPath: path.join(dir, bundle.app),

@@ -25,7 +25,10 @@
       "args": [
         "${CLAUDE_PLUGIN_ROOT}/dist/server.mjs"
       ],
-      "cwd": "${CLAUDE_PLUGIN_ROOT}"
+      "cwd": "${CLAUDE_PLUGIN_ROOT}",
+      "env": {
+        "AGENT_LINK_HOST": "claude"
+      }
     }
   }
 }

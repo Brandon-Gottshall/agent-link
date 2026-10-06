@@ -1,31 +1,47 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { summarizeRuntimeCallerContext } from "./caller-context.js";
 import { clampInt as clamp } from "./args.js";
+import { env, envFlag } from "./env.js";
 import { appendJsonl, parseJsonlLines } from "./jsonl.js";
+import { legacyReceiptPaths, receiptLogPath, stateDir } from "./paths.js";
+import { ensureStateDir } from "./state.js";
 
 const RECEIPT_VERSION = 1;
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 500;
 const MAX_TEXT = 700;
 
-export function receiptLogPath(options = {}) {
-  const codexHome = options.codexHome
-    || process.env.CODEX_HOME
-    || path.join(os.homedir(), ".codex");
-  return options.path
-    || process.env.CODEX_AGENT_LINK_RECEIPT_LOG
-    || path.join(codexHome, "agent-link-receipts.jsonl");
+// The file receipts are appended to: options.path, else AGENT_LINK_RECEIPT_LOG
+// (or a legacy alias), else <state>/receipts.jsonl (src/shared/paths.js).
+export function receiptWritePath(options = {}) {
+  return options.path || receiptLogPath();
 }
 
+// Every file listReceipts reads: with no override, the 0.4.x log at
+// $CODEX_HOME/agent-link-receipts.jsonl first, then the current log (R4.5).
+// The legacy log is never written.
+export function receiptReadPaths(options = {}) {
+  const writePath = receiptWritePath(options);
+  if (options.path) return [writePath];
+  return [...legacyReceiptPaths(), writePath];
+}
+
+// Health must still answer when a path setting is misconfigured, so a
+// PathConfigError is reported as `error` instead of thrown.
 export function receiptIndexSummary(options = {}) {
+  let paths;
+  try {
+    paths = { path: receiptWritePath(options), readPaths: receiptReadPaths(options) };
+  } catch (error) {
+    paths = { path: null, readPaths: [], error: error.message };
+  }
   return {
-    path: receiptLogPath(options),
+    ...paths,
     format: "jsonl",
     version: RECEIPT_VERSION,
-    note: "Agent Link writes local action receipts for launch, message, and archive operations so later agents can query provenance by target or origin thread. Origin fields come from caller-supplied receipt data, MCP runtime caller context, or environment fallback."
+    note: "Agent Link writes local action receipts for launch, message, and archive operations so later agents can query provenance by target or origin thread. Origin fields come from caller-supplied receipt data, MCP runtime caller context, or environment fallback. Reads also merge the legacy log listed in readPaths; writes go only to path."
   };
 }
 
@@ -41,9 +57,9 @@ export function normalizeReceiptInput(value = {}, options = {}) {
   const runtimeOriginThreadId = cleanText(runtimeCallerContext.threadId, 160);
   const runtimeOriginTurnId = cleanText(runtimeCallerContext.turnId, 160);
   const runtimeOriginToolCallId = cleanText(runtimeCallerContext.toolCallId, 160);
-  const canInferOrigin = process.env.CODEX_AGENT_LINK_INFER_RECEIPT_ORIGIN !== "0";
-  const inferredOriginThreadId = canInferOrigin ? cleanText(process.env.CODEX_THREAD_ID, 160) : null;
-  const inferredOriginTurnId = canInferOrigin ? cleanText(process.env.CODEX_TURN_ID, 160) : null;
+  const canInferOrigin = envFlag("AGENT_LINK_INFER_RECEIPT_ORIGIN", true);
+  const inferredOriginThreadId = canInferOrigin ? cleanText(env("CODEX_THREAD_ID").value, 160) : null;
+  const inferredOriginTurnId = canInferOrigin ? cleanText(env("CODEX_TURN_ID").value, 160) : null;
   const originThread = firstOriginValue([
     ["caller_supplied", callerOriginThreadId],
     ["runtime_context", runtimeOriginThreadId],
@@ -145,10 +161,11 @@ async function tightenFileMode(target, mode) {
 }
 
 export async function appendReceipt(receipt, options = {}) {
-  const logPath = receiptLogPath(options);
+  const logPath = receiptWritePath(options);
   // Directories this creates are 0700 and the log file 0600. An existing log
-  // file this user owns is tightened to 0600. Existing directories (such as
-  // $CODEX_HOME) are left alone.
+  // file this user owns is tightened to 0600, and so is the state dir when
+  // the log lives there. Other existing directories are left alone.
+  if (path.resolve(path.dirname(logPath)) === path.resolve(stateDir())) ensureStateDir();
   await appendJsonl(logPath, receipt);
   await tightenFileMode(logPath, 0o600);
   return {
@@ -166,15 +183,34 @@ export async function safeAppendReceipt(receipt, options = {}) {
     return {
       ok: false,
       id: receipt.id,
-      path: receiptLogPath(options),
+      path: safeWritePath(options),
       error: error.message,
       receipt: receiptSummary(receipt)
     };
   }
 }
 
+function safeWritePath(options) {
+  try {
+    return receiptWritePath(options);
+  } catch {
+    return null;
+  }
+}
+
+// Reads one receipt file; a missing file is empty.
+async function readReceiptFile(file) {
+  try {
+    return parseJsonlLines(await fs.readFile(file, "utf8"));
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
 export async function listReceipts(options = {}) {
-  const logPath = receiptLogPath(options);
+  const logPath = receiptWritePath(options);
+  const readPaths = receiptReadPaths(options);
   const limit = clamp(options.limit ?? DEFAULT_LIMIT, 1, MAX_LIMIT);
   const filters = {
     targetThreadId: cleanText(options.targetThreadId, 160),
@@ -186,23 +222,18 @@ export async function listReceipts(options = {}) {
     searchTerm: normalizeSearch(options.searchTerm)
   };
 
-  let raw;
-  try {
-    raw = await fs.readFile(logPath, "utf8");
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      return {
-        ok: true,
-        path: logPath,
-        data: [],
-        scannedReceipts: 0,
-        filters
-      };
+  // Legacy log first, current log second; a receipt id seen twice (a copied
+  // log) is listed once.
+  const seen = new Set();
+  const receipts = [];
+  for (const file of readPaths) {
+    for (const receipt of await readReceiptFile(file)) {
+      const id = typeof receipt?.id === "string" ? receipt.id : null;
+      if (id && seen.has(id)) continue;
+      if (id) seen.add(id);
+      receipts.push(receipt);
     }
-    throw error;
   }
-
-  const receipts = parseJsonlLines(raw);
 
   const data = receipts
     .filter((receipt) => receiptMatches(receipt, filters))

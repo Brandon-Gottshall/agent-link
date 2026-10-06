@@ -1,15 +1,22 @@
 // src/claude/mailbox.js
 import path from "node:path";
 import fs from "node:fs";
-import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
+import {
+  legacyMailboxPaths,
+  legacyPaths,
+  mailboxDbPath,
+  mailboxPath as defaultMailboxPath,
+  sqliteToJsonl,
+  stateDir
+} from "../shared/paths.js";
+import { ensureStateDir, tightenMode } from "../shared/state.js";
 
-// The mailbox stays at ~/.claude/agent-link even when CLAUDE_CONFIG_DIR is
-// set; relocating the state dir is a separate, owner-approved change.
-const DEFAULT_DIR = path.join(homedir(), ".claude/agent-link");
-const DEFAULT_MAILBOX_PATH = path.join(DEFAULT_DIR, "mailbox.jsonl");
-const DEFAULT_LEGACY_DB_PATH = path.join(DEFAULT_DIR, "mailbox.sqlite");
+// The mailbox lives in the Agent Link state dir (~/.agent-link/mailbox.jsonl,
+// see src/shared/paths.js). With no override, reads also merge the 0.4.x
+// mailbox under ~/.claude/agent-link (and <CLAUDE_CONFIG_DIR>/agent-link);
+// writes only ever go to the new file and the legacy files are never changed.
 
 // Every hook, poll and listing re-reads the whole mailbox, so one huge body
 // would stall every session. Bodies are capped at 64 KiB (UTF-8 bytes).
@@ -38,67 +45,79 @@ export function messageBodyTooLarge(body) {
 
 // Precedence: explicit options (mailboxPath, then dbPath) always win over the
 // environment, so a caller that names a mailbox gets that mailbox.
+// Relative AGENT_LINK_MAILBOX_PATH / AGENT_LINK_MAILBOX_DB values throw a
+// PathConfigError (src/shared/paths.js) naming the variable.
+/** @typedef {{mailboxPath?: string, dbPath?: string}} MailboxLocation */
+
+/** @param {MailboxLocation} [location] */
 export function resolveMailboxPath({ mailboxPath, dbPath } = {}) {
   if (mailboxPath) return mailboxPath;
-  if (dbPath) return legacyToJsonl(dbPath);
-  if (process.env.AGENT_LINK_MAILBOX_PATH) return process.env.AGENT_LINK_MAILBOX_PATH;
-  if (process.env.AGENT_LINK_MAILBOX_DB) return legacyToJsonl(process.env.AGENT_LINK_MAILBOX_DB);
-  return DEFAULT_MAILBOX_PATH;
+  if (dbPath) return sqliteToJsonl(dbPath);
+  return defaultMailboxPath();
 }
 
-function legacyToJsonl(legacy) {
-  return legacy.endsWith(".sqlite")
-    ? legacy.slice(0, -".sqlite".length) + ".jsonl"
-    : legacy;
+// Every file the mailbox view is built from: the legacy mailboxes first, then
+// the file new events go to. An explicit path (option or environment) is a
+// complete choice and is read alone.
+/** @param {MailboxLocation} [options] */
+export function mailboxReadPaths(options = {}) {
+  const writePath = resolveMailboxPath(options);
+  if (options.mailboxPath || options.dbPath) return [writePath];
+  return [...legacyMailboxPaths(), writePath];
 }
 
+/** @param {MailboxLocation} [location] */
 function resolveLegacyDbPath({ mailboxPath, dbPath } = {}) {
   if (dbPath) return dbPath;
   // An explicit mailboxPath is a complete choice; never import a legacy
   // database named only by the environment into it.
   if (mailboxPath) return null;
-  return process.env.AGENT_LINK_MAILBOX_DB ?? null;
+  return mailboxDbPath();
+}
+
+function isDefaultMailbox(mailboxPath) {
+  return path.resolve(mailboxPath) === path.resolve(stateDir(), "mailbox.jsonl");
 }
 
 // The mailbox directory is created 0700 and the mailbox file 0600. An
 // existing mailbox file this user owns is tightened to 0600. The directory is
-// only tightened when it is the default Agent Link state dir: a custom path
-// may live in a shared directory that is not ours to change.
+// only tightened when it is the Agent Link state dir: a custom path may live
+// in a shared directory that is not ours to change.
 function ensurePrivateMailbox(mailboxPath) {
-  const dir = path.dirname(mailboxPath);
-  fs.mkdirSync(dir, { recursive: true, mode: DIR_MODE });
-  if (path.resolve(dir) === path.resolve(DEFAULT_DIR)) tightenMode(dir, DIR_MODE);
+  if (isDefaultMailbox(mailboxPath)) {
+    ensureStateDir();
+  } else {
+    fs.mkdirSync(path.dirname(mailboxPath), { recursive: true, mode: DIR_MODE });
+  }
   tightenMode(mailboxPath, FILE_MODE);
 }
 
-function tightenMode(target, mode) {
-  try {
-    const stat = fs.statSync(target);
-    const uid = typeof process.getuid === "function" ? process.getuid() : null;
-    if (uid !== null && stat.uid !== uid) return;
-    if ((stat.mode & 0o777 & ~mode) !== 0) fs.chmodSync(target, mode);
-  } catch {
-    // missing or not ours: leave it alone
-  }
-}
-
-// Read-only status for health checks: never creates the mailbox directory or
-// file (a health call on a Codex-only machine must not create
-// ~/.claude/agent-link).
+// Read-only status for health checks: never creates the state directory or
+// the mailbox file (a health call on a Codex-only machine must not create
+// ~/.agent-link).
 export function mailboxStatus(options = {}) {
   const mailboxPath = resolveMailboxPath(options);
+  const readPaths = mailboxReadPaths(options);
   const exists = fs.existsSync(mailboxPath);
+  const legacyReadPaths = readPaths.filter((p) => p !== mailboxPath && fs.existsSync(p));
   let pendingMessagesCount = 0;
   let readable = true;
-  if (exists) {
+  if (exists || legacyReadPaths.length) {
     try {
-      pendingMessagesCount = view(mailboxPath).filter((m) => !m.delivered_at).length;
+      pendingMessagesCount = mergedView(readPaths).filter((m) => !m.delivered_at).length;
     } catch {
       readable = false;
       pendingMessagesCount = null;
     }
   }
-  return { path: mailboxPath, exists, readable, writable: canWrite(exists ? mailboxPath : path.dirname(mailboxPath)), pendingMessagesCount };
+  return {
+    path: mailboxPath,
+    exists,
+    readable,
+    writable: canWrite(exists ? mailboxPath : path.dirname(mailboxPath)),
+    pendingMessagesCount,
+    legacyReadPaths
+  };
 }
 
 // Writable if the target exists and is writable, or its nearest existing
@@ -122,11 +141,14 @@ function canWrite(target) {
 
 export function openMailbox(options = {}) {
   const mailboxPath = resolveMailboxPath(options);
+  const readPaths = mailboxReadPaths(options);
   ensurePrivateMailbox(mailboxPath);
   importLegacySqliteIfNeeded({
     mailboxPath,
-    legacyDbPath: resolveLegacyDbPath(options) ?? (mailboxPath === DEFAULT_MAILBOX_PATH ? DEFAULT_LEGACY_DB_PATH : null)
+    readPaths,
+    legacyDbPath: resolveLegacyDbPath(options) ?? (isDefaultMailbox(mailboxPath) ? legacyPaths().mailboxDb : null)
   });
+  const view = () => mergedView(readPaths);
 
   function appendEvent(event) {
     const line = JSON.stringify(event) + "\n";
@@ -188,7 +210,7 @@ export function openMailbox(options = {}) {
   // claudeSessionAliases()).
   function listPendingFor({ toSessionId, toSessionIds } = {}) {
     const recipients = idSet(toSessionId, toSessionIds);
-    return view(mailboxPath)
+    return view()
       .filter((m) => recipients.has(m.to_session_id) && !m.delivered_at)
       .sort((a, b) => a.sent_at - b.sent_at);
   }
@@ -209,7 +231,7 @@ export function openMailbox(options = {}) {
     },
     // Returns the reply message id, or null when no reply was written.
     ackMessage({ messageId, body }) {
-      const original = view(mailboxPath).find((m) => m.id === messageId);
+      const original = view().find((m) => m.id === messageId);
       markAcknowledged({ messageId });
       if (body && original) {
         return insertMessage({
@@ -224,10 +246,10 @@ export function openMailbox(options = {}) {
       return null;
     },
     getMessage({ messageId }) {
-      return view(mailboxPath).find((m) => m.id === messageId) ?? null;
+      return view().find((m) => m.id === messageId) ?? null;
     },
     inspect(filters = {}) {
-      let rows = view(mailboxPath);
+      let rows = view();
       if (filters.fromSessionId) rows = rows.filter((m) => m.from_session_id === filters.fromSessionId);
       if (filters.toSessionId) rows = rows.filter((m) => m.to_session_id === filters.toSessionId);
       if (Array.isArray(filters.fromSessionIds)) {
@@ -263,12 +285,33 @@ function idSet(single, many) {
   return out;
 }
 
-function view(mailboxPath) {
+// Builds the message view from one or more mailbox files (R4.5). Message
+// events are deduped by id (the first file listed wins, so a legacy record
+// beats a re-import of it). Delivery-state events are applied after every
+// message is known, so a delivery recorded in the new file for a message
+// that only exists in the legacy file still counts. With more than one file
+// the state events are applied in `at` order; within one file, file order.
+function mergedView(paths) {
   const messages = new Map();
-  for (const event of readEvents(mailboxPath)) {
-    if (event.type === "message" && event.message?.id) {
-      messages.set(event.message.id, normalizeMessage(event.message, event.at));
-    } else if (event.type === "delivered" && event.messageId && messages.has(event.messageId)) {
+  const stateEvents = [];
+  let filesWithEvents = 0;
+  for (const file of paths) {
+    const events = readEvents(file);
+    if (events.length) filesWithEvents += 1;
+    for (const event of events) {
+      if (event?.type === "message" && event.message?.id) {
+        const id = String(event.message.id);
+        if (!messages.has(id)) messages.set(id, normalizeMessage(event.message, event.at));
+      } else if (event && typeof event === "object") {
+        stateEvents.push(event);
+      }
+    }
+  }
+  if (filesWithEvents > 1) {
+    stateEvents.sort((a, b) => normalizeTimestamp(a.at) - normalizeTimestamp(b.at));
+  }
+  for (const event of stateEvents) {
+    if (event.type === "delivered" && event.messageId && messages.has(event.messageId)) {
       const message = messages.get(event.messageId);
       message.delivered_at = event.at ?? Date.now();
     } else if (event.type === "acknowledged" && event.messageId && messages.has(event.messageId)) {
@@ -325,8 +368,11 @@ function normalizeMessage(message, eventAt) {
   };
 }
 
-function importLegacySqliteIfNeeded({ mailboxPath, legacyDbPath }) {
-  if (fs.existsSync(mailboxPath) && fs.statSync(mailboxPath).size > 0) return;
+// Imports a 0.3.x SQLite mailbox into the (new, empty) JSONL mailbox. Skipped
+// when any file the view reads already has content: a legacy JSONL mailbox
+// is the newer copy of the same messages.
+function importLegacySqliteIfNeeded({ mailboxPath, readPaths = [mailboxPath], legacyDbPath }) {
+  if (readPaths.some((file) => fs.existsSync(file) && fs.statSync(file).size > 0)) return;
   if (!legacyDbPath || !legacyDbPath.endsWith(".sqlite") || !fs.existsSync(legacyDbPath)) return;
 
   const result = spawnSync("sqlite3", [

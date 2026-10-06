@@ -1,10 +1,10 @@
 import { promises as fs } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { inferArchiveState, normalizeArchiveScope, scoreThreadMatch } from "./thread-utils.js";
 import { clampInt as clampNumber } from "../shared/args.js";
 import { parseJsonlLines } from "../shared/jsonl.js";
 import { truncate } from "../shared/text.js";
+import { codexHome as defaultCodexHome } from "../shared/paths.js";
 
 const MAX_PREVIEW_CHARS = 500;
 // Transcripts are read in bounded windows from the head (session_meta, first
@@ -44,7 +44,7 @@ export function localThreadSummaryCacheStats() {
 }
 
 function resolveCodexHome(options = {}) {
-  return options.codexHome || process.env.CODEX_HOME || path.join(os.homedir(), ".codex");
+  return options.codexHome || defaultCodexHome();
 }
 
 export async function listLocalThreads(options = {}) {

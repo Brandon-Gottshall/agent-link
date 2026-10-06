@@ -72,4 +72,14 @@ import { detectHost, currentClaudeSessionId } from "../../src/shared/host-detect
   assert.equal(hostDetect.claudeProjectsRoot({ env: { CLAUDE_CONFIG_DIR: "/tmp/relocated-claude" } }), "/tmp/relocated-claude/projects");
 }
 
+// AGENT_LINK_HOST (set by each manifest) beats env inference; an unknown
+// value is ignored and reported.
+{
+  assert.deepEqual(detectHost({ env: { AGENT_LINK_HOST: "codex", CLAUDE_PLUGIN_ROOT: "/y" } }), { host: "codex", reason: "AGENT_LINK_HOST=codex" });
+  assert.deepEqual(detectHost({ env: { AGENT_LINK_HOST: "Claude", CODEX_HOME: "/x" } }), { host: "claude", reason: "AGENT_LINK_HOST=claude" });
+  const unknown = detectHost({ env: { AGENT_LINK_HOST: "cursor", CODEX_HOME: "/x" } });
+  assert.equal(unknown.host, "codex");
+  assert.match(unknown.reason, /ignored unknown AGENT_LINK_HOST="cursor"/);
+}
+
 console.log("host-detect tests passed");

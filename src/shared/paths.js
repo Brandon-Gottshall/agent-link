@@ -1,17 +1,20 @@
 // src/shared/paths.js
 //
-// The path resolver for Agent Link state (design doc sections 4.3/4.4). The
-// state root is ~/.agent-link unless AGENT_LINK_STATE_DIR says otherwise;
-// legacy locations under ~/.claude and $CODEX_HOME are reported separately so
-// a later PR can merge reads from them.
+// The only path resolver for Agent Link state (design doc sections 4.3/4.4).
+// The MCP server and the Claude notify hook both import it, so they agree on
+// every path under the same environment whatever their working directory.
+// The state root is ~/.agent-link unless AGENT_LINK_STATE_DIR says otherwise.
+// Legacy locations under ~/.claude and $CODEX_HOME are reported separately so
+// the mailbox and receipt readers can merge them (R4.5); nothing ever writes
+// to them.
 //
 // Pure: every function takes `{env, homedir}` (defaults: process.env and
-// os.homedir()) and touches no file. Not wired into the mailbox, receipts or
-// app-server yet; they keep their own defaults until the state-dir PR.
+// os.homedir()) and touches no file.
 
 import os from "node:os";
 import path from "node:path";
 import { env as lookup } from "./env.js";
+import { AgentLinkError } from "./errors.js";
 
 /**
  * @typedef {object} PathOptions
@@ -28,6 +31,20 @@ import { env as lookup } from "./env.js";
  */
 
 /**
+ * Settings that name Agent Link's own files. A relative value is rejected:
+ * the hook runs in the session's project directory and the server in the
+ * plugin root, so one relative path would name two different files.
+ */
+const AGENT_LINK_PATH_SETTINGS = new Set([
+  "AGENT_LINK_STATE_DIR",
+  "AGENT_LINK_MAILBOX_PATH",
+  "AGENT_LINK_MAILBOX_DB",
+  "AGENT_LINK_RECEIPT_LOG",
+  "AGENT_LINK_MANAGED_DIR",
+  "AGENT_LINK_LOG_FILE"
+]);
+
+/**
  * @param {PathOptions} [options]
  */
 function resolveOptions(options = {}) {
@@ -38,15 +55,40 @@ function resolveOptions(options = {}) {
 }
 
 /**
- * Expands a leading `~` or `~/` and makes the path absolute.
+ * Expands a leading `~` or `~/` and normalizes an absolute path. Returns null
+ * for a relative path: callers reject it (Agent Link settings) or resolve it
+ * (host-provided directories).
  * @param {string} value
  * @param {string} home
- * @returns {string}
+ * @returns {string | null}
  */
 export function expandHome(value, home) {
   if (value === "~") return home;
   if (value.startsWith("~/")) return path.join(home, value.slice(2));
-  return path.resolve(value);
+  return path.isAbsolute(value) ? path.normalize(value) : null;
+}
+
+/**
+ * Thrown when an Agent Link path setting is relative. Names the variable that
+ * supplied the value (canonical or legacy alias) so the fix is obvious.
+ */
+export class PathConfigError extends AgentLinkError {
+  /**
+   * @param {string} variable
+   * @param {string} value
+   */
+  constructor(variable, value) {
+    super(
+      "state_io_error",
+      `${variable} must be an absolute path or start with ~/ (got the relative path ${JSON.stringify(value)}). ` +
+        "The Claude hook and the MCP server run from different working directories, so a relative path would name two different files.",
+      {
+        details: { variable, value },
+        hint: `Set ${variable} to an absolute path, or unset it to use the default under ~/.agent-link.`
+      }
+    );
+    this.name = "PathConfigError";
+  }
 }
 
 /**
@@ -56,8 +98,27 @@ export function expandHome(value, home) {
  */
 function configuredPath(name, options) {
   const { source, home } = resolveOptions(options);
-  const value = lookup(name, source).value;
-  return value ? expandHome(value, home) : null;
+  const found = lookup(name, source);
+  const value = found.value?.trim();
+  if (!value) return null;
+  const expanded = expandHome(value, home);
+  if (expanded) return expanded;
+  if (AGENT_LINK_PATH_SETTINGS.has(name)) {
+    throw new PathConfigError(/** @type {string} */ (found.source), value);
+  }
+  // Host-provided directories (CLAUDE_CONFIG_DIR, CODEX_HOME) keep the
+  // host's own meaning: relative to the current directory.
+  return path.resolve(value);
+}
+
+/**
+ * True when `name` (or one of its legacy aliases) is set to a non-blank value.
+ * @param {string} name
+ * @param {PathOptions} [options]
+ * @returns {boolean}
+ */
+export function isConfigured(name, options = {}) {
+  return Boolean(lookup(name, resolveOptions(options).source).value?.trim());
 }
 
 /**
@@ -91,15 +152,40 @@ export function codexHome(options = {}) {
 }
 
 /**
+ * The mailbox file new events are appended to. AGENT_LINK_MAILBOX_PATH wins;
+ * the deprecated AGENT_LINK_MAILBOX_DB names a `.sqlite` file whose `.jsonl`
+ * sibling is the mailbox.
  * @param {PathOptions} [options]
  * @returns {string}
  */
 export function mailboxPath(options = {}) {
-  return configuredPath("AGENT_LINK_MAILBOX_PATH", options)
-    ?? path.join(stateDir(options), "mailbox.jsonl");
+  const explicit = configuredPath("AGENT_LINK_MAILBOX_PATH", options);
+  if (explicit) return explicit;
+  const legacyDb = configuredPath("AGENT_LINK_MAILBOX_DB", options);
+  if (legacyDb) return sqliteToJsonl(legacyDb);
+  return path.join(stateDir(options), "mailbox.jsonl");
 }
 
 /**
+ * The deprecated AGENT_LINK_MAILBOX_DB value (a 0.3.x SQLite mailbox), or null.
+ * @param {PathOptions} [options]
+ * @returns {string | null}
+ */
+export function mailboxDbPath(options = {}) {
+  return configuredPath("AGENT_LINK_MAILBOX_DB", options);
+}
+
+/**
+ * @param {string} file
+ * @returns {string}
+ */
+export function sqliteToJsonl(file) {
+  return file.endsWith(".sqlite") ? `${file.slice(0, -".sqlite".length)}.jsonl` : file;
+}
+
+/**
+ * Where receipts are written. With no override, reads also merge the legacy
+ * log from legacyReceiptPaths().
  * @param {PathOptions} [options]
  * @returns {string}
  */
@@ -146,7 +232,7 @@ export function migrationRecordPath(options = {}) {
 }
 
 /**
- * Where releases up to 0.4.x kept state. Read-only from the state-dir PR on.
+ * Where releases up to 0.4.x kept state. Read-only from 0.4.x on.
  * @param {PathOptions} [options]
  * @returns {LegacyPaths}
  */
@@ -165,11 +251,72 @@ export function legacyPaths(options = {}) {
 
 /**
  * Legacy locations under CLAUDE_CONFIG_DIR, for users who set it. Section 4.4
- * reads the legacy mailbox from `<claudeConfigDir>/agent-link`; when that
- * differs from ~/.claude the state-dir PR checks both.
+ * reads the legacy mailbox from `<claudeConfigDir>/agent-link` as well as
+ * ~/.claude/agent-link.
  * @param {PathOptions} [options]
  * @returns {string}
  */
 export function legacyClaudeStateDir(options = {}) {
   return path.join(claudeConfigDir(options), "agent-link");
+}
+
+/**
+ * Legacy mailbox files merged into reads (R4.5): the 0.4.x default under
+ * ~/.claude, plus <CLAUDE_CONFIG_DIR>/agent-link when that differs. Empty when
+ * AGENT_LINK_MAILBOX_PATH or AGENT_LINK_MAILBOX_DB names the mailbox: an
+ * explicit choice is never mixed with other files.
+ * @param {PathOptions} [options]
+ * @returns {string[]}
+ */
+export function legacyMailboxPaths(options = {}) {
+  if (isConfigured("AGENT_LINK_MAILBOX_PATH", options) || isConfigured("AGENT_LINK_MAILBOX_DB", options)) return [];
+  return without(unique([
+    legacyPaths(options).mailbox,
+    path.join(legacyClaudeStateDir(options), "mailbox.jsonl")
+  ]), mailboxPath(options));
+}
+
+/**
+ * Legacy receipt log merged into reads, or none when a receipt-log override
+ * is set.
+ * @param {PathOptions} [options]
+ * @returns {string[]}
+ */
+export function legacyReceiptPaths(options = {}) {
+  if (isConfigured("AGENT_LINK_RECEIPT_LOG", options)) return [];
+  return without([path.resolve(legacyPaths(options).receipts)], receiptLogPath(options));
+}
+
+/**
+ * Legacy managed app-server record directories that orphan reaping also
+ * scans, or none when the managed dir is overridden.
+ * @param {PathOptions} [options]
+ * @returns {string[]}
+ */
+export function legacyManagedAppServerDirs(options = {}) {
+  if (isConfigured("AGENT_LINK_MANAGED_DIR", options)) return [];
+  return without(unique([
+    legacyPaths(options).managedAppServers,
+    path.join(legacyClaudeStateDir(options), "managed-app-servers")
+  ]), managedAppServerDir(options));
+}
+
+/**
+ * @param {string[]} paths
+ * @returns {string[]}
+ */
+function unique(paths) {
+  return [...new Set(paths.map((p) => path.resolve(p)))];
+}
+
+/**
+ * Drops `current` (an AGENT_LINK_STATE_DIR pointed at the old location must
+ * not read one file twice).
+ * @param {string[]} paths
+ * @param {string} current
+ * @returns {string[]}
+ */
+function without(paths, current) {
+  const resolved = path.resolve(current);
+  return paths.filter((p) => p !== resolved);
 }

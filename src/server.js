@@ -11,6 +11,7 @@ import {
   CodexAppServerClient,
   asUserTextInput,
   describeCodexInstall,
+  managedAppServerReapDirs,
   reapOrphanedManagedAppServers
 } from "./codex/app-server-client.js";
 import {
@@ -69,6 +70,7 @@ import {
   unsupportedSidebarStateResponse
 } from "./codex/thread-utils.js";
 import { clampInt as clamp, optionalString, requiredString } from "./shared/args.js";
+import { env, envFlag } from "./shared/env.js";
 import { getLogger } from "./shared/log.js";
 import { toIso, truncate } from "./shared/text.js";
 import { resolveCallerIdentity } from "./claude/identity.js";
@@ -147,7 +149,7 @@ const server = new Server(
       "Use reply_agent_link_message with the messageId to reply to an inbound Agent Link message.",
     capabilities: {
       tools: {},
-      experimental: HOST_INFO.host === "claude" && process.env.AGENT_LINK_DISABLE_CHANNEL !== "1"
+      experimental: HOST_INFO.host === "claude" && !envFlag("AGENT_LINK_DISABLE_CHANNEL", false)
         ? { "claude/channel": {} }
         : {}
     }
@@ -1085,7 +1087,7 @@ async function health(args, toolContext = {}) {
     : null;
   const configuredEndpoint = configuredEndpointSummary();
   const usesManagedAppServer = !Object.values(configuredEndpoint).some(Boolean);
-  const autoStartEnabled = process.env.CODEX_AGENT_LINK_AUTOSTART !== "0";
+  const autoStartEnabled = envFlag("AGENT_LINK_CODEX_AUTOSTART", true);
   const codex = {
     // Skip the blocking `codex --version` when the caller asked for a cheap check.
     ...describeCodexInstall({ probeVersion: args.startAppServer !== false }),
@@ -1158,15 +1160,15 @@ function appServerErrorHint(error) {
   const cached = error.code === "startup-failure-cached";
   const code = cached ? error.details?.cachedCode : error.code;
   const hints = {
-    "codex-binary-not-found": "No Codex binary was found (details.searched lists where Agent Link looked). Install Codex Desktop (ChatGPT.app) or the codex CLI, or set CODEX_AGENT_LINK_CODEX_BIN to the binary's absolute path.",
-    "spawn-failed": "The Codex binary could not be executed. Check its permissions, or set CODEX_AGENT_LINK_CODEX_BIN to a working binary.",
-    "app-server-exited-during-startup": "The Codex binary exited while starting `app-server` (see details.command and details.logs). If it is an old install, point CODEX_AGENT_LINK_CODEX_BIN at a current Codex.",
-    "readiness-timeout": "The managed Codex app-server did not accept connections before the startup timeout. Raise CODEX_AGENT_LINK_APP_SERVER_STARTUP_MS (milliseconds) or check details.logs.",
-    "autostart-disabled": "CODEX_AGENT_LINK_AUTOSTART=0 turns off the managed app-server. Unset it, or set CODEX_AGENT_LINK_URL / CODEX_AGENT_LINK_SOCK to a running Codex app-server.",
-    "state-dir-unsafe": "The managed app-server state directory is not private to this user. Fix its ownership or set CODEX_AGENT_LINK_STATE_DIR to a directory you own.",
+    "codex-binary-not-found": "No Codex binary was found (details.searched lists where Agent Link looked). Install Codex Desktop (ChatGPT.app) or the codex CLI, or set AGENT_LINK_CODEX_BIN to the binary's absolute path.",
+    "spawn-failed": "The Codex binary could not be executed. Check its permissions, or set AGENT_LINK_CODEX_BIN to a working binary.",
+    "app-server-exited-during-startup": "The Codex binary exited while starting `app-server` (see details.command and details.logs). If it is an old install, point AGENT_LINK_CODEX_BIN at a current Codex.",
+    "readiness-timeout": "The managed Codex app-server did not accept connections before the startup timeout. Raise AGENT_LINK_CODEX_STARTUP_TIMEOUT_MS (milliseconds) or check details.logs.",
+    "autostart-disabled": "AGENT_LINK_CODEX_AUTOSTART=0 turns off the managed app-server. Unset it, or set AGENT_LINK_CODEX_URL / AGENT_LINK_CODEX_SOCK to a running Codex app-server.",
+    "state-dir-unsafe": "The managed app-server state directory is not private to this user. Fix its ownership or set AGENT_LINK_MANAGED_DIR to a directory you own.",
     "client-closed": "Agent Link is shutting down; retry once the MCP server has restarted.",
-    "open-failed": "Could not connect to the Codex app-server. Check CODEX_AGENT_LINK_URL / CODEX_AGENT_LINK_SOCK, or unset them to let Agent Link manage its own app-server.",
-    "open-timeout": "Timed out connecting to the Codex app-server. Check CODEX_AGENT_LINK_URL / CODEX_AGENT_LINK_SOCK, or unset them to let Agent Link manage its own app-server.",
+    "open-failed": "Could not connect to the Codex app-server. Check AGENT_LINK_CODEX_URL / AGENT_LINK_CODEX_SOCK, or unset them to let Agent Link manage its own app-server.",
+    "open-timeout": "Timed out connecting to the Codex app-server. Check AGENT_LINK_CODEX_URL / AGENT_LINK_CODEX_SOCK, or unset them to let Agent Link manage its own app-server.",
     "connection-lost": "The Codex app-server connection dropped. Retry; a managed app-server is restarted on the next call.",
     "request-timeout": "The Codex app-server did not answer in time. Retry, or check that the app-server is not overloaded."
   };
@@ -1186,12 +1188,14 @@ function claudeHealthSummary() {
   } catch {
     sessions = [];
   }
-  // Read-only: a health check must not create ~/.claude/agent-link.
-  let status = { path: null, writable: false, pendingMessagesCount: null };
+  // Read-only: a health check must not create ~/.agent-link.
+  /** @type {{path: string | null, writable: boolean, pendingMessagesCount: number | null, error?: string | null}} */
+  let status = { path: null, writable: false, pendingMessagesCount: null, error: null };
   try {
     status = mailboxStatus();
-  } catch {
-    // keep defaults
+  } catch (error) {
+    // A misconfigured path (relative AGENT_LINK_MAILBOX_PATH) is reported, not thrown.
+    status = { ...status, error: error?.message ?? String(error) };
   }
 
   const current = currentClaudeSession();
@@ -1205,10 +1209,11 @@ function claudeHealthSummary() {
     mailbox: {
       path: status.path,
       writable: status.writable,
-      pendingMessagesCount: status.pendingMessagesCount
+      pendingMessagesCount: status.pendingMessagesCount,
+      ...(status.error ? { error: status.error } : {})
     },
     channel: {
-      enabled: HOST_INFO.host === "claude" && process.env.AGENT_LINK_DISABLE_CHANNEL !== "1",
+      enabled: HOST_INFO.host === "claude" && !envFlag("AGENT_LINK_DISABLE_CHANNEL", false),
       currentSession: current
         ? {
             sessionId: current.sessionId,
@@ -2376,7 +2381,7 @@ async function openCodexDesktopThread({ threadId, ephemeral }) {
   const args = ["-g", deepLink];
   const commandDisplay = `${command} ${args.map(shellQuoteForDisplay).join(" ")}`;
 
-  if (process.env.CODEX_AGENT_LINK_GUI_OPEN_DRY_RUN === "1") {
+  if (envFlag("AGENT_LINK_GUI_OPEN_DRY_RUN", false)) {
     return {
       attempted: true,
       ok: true,
@@ -2857,11 +2862,11 @@ function summarizeUserContent(content) {
 }
 
 function configuredEndpointSummary() {
+  // The variable (canonical AGENT_LINK_* or a legacy alias) that points Agent
+  // Link at an existing app-server, or null. Values are never reported.
   return {
-    CODEX_AGENT_LINK_URL: Boolean(process.env.CODEX_AGENT_LINK_URL),
-    CODEX_APP_SERVER_URL: Boolean(process.env.CODEX_APP_SERVER_URL),
-    CODEX_AGENT_LINK_SOCK: Boolean(process.env.CODEX_AGENT_LINK_SOCK),
-    CODEX_APP_SERVER_SOCK: Boolean(process.env.CODEX_APP_SERVER_SOCK)
+    url: env("AGENT_LINK_CODEX_URL").source,
+    socket: env("AGENT_LINK_CODEX_SOCK").source
   };
 }
 
@@ -2894,12 +2899,12 @@ await server.connect(transport);
 // Cheap, file-based: kill app-servers orphaned by an agent-link server that
 // was SIGKILLed or crashed. Never starts anything.
 try {
-  reapOrphanedManagedAppServers();
+  for (const stateDir of managedAppServerReapDirs()) reapOrphanedManagedAppServers({ stateDir });
 } catch {
   // best effort
 }
 
-const channelBridge = HOST_INFO.host === "claude" && process.env.AGENT_LINK_DISABLE_CHANNEL !== "1"
+const channelBridge = HOST_INFO.host === "claude" && !envFlag("AGENT_LINK_DISABLE_CHANNEL", false)
   ? makeAgentLinkChannelBridge({
       resolveCurrentSession: currentClaudeSession,
       notify: async (notification) => {

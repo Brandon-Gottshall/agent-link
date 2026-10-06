@@ -6,12 +6,16 @@ import {
   codexHome,
   expandHome,
   legacyClaudeStateDir,
+  legacyManagedAppServerDirs,
+  legacyMailboxPaths,
   legacyPaths,
+  legacyReceiptPaths,
   logDir,
   logFilePath,
   mailboxPath,
   managedAppServerDir,
   migrationRecordPath,
+  PathConfigError,
   receiptLogPath,
   stateDir
 } from "../../src/shared/paths.js";
@@ -65,8 +69,53 @@ test("host directories honor CLAUDE_CONFIG_DIR and CODEX_HOME", () => {
 test("a leading ~ expands against the home directory", () => {
   assert.equal(stateDir(at({ AGENT_LINK_STATE_DIR: "~/state" })), path.join(home, "state"));
   assert.equal(expandHome("~", home), home);
-  assert.equal(expandHome("~other/x", home), path.resolve("~other/x"));
-  assert.equal(expandHome("rel/dir", home), path.resolve("rel/dir"));
+  // Relative values (including ~user forms) are not expanded against cwd.
+  assert.equal(expandHome("~other/x", home), null);
+  assert.equal(expandHome("rel/dir", home), null);
+  assert.equal(expandHome("/a/../b", home), path.resolve("/b"));
+});
+
+test("relative Agent Link path settings are rejected, naming the variable", () => {
+  const cases = [
+    [stateDir, { AGENT_LINK_STATE_DIR: "state" }, "AGENT_LINK_STATE_DIR"],
+    [mailboxPath, { AGENT_LINK_MAILBOX_PATH: "./box.jsonl" }, "AGENT_LINK_MAILBOX_PATH"],
+    [mailboxPath, { AGENT_LINK_MAILBOX_DB: "box.sqlite" }, "AGENT_LINK_MAILBOX_DB"],
+    [receiptLogPath, { CODEX_AGENT_LINK_RECEIPT_LOG: "r.jsonl" }, "CODEX_AGENT_LINK_RECEIPT_LOG"],
+    [managedAppServerDir, { CODEX_AGENT_LINK_STATE_DIR: "managed" }, "CODEX_AGENT_LINK_STATE_DIR"],
+    [logFilePath, { AGENT_LINK_LOG_FILE: "x.log" }, "AGENT_LINK_LOG_FILE"],
+    // Derived paths fail too: they sit under a relative state dir.
+    [mailboxPath, { AGENT_LINK_STATE_DIR: "rel" }, "AGENT_LINK_STATE_DIR"]
+  ];
+  for (const [fn, env, variable] of cases) {
+    assert.throws(() => fn(at(env)), (error) => {
+      assert.ok(error instanceof PathConfigError, `${variable}: PathConfigError`);
+      assert.equal(error.errorCode, "state_io_error");
+      assert.equal(error.details.variable, variable);
+      assert.match(error.message, new RegExp(`^${variable} must be an absolute path`));
+      assert.match(error.hint, new RegExp(variable));
+      return true;
+    }, variable);
+  }
+  // Host-provided directories keep the host's meaning (relative to cwd).
+  assert.equal(claudeConfigDir(at({ CLAUDE_CONFIG_DIR: "cfg" })), path.resolve("cfg"));
+  assert.equal(codexHome(at({ CODEX_HOME: "ch" })), path.resolve("ch"));
+});
+
+test("legacy read lists: defaults, CLAUDE_CONFIG_DIR, and overrides that disable merging", () => {
+  assert.deepEqual(legacyMailboxPaths(at({})), [path.join(home, ".claude", "agent-link", "mailbox.jsonl")]);
+  assert.deepEqual(legacyMailboxPaths(at({ CLAUDE_CONFIG_DIR: "/cfg/claude" })), [
+    path.join(home, ".claude", "agent-link", "mailbox.jsonl"),
+    path.resolve("/cfg/claude/agent-link/mailbox.jsonl")
+  ]);
+  assert.deepEqual(legacyMailboxPaths(at({ AGENT_LINK_MAILBOX_PATH: "/m.jsonl" })), []);
+  assert.deepEqual(legacyMailboxPaths(at({ AGENT_LINK_MAILBOX_DB: "/m.sqlite" })), []);
+  // A state dir pointed at the old location never lists one file twice.
+  assert.deepEqual(legacyMailboxPaths(at({ AGENT_LINK_STATE_DIR: "~/.claude/agent-link" })), []);
+  assert.deepEqual(legacyReceiptPaths(at({})), [path.join(home, ".codex", "agent-link-receipts.jsonl")]);
+  assert.deepEqual(legacyReceiptPaths(at({ CLAUDE_AGENT_LINK_RECEIPT_LOG: "/r.jsonl" })), []);
+  assert.deepEqual(legacyManagedAppServerDirs(at({})), [path.join(home, ".claude", "agent-link", "managed-app-servers")]);
+  assert.deepEqual(legacyManagedAppServerDirs(at({ AGENT_LINK_MANAGED_DIR: "/m" })), []);
+  assert.equal(mailboxPath(at({ AGENT_LINK_MAILBOX_DB: "/x/box.sqlite" })), path.resolve("/x/box.jsonl"));
 });
 
 test("legacyPaths are the 0.4.x locations", () => {

@@ -193,7 +193,7 @@ try {
       assert.match(result.payload.codex.reason, /CODEX_AGENT_LINK_CODEX_BIN/);
       assert.ok(result.payload.codex.searched.includes(path.join(tmp, "no-such", "codex")));
       assert.equal(typeof result.payload.host, "string");
-      assert.match(result.payload.hint, /CODEX_AGENT_LINK_CODEX_BIN/);
+      assert.match(result.payload.hint, /AGENT_LINK_CODEX_BIN/);
       assert.doesNotMatch(result.payload.hint, /leave CODEX_AGENT_LINK_AUTOSTART enabled/);
 
       // Other Codex tools fail with the specific hint, not the generic one.
