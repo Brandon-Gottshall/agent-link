@@ -19244,7 +19244,7 @@ var DEFAULT_STARTUP_FAILURE_CACHE_MS = 60 * 1e3;
 var MAX_UNIX_SOCKET_PATH_BYTES = 100;
 var RECENT_NOTIFICATIONS = 20;
 var MAX_TRACKED_METHODS = 64;
-var AGENT_LINK_VERSION = true ? "0.3.0" : readPackageVersion();
+var AGENT_LINK_VERSION = true ? "0.4.0" : readPackageVersion();
 var SERVER_REQUEST_DECLINES = Object.freeze({
   "item/commandExecution/requestApproval": { decision: "decline" },
   "item/fileChange/requestApproval": { decision: "decline" },
@@ -24652,7 +24652,7 @@ var replyAgentLinkMessageHandlers = makeReplyAgentLinkMessageHandler({
   host: HOST_INFO.host,
   resolveCurrentSession: currentClaudeSession
 });
-var SERVER_VERSION = true ? "0.3.0" : "0.0.0-dev";
+var SERVER_VERSION = true ? "0.4.0" : "0.0.0-dev";
 var server = new Server(
   {
     name: "agent-link",

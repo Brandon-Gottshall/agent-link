@@ -1,6 +1,6 @@
 {
   "name": "agent-link",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Cross-host agent link: inspect, resolve, message, and audit Codex threads plus Claude Desktop and Claude Code sessions.",
   "author": { "name": "Brandon" },
   "homepage": "https://github.com/Brandon-Gottshall/agent-link",

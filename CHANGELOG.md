@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 - 2026-10-06 Routing, Codex correctness, and hardening
+
+Breaking for some callers: `agent_link_mailbox_inspect` returns only the caller's mail unless `scope:"all"`; `wait_for_claude_session` matches only mail addressed to the caller; `replyToMessageId` must reference mail addressed to the caller; peers can no longer silently change another thread's cwd/model/effort without `allowTargetOverride:true`.
 
 - Security: the managed Codex app-server no longer listens on an unauthenticated `ws://127.0.0.1` port. It listens on a Unix socket, `<pid>.sock`, one name per Agent Link process, in a state directory that must be a real directory (not a symlink) owned by the user and is tightened to 0700. When the state path is too long for a socket, the socket goes in a private `agent-link-<uid>` directory under the per-user temp dir on macOS or `/tmp` elsewhere, with the same checks. Where Unix sockets are unavailable (Windows, or `CODEX_AGENT_LINK_APP_SERVER_TRANSPORT=ws-token`) it uses a loopback websocket with `--ws-auth capability-token` and a 0600 token file. The free-port probe is gone from the default path.
 - Fixed: `CODEX_AGENT_LINK_SOCK` / `CODEX_APP_SERVER_SOCK` never worked. The `ws` client ignored the socket path and dialed `localhost:80`. It now connects over the socket directly, so a relative path (resolved against the working directory) and paths containing spaces or colons work.

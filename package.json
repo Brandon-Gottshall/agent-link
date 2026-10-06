@@ -1,6 +1,6 @@
 {
   "name": "agent-link",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Cross-host Agent Link MCP plugin for Codex threads and Claude sessions.",
   "private": true,
   "type": "module",
