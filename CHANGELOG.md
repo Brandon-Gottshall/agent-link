@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Removed dead root modules `src/session-index.js`, `src/receipt-index.js`, `src/caller-context.js`, and `src/thread-utils.js`. Nothing imported them; the canonical copies live in `src/codex/` and `src/shared/`.
+- Removed the `src/app-server-client.js` re-export shim. Import `src/codex/app-server-client.js` directly; no in-repo importers of the shim remained.
+- Removed the unused `desktopVisibilityContract` import from `src/server.js`.
+- Removed the stray `src/claude/.gitkeep` and added `*.bak-*`, `*.OFF`, and `*.orig` to `.gitignore`.
+
 ## 0.3.0 - 2026-10-06 Remove Antechamber handoff and Desktop bridge discovery
 
 Breaking for callers that used these options.

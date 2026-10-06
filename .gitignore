@@ -10,3 +10,6 @@ coverage/
 *.tgz
 .worktrees/
 wf-runs/
+*.bak-*
+*.OFF
+*.orig
