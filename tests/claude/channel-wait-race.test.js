@@ -90,13 +90,22 @@ function readMessage(mailboxPath, messageId) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function waitUntil(predicate, timeoutMs = 3_000) {
+// Generous: only a failing test ever waits this long.
+async function waitUntil(predicate, timeoutMs = 10_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (predicate()) return true;
     await sleep(10);
   }
   return predicate();
+}
+
+// Event-driven stand-in for "give the bridge several more polls": resolves
+// once the live bridge has actually run `n` more checks, however slowly the
+// machine is scheduling this process.
+async function bridgePolls(bridge, n = 3) {
+  const start = bridge.stats().ticks;
+  assert.ok(await waitUntil(() => bridge.stats().ticks >= start + n), `bridge ran ${n} more polls`);
 }
 
 function sendHandler(mailboxPath) {
@@ -109,13 +118,15 @@ function sendHandler(mailboxPath) {
   });
 }
 
-function waitHandler(mailboxPath, { mailboxOpener } = {}) {
+function waitHandler(mailboxPath, { mailboxOpener, now, pollIntervalMs } = {}) {
   return makeWaitHandler({
     host: "claude",
     listSessions: () => [TARGET],
     mailboxOpener: mailboxOpener ?? (() => openMailbox({ mailboxPath })),
     resolveCurrentSession: () => ME,
-    isSessionLoaded: () => true
+    isSessionLoaded: () => true,
+    ...(now ? { now } : {}),
+    ...(pollIntervalMs ? { pollIntervalMs } : {})
   });
 }
 
@@ -130,7 +141,7 @@ function waitHandler(mailboxPath, { mailboxOpener } = {}) {
       to: TARGET.sessionId,
       body: "question?",
       waitForReply: true,
-      timeoutMs: 5_000
+      timeoutMs: 30_000
     });
     assert.ok(await waitUntil(() => findOutbound(mailboxPath)), "outbound message was written");
     const outbound = findOutbound(mailboxPath);
@@ -144,7 +155,7 @@ function waitHandler(mailboxPath, { mailboxOpener } = {}) {
     const result = await pending;
     assert.equal(result.replyConfirmation.received, true);
     assert.equal(result.replyConfirmation.replyMessageId, replyId);
-    await sleep(150); // give the bridge several more polls
+    await bridgePolls(bridge);
     assert.equal(notifications.length, 0, "reply must not also arrive as a channel message");
     const stored = readMessage(mailboxPath, replyId);
     assert.ok(stored.delivered_at && stored.acknowledged_at, "wait consumed the reply");
@@ -164,7 +175,7 @@ function waitHandler(mailboxPath, { mailboxOpener } = {}) {
     const pending = waitHandler(mailboxPath).wait_for_claude_session({
       sessionId: TARGET.sessionId,
       latestMessageId: outboundId,
-      timeoutMs: 5_000
+      timeoutMs: 30_000
     });
     await sleep(30);
     const replyId = insert(mailboxPath, {
@@ -176,7 +187,7 @@ function waitHandler(mailboxPath, { mailboxOpener } = {}) {
     const result = await pending;
     assert.equal(result.result, "reply");
     assert.equal(result.message.id, replyId);
-    await sleep(150);
+    await bridgePolls(bridge);
     assert.equal(notifications.length, 0, "reply must not also arrive as a channel message");
     assert.equal(activeWaitCount(), 0);
   } finally {
@@ -194,7 +205,7 @@ function waitHandler(mailboxPath, { mailboxOpener } = {}) {
   try {
     const pending = waitHandler(mailboxPath).wait_for_claude_session({
       sessionId: TARGET.sessionId,
-      timeoutMs: 5_000
+      timeoutMs: 30_000
     });
     await sleep(30);
     const otherId = insert(mailboxPath, { from: "local_other", to: ME.sessionId, body: "unrelated" });
@@ -203,7 +214,7 @@ function waitHandler(mailboxPath, { mailboxOpener } = {}) {
     assert.equal(result.result, "reply");
     assert.equal(result.message.id, replyId);
     assert.ok(await waitUntil(() => notifications.length >= 1), "unrelated message delivered");
-    await sleep(150);
+    await bridgePolls(bridge);
     assert.deepEqual(notifications.map((n) => n.params.meta.message_id), [otherId]);
   } finally {
     bridge.stop();
@@ -213,7 +224,11 @@ function waitHandler(mailboxPath, { mailboxOpener } = {}) {
 // 4. Timeout: a matching reply the wait never saw (it landed after the wait's
 //    last check) is held while the wait runs and delivered by the bridge as
 //    soon as the wait times out. The wait's opener hides the reply to make
-//    that window deterministic.
+//    that window deterministic, and the wait runs on a test-owned clock so it
+//    times out exactly when the test advances it. A real-time timeout here
+//    used to flake under load: a stall of ~220 ms between starting the wait
+//    and the "held" check let a 400 ms wait expire, after which the bridge
+//    correctly delivered the reply.
 {
   const mailboxPath = makeSandbox();
   const notifications = [];
@@ -224,20 +239,31 @@ function waitHandler(mailboxPath, { mailboxOpener } = {}) {
       const mb = openMailbox({ mailboxPath });
       return { ...mb, inspect: () => [] };
     };
-    const pending = waitHandler(mailboxPath, { mailboxOpener: blindOpener }).wait_for_claude_session({
+    let clock = Date.now();
+    const pending = waitHandler(mailboxPath, {
+      mailboxOpener: blindOpener,
+      now: () => clock,
+      pollIntervalMs: 20
+    }).wait_for_claude_session({
       sessionId: TARGET.sessionId,
       latestMessageId: outboundId,
       timeoutMs: 400
     });
-    await sleep(30);
+    // The handler registers its wait synchronously before its first await.
+    assert.equal(activeWaitCount(), 1, "wait registered");
     const replyId = insert(mailboxPath, {
       from: TARGET.sessionId,
       to: ME.sessionId,
       body: "late",
       replyToMessageId: outboundId
     });
-    await sleep(150);
+    // A check while the wait is active holds the reply instead of pushing it,
+    // both when driven directly and on the live bridge's own polls.
+    assert.deepEqual(await bridge.pollOnce({ force: true }), { delivered: 0, held: 1 });
+    await bridgePolls(bridge);
     assert.equal(notifications.length, 0, "held while the wait is active");
+    assert.equal(activeWaitCount(), 1, "wait still active");
+    clock += 1_000; // past the wait's deadline: its next poll times out
     const result = await pending;
     assert.equal(result.result, "timeout");
     assert.equal(activeWaitCount(), 0);
