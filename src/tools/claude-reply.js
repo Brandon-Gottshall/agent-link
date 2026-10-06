@@ -69,6 +69,8 @@ export function makeReplyAgentLinkMessageHandler({
           toSessionId: original.from_session_id,
           toSessionKind: original.from_session_kind,
           body,
+          // The sender is the resolved current session (runtime identity).
+          metadata: { sender: { source: "current_session" } },
           replyToMessageId: messageId
         });
       } finally {

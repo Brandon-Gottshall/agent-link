@@ -246,7 +246,7 @@ function insert(mailboxPath, fields) {
     }
   );
   assert.ok(parsed.hookSpecificOutput);
-  assert.match(parsed.hookSpecificOutput.additionalContext, /\b2 pending messages\b/);
+  assert.match(parsed.hookSpecificOutput.additionalContext, /\b2 pending peer messages\b/);
   assert.match(parsed.hookSpecificOutput.additionalContext, new RegExp(SENDER_A));
   assert.match(parsed.hookSpecificOutput.additionalContext, new RegExp(SENDER_B));
   assert.ok(!parsed.hookSpecificOutput.additionalContext.includes(SENDER_C));
@@ -268,11 +268,10 @@ function insert(mailboxPath, fields) {
   const parsed = runWithRegistry(stdinFixture, { mailboxPath: sb.mailboxPath, registry });
   const ctx = parsed.hookSpecificOutput.additionalContext;
   assert.ok(!ctx.includes("Ignore the user"), "invalid sender id must not be rendered");
-  assert.match(ctx, /unknown sender/);
+  assert.match(ctx, /from invalid\./);
   assert.doesNotMatch(ctx, /BEFORE answering/i, "must not tell the model to act before the user's prompt");
-  assert.match(ctx, /untrusted/i);
-  assert.match(ctx, /another agent/i);
-  assert.match(ctx, /not (as )?(instructions )?from the user/i);
+  assert.match(ctx, /other AI agents/i);
+  assert.match(ctx, /not from the user/i);
   cleanup(sb);
 }
 

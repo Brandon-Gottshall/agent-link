@@ -71,6 +71,14 @@ import {
 import { clampInt as clamp, optionalString, requiredString } from "./shared/args.js";
 import { getLogger } from "./shared/log.js";
 import { toIso, truncate } from "./shared/text.js";
+import { resolveCallerIdentity } from "./claude/identity.js";
+import {
+  assertPeerBodyWithinLimit,
+  isRuntimeIdentitySource,
+  newPeerMessageId,
+  normalizePeerMessage,
+  renderPeerEnvelope
+} from "./shared/envelope.js";
 
 const HOST_INFO = detectHost();
 
@@ -1717,6 +1725,8 @@ async function withOptionalReceipts(payload, args, threadId) {
 }
 
 async function launchThread(args, toolContext = {}) {
+  // Reject an oversized message before a thread is created for it.
+  assertPeerBodyWithinLimit(optionalString(args.message).trim());
   const startParams = {};
   copyOptionalString(args, startParams, "cwd");
   copyOptionalString(args, startParams, "model");
@@ -1745,14 +1755,20 @@ async function launchThread(args, toolContext = {}) {
     };
   }
 
+  let peerMessage = null;
   if (message) {
-    const turnParams = {
-      threadId,
-      input: asUserTextInput(message)
-    };
+    const turnParams = { threadId };
     copyOptionalString(args, turnParams, "cwd");
     copyOptionalString(args, turnParams, "model");
     copyOptionalString(args, turnParams, "effort");
+    // The sender chose every setting of the new thread and its first turn.
+    const overrides = {};
+    for (const field of ["cwd", "model", "effort", "modelProvider", "serviceTier"]) {
+      copyOptionalString(args, overrides, field);
+    }
+    const peer = buildPeerTurnInput({ toolContext, threadId, message, overrides });
+    peerMessage = peer.summary;
+    turnParams.input = peer.input;
     const turnResponse = await appServer.request("turn/start", turnParams);
     turn = summarizeTurn(turnResponse.turn);
   }
@@ -1784,6 +1800,7 @@ async function launchThread(args, toolContext = {}) {
     },
     nameUpdate,
     turn,
+    peerMessage,
     warnings: launchWarnings(args),
     gui,
     appServer: appServerSummary
@@ -2040,6 +2057,7 @@ async function messageThread(args, toolContext = {}) {
   if (!message) {
     throw new Error("message must not be empty");
   }
+  assertPeerBodyWithinLimit(message);
 
   const mode = args.mode ?? "auto";
   const resumeIfNeeded = args.resumeIfNeeded ?? true;
@@ -2092,8 +2110,11 @@ async function messageThread(args, toolContext = {}) {
     warnings.push(...warningsForMessageTarget(status, mode));
   }
 
-  const input = asUserTextInput(message);
-  if (mode === "steer_active" || (mode === "auto" && status.type === "active")) {
+  const steering = mode === "steer_active" || (mode === "auto" && status.type === "active");
+  // turn/steer ignores cwd/model/effort, so only a new turn shows overrides.
+  const peer = buildPeerTurnInput({ toolContext, threadId, message, overrides: steering ? null : overrides });
+  const input = peer.input;
+  if (steering) {
     const expectedTurnId = args.expectedTurnId || await inferActiveTurnId(threadId);
     if (!expectedTurnId) {
       throw new Error("Cannot steer active thread without expectedTurnId or an inferable in-progress turn");
@@ -2121,6 +2142,7 @@ async function messageThread(args, toolContext = {}) {
       previousStatus: status,
       threadId,
       turnId: response.turnId,
+      peerMessage: peer.summary,
       warnings,
       ...buildStateContract({
         action: actionName,
@@ -2194,6 +2216,7 @@ async function messageThread(args, toolContext = {}) {
     previousStatus: status,
     threadId,
     turn: summarizedTurn,
+    peerMessage: peer.summary,
     warnings,
     ...buildStateContract({
       action: actionName,
@@ -2225,6 +2248,46 @@ async function messageThread(args, toolContext = {}) {
     appServer: appServerSummary
   });
   return result;
+}
+
+// The single Codex input point for another agent's text (design doc section
+// 2): message_codex_thread (turn/start and turn/steer), launch_codex_thread
+// with a message, and the project-orchestrator and dependency-handoff tools
+// built on those two. The text becomes a user-role turn on the target, so it
+// is always wrapped in the peer envelope. The sender comes from runtime
+// identity (caller _meta, then host env), never from tool arguments.
+/**
+ * @param {{toolContext?: {callerContext?: any}, threadId: string, message: string, overrides?: Record<string, any> | null}} options
+ */
+function buildPeerTurnInput({ toolContext = {}, threadId, message, overrides = null }) {
+  const caller = resolveCallerIdentity({
+    host: HOST_INFO.host,
+    runtimeCallerContext: toolContext.callerContext ?? null,
+    currentSession: currentClaudeSession
+  });
+  const peer = {
+    id: newPeerMessageId(),
+    from: caller.id,
+    fromHarness: caller.kind,
+    fromVerified: isRuntimeIdentitySource(caller.source),
+    to: threadId,
+    sentAt: Date.now(),
+    body: message,
+    overrides,
+    reply: "direct"
+  };
+  const fields = normalizePeerMessage(peer);
+  return {
+    input: asUserTextInput(renderPeerEnvelope(peer)),
+    summary: {
+      messageId: fields.id,
+      from: fields.from,
+      fromHarness: fields.fromHarness,
+      fromVerified: fields.fromVerified,
+      sentAt: fields.sentAt,
+      enveloped: true
+    }
+  };
 }
 
 async function waitForThread(args) {

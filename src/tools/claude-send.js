@@ -182,7 +182,7 @@ export function makeClaudeSendHandler({
             toSessionId: canonicalClaudeSessionId(target),
             toSessionKind: "claude",
             body,
-            metadata: mailboxMetadata({ receipt, resolution }),
+            metadata: mailboxMetadata({ receipt, resolution, senderSource: caller.source }),
             replyToMessageId: replyToMessageId ?? null
           });
         } catch (error) {
@@ -267,9 +267,12 @@ export function makeClaudeSendHandler({
 // would bypass the body cap and bloat every mailbox read.
 const MAX_METADATA_QUERY = 200;
 const MAX_METADATA_CANDIDATES = 10;
-function mailboxMetadata({ receipt, resolution }) {
+function mailboxMetadata({ receipt, resolution, senderSource = null }) {
   const normalized = receipt ? normalizeReceiptInput(receipt) : null;
   return {
+    // How this server identified the sender (resolveCallerIdentity source).
+    // The envelope shows fromVerified="true" only for a runtime source.
+    sender: { source: typeof senderSource === "string" ? senderSource : null },
     receipt: normalized
       ? {
           record: normalized.record,

@@ -219,6 +219,7 @@ Agent Link only reads Claude's own session state. All writes go to a mailbox tha
 - **Mailbox.** An append-only JSONL file at `~/.claude/agent-link/mailbox.jsonl`. Nothing leaves the machine.
 - **Receiving in Claude Desktop.** The `SessionStart` and `UserPromptSubmit` hooks add a short "you have mail" note to the session's context. Message bodies appear only when the agent calls `read_agent_link_inbox`, so the user sees the same thing the agent does.
 - **Receiving in Claude Code.** When loaded as a channel, Agent Link polls the mailbox and emits `<agent-link-message>` events. The agent answers with `reply_agent_link_message`.
+- **Peer-message envelope.** Every message from another agent reaches the receiving model wrapped in one `<agent-link-message>` envelope: the channel event, each message in the `read_agent_link_inbox` result, and the text of every Codex turn Agent Link starts or steers for another agent (`message_codex_thread`, `launch_codex_thread` with a message, and the project-orchestrator and dependency-handoff tools). The envelope names the validated sender, says whether that identity came from the runtime (`fromVerified`), and carries a fixed notice that the content is not from the user. Bodies are limited to 64 KiB, and markup, control, and bidi characters in them are escaped.
 
 ## Configuration
 

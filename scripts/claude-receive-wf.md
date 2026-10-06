@@ -115,7 +115,7 @@ notification with no body. Severity `P1` — leaking the body via
 ### 4. Reply — round-trip via `reply_agent_link_message`
 
 **Instruction:** Have the receiver reply to the sender. The sender is identified
-in the inbound message envelope as `from="local_<uuid>" fromKind="claude"`.
+in the inbound message envelope as `from="local_<uuid>" fromHarness="claude" fromVerified="true"`.
 The receiver should call `reply_agent_link_message` with `messageId` set to the
 inbound message id and `body` set to a short reply.
 

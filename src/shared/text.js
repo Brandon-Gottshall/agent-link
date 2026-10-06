@@ -40,12 +40,13 @@ export function escapeXml(value) {
 }
 
 /**
- * Escapes an attribute value: escapeXml plus both quote characters.
+ * Escapes an attribute value: escapeXml plus both quote characters (`&quot;`,
+ * and `&#39;` rather than `&apos;`, which HTML 4 lacks; design doc 2.3).
  * @param {unknown} value
  * @returns {string}
  */
 export function escapeAttr(value) {
-  return escapeXml(value).replace(/["']/g, (c) => (c === '"' ? "&quot;" : "&apos;"));
+  return escapeXml(value).replace(/["']/g, (c) => (c === '"' ? "&quot;" : "&#39;"));
 }
 
 // C0 controls except \t (09) and \n (0A), plus DEL. \r is gone by then.

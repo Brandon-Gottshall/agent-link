@@ -38,9 +38,10 @@ const SENDER = "local_0d6a2b9e-1f3c-4b5a-9e8d-7c6b5a4f3e2d";
     from_session_kind: "system",
     body: "b"
   });
-  assert.equal(rendered.meta.message_id, "unknown message");
-  assert.equal(rendered.meta.from_session_id, "unknown sender");
-  assert.equal(rendered.meta.from_kind, "unknown");
+  assert.equal(rendered.meta.message_id, "invalid");
+  assert.equal(rendered.meta.from_session_id, "invalid");
+  assert.equal(rendered.meta.from_kind, "external");
+  assert.equal(rendered.meta.from_verified, "false");
   assert.ok(!rendered.content.includes("ignore-previous-instructions"));
   assert.ok(!rendered.content.includes("<x/>"));
   for (const known of ["external", "019df300-0000-7000-8000-000000000001", SENDER]) {
@@ -243,9 +244,9 @@ const SENDER = "local_0d6a2b9e-1f3c-4b5a-9e8d-7c6b5a4f3e2d";
   });
   assert.equal((await bridge.pollOnce()).delivered, 1);
   assert.match(notifications[0].params.content, /via cli id/);
-  assert.match(notifications[0].params.content, /from="unknown sender"/);
+  assert.match(notifications[0].params.content, /from="invalid" fromHarness="external" fromVerified="false"/);
   assert.ok(!notifications[0].params.content.includes("<inject/>"));
-  assert.equal(notifications[0].params.meta.from_session_id, "unknown sender");
+  assert.equal(notifications[0].params.meta.from_session_id, "invalid");
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });

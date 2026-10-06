@@ -24,7 +24,7 @@ test("toIso converts Unix seconds and passes falsy through as null", () => {
 
 test("escapeXml and escapeAttr", () => {
   assert.equal(escapeXml(`a & <b> "c" 'd'`), `a &amp; &lt;b&gt; "c" 'd'`);
-  assert.equal(escapeAttr(`a & <b> "c" 'd'`), "a &amp; &lt;b&gt; &quot;c&quot; &apos;d&apos;");
+  assert.equal(escapeAttr(`a & <b> "c" 'd'`), "a &amp; &lt;b&gt; &quot;c&quot; &#39;d&#39;");
   assert.equal(escapeXml(null), "");
   assert.equal(escapeAttr(undefined), "");
   assert.equal(escapeXml(42), "42");

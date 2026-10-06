@@ -9,7 +9,8 @@
 // same transaction. Set markAsDelivered:false to inspect without draining.
 import { openMailbox } from "../claude/mailbox.js";
 import { claudeSessionAliases, displayMessageId, displaySenderId, displaySenderKind } from "../claude/identity.js";
-import { escapeAttr, escapeXml } from "../claude/xml.js";
+import { isHeldByActiveWait } from "../claude/active-waits.js";
+import { normalizePeerMessage, peerMessageFromMailbox, renderInbox } from "../shared/envelope.js";
 
 export const readInboxTool = {
   name: "read_agent_link_inbox",
@@ -17,8 +18,8 @@ export const readInboxTool = {
     "Read pending agent-link messages addressed to the current session. By default the tool drains the pending " +
     "messages (marks them delivered) in the same transaction. Returns the messages and a rendered " +
     "<agent-link-inbox> block as a visible MCP tool result so the user can see the inbound mail in the transcript. " +
-    "Pair with the agent-link UserPromptSubmit / SessionStart notify hook: when the model is told mail is pending " +
-    "it should call this tool first, then answer the user.",
+    "Each message is wrapped in an <agent-link-message> envelope marking it as content from another agent, not " +
+    "from the user. Pair with the agent-link UserPromptSubmit / SessionStart notify hook, which reports pending mail.",
   inputSchema: {
     type: "object",
     properties: {
@@ -65,24 +66,35 @@ export function makeReadInboxHandler({ resolveCurrentSession, mailboxOpener } = 
       const toSessionIds = claudeSessionAliases(session);
       const mb = openMb();
       try {
+        // A reply that an in-process wait (message_claude_session with
+        // waitForReply, or wait_for_claude_session) is blocked on belongs to
+        // that wait, which returns it as its tool result. Same rule as the
+        // channel bridge: never drain or show it here, or it arrives twice.
+        const all = mb.listPendingFor({ toSessionIds });
+        const pending = all.filter((message) => !isHeldByActiveWait(message));
         // Slice before marking: with `limit`, only the returned messages are
         // marked delivered and the rest stay pending.
-        const rows = markAsDelivered
-          ? mb.drainFor({ toSessionIds, limit: limit ?? undefined })
-          : mb.listPendingFor({ toSessionIds }).slice(0, limit ?? undefined);
+        const rows = pending.slice(0, limit ?? undefined);
+        if (markAsDelivered) {
+          for (const row of rows) mb.markDelivered({ messageId: row.id });
+        }
+        const peers = rows.map(peerMessageFromMailbox);
         // Ids are untrusted; only shapes Agent Link produces reach the model.
-        const messages = rows.map((m) => ({
+        const messages = rows.map((m, i) => ({
           ...m,
           id: displayMessageId(m.id),
           from_session_id: displaySenderId(m.from_session_id),
           from_session_kind: displaySenderKind(m.from_session_kind),
+          from_verified: normalizePeerMessage(peers[i]).fromVerified,
           reply_to_message_id: m.reply_to_message_id ? displayMessageId(m.reply_to_message_id) : null
         }));
+        const held = all.length - pending.length;
         return {
           sessionId: session.sessionId,
           markedDelivered: markAsDelivered,
           messages,
-          renderedBlock: renderInbox(messages)
+          ...(held > 0 ? { heldByActiveWait: held } : {}),
+          renderedBlock: renderInbox(peers)
         };
       } finally {
         mb.close();
@@ -90,22 +102,3 @@ export function makeReadInboxHandler({ resolveCurrentSession, mailboxOpener } = 
     }
   };
 }
-
-function renderInbox(messages) {
-  if (!messages.length) {
-    return `<agent-link-inbox count="0"/>`;
-  }
-  const lines = [`<agent-link-inbox count="${messages.length}">`];
-  for (const m of messages) {
-    const replyAttr = m.reply_to_message_id ? ` replyTo="${escapeAttr(displayMessageId(m.reply_to_message_id))}"` : "";
-    const sentAt = Number.isFinite(m.sent_at) ? new Date(m.sent_at).toISOString() : "";
-    lines.push(
-      `  <message id="${escapeAttr(displayMessageId(m.id))}" from="${escapeAttr(displaySenderId(m.from_session_id))}" fromKind="${escapeAttr(displaySenderKind(m.from_session_kind))}" sentAt="${escapeAttr(sentAt)}"${replyAttr}>`
-    );
-    lines.push(`    <body>${escapeXml(m.body)}</body>`);
-    lines.push(`  </message>`);
-  }
-  lines.push(`</agent-link-inbox>`);
-  return lines.join("\n");
-}
-

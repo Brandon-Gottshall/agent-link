@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { openMailbox, resolveMailboxPath } from "./mailbox.js";
 import { isHeldByActiveWait, onActiveWaitEnded } from "./active-waits.js";
-import { claudeSessionAliases, displayMessageId, displaySenderId, displaySenderKind } from "./identity.js";
-import { escapeAttr, escapeXml } from "./xml.js";
+import { claudeSessionAliases } from "./identity.js";
+import { normalizePeerMessage, peerMessageFromMailbox, renderPeerEnvelope } from "../shared/envelope.js";
 
 // Poll cadence: start at 1s, double on every tick that finds nothing to
 // deliver, cap at 30s, and snap back to 1s on delivery or when fs.watch sees
@@ -12,23 +12,18 @@ const DEFAULT_POLL_INTERVAL_MS = 1_000;
 const DEFAULT_MAX_POLL_INTERVAL_MS = 30_000;
 const WAKE_DEBOUNCE_MS = 50;
 
+// The channel event content is exactly the section 2 peer envelope. The meta
+// carries the same validated ids; nothing unvalidated reaches the model.
 export function renderChannelMessage(message) {
-  // Every id reaching the model is checked against the shapes Agent Link
-  // produces; anything else is rendered as unknown.
-  const id = displayMessageId(message.id);
-  const from = displaySenderId(message.from_session_id);
-  const fromKind = displaySenderKind(message.from_session_kind);
+  const peer = peerMessageFromMailbox(message);
+  const fields = normalizePeerMessage(peer);
   return {
-    content: [
-      `<agent-link-message id="${escapeAttr(id)}" from="${escapeAttr(from)}" fromKind="${escapeAttr(fromKind)}">`,
-      `  <body>${escapeXml(message.body)}</body>`,
-      `  <reply>Use reply_agent_link_message with messageId="${escapeAttr(id)}" to reply.</reply>`,
-      `</agent-link-message>`
-    ].join("\n"),
+    content: renderPeerEnvelope(peer),
     meta: {
-      message_id: id,
-      from_session_id: from,
-      from_kind: fromKind
+      message_id: fields.id,
+      from_session_id: fields.from,
+      from_kind: fields.fromHarness,
+      from_verified: fields.fromVerified ? "true" : "false"
     }
   };
 }

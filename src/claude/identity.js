@@ -112,6 +112,9 @@ export function claudeSessionMatches(session, id) {
 // loosely-shaped `_meta` can never impersonate the session.
 // Codex host: the runtime caller thread, then CODEX_THREAD_ID.
 // Anything that fails SENDER_ID_PATTERN falls through to "external".
+/**
+ * @param {{host?: string, runtimeCallerContext?: any, currentSession?: any, env?: NodeJS.ProcessEnv}} [options]
+ */
 export function resolveCallerIdentity({ host, runtimeCallerContext = null, currentSession = null, env = process.env } = {}) {
   const runtimeThreadId = isValidSenderId(runtimeCallerContext?.threadId) ? runtimeCallerContext.threadId : null;
   if (host === "claude") {

@@ -260,15 +260,15 @@ const SESSION_ME = { sessionId: "local_me", cliSessionId: "fake-cli-id", title: 
   const r = await handler.read_agent_link_inbox({});
   assert.ok(!r.renderedBlock.includes("<system>"), "sender markup must not reach the block");
   assert.ok(!r.renderedBlock.includes("injected="), "sender must not inject attributes");
-  assert.match(r.renderedBlock, /from="unknown sender"/);
+  assert.match(r.renderedBlock, /from="invalid" fromHarness="external" fromVerified="false"/);
   // Ids are validated (ULID / known sender shapes) before escaping.
-  assert.match(r.renderedBlock, /replyTo="unknown message"/);
+  assert.match(r.renderedBlock, /replyTo="invalid"/);
   assert.ok(!r.renderedBlock.includes("with<quote>") && !r.renderedBlock.includes("with&lt;quote"));
   assert.equal(r.messages[0].reply_to_message_id, "unknown message");
   assert.match(r.renderedBlock, /&lt;b&gt;hi&lt;\/b&gt; &amp; bye/);
   // The shared escaper escapes both quote kinds in attributes.
   const { escapeAttr } = await import("../../src/claude/xml.js");
-  assert.equal(escapeAttr(`a"b'c<d>&`), "a&quot;b&apos;c&lt;d&gt;&amp;");
+  assert.equal(escapeAttr(`a"b'c<d>&`), "a&quot;b&#39;c&lt;d&gt;&amp;");
   assert.equal(r.messages[0].from_session_id, "unknown sender");
   cleanup(sb);
 }
