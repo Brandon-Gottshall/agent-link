@@ -50,7 +50,6 @@ import {
   analyzeThreadWaitState,
   buildStateContract,
   classifySidebarMembership,
-  desktopVisibilityContract,
   extractFinalResponse,
   inferArchiveState,
   isRiskyParallelStatus,
