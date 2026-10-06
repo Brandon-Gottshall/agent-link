@@ -21,6 +21,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const groups = {
   claude: [
     "tests/claude/channel-bridge.test.js",
+    "tests/claude/channel-wait-race.test.js",
     "tests/claude/desktop-registry.test.js",
     "tests/claude/mailbox.test.js",
     "tests/claude/notify-hook.test.js",

@@ -8,6 +8,7 @@ import {
   claudeSessionMatches,
   resolveCallerIdentity
 } from "../claude/identity.js";
+import { registerActiveWait } from "../claude/active-waits.js";
 import { buildReceipt, normalizeReceiptInput, safeAppendReceipt } from "../shared/receipt-index.js";
 
 const DEFAULT_WAIT_TIMEOUT_MS = 60_000;
@@ -161,6 +162,7 @@ export function makeClaudeSendHandler({
       });
       const mb = openMb();
       let messageId;
+      let releaseWait = null;
       try {
         if (replyToMessageId !== undefined && replyToMessageId !== null) {
           const original = typeof replyToMessageId === "string" ? mb.getMessage({ messageId: replyToMessageId }) : null;
@@ -188,6 +190,16 @@ export function makeClaudeSendHandler({
             return { error: "invalid_arguments", message: error.message };
           }
           throw error;
+        }
+        // Register the reply wait before the receipt write yields, so this
+        // process's channel bridge never pushes the reply pollForReply will
+        // return. Released in the finally below however the call ends.
+        if (waitForReply) {
+          releaseWait = registerActiveWait({
+            replyToMessageId: messageId,
+            fromIds: claudeSessionAliases(target),
+            toIds: caller.aliases
+          });
         }
 
         const delivery = classifyDelivery({ target, deliveryPreference });
@@ -243,6 +255,7 @@ export function makeClaudeSendHandler({
 
         return result;
       } finally {
+        releaseWait?.();
         mb.close();
       }
     }

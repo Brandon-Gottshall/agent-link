@@ -20970,6 +20970,50 @@ function ulid2() {
   return timePart + randPart;
 }
 
+// src/claude/active-waits.js
+var waits = /* @__PURE__ */ new Map();
+var endListeners = /* @__PURE__ */ new Set();
+var nextToken = 1;
+function registerActiveWait({ replyToMessageId = null, fromIds = [], toIds = [], since = null } = {}) {
+  const token = nextToken++;
+  waits.set(token, {
+    replyToMessageId: typeof replyToMessageId === "string" && replyToMessageId ? replyToMessageId : null,
+    from: new Set(fromIds),
+    to: new Set(toIds),
+    since: Number.isFinite(since) ? since : null
+  });
+  let released = false;
+  return function releaseActiveWait() {
+    if (released) return;
+    released = true;
+    waits.delete(token);
+    for (const listener of [...endListeners]) {
+      try {
+        listener();
+      } catch {
+      }
+    }
+  };
+}
+function isHeldByActiveWait(message) {
+  if (!message || waits.size === 0) return false;
+  for (const wait of waits.values()) {
+    if (!wait.from.has(message.from_session_id) || !wait.to.has(message.to_session_id)) continue;
+    if (wait.replyToMessageId) {
+      if (message.reply_to_message_id === wait.replyToMessageId) return true;
+    } else if (wait.since === null || message.sent_at >= wait.since) {
+      return true;
+    }
+  }
+  return false;
+}
+function onActiveWaitEnded(listener) {
+  if (typeof listener !== "function") return () => {
+  };
+  endListeners.add(listener);
+  return () => endListeners.delete(listener);
+}
+
 // src/shared/receipt-index.js
 import { randomUUID } from "node:crypto";
 import { promises as fs4 } from "node:fs";
@@ -21460,6 +21504,7 @@ function makeClaudeSendHandler({
       });
       const mb = openMb();
       let messageId;
+      let releaseWait = null;
       try {
         if (replyToMessageId !== void 0 && replyToMessageId !== null) {
           const original = typeof replyToMessageId === "string" ? mb.getMessage({ messageId: replyToMessageId }) : null;
@@ -21486,6 +21531,13 @@ function makeClaudeSendHandler({
             return { error: "invalid_arguments", message: error2.message };
           }
           throw error2;
+        }
+        if (waitForReply) {
+          releaseWait = registerActiveWait({
+            replyToMessageId: messageId,
+            fromIds: claudeSessionAliases(target),
+            toIds: caller.aliases
+          });
         }
         const delivery = classifyDelivery({ target, deliveryPreference });
         const targetSummary = {
@@ -21533,6 +21585,7 @@ function makeClaudeSendHandler({
         }
         return result;
       } finally {
+        releaseWait?.();
         mb.close();
       }
     }
@@ -21663,45 +21716,55 @@ function makeWaitHandler({
       const wasLoaded = !!target0.loaded;
       const deadline = waitStartedAt + timeoutMs;
       let nextLivenessCheckAt = waitStartedAt + livenessIntervalMs;
-      while (true) {
-        const mb = openMb();
-        try {
-          const filters = {
-            fromSessionIds: fromIds,
-            toSessionIds: caller.aliases,
-            limit: Number.MAX_SAFE_INTEGER
-          };
-          if (latestMessageId) {
-            filters.replyToMessageId = latestMessageId;
-          } else {
-            filters.since = waitStartedAt;
-          }
-          const messages = mb.inspect(filters).sort((a, b) => a.sent_at - b.sent_at);
-          if (messages.length > 0) {
-            consumeReply(mb, messages[0]);
-            return {
-              result: "reply",
-              message: messages[0],
-              sessionId
+      const releaseWait = registerActiveWait({
+        replyToMessageId: latestMessageId || null,
+        fromIds,
+        toIds: caller.aliases,
+        since: latestMessageId ? null : waitStartedAt
+      });
+      try {
+        while (true) {
+          const mb = openMb();
+          try {
+            const filters = {
+              fromSessionIds: fromIds,
+              toSessionIds: caller.aliases,
+              limit: Number.MAX_SAFE_INTEGER
             };
+            if (latestMessageId) {
+              filters.replyToMessageId = latestMessageId;
+            } else {
+              filters.since = waitStartedAt;
+            }
+            const messages = mb.inspect(filters).sort((a, b) => a.sent_at - b.sent_at);
+            if (messages.length > 0) {
+              consumeReply(mb, messages[0]);
+              return {
+                result: "reply",
+                message: messages[0],
+                sessionId
+              };
+            }
+          } finally {
+            mb.close();
           }
-        } finally {
-          mb.close();
-        }
-        if (wasLoaded && now() >= nextLivenessCheckAt) {
-          nextLivenessCheckAt = now() + livenessIntervalMs;
-          if (!loadedFn(target0)) {
-            return {
-              result: "idle",
-              target: { sessionId, lastLoaded: false }
-            };
+          if (wasLoaded && now() >= nextLivenessCheckAt) {
+            nextLivenessCheckAt = now() + livenessIntervalMs;
+            if (!loadedFn(target0)) {
+              return {
+                result: "idle",
+                target: { sessionId, lastLoaded: false }
+              };
+            }
           }
+          if (now() >= deadline) {
+            return { result: "timeout", sessionId };
+          }
+          const remaining = deadline - now();
+          await sleep3(Math.min(pollIntervalMs, Math.max(remaining, 10)));
         }
-        if (now() >= deadline) {
-          return { result: "timeout", sessionId };
-        }
-        const remaining = deadline - now();
-        await sleep3(Math.min(pollIntervalMs, Math.max(remaining, 10)));
+      } finally {
+        releaseWait();
       }
     }
   };
@@ -21978,6 +22041,7 @@ function makeAgentLinkChannelBridge({
   const maxDelay = Math.max(minDelay, maxPollIntervalMs);
   let timer = null;
   let watcher = null;
+  let unsubscribeWaitEnded = null;
   let running = false;
   let stopped = true;
   let delay = minDelay;
@@ -22015,8 +22079,10 @@ function makeAgentLinkChannelBridge({
     stats.fullChecks += 1;
     const mb = openMb();
     try {
-      const pending = mb.listPendingFor({ toSessionIds: claudeSessionAliases(session) });
-      lastHadPending = pending.length > 0;
+      const all = mb.listPendingFor({ toSessionIds: claudeSessionAliases(session) });
+      const pending = all.filter((message) => !isHeldByActiveWait(message));
+      const held = all.length - pending.length;
+      lastHadPending = all.length > 0;
       for (const message of pending) mb.markDelivered({ messageId: message.id });
       let delivered = 0;
       try {
@@ -22035,9 +22101,9 @@ function makeAgentLinkChannelBridge({
         for (const message of pending.slice(delivered)) mb.releaseDelivery({ messageId: message.id });
         throw error2;
       }
-      lastHadPending = false;
+      lastHadPending = held > 0;
       lastSignature = signature;
-      return { delivered };
+      return held > 0 ? { delivered, held } : { delivered };
     } finally {
       mb.close();
     }
@@ -22099,6 +22165,7 @@ function makeAgentLinkChannelBridge({
       stopped = false;
       delay = minDelay;
       startWatcher();
+      unsubscribeWaitEnded = onActiveWaitEnded(wake);
       schedule(delay);
     },
     stop() {
@@ -22107,6 +22174,8 @@ function makeAgentLinkChannelBridge({
       timer = null;
       watcher?.close();
       watcher = null;
+      unsubscribeWaitEnded?.();
+      unsubscribeWaitEnded = null;
     }
   };
 }

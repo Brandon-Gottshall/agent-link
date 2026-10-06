@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { openMailbox, resolveMailboxPath } from "./mailbox.js";
+import { isHeldByActiveWait, onActiveWaitEnded } from "./active-waits.js";
 import { claudeSessionAliases, displayMessageId, displaySenderId, displaySenderKind } from "./identity.js";
 import { escapeAttr, escapeXml } from "./xml.js";
 
@@ -51,6 +52,7 @@ export function makeAgentLinkChannelBridge({
 
   let timer = null;
   let watcher = null;
+  let unsubscribeWaitEnded = null;
   let running = false;
   let stopped = true;
   let delay = minDelay;
@@ -100,8 +102,15 @@ export function makeAgentLinkChannelBridge({
     stats.fullChecks += 1;
     const mb = openMb();
     try {
-      const pending = mb.listPendingFor({ toSessionIds: claudeSessionAliases(session) });
-      lastHadPending = pending.length > 0;
+      const all = mb.listPendingFor({ toSessionIds: claudeSessionAliases(session) });
+      // A reply that an in-process wait (message_claude_session with
+      // waitForReply, or wait_for_claude_session) is blocked on stays pending
+      // for that wait, which returns it as its tool result; pushing it here
+      // too would deliver it twice. Held messages keep lastHadPending set, so
+      // later polls re-check them, and the wait's end wakes the bridge.
+      const pending = all.filter((message) => !isHeldByActiveWait(message));
+      const held = all.length - pending.length;
+      lastHadPending = all.length > 0;
       // Claim every message before the first await. The inbox tool runs in
       // this same process and drains synchronously, so a claim made before
       // notifying means it can never hand out a message the channel is
@@ -125,9 +134,9 @@ export function makeAgentLinkChannelBridge({
         for (const message of pending.slice(delivered)) mb.releaseDelivery({ messageId: message.id });
         throw error;
       }
-      lastHadPending = false;
+      lastHadPending = held > 0;
       lastSignature = signature;
-      return { delivered };
+      return held > 0 ? { delivered, held } : { delivered };
     } finally {
       mb.close();
     }
@@ -193,6 +202,9 @@ export function makeAgentLinkChannelBridge({
       stopped = false;
       delay = minDelay;
       startWatcher();
+      // A wait that ends without consuming what it held (timeout, idle)
+      // hands it back to the channel right away, not after a backoff.
+      unsubscribeWaitEnded = onActiveWaitEnded(wake);
       schedule(delay);
     },
     stop() {
@@ -201,6 +213,8 @@ export function makeAgentLinkChannelBridge({
       timer = null;
       watcher?.close();
       watcher = null;
+      unsubscribeWaitEnded?.();
+      unsubscribeWaitEnded = null;
     }
   };
 }

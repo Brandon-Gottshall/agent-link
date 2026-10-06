@@ -28,6 +28,7 @@
 import { openMailbox } from "../claude/mailbox.js";
 import { isClaudeSessionLoaded, listClaudeSessions } from "../claude/session-index.js";
 import { claudeSessionAliases, claudeSessionMatches, resolveCallerIdentity } from "../claude/identity.js";
+import { registerActiveWait } from "../claude/active-waits.js";
 import { consumeReply } from "./claude-send.js";
 
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -115,56 +116,69 @@ export function makeWaitHandler({
       const deadline = waitStartedAt + timeoutMs;
       let nextLivenessCheckAt = waitStartedAt + livenessIntervalMs;
 
-      while (true) {
-        // 1. Check the mailbox for an inbound message matching our criteria.
-        //    Open/close per iteration so waits observe fresh append-only state
-        //    and never hold a mailbox object across an await boundary.
-        const mb = openMb();
-        try {
-          const filters = {
-            fromSessionIds: fromIds,
-            toSessionIds: caller.aliases,
-            limit: Number.MAX_SAFE_INTEGER
-          };
-          if (latestMessageId) {
-            filters.replyToMessageId = latestMessageId;
-          } else {
-            filters.since = waitStartedAt;
-          }
-          const messages = mb.inspect(filters).sort((a, b) => a.sent_at - b.sent_at);
-          if (messages.length > 0) {
-            // A reply consumed by a wait counts as delivered (and
-            // acknowledged); the caller's inbox and channel skip it.
-            consumeReply(mb, messages[0]);
-            return {
-              result: "reply",
-              message: messages[0],
-              sessionId
+      // Keep this process's channel bridge from pushing the message this
+      // wait is about to return; released however the wait ends, so the
+      // bridge delivers anything left over (timeout, idle) normally.
+      const releaseWait = registerActiveWait({
+        replyToMessageId: latestMessageId || null,
+        fromIds,
+        toIds: caller.aliases,
+        since: latestMessageId ? null : waitStartedAt
+      });
+      try {
+        while (true) {
+          // 1. Check the mailbox for an inbound message matching our criteria.
+          //    Open/close per iteration so waits observe fresh append-only state
+          //    and never hold a mailbox object across an await boundary.
+          const mb = openMb();
+          try {
+            const filters = {
+              fromSessionIds: fromIds,
+              toSessionIds: caller.aliases,
+              limit: Number.MAX_SAFE_INTEGER
             };
+            if (latestMessageId) {
+              filters.replyToMessageId = latestMessageId;
+            } else {
+              filters.since = waitStartedAt;
+            }
+            const messages = mb.inspect(filters).sort((a, b) => a.sent_at - b.sent_at);
+            if (messages.length > 0) {
+              // A reply consumed by a wait counts as delivered (and
+              // acknowledged); the caller's inbox and channel skip it.
+              consumeReply(mb, messages[0]);
+              return {
+                result: "reply",
+                message: messages[0],
+                sessionId
+              };
+            }
+          } finally {
+            mb.close();
           }
-        } finally {
-          mb.close();
-        }
 
-        // 2. Idle-transition check: only meaningful if the session was
-        //    loaded when the wait started. Check that one session's process,
-        //    and no more often than livenessIntervalMs.
-        if (wasLoaded && now() >= nextLivenessCheckAt) {
-          nextLivenessCheckAt = now() + livenessIntervalMs;
-          if (!loadedFn(target0)) {
-            return {
-              result: "idle",
-              target: { sessionId, lastLoaded: false }
-            };
+          // 2. Idle-transition check: only meaningful if the session was
+          //    loaded when the wait started. Check that one session's process,
+          //    and no more often than livenessIntervalMs.
+          if (wasLoaded && now() >= nextLivenessCheckAt) {
+            nextLivenessCheckAt = now() + livenessIntervalMs;
+            if (!loadedFn(target0)) {
+              return {
+                result: "idle",
+                target: { sessionId, lastLoaded: false }
+              };
+            }
           }
-        }
 
-        // 3. Sleep until the next poll, or break out on timeout.
-        if (now() >= deadline) {
-          return { result: "timeout", sessionId };
+          // 3. Sleep until the next poll, or break out on timeout.
+          if (now() >= deadline) {
+            return { result: "timeout", sessionId };
+          }
+          const remaining = deadline - now();
+          await sleep(Math.min(pollIntervalMs, Math.max(remaining, 10)));
         }
-        const remaining = deadline - now();
-        await sleep(Math.min(pollIntervalMs, Math.max(remaining, 10)));
+      } finally {
+        releaseWait();
       }
     }
   };
