@@ -57,13 +57,23 @@ export function envelopeMessageId(id) {
   return typeof id === "string" && MESSAGE_ID_PATTERN.test(id) ? id : INVALID_ID;
 }
 
+const utf8Bytes = (value) => Buffer.byteLength(String(value ?? ""), "utf8");
+
 /**
  * Section 2.3 step 1, at send: throws `body_too_large` over 64 KiB (UTF-8).
+ *
+ * For a body Agent Link composes around caller text (worker prompts, work
+ * results, dependency handoffs), pass `supplied` (the caller's text) and the
+ * error reports both sizes: the limit covers the whole composed message,
+ * template included. `reserveBytes` counts room for fields resolved later
+ * (so the check can run before any app-server request).
  * @param {unknown} body
+ * @param {{supplied?: unknown, reserveBytes?: number, what?: string}} [options]
  */
-export function assertPeerBodyWithinLimit(body) {
-  const actualBytes = Buffer.byteLength(String(body ?? ""), "utf8");
-  if (actualBytes > MAX_PEER_BODY_BYTES) {
+export function assertPeerBodyWithinLimit(body, { supplied, reserveBytes = 0, what = "message" } = {}) {
+  const actualBytes = utf8Bytes(body) + reserveBytes;
+  if (actualBytes <= MAX_PEER_BODY_BYTES) return;
+  if (supplied === undefined) {
     throw new AgentLinkError(
       "body_too_large",
       `Message body is ${actualBytes} bytes; Agent Link peer messages are limited to ${MAX_PEER_BODY_BYTES} bytes (64 KiB).`,
@@ -73,6 +83,18 @@ export function assertPeerBodyWithinLimit(body) {
       }
     );
   }
+  const suppliedBytes = utf8Bytes(supplied);
+  const templateBytes = actualBytes - suppliedBytes - reserveBytes;
+  const reserved = reserveBytes ? `, plus ${reserveBytes} bytes reserved for project fields resolved later` : "";
+  throw new AgentLinkError(
+    "body_too_large",
+    `The composed ${what} would be ${actualBytes} bytes: ${suppliedBytes} bytes of caller-supplied text and ${templateBytes} bytes of Agent Link's template${reserved}. ` +
+      `The ${MAX_PEER_BODY_BYTES}-byte (64 KiB) limit applies to the whole composed message, template included.`,
+    {
+      details: { limitBytes: MAX_PEER_BODY_BYTES, actualBytes, suppliedBytes, templateBytes, reservedBytes: reserveBytes },
+      hint: "Send shorter text, or point the receiver at a file."
+    }
+  );
 }
 
 /** A fresh ULID for a peer message that has no mailbox record. */
@@ -91,29 +113,47 @@ export function newPeerMessageId(now = Date.now()) {
 
 /**
  * Attribute value: section 2.3 steps 2-5, quotes, `&#10;` for newlines, and
- * a 256-character cap (applied to the raw value, so no reference is cut).
+ * a 256-character cap. The cap counts code points and is applied to the raw
+ * value, so neither a surrogate pair nor a reference is cut.
  * @param {unknown} value
  */
 export function escapeEnvelopeAttr(value) {
   let text = String(value ?? "");
-  if (text.length > MAX_ATTRIBUTE_CHARS) text = `${text.slice(0, MAX_ATTRIBUTE_CHARS - 1)}…`;
+  const chars = Array.from(text);
+  if (chars.length > MAX_ATTRIBUTE_CHARS) text = `${chars.slice(0, MAX_ATTRIBUTE_CHARS - 1).join("")}…`;
   return escapeXmlText(text)
     .replace(/["']/g, (c) => (c === '"' ? "&quot;" : "&#39;"))
     .replace(/\n/g, "&#10;")
     .replace(/\t/g, "&#9;");
 }
 
+// Escaping can grow a body (`<` is 4 characters, a tag character 10). The
+// escaped body is cut at twice the raw cap, visibly.
+export const MAX_ESCAPED_BODY_CHARS = 2 * MAX_PEER_BODY_BYTES;
+
+function capEscaped(escaped) {
+  if (escaped.length <= MAX_ESCAPED_BODY_CHARS) return escaped;
+  let end = MAX_ESCAPED_BODY_CHARS;
+  // Never split a character reference or a surrogate pair.
+  const amp = escaped.lastIndexOf("&", end - 1);
+  if (amp > end - 12 && escaped.indexOf(";", amp) >= end) end = amp;
+  const code = escaped.charCodeAt(end - 1);
+  if (code >= 0xd800 && code <= 0xdbff) end -= 1;
+  return `${escaped.slice(0, end)}\n[Agent Link: escaped body cut at ${MAX_ESCAPED_BODY_CHARS} characters; it was ${escaped.length}.]`;
+}
+
 /**
  * Element text: section 2.3 steps 2-5. A body over the cap (only possible for
- * a mailbox line written outside Agent Link) is cut at the cap, visibly.
+ * a mailbox line written outside Agent Link) is cut at the cap, visibly, and
+ * the escaped text is bounded at twice the cap.
  * @param {unknown} body
  */
 export function escapeEnvelopeBody(body) {
   const text = String(body ?? "");
   const bytes = Buffer.byteLength(text, "utf8");
-  if (bytes <= MAX_PEER_BODY_BYTES) return escapeXmlText(text);
+  if (bytes <= MAX_PEER_BODY_BYTES) return capEscaped(escapeXmlText(text));
   const cut = new TextDecoder("utf-8").decode(Buffer.from(text, "utf8").subarray(0, MAX_PEER_BODY_BYTES)).replace(/\uFFFD+$/, "");
-  return `${escapeXmlText(cut)}\n[Agent Link: body truncated; it was ${bytes} bytes and the limit is ${MAX_PEER_BODY_BYTES}.]`;
+  return `${capEscaped(escapeXmlText(cut))}\n[Agent Link: body truncated; it was ${bytes} bytes and the limit is ${MAX_PEER_BODY_BYTES}.]`;
 }
 
 function isoTime(value) {
@@ -210,7 +250,34 @@ export function normalizePeerMessage(message = {}) {
 }
 
 /**
- * Converts a mailbox row to renderPeerEnvelope input. The sender is verified
+ * The structured form of a peer message for a tool result: only validated
+ * fields, never the raw body or metadata. The body reaches the model only
+ * inside `envelope` (omit it where the result already carries the rendered
+ * block, as read_agent_link_inbox does).
+ * @param {Parameters<typeof renderPeerEnvelope>[0]} message
+ * @param {{includeEnvelope?: boolean}} [options]
+ */
+export function peerMessageResult(message = {}, { includeEnvelope = true } = {}) {
+  const fields = normalizePeerMessage(message);
+  return {
+    id: fields.id,
+    from: fields.from,
+    fromHarness: fields.fromHarness,
+    fromVerified: fields.fromVerified,
+    to: fields.to,
+    sentAt: fields.sentAt,
+    replyTo: fields.replyTo,
+    ...(includeEnvelope ? { envelope: renderPeerEnvelope(message) } : {})
+  };
+}
+
+/**
+ * Converts a mailbox row to renderPeerEnvelope input.
+ *
+ * `fromVerified` here means the sender id was attested by whoever wrote the
+ * local mailbox line: an Agent Link server that took it from runtime identity
+ * records `metadata.sender.source`. It is not cryptographic authentication;
+ * any process that can write the user's mailbox file can claim it. The sender is verified
  * only when the sending server recorded a runtime identity source for it.
  * @param {Record<string, any>} row
  * @returns {Parameters<typeof renderPeerEnvelope>[0]}

@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { openMailbox, resolveMailboxPath } from "../../src/claude/mailbox.js";
+import { envelopeBodies, envelopeBody } from "../helpers/envelope-body.js";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "agent-link-mailbox-"));
 const mailboxPath = path.join(tmp, "mailbox.jsonl");
@@ -192,7 +193,11 @@ const mailboxPath = path.join(tmp, "mailbox.jsonl");
     resolveCurrentSession: () => ({ sessionId: "local_me", cliSessionId: "cli-me" })
   });
   const mine = await handlers.agent_link_mailbox_inspect({});
-  assert.deepEqual(mine.messages.map((m) => m.body).sort(), ["from me", "to me"]);
+  assert.equal(mine.messages.length, 2);
+  assert.ok(mine.messages.every((m) => !("body" in m) && !("envelope" in m) && !("metadata_json" in m)), "no bodies by default");
+  assert.ok(!JSON.stringify(mine).includes("to me"));
+  const withBodies = await handlers.agent_link_mailbox_inspect({ includeBodies: true });
+  assert.deepEqual(withBodies.messages.map((m) => envelopeBody(m.envelope)).sort(), ["from me", "to me"]);
   const filtered = await handlers.agent_link_mailbox_inspect({ toSessionId: "local_third" });
   assert.equal(filtered.messages.length, 0, "filters cannot widen past the caller's mail");
   const all = await handlers.agent_link_mailbox_inspect({ scope: "all" });

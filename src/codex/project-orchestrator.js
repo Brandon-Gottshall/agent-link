@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { rankThreadSummaries } from "./thread-utils.js";
 import { cleanString, clampInt as clamp, normalizeStringList, requiredString } from "../shared/args.js";
+import { assertPeerBodyWithinLimit } from "../shared/envelope.js";
 
 export const PROJECT_ORCHESTRATOR_BINDING_PATH = path.join(".codex", "project-orchestrator.json");
 const DEFAULT_POLICY_VERSION = "v0";
@@ -111,8 +112,16 @@ export async function resolveProjectOrchestrator(args = {}, deps = {}) {
   };
 }
 
+// Room left for fields that resolution fills into a composed message
+// (orchestrator thread id, projectId and policyVersion of up to 128
+// characters each, a project root path up to PATH_MAX). The size check runs
+// before resolution, so it reserves this much (design section 2.3 step 1).
+export const RESOLVED_FIELDS_RESERVE_BYTES = 2048;
+
 export async function messageProjectOrchestrator(args = {}, deps = {}, toolContext = {}) {
   const message = requiredString(args.message, "message").trim();
+  // Before any app-server request.
+  assertPeerBodyWithinLimit(message);
   const resolution = await resolveProjectOrchestrator(args, deps);
   const result = await deps.messageThread({
     ...forwardMessageOptions(args),
@@ -133,10 +142,18 @@ export async function launchProjectWorker(args = {}, deps = {}, toolContext = {}
   // `name` titles the new worker thread; it must not steer which orchestrator
   // is resolved.
   const { name: _workerName, ...resolveArgs } = args;
-  const resolution = await resolveProjectOrchestrator(resolveArgs, deps);
-  const projectRoot = cleanString(args.projectRoot || args.cwd) || resolution.projectRoot || null;
   const workerRole = cleanString(args.workerRole || args.role) || "project worker";
   const task = requiredString(args.task || args.message, "task").trim();
+  const supplied = [task, args.instructions ?? "", workerRole].join("");
+  // Size check before any app-server request: the prompt without resolved
+  // fields, plus room for them.
+  assertPeerBodyWithinLimit(buildWorkerPrompt({ ...args, workerRole, task, projectRoot: "", orchestratorThreadId: "", projectId: "", policyVersion: "" }), {
+    supplied,
+    reserveBytes: RESOLVED_FIELDS_RESERVE_BYTES,
+    what: "worker prompt"
+  });
+  const resolution = await resolveProjectOrchestrator(resolveArgs, deps);
+  const projectRoot = cleanString(args.projectRoot || args.cwd) || resolution.projectRoot || null;
   const name = cleanString(args.name) || `Project worker: ${workerRole}`;
   const message = buildWorkerPrompt({
     ...args,
@@ -147,6 +164,7 @@ export async function launchProjectWorker(args = {}, deps = {}, toolContext = {}
     projectId: resolution.projectId,
     policyVersion: resolution.binding?.policyVersion
   });
+  assertPeerBodyWithinLimit(message, { supplied, what: "worker prompt" });
   const result = await deps.launchThread({
     ...forwardLaunchOptions(args),
     name,
@@ -168,8 +186,7 @@ export async function launchProjectWorker(args = {}, deps = {}, toolContext = {}
 
 export async function returnProjectWorkResult(args = {}, deps = {}, toolContext = {}) {
   const status = normalizeReturnStatus(args.status);
-  const resolution = await resolveProjectOrchestrator(args, deps);
-  const message = buildProjectWorkResultMessage({
+  const fields = {
     status,
     workerThreadId: cleanString(args.workerThreadId),
     summary: requiredString(args.summary || args.result, "summary").trim(),
@@ -178,10 +195,23 @@ export async function returnProjectWorkResult(args = {}, deps = {}, toolContext 
     blockers: normalizeStringList(args.blockers),
     nextSteps: normalizeStringList(args.nextSteps),
     details: args.details ?? null,
-    projectRoot: cleanString(args.projectRoot || args.cwd) || resolution.projectRoot || null,
-    projectId: resolution.projectId,
     now: deps.now
+  };
+  const supplied = JSON.stringify([fields.summary, fields.changedPaths, fields.testsRun, fields.blockers, fields.nextSteps, fields.details]);
+  // Size check before any app-server request: the report without resolved
+  // fields, plus room for them.
+  assertPeerBodyWithinLimit(buildProjectWorkResultMessage({ ...fields, projectRoot: null, projectId: null }), {
+    supplied,
+    reserveBytes: RESOLVED_FIELDS_RESERVE_BYTES,
+    what: "work result message"
   });
+  const resolution = await resolveProjectOrchestrator(args, deps);
+  const message = buildProjectWorkResultMessage({
+    ...fields,
+    projectRoot: cleanString(args.projectRoot || args.cwd) || resolution.projectRoot || null,
+    projectId: resolution.projectId
+  });
+  assertPeerBodyWithinLimit(message, { supplied, what: "work result message" });
   const result = await deps.messageThread({
     ...forwardMessageOptions(args),
     threadId: resolution.threadId,

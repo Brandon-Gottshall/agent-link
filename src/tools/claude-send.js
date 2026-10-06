@@ -9,6 +9,7 @@ import {
   resolveCallerIdentity
 } from "../claude/identity.js";
 import { registerActiveWait } from "../claude/active-waits.js";
+import { peerMessageFromMailbox, peerMessageResult } from "../shared/envelope.js";
 import { buildReceipt, normalizeReceiptInput, safeAppendReceipt } from "../shared/receipt-index.js";
 
 const DEFAULT_WAIT_TIMEOUT_MS = 60_000;
@@ -327,10 +328,12 @@ async function pollForReply(mb, { messageId, fromIds, toIds, timeoutMs }) {
       // acknowledged), so the sender's channel, hook and inbox do not
       // deliver it a second time.
       consumeReply(mb, replies[0]);
+      // The reply is another agent's text: it reaches the caller only inside
+      // the peer envelope, never as a raw body.
       return {
         received: true,
-        body: replies[0].body,
-        replyMessageId: replies[0].id
+        replyMessageId: replies[0].id,
+        reply: peerMessageResult(peerMessageFromMailbox(replies[0]))
       };
     }
     if (Date.now() >= deadline) {

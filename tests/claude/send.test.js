@@ -6,6 +6,7 @@ import os from "node:os";
 import { openMailbox } from "../../src/claude/mailbox.js";
 import { makeClaudeSendHandler } from "../../src/tools/claude-send.js";
 import { listReceipts } from "../../src/shared/receipt-index.js";
+import { envelopeBodies, envelopeBody } from "../helpers/envelope-body.js";
 
 // Hermetic: the sender identity must not come from the Claude session that
 // happens to run these tests.
@@ -241,7 +242,8 @@ function cleanup({ tmp, receiptLog }) {
   assert.equal(result.error, undefined);
   assert.ok(result.replyConfirmation);
   assert.equal(result.replyConfirmation.received, true);
-  assert.equal(result.replyConfirmation.body, "pong");
+  assert.equal(envelopeBody(result.replyConfirmation.reply.envelope), "pong");
+  assert.ok(!("body" in result.replyConfirmation), "no raw reply body");
   assert.match(result.replyConfirmation.replyMessageId, /^[0-9A-Z]{26}$/);
   cleanup(sb);
 }
@@ -310,7 +312,7 @@ function insertRaw(dbPath, fields) {
   }, 50);
   const result = await sendPromise;
   assert.equal(result.replyConfirmation.received, true);
-  assert.equal(result.replyConfirmation.body, "real answer", "forged or misaddressed replies must be ignored");
+  assert.equal(envelopeBody(result.replyConfirmation.reply.envelope), "real answer", "forged or misaddressed replies must be ignored");
   cleanup(sb);
 }
 
@@ -502,7 +504,7 @@ function insertRaw(dbPath, fields) {
     await replyAsA.reply_agent_link_message({ messageId: q.id, body: "answer" });
   }, 50);
   const result = await pending;
-  assert.equal(result.replyConfirmation.body, "answer");
+  assert.equal(envelopeBody(result.replyConfirmation.reply.envelope), "answer");
   const inbox = await inboxOfB.read_agent_link_inbox({});
   assert.deepEqual(inbox.messages, [], "a reply returned by waitForReply must not be delivered again");
   const mb = open();

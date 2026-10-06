@@ -29,6 +29,7 @@ import { openMailbox } from "../claude/mailbox.js";
 import { isClaudeSessionLoaded, listClaudeSessions } from "../claude/session-index.js";
 import { claudeSessionAliases, claudeSessionMatches, resolveCallerIdentity } from "../claude/identity.js";
 import { registerActiveWait } from "../claude/active-waits.js";
+import { peerMessageFromMailbox, peerMessageResult } from "../shared/envelope.js";
 import { consumeReply } from "./claude-send.js";
 
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -147,9 +148,11 @@ export function makeWaitHandler({
               // A reply consumed by a wait counts as delivered (and
               // acknowledged); the caller's inbox and channel skip it.
               consumeReply(mb, messages[0]);
+              // Another agent's text: only the validated fields and the peer
+              // envelope reach the caller, never the raw row.
               return {
                 result: "reply",
-                message: messages[0],
+                message: peerMessageResult(peerMessageFromMailbox(messages[0])),
                 sessionId
               };
             }

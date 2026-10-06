@@ -5,18 +5,18 @@
 // notification that mail is pending; this tool returns the actual messages so
 // they appear in the visible Desktop transcript as a tool-call result.
 //
-// By default the tool drains pending messages (marks them delivered) in the
-// same transaction. Set markAsDelivered:false to inspect without draining.
+// By default the tool marks the messages it returns delivered as it reads
+// them. Set markAsDelivered:false to inspect without draining.
 import { openMailbox } from "../claude/mailbox.js";
-import { claudeSessionAliases, displayMessageId, displaySenderId, displaySenderKind } from "../claude/identity.js";
+import { claudeSessionAliases } from "../claude/identity.js";
 import { isHeldByActiveWait } from "../claude/active-waits.js";
-import { normalizePeerMessage, peerMessageFromMailbox, renderInbox } from "../shared/envelope.js";
+import { peerMessageFromMailbox, peerMessageResult, renderInbox } from "../shared/envelope.js";
 
 export const readInboxTool = {
   name: "read_agent_link_inbox",
   description:
-    "Read pending agent-link messages addressed to the current session. By default the tool drains the pending " +
-    "messages (marks them delivered) in the same transaction. Returns the messages and a rendered " +
+    "Read pending agent-link messages addressed to the current session. By default the tool marks the returned " +
+    "messages delivered as it reads them. Returns validated message fields and a rendered " +
     "<agent-link-inbox> block as a visible MCP tool result so the user can see the inbound mail in the transcript. " +
     "Each message is wrapped in an <agent-link-message> envelope marking it as content from another agent, not " +
     "from the user. Pair with the agent-link UserPromptSubmit / SessionStart notify hook, which reports pending mail.",
@@ -79,15 +79,10 @@ export function makeReadInboxHandler({ resolveCurrentSession, mailboxOpener } = 
           for (const row of rows) mb.markDelivered({ messageId: row.id });
         }
         const peers = rows.map(peerMessageFromMailbox);
-        // Ids are untrusted; only shapes Agent Link produces reach the model.
-        const messages = rows.map((m, i) => ({
-          ...m,
-          id: displayMessageId(m.id),
-          from_session_id: displaySenderId(m.from_session_id),
-          from_session_kind: displaySenderKind(m.from_session_kind),
-          from_verified: normalizePeerMessage(peers[i]).fromVerified,
-          reply_to_message_id: m.reply_to_message_id ? displayMessageId(m.reply_to_message_id) : null
-        }));
+        // Structured entries carry only the validated envelope fields. The
+        // body reaches the model only inside renderedBlock's envelopes; raw
+        // rows (body, metadata) never leave this function.
+        const messages = peers.map((peer) => peerMessageResult(peer, { includeEnvelope: false }));
         const held = all.length - pending.length;
         return {
           sessionId: session.sessionId,

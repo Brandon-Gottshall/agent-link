@@ -5,6 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import { openMailbox } from "../../src/claude/mailbox.js";
 import { makeWaitHandler } from "../../src/tools/claude-wait.js";
+import { envelopeBodies, envelopeBody } from "../helpers/envelope-body.js";
 
 const TARGET_SESSION_ID = "local_aaa1111";
 
@@ -60,7 +61,7 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
     sessionsFn: () => [LOADED_SESSION]
   });
 
-  const latestMessageId = "01HFAKEOUTBOUNDIDX12345678";
+  const latestMessageId = "01J9ZQ3V8K4M2N6P7R8S9T0V2A";
 
   // Reply arrives ~50ms in.
   const insertedIdPromise = new Promise((resolve) => {
@@ -88,9 +89,9 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
   assert.equal(result.sessionId, TARGET_SESSION_ID);
   assert.ok(result.message, "message field populated");
   assert.equal(result.message.id, insertedId);
-  assert.equal(result.message.body, "thanks for the ping");
-  assert.equal(result.message.from_session_id, TARGET_SESSION_ID);
-  assert.equal(result.message.reply_to_message_id, latestMessageId);
+  assert.equal(envelopeBody(result.message.envelope), "thanks for the ping");
+  assert.ok(!("from_session_id" in result.message) && !("body" in result.message), "structured reply carries no raw row fields");
+  assert.equal(result.message.replyTo, latestMessageId);
   cleanup(sb);
 }
 
@@ -119,9 +120,9 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
   });
 
   assert.equal(result.result, "reply");
-  assert.equal(result.message.body, "fresh inbound, not a reply");
-  assert.equal(result.message.reply_to_message_id, null);
-  assert.equal(result.message.from_session_id, TARGET_SESSION_ID);
+  assert.equal(envelopeBody(result.message.envelope), "fresh inbound, not a reply");
+  assert.equal(result.message.replyTo, null);
+  assert.ok(!("from_session_id" in result.message) && !("body" in result.message), "structured reply carries no raw row fields");
   cleanup(sb);
 }
 
@@ -213,7 +214,7 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
   }, 400);
   const result = await handlers.wait_for_claude_session({ sessionId: TARGET_SESSION_ID, timeoutMs: 2000 });
   assert.equal(result.result, "reply");
-  assert.equal(result.message.body, "for the waiter", "mail to another recipient must not resolve the wait");
+  assert.equal(envelopeBody(result.message.envelope), "for the waiter", "mail to another recipient must not resolve the wait");
   cleanup(sb);
 }
 
@@ -227,7 +228,7 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
   }, 30);
   const result = await handlers.wait_for_claude_session({ sessionId: "uuid-aaa", timeoutMs: 2000 });
   assert.equal(result.result, "reply", `cliSessionId input must match (got ${result.result})`);
-  assert.equal(result.message.body, "sent under the sidecar id");
+  assert.equal(envelopeBody(result.message.envelope), "sent under the sidecar id");
   cleanup(sb);
 }
 
@@ -324,7 +325,7 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
     insertReply({ dbPath: sb.dbPath, fromSessionId: TARGET_SESSION_ID, toSessionId: B.sessionId, body: "answer", replyToMessageId: question });
   }, 50);
   const result = await handlers.wait_for_claude_session({ sessionId: TARGET_SESSION_ID, latestMessageId: question, timeoutMs: 2000 });
-  assert.equal(result.message.body, "answer");
+  assert.equal(envelopeBody(result.message.envelope), "answer");
   const inbox = await makeReadInboxHandler({ mailboxOpener: open, resolveCurrentSession: () => B }).read_agent_link_inbox({});
   assert.deepEqual(inbox.messages, [], "a reply returned by the wait must not be delivered again");
   const mb = open();

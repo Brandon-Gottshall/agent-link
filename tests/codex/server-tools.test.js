@@ -13,6 +13,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { WebSocketServer } from "ws";
 import { pluginRoot } from "../helpers/codex-stub.js";
 import { hermeticEnv } from "../helpers/env.js";
+import { envelopeBody } from "../helpers/envelope-body.js";
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), "agent-link-tools-"));
 const codexHome = path.join(tmp, "codex");
@@ -153,7 +154,8 @@ try {
     // P2-04: message + waitForReply returns up to N recent items.
     result = await call("message_codex_thread", { threadId, message: "hi", waitForReply: true, timeoutMs: 2000, pollIntervalMs: 250, recentItems: 2 });
     assert.equal(result.isError, false);
-    assert.equal(result.payload.replyConfirmation.finalResponse, "second answer");
+    assert.equal(envelopeBody(result.payload.replyConfirmation.finalResponse), "second answer");
+    assert.match(result.payload.replyConfirmation.recentItemsEnvelope, /\[agentMessage i5\] second answer/);
     assert.deepEqual(result.payload.replyConfirmation.recentItems.map((entry) => [entry.turnId, entry.id]), [["turn-2", "i4"], ["turn-2", "i5"]]);
 
     // W2B-06: get/wait slice items, not turns, under one key.

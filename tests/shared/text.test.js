@@ -53,9 +53,27 @@ test("sanitizeControlChars shows bidi and invisible format controls as reference
     "&#x200B;&#x200F;&#x202A;&#x202E;&#x2060;&#x2064;&#x2066;&#x2069;&#xFEFF;"
   );
   // Neighbors of the ranges are left alone.
-  for (const code of [0x200a, 0x2010, 0x2029, 0x202f, 0x2065, 0x206a]) {
+  for (const code of [0x200a, 0x2010, 0x2027, 0x202f, 0x2065, 0x206a, 0xac, 0xae, 0x61b, 0xfe10, 0xa0]) {
     assert.equal(sanitizeControlChars(ch(code)), ch(code));
   }
+});
+
+test("sanitizeControlChars covers C1 controls, separators, tags and variation selectors", () => {
+  assert.equal(sanitizeControlChars(`${ch(0x80)}${ch(0x85)}${ch(0x9f)}`), "\\u{80}\\u{85}\\u{9F}");
+  assert.equal(sanitizeControlChars(String.fromCodePoint(0xe0080, 0xe01f0)), String.fromCodePoint(0xe0080, 0xe01f0), "neighbors of the tag and selector ranges");
+  const codes = [0xad, 0x61c, 0x180e, 0x2028, 0x2029, 0xfe00, 0xfe0f, 0xe0000, 0xe0041, 0xe007f, 0xe0100, 0xe01ef];
+  assert.equal(
+    sanitizeControlChars(codes.map((c) => `x${String.fromCodePoint(c)}`).join("")),
+    "x&#x00AD;x&#x061C;x&#x180E;x&#x2028;x&#x2029;x&#xFE00;x&#xFE0F;x&#xE0000;x&#xE0041;x&#xE007F;x&#xE0100;x&#xE01EF;"
+  );
+});
+
+test("sanitizeControlChars collapses runs longer than 16", () => {
+  const run = (n) => String.fromCodePoint(0xe0041).repeat(n);
+  assert.equal(sanitizeControlChars(run(16)), "&#xE0041;".repeat(16));
+  assert.equal(sanitizeControlChars(`a${run(1000)}b`), `a${"&#xE0041;".repeat(16)}[+984 more invisible characters]b`);
+  // Mixed controls and format characters form one run.
+  assert.equal(sanitizeControlChars(`${ch(7)}${ch(0x202e)}`.repeat(10)), `${"\\u{07}&#x202E;".repeat(8)}[+4 more invisible characters]`);
 });
 
 test("escapeXmlText is the full steps 2-5 pipeline without double escaping", () => {

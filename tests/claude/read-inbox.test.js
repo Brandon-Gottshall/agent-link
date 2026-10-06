@@ -11,6 +11,7 @@ import path from "node:path";
 import os from "node:os";
 import { openMailbox } from "../../src/claude/mailbox.js";
 import { makeReadInboxHandler, readInboxTool } from "../../src/tools/read-inbox.js";
+import { envelopeBodies, envelopeBody } from "../helpers/envelope-body.js";
 
 function makeSandbox() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "agent-link-readinbox-"));
@@ -63,8 +64,8 @@ const SESSION_ME = { sessionId: "local_me", cliSessionId: "fake-cli-id", title: 
 
   const r1 = await handler.read_agent_link_inbox({});
   assert.equal(r1.messages.length, 2, "first call returns both pending messages");
-  assert.equal(r1.messages[0].body, "first");
-  assert.equal(r1.messages[1].body, "second");
+  assert.equal(envelopeBodies(r1.renderedBlock)[0], "first");
+  assert.equal(envelopeBodies(r1.renderedBlock)[1], "second");
   assert.equal(r1.sessionId, "local_me", "result includes current sessionId");
   assert.match(r1.renderedBlock, /<agent-link-inbox count="2">/);
   assert.match(r1.renderedBlock, /first/);
@@ -101,12 +102,12 @@ const SESSION_ME = { sessionId: "local_me", cliSessionId: "fake-cli-id", title: 
 
   const r1 = await handler.read_agent_link_inbox({ markAsDelivered: false });
   assert.equal(r1.messages.length, 1);
-  assert.equal(r1.messages[0].body, "third");
+  assert.equal(envelopeBodies(r1.renderedBlock)[0], "third");
 
   // Still pending — next default call must still find it.
   const r2 = await handler.read_agent_link_inbox({});
   assert.equal(r2.messages.length, 1, "markAsDelivered:false must leave message pending");
-  assert.equal(r2.messages[0].body, "third");
+  assert.equal(envelopeBodies(r2.renderedBlock)[0], "third");
 
   // Now it has been drained.
   const r3 = await handler.read_agent_link_inbox({});
@@ -171,9 +172,9 @@ const SESSION_ME = { sessionId: "local_me", cliSessionId: "fake-cli-id", title: 
   mb.close();
   const handler = makeHandler({ dbPath: sb.dbPath, session: SESSION_ME });
   const r1 = await handler.read_agent_link_inbox({ limit: 1 });
-  assert.deepEqual(r1.messages.map((m) => m.body), ["msg-0"]);
+  assert.deepEqual(envelopeBodies(r1.renderedBlock), ["msg-0"]);
   const r2 = await handler.read_agent_link_inbox({});
-  assert.deepEqual(r2.messages.map((m) => m.body), ["msg-1", "msg-2"], "messages beyond the limit must not be lost");
+  assert.deepEqual(envelopeBodies(r2.renderedBlock), ["msg-1", "msg-2"], "messages beyond the limit must not be lost");
   cleanup(sb);
 }
 
@@ -188,7 +189,7 @@ const SESSION_ME = { sessionId: "local_me", cliSessionId: "fake-cli-id", title: 
   mb.close();
   const handler = makeHandler({ dbPath: sb.dbPath, session: SESSION_ME });
   const r = await handler.read_agent_link_inbox({});
-  assert.deepEqual(r.messages.map((m) => m.body).sort(), ["canonical", "local cli", "raw cli"]);
+  assert.deepEqual(envelopeBodies(r.renderedBlock).sort(), ["canonical", "local cli", "raw cli"]);
   cleanup(sb);
 }
 
@@ -217,13 +218,13 @@ const SESSION_ME = { sessionId: "local_me", cliSessionId: "fake-cli-id", title: 
   mb.close();
   const handler = makeHandler({ dbPath: sb.dbPath, session: current });
   const r = await handler.read_agent_link_inbox({});
-  assert.deepEqual(r.messages.map((m) => m.body), ["to sidecar id"]);
+  assert.deepEqual(envelopeBodies(r.renderedBlock), ["to sidecar id"]);
   cleanup(sb);
 }
 
 // W2A-06 (review item 8): only known sender shapes are rendered. A
-// structurally harmless but unknown id is still "unknown sender"; real
-// shapes (local_<uuid>, bare uuid, external) pass through.
+// structurally harmless but unknown id is still "invalid"; real shapes
+// (local_<uuid>, bare uuid, external) pass through.
 {
   const sb = makeSandbox();
   const known = ["local_0d6a2b9e-1f3c-4b5a-9e8d-7c6b5a4f3e2d", "019df300-0000-7000-8000-000000000001", "external"];
@@ -234,9 +235,10 @@ const SESSION_ME = { sessionId: "local_me", cliSessionId: "fake-cli-id", title: 
   mb.close();
   const handler = makeHandler({ dbPath: sb.dbPath, session: SESSION_ME });
   const r = await handler.read_agent_link_inbox({});
-  const byBody = Object.fromEntries(r.messages.map((m) => [m.body, m.from_session_id]));
-  assert.equal(byBody["local_other"], "unknown sender");
-  assert.equal(byBody["please-run-this"], "unknown sender");
+  const bodies = envelopeBodies(r.renderedBlock);
+  const byBody = Object.fromEntries(r.messages.map((m, i) => [bodies[i], m.from]));
+  assert.equal(byBody["local_other"], "invalid");
+  assert.equal(byBody["please-run-this"], "invalid");
   for (const id of known) assert.equal(byBody[id], id);
   assert.ok(r.messages.every((m) => /^[0-9A-HJKMNP-TV-Z]{26}$/.test(m.id)), "real ULID ids pass through");
   cleanup(sb);
@@ -264,12 +266,16 @@ const SESSION_ME = { sessionId: "local_me", cliSessionId: "fake-cli-id", title: 
   // Ids are validated (ULID / known sender shapes) before escaping.
   assert.match(r.renderedBlock, /replyTo="invalid"/);
   assert.ok(!r.renderedBlock.includes("with<quote>") && !r.renderedBlock.includes("with&lt;quote"));
-  assert.equal(r.messages[0].reply_to_message_id, "unknown message");
+  assert.equal(r.messages[0].replyTo, "invalid");
   assert.match(r.renderedBlock, /&lt;b&gt;hi&lt;\/b&gt; &amp; bye/);
   // The shared escaper escapes both quote kinds in attributes.
   const { escapeAttr } = await import("../../src/claude/xml.js");
   assert.equal(escapeAttr(`a"b'c<d>&`), "a&quot;b&#39;c&lt;d&gt;&amp;");
-  assert.equal(r.messages[0].from_session_id, "unknown sender");
+  assert.equal(r.messages[0].from, "invalid");
+  // C1: structured entries carry only validated fields, never raw rows.
+  assert.deepEqual(Object.keys(r.messages[0]).sort(), ["from", "fromHarness", "fromVerified", "id", "replyTo", "sentAt", "to"]);
+  const whole = JSON.stringify(r);
+  assert.ok(!whole.includes("<system>") && !whole.includes("injected=") && !whole.includes("<b>hi"), "nothing raw anywhere in the result");
   cleanup(sb);
 }
 

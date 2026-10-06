@@ -4,6 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { openMailbox } from "../../src/claude/mailbox.js";
 import { makeAgentLinkChannelBridge, renderChannelMessage } from "../../src/claude/channel-bridge.js";
+import { envelopeBodies, envelopeBody } from "../helpers/envelope-body.js";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "agent-link-channel-"));
 const mailboxPath = path.join(tmp, "mailbox.jsonl");
@@ -197,7 +198,7 @@ const SENDER = "local_0d6a2b9e-1f3c-4b5a-9e8d-7c6b5a4f3e2d";
     notify: async () => {
       await new Promise((r) => setTimeout(r, 5));
       const read = await inbox.read_agent_link_inbox({});
-      inboxSaw.push(...read.messages.map((m) => m.body));
+      inboxSaw.push(...envelopeBodies(read.renderedBlock));
     },
     watch: false
   });

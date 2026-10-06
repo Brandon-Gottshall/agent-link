@@ -1,4 +1,5 @@
 import { forwardMessageOptions } from "./project-orchestrator.js";
+import { assertPeerBodyWithinLimit } from "../shared/envelope.js";
 
 const THREAD_ID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 
@@ -173,17 +174,26 @@ export async function registerDependencyHandoff(args = {}, deps = {}, toolContex
     ? { supplied: suppliedCallbackThreadId, used: callerThreadId, reason: "caller context thread id takes precedence over callbackThreadId" }
     : null;
 
-  const target = await resolveDependencyTarget(args, deps);
+  // The message uses no resolved field, so it is composed and size-checked
+  // before any app-server request (design section 2.3 step 1).
+  const deadline = cleanString(args.deadline);
+  const evidenceRequirements = normalizeStringList(args.evidenceRequirements);
+  const context = cleanString(args.context);
   const message = buildDependencyHandoffMessage({
     dependencyName,
     readinessContract,
     callbackThreadId,
-    deadline: cleanString(args.deadline),
-    evidenceRequirements: normalizeStringList(args.evidenceRequirements),
-    context: cleanString(args.context),
+    deadline,
+    evidenceRequirements,
+    context,
     sourceThreadId: callerThreadId,
     callbackMismatch
   });
+  assertPeerBodyWithinLimit(message, {
+    supplied: [dependencyName, readinessContract, deadline, context, ...evidenceRequirements].join(""),
+    what: "dependency handoff message"
+  });
+  const target = await resolveDependencyTarget(args, deps);
   const tags = [
     "dependency-handoff",
     `dependency:${slug(dependencyName)}`,
