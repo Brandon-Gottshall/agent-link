@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// scripts/claude-receive-wf-test.js
+// scripts/claude-receive-wf.live.js
 //
 // Orchestration helper for the Claude receive WF test (Phase 11 of the
 // agent-link restructure plan). It does NOT drive the receiver's UI. It only:
@@ -13,19 +13,20 @@
 //
 // The actual WF test is performed by a human or low-context agent operating
 // the receiver's Claude Desktop session. See:
-//   scripts/claude-receive-wf-test.md
+//   scripts/claude-receive-wf.md
 //
 // Usage:
-//   node scripts/claude-receive-wf-test.js                    # list sessions, exit
-//   node scripts/claude-receive-wf-test.js local_<uuid>       # insert default body
-//   node scripts/claude-receive-wf-test.js local_<uuid> --body "custom text"
-//   node scripts/claude-receive-wf-test.js local_<uuid> --from local_<other-uuid>
+//   AGENT_LINK_LIVE=1 node scripts/claude-receive-wf.live.js                    # list sessions, exit
+//   AGENT_LINK_LIVE=1 node scripts/claude-receive-wf.live.js local_<uuid>       # insert default body
+//   AGENT_LINK_LIVE=1 node scripts/claude-receive-wf.live.js local_<uuid> --body "custom text"
+//   AGENT_LINK_LIVE=1 node scripts/claude-receive-wf.live.js local_<uuid> --from local_<other-uuid>
 //
 // Optional env:
 //   AGENT_LINK_MAILBOX_PATH  override mailbox JSONL path (defaults to
 //                            ~/.claude/agent-link/mailbox.jsonl)
 //   AGENT_LINK_MAILBOX_DB    deprecated legacy SQLite import/source hint
 
+import "./live-guard.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openMailbox, resolveMailboxPath } from "../src/claude/mailbox.js";
@@ -33,7 +34,7 @@ import { listClaudeSessions } from "../src/claude/session-index.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const REPO_ROOT = path.resolve(path.dirname(__filename), "..");
-const CHECKLIST_PATH = path.join(REPO_ROOT, "scripts/claude-receive-wf-test.md");
+const CHECKLIST_PATH = path.join(REPO_ROOT, "scripts/claude-receive-wf.md");
 
 function parseArgs(argv) {
   const out = { positional: [], body: null, from: null, help: false };
@@ -51,13 +52,13 @@ function parseArgs(argv) {
 
 function printHelp() {
   process.stdout.write(
-`claude-receive-wf-test.js — environment prep for the Claude receive WF test.
+`claude-receive-wf.live.js — environment prep for the Claude receive WF test.
 
 Usage:
-  node scripts/claude-receive-wf-test.js                       List candidate sessions and exit.
-  node scripts/claude-receive-wf-test.js <local_uuid>          Insert a test message addressed to <local_uuid>.
-  node scripts/claude-receive-wf-test.js <local_uuid> --body "..."   Custom body (must still start with "WF test ping" for recognizability).
-  node scripts/claude-receive-wf-test.js <local_uuid> --from <local_other>   Override the synthetic sender id.
+  AGENT_LINK_LIVE=1 node scripts/claude-receive-wf.live.js                       List candidate sessions and exit.
+  AGENT_LINK_LIVE=1 node scripts/claude-receive-wf.live.js <local_uuid>          Insert a test message addressed to <local_uuid>.
+  AGENT_LINK_LIVE=1 node scripts/claude-receive-wf.live.js <local_uuid> --body "..."   Custom body (must still start with "WF test ping" for recognizability).
+  AGENT_LINK_LIVE=1 node scripts/claude-receive-wf.live.js <local_uuid> --from <local_other>   Override the synthetic sender id.
 
 This script DOES NOT open Claude Desktop, click anything, or otherwise drive the
 receiver's UI. It only seeds the mailbox. The receiving agent (human or
@@ -99,7 +100,7 @@ Re-run with an explicit local_<uuid> sessionId once a session exists.
   process.stdout.write(
 `\nRe-invoke with one sessionId to insert the test message:
 
-  node scripts/claude-receive-wf-test.js <local_uuid>
+  AGENT_LINK_LIVE=1 node scripts/claude-receive-wf.live.js <local_uuid>
 
 `);
 }
@@ -162,7 +163,7 @@ message if a Claude Desktop session with that sessionId exists. Continuing.
       metadata: {
         receipt: {
           purpose: "wf-claude-receive",
-          note: "Inserted by scripts/claude-receive-wf-test.js for the WF receive checklist."
+          note: "Inserted by scripts/claude-receive-wf.live.js for the WF receive checklist."
         }
       },
       replyToMessageId: null
@@ -194,6 +195,6 @@ Next steps (the script stops here — it does not touch the receiver's UI):
 }
 
 main().catch((err) => {
-  process.stderr.write(`claude-receive-wf-test: ${err.stack || err.message}\n`);
+  process.stderr.write(`claude-receive-wf: ${err.stack || err.message}\n`);
   process.exit(1);
 });

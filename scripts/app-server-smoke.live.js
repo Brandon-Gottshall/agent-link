@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "./live-guard.js";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

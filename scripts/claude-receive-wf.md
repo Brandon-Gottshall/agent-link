@@ -11,7 +11,7 @@ hidden routes** beyond what is in this checklist. The agent is expected to use
 its visible product cues (MCP tool listings, hook-injected prompts, tool results
 in the transcript) to discover and complete each item.
 
-The orchestration helper `scripts/claude-receive-wf-test.js` only prepares the
+The orchestration helper `scripts/claude-receive-wf.live.js` only prepares the
 environment (inserts a single test message into the local JSONL mailbox
 addressed to the receiver session). It does not drive the receiver's UI.
 

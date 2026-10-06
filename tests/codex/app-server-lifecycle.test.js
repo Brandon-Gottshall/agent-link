@@ -6,7 +6,7 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { alive, readSpawnLog, sleep, stubAppServer, waitFor } from "./test-helpers.js";
+import { alive, readSpawnLog, sleep, stubAppServer, waitFor } from "../helpers/codex-stub.js";
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), "agent-link-lifecycle-"));
 const spawnLog = path.join(tmp, "spawns.log");

@@ -1,0 +1,44 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline:
+    name: offline (Node ${{ matrix.node }})
+    runs-on: macos-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    env:
+      # Never start a real Codex app-server on the runner. Tests that need one
+      # use the stub in tests/fixtures and set their own environment.
+      CODEX_AGENT_LINK_AUTOSTART: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run check:dist
+      - run: npm test
+      - run: npm run -s wf:agent-link
+      - name: Upload WF reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wf-runs-node-${{ matrix.node }}
+          path: wf-runs/
+          if-no-files-found: ignore
+          retention-days: 14
