@@ -5,7 +5,7 @@ description: Use when the user asks to inspect, resolve, message, audit, or coor
 
 # Agent Link
 
-Use the `agent-link` MCP tools for cross-thread and cross-session coordination. The plugin runs in two hosts: Codex (talking to a local app-server over its JSON-RPC channel) and Claude (reading Desktop/Code sidecars plus Code transcript metadata, sending through a pure-JS JSONL mailbox, surfacing Desktop mail through `UserPromptSubmit` + `read_agent_link_inbox`, and surfacing Code mail through Claude Code Channels when enabled).
+Use the `agent-link` MCP tools for cross-thread and cross-session coordination. The plugin runs in two hosts: Codex (talking to a local app-server over its JSON-RPC channel) and Claude (reading Desktop/Code sidecars plus Code transcript metadata, sending through a pure-JS JSONL mailbox at `~/.agent-link/mailbox.jsonl`, surfacing Desktop mail through `UserPromptSubmit` + `read_agent_link_inbox`, and surfacing Code mail through Claude Code Channels when enabled).
 
 ## Choose your host
 
@@ -54,4 +54,4 @@ For Codex thread creation and cleanup, use `launch_codex_thread` and `archive_co
 - **Codex → Claude:** call `message_claude_session` from a Codex thread. The JSONL mailbox accepts the insert directly; Claude Code receivers pick it up through Channels when enabled, while Desktop receivers pick it up on the next user prompt via the notify hook.
 - **Claude → Codex:** call `message_codex_thread` from a Claude session. Requires a Codex app-server reachable from the Claude host's environment; otherwise the call returns `local-jsonl-fallback` semantics or a connection error.
 - **Origin derivation:** `from_session_id` resolves through MCP `_meta` first (`_meta.sessionId`, `_meta.callerSessionId`), then env fallback (`CLAUDE_SESSION_ID` in Claude, the existing Codex env vars in Codex). Caller-supplied receipt fields still win over both.
-- **Receipt logging:** both hosts append to one shared log, `$CODEX_HOME/agent-link-receipts.jsonl` (`~/.codex` when `CODEX_HOME` is unset; override with `CODEX_AGENT_LINK_RECEIPT_LOG`). Each receipt records the sender's `host` and the target's `target.kind`, so audit either direction with `list_agent_link_receipts` filtered by `host` and `targetKind`.
+- **Receipt logging:** both hosts append to one shared log, `~/.agent-link/receipts.jsonl` (override with `AGENT_LINK_RECEIPT_LOG`). Receipts written by 0.4.x to `$CODEX_HOME/agent-link-receipts.jsonl` are still listed, read-only. Each receipt records the sender's `host` and the target's `target.kind`, so audit either direction with `list_agent_link_receipts` filtered by `host` and `targetKind`.

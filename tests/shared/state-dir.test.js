@@ -21,6 +21,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { makeAgentLinkChannelBridge } from "../../src/claude/channel-bridge.js";
 import { mailboxStatus, openMailbox } from "../../src/claude/mailbox.js";
 import { PathConfigError } from "../../src/shared/paths.js";
 import { appendReceipt, buildReceipt, listReceipts, receiptIndexSummary } from "../../src/shared/receipt-index.js";
@@ -105,18 +106,19 @@ test("T-4.3 mailbox: legacy-only pending mail is read, new events go to ~/.agent
   assert.equal(mb.inspect({ limit: 100 }).length, 5);
 });
 
-test("T-4.3 mailbox: a message in both files is listed once and state events apply in time order", () => {
+test("T-4.3 mailbox: a message in both files is listed once and each file's state events apply in file order", () => {
   const home = useHome();
   const legacy = writeLegacyMailbox(home, 1);
   const [id] = legacy.ids;
   const legacyLine = fs.readFileSync(legacy.file, "utf8").trim();
   const at = JSON.parse(legacyLine).at;
   fs.mkdirSync(path.join(home, ".agent-link"), { recursive: true, mode: 0o700 });
-  // A copy of the same message in the new file, plus deliver (newer) in the
-  // new file and release (older) in the legacy file.
+  // A copy of the same message in the new file, plus a delivery in the new
+  // file stamped (by a skewed clock) earlier than a release in the legacy
+  // file. Legacy events apply first, then the new file's: delivered.
   fs.writeFileSync(newMailbox(home), [
     legacyLine,
-    JSON.stringify({ type: "delivered", at: at + 20, messageId: id })
+    JSON.stringify({ type: "delivered", at: at + 5, messageId: id })
   ].join("\n") + "\n", { mode: 0o600 });
   fs.appendFileSync(legacy.file, JSON.stringify({ type: "released", at: at + 10, messageId: id }) + "\n");
   const bytes = fs.readFileSync(legacy.file);
@@ -124,8 +126,28 @@ test("T-4.3 mailbox: a message in both files is listed once and state events app
   const mb = openMailbox();
   const rows = mb.inspect({ limit: 100 });
   assert.equal(rows.length, 1, "deduped by id");
-  assert.equal(rows[0].delivered_at, at + 20, "the later delivery wins over the earlier release");
+  assert.equal(rows[0].delivered_at, at + 5, "the new file's delivery applies after the legacy release, whatever the timestamps");
   assert.deepEqual(fs.readFileSync(legacy.file), bytes);
+});
+
+test("clock skew regression: an unrelated write to the new file does not change how the legacy file reads", () => {
+  const home = useHome();
+  const legacy = writeLegacyMailbox(home, 1);
+  const [id] = legacy.ids;
+  const at = JSON.parse(fs.readFileSync(legacy.file, "utf8").trim()).at;
+  // Legacy writer: delivered, then released, but its clock stamped the
+  // release 5 ms before the delivery. In file order the message is pending.
+  fs.appendFileSync(legacy.file, [
+    JSON.stringify({ type: "delivered", at: at + 10, messageId: id }),
+    JSON.stringify({ type: "released", at: at + 5, messageId: id })
+  ].join("\n") + "\n");
+
+  const mb = openMailbox();
+  assert.deepEqual(mb.listPendingFor({ toSessionId: RECEIVER }).map((m) => m.id), [id], "pending before any new write");
+  // Unrelated traffic lands in the new file.
+  const other = mb.insertMessage({ fromSessionId: OTHER_SENDER, fromSessionKind: "claude", toSessionId: "someone-else", toSessionKind: "claude", body: "x" });
+  mb.markDelivered({ messageId: other });
+  assert.deepEqual(mb.listPendingFor({ toSessionId: RECEIVER }).map((m) => m.id), [id], "still pending after an unrelated write");
 });
 
 test("an explicit mailbox path is read alone (no legacy merge)", () => {
@@ -287,7 +309,7 @@ test("T-4.2 the hook (another cwd) and the server resolve the same mailbox, lega
     fs.writeFileSync(transcriptPath, JSON.stringify({ sessionId: RECEIVER }) + "\n");
     const parsed = spawnHook(env, otherCwd, { session_id: RECEIVER, transcript_path: transcriptPath, hook_event_name: "UserPromptSubmit" });
     const context = parsed.hookSpecificOutput?.additionalContext ?? "";
-    assert.match(context, /2 pending messages/, "the hook sees both the server's mailbox and the legacy one");
+    assert.match(context, /2 pending (peer )?messages/, "the hook sees both the server's mailbox and the legacy one");
     assert.match(context, new RegExp(SENDER));
     assert.match(context, new RegExp(OTHER_SENDER));
 
@@ -305,5 +327,125 @@ test("T-4.2 the hook (another cwd) and the server resolve the same mailbox, lega
     assert.equal(fs.existsSync(path.join(otherCwd, "mailbox.jsonl")), false, "no file created relative to the hook's cwd");
   } finally {
     fs.rmSync(otherCwd, { recursive: true, force: true });
+  }
+});
+
+test("migration.json records the plugin version when the hook (running from source) creates it", () => {
+  const home = makeTempHome("agent-link-hook-version-");
+  const env = hermeticEnv({ home });
+  const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "agent-link-hook-version-cwd-"));
+  try {
+    const transcriptPath = path.join(cwd, `${RECEIVER}.jsonl`);
+    fs.writeFileSync(transcriptPath, JSON.stringify({ sessionId: RECEIVER }) + "\n");
+    spawnHook(env, cwd, { session_id: RECEIVER, transcript_path: transcriptPath, hook_event_name: "SessionStart" });
+    const migration = JSON.parse(fs.readFileSync(path.join(home, ".agent-link", "migration.json"), "utf8"));
+    assert.equal(migration.version, pkg.version);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+for (const [variable, value] of [["AGENT_LINK_STATE_DIR", "rel/state"], ["AGENT_LINK_MAILBOX_PATH", "rel/mailbox.jsonl"]]) {
+  test(`a relative ${variable} on the Claude host disables the channel but keeps the server up`, async () => {
+    const home = makeTempHome("agent-link-bad-config-");
+    // Channel on (no AGENT_LINK_DISABLE_CHANNEL): the bridge is what used to
+    // crash the server at startup.
+    const env = hermeticEnv({ home, overrides: { AGENT_LINK_HOST: "claude", AGENT_LINK_CODEX_AUTOSTART: "0", [variable]: value } });
+    const client = new Client({ name: "state-dir-bad-config", version: "0" });
+    await client.connect(new StdioClientTransport({
+      command: process.execPath,
+      args: [path.join(repoRoot, "src", "server.js")],
+      cwd: repoRoot,
+      env,
+      stderr: "ignore"
+    }));
+    try {
+      assert.equal(client.getServerCapabilities()?.experimental?.["claude/channel"], undefined, "channel capability withdrawn");
+      const result = await client.callTool({ name: "agent_link_health", arguments: { startAppServer: false } });
+      const health = JSON.parse(result.content[0].text);
+      assert.equal(health.ok, true);
+      assert.equal(health.claude.channel.enabled, false);
+      assert.match(health.claude.channel.error, new RegExp(`${variable} must be an absolute path`));
+      assert.match(health.claude.mailbox.error, new RegExp(`${variable} must be an absolute path`));
+      assert.equal((await client.listTools()).tools.length > 0, true, "tools still listed");
+    } finally {
+      await client.close();
+    }
+    assert.equal(fs.existsSync(path.join(repoRoot, "rel")), false, "nothing created relative to the server's cwd");
+  });
+}
+
+// --- Channel bridge watches every file it reads -----------------------------
+
+function bridgeFor(notifications, options = {}) {
+  return makeAgentLinkChannelBridge({
+    resolveCurrentSession: () => ({ sessionId: RECEIVER, surface: "code" }),
+    notify: async (n) => notifications.push(n),
+    ...options
+  });
+}
+
+async function waitFor(predicate, ms = 3000) {
+  const deadline = Date.now() + ms;
+  while (!predicate() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25));
+  return predicate();
+}
+
+test("channel: a legacy-mailbox append by a not-yet-upgraded sender is not skipped as unchanged", async () => {
+  const home = useHome();
+  fs.mkdirSync(path.dirname(legacyMailbox(home)), { recursive: true });
+  fs.writeFileSync(legacyMailbox(home), "");
+  const notifications = [];
+  const bridge = bridgeFor(notifications);
+  assert.deepEqual(await bridge.pollOnce(), { delivered: 0 });
+  assert.deepEqual(await bridge.pollOnce(), { delivered: 0, skipped: "unchanged" });
+  // An old plugin copy appends to the legacy file only.
+  writeLegacyMailbox(home, 1);
+  assert.equal((await bridge.pollOnce()).delivered, 1);
+  assert.equal(notifications.length, 1);
+  assert.equal(fs.existsSync(newMailbox(home)), true, "the delivery mark went to the new file");
+});
+
+test("channel: a watching bridge wakes on a legacy append and on ~/.agent-link being created", async () => {
+  const home = useHome();
+  // Nothing exists yet: no ~/.agent-link, no ~/.claude/agent-link.
+  fs.rmSync(path.join(home, ".claude", "agent-link"), { recursive: true, force: true });
+  const notifications = [];
+  const bridge = bridgeFor(notifications, { pollIntervalMs: 20_000, maxPollIntervalMs: 30_000 });
+  bridge.start();
+  try {
+    assert.equal(bridge.stats().watching, true, "watches parents of directories that do not exist yet");
+    await new Promise((r) => setTimeout(r, 100));
+    writeLegacyMailbox(home, 1);
+    assert.ok(await waitFor(() => notifications.length === 1), "legacy append delivered well before the 20 s poll");
+
+    // Mail written by an upgraded sender into the (by now created) state dir.
+    await new Promise((r) => setTimeout(r, 100));
+    const mb = openMailbox();
+    mb.insertMessage({ fromSessionId: OTHER_SENDER, fromSessionKind: "claude", toSessionId: RECEIVER, toSessionKind: "claude", body: "new" });
+    assert.ok(await waitFor(() => notifications.length === 2), "new-file append delivered by the watcher too");
+  } finally {
+    bridge.stop();
+  }
+});
+
+test("channel: the state dir created after the bridge starts is picked up by the watcher", async () => {
+  const home = useHome();
+  fs.mkdirSync(path.dirname(legacyMailbox(home)), { recursive: true });
+  fs.writeFileSync(legacyMailbox(home), "");
+  assert.equal(fs.existsSync(path.join(home, ".agent-link")), false);
+  const notifications = [];
+  const bridge = bridgeFor(notifications, { pollIntervalMs: 20_000, maxPollIntervalMs: 30_000 });
+  bridge.start();
+  try {
+    await new Promise((r) => setTimeout(r, 100));
+    // Another process (an upgraded sender) creates ~/.agent-link and writes.
+    const mb = openMailbox({ mailboxPath: newMailbox(home) });
+    await new Promise((r) => setTimeout(r, 100));
+    mb.insertMessage({ fromSessionId: OTHER_SENDER, fromSessionKind: "claude", toSessionId: RECEIVER, toSessionKind: "claude", body: "first" });
+    assert.ok(await waitFor(() => notifications.length === 1), "delivered without waiting for the 20 s poll");
+  } finally {
+    bridge.stop();
   }
 });

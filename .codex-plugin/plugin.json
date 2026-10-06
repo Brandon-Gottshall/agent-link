@@ -19,7 +19,7 @@
     "coordination"
   ],
   "skills": "./skills/",
-  "mcpServers": "./.mcp.json",
+  "mcpServers": "./.codex-mcp.json",
   "interface": {
     "displayName": "Agent Link",
     "shortDescription": "Inspect, resolve, message, and audit Codex and Claude sessions",

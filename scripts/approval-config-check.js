@@ -130,6 +130,10 @@ function validatePluginEnvelope(root) {
     if (!Array.isArray(server.args) || server.args[0] !== SERVER_ENTRY) {
       problems.push(`${path.relative(root, mcpPath)} mcpServers.${mcpServer}.args must start with ${SERVER_ENTRY}`);
     }
+    // The Codex host declares itself so the server never has to guess.
+    if (server.env?.AGENT_LINK_HOST !== "codex") {
+      problems.push(`${path.relative(root, mcpPath)} mcpServers.${mcpServer}.env.AGENT_LINK_HOST must be "codex"`);
+    }
   }
 
   return problems;
@@ -142,12 +146,17 @@ async function listCodexHostTools(root) {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "agent-link-approval-check-"));
   const env = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (key.startsWith("CLAUDE_") || key.startsWith("CODEX_")) continue;
+    if (key.startsWith("CLAUDE_") || key.startsWith("CODEX_") || key.startsWith("AGENT_LINK_")) continue;
     env[key] = value;
   }
+  // All state under the scratch dir: the check never reads or writes the
+  // user's ~/.agent-link (or reaps its managed app-servers).
   Object.assign(env, {
+    HOME: scratch,
     CODEX_HOME: scratch,
-    CODEX_AGENT_LINK_AUTOSTART: "0",
+    AGENT_LINK_HOST: "codex",
+    AGENT_LINK_STATE_DIR: path.join(scratch, "agent-link-state"),
+    AGENT_LINK_CODEX_AUTOSTART: "0",
     AGENT_LINK_DISABLE_CHANNEL: "1",
     AGENT_LINK_MAILBOX_PATH: path.join(scratch, "mailbox.jsonl")
   });

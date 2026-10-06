@@ -285,20 +285,19 @@ function idSet(single, many) {
   return out;
 }
 
-// Builds the message view from one or more mailbox files (R4.5). Message
-// events are deduped by id (the first file listed wins, so a legacy record
-// beats a re-import of it). Delivery-state events are applied after every
-// message is known, so a delivery recorded in the new file for a message
-// that only exists in the legacy file still counts. With more than one file
-// the state events are applied in `at` order; within one file, file order.
+// Builds the message view from one or more mailbox files (R4.5): legacy files
+// first, then the file new events go to. Message events are deduped by id
+// (the first file listed wins). Delivery-state events are applied after every
+// message is known, so a delivery recorded in the new file for a message that
+// only exists in a legacy file still counts. They are applied file by file,
+// each in its own order, and never re-sorted by `at` across files: clock skew
+// between writers must not change how one file reads after an unrelated write
+// to another.
 function mergedView(paths) {
   const messages = new Map();
   const stateEvents = [];
-  let filesWithEvents = 0;
   for (const file of paths) {
-    const events = readEvents(file);
-    if (events.length) filesWithEvents += 1;
-    for (const event of events) {
+    for (const event of readEvents(file)) {
       if (event?.type === "message" && event.message?.id) {
         const id = String(event.message.id);
         if (!messages.has(id)) messages.set(id, normalizeMessage(event.message, event.at));
@@ -306,9 +305,6 @@ function mergedView(paths) {
         stateEvents.push(event);
       }
     }
-  }
-  if (filesWithEvents > 1) {
-    stateEvents.sort((a, b) => normalizeTimestamp(a.at) - normalizeTimestamp(b.at));
   }
   for (const event of stateEvents) {
     if (event.type === "delivered" && event.messageId && messages.has(event.messageId)) {

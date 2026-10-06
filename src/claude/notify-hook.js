@@ -34,6 +34,26 @@ import {
 } from "./session-index.js";
 import { claudeSessionAliases } from "./identity.js";
 import { renderHookNotice } from "../shared/envelope.js";
+import { createLogger } from "../shared/log.js";
+
+// Hook failures go to stderr (Claude Code shows it in its hook log) and, when
+// the Agent Link log file is on (AGENT_LINK_DEBUG or AGENT_LINK_LOG_FILE), to
+// that file too. The file logger is created on first failure with stderr
+// muted, so a line is never printed twice.
+let hookFileLogger = null;
+function logHookFailure(line) {
+  try {
+    process.stderr.write(line);
+  } catch {
+    // stderr closed
+  }
+  try {
+    hookFileLogger ??= createLogger({ stderr: { write: () => true } });
+    hookFileLogger.warn("notify_hook.failure", { message: String(line).trim() });
+  } catch {
+    // logging must never fail the hook
+  }
+}
 
 // Pure entry point: payload in, hook output object out. Tests inject
 // `resolveSession`, `findSidecarById` and `mailboxOpener` instead of the
@@ -42,7 +62,7 @@ export function runNotifyHook(payload, {
   resolveSession = resolveHookSession,
   findSidecarById = (id) => findSidecarSessionById(id),
   mailboxOpener = () => openMailbox(),
-  log = (line) => process.stderr.write(line)
+  log = logHookFailure
 } = {}) {
   const cliSessionId = typeof payload?.session_id === "string" ? payload.session_id : null;
   const hookEvent = typeof payload?.hook_event_name === "string" ? payload.hook_event_name : null;
@@ -137,7 +157,7 @@ async function main() {
     }
     payload = JSON.parse(stdin);
   } catch (err) {
-    process.stderr.write(`notify-hook: invalid JSON stdin: ${err.message}\n`);
+    logHookFailure(`notify-hook: invalid JSON stdin: ${err.message}\n`);
     process.stdout.write("{}\n");
     return;
   }
@@ -168,7 +188,7 @@ function invokedDirectly() {
 
 if (invokedDirectly()) {
   main().catch((err) => {
-    process.stderr.write(`notify-hook: unhandled error: ${err.message}\n`);
+    logHookFailure(`notify-hook: unhandled error: ${err.message}\n`);
     // Always succeed — non-zero exit would be treated as a fatal hook failure.
     try {
       process.stdout.write("{}\n");

@@ -16,7 +16,17 @@ import {
   stateDir
 } from "./paths.js";
 
-const VERSION = typeof __AGENT_LINK_VERSION__ === "string" ? __AGENT_LINK_VERSION__ : null;
+// The bundled server has the version compiled in; the hook runs from src/,
+// so it reads the plugin's package.json instead.
+function pluginVersion() {
+  if (typeof __AGENT_LINK_VERSION__ === "string") return __AGENT_LINK_VERSION__;
+  try {
+    const pkg = JSON.parse(fs.readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
+    return typeof pkg.version === "string" ? pkg.version : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Makes `target` mode `mode` when this user owns it and it is looser.
@@ -59,7 +69,7 @@ function writeMigrationRecord(options) {
     ...legacyReceiptPaths(options),
     ...legacyManagedAppServerDirs(options)
   ].filter((candidate) => fs.existsSync(candidate));
-  const record = { from, at: new Date().toISOString(), version: VERSION };
+  const record = { from, at: new Date().toISOString(), version: pluginVersion() };
   try {
     // "wx": a concurrent first open (hook and server) keeps the first record.
     fs.writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`, { encoding: "utf8", mode: FILE_MODE, flag: "wx" });

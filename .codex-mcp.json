@@ -5,7 +5,10 @@
       "args": [
         "./dist/server.mjs"
       ],
-      "cwd": "."
+      "cwd": ".",
+      "env": {
+        "AGENT_LINK_HOST": "codex"
+      }
     }
   }
 }

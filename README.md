@@ -245,6 +245,12 @@ Agent Link keeps its own files in `~/.agent-link` (directory `0700`, files `0600
 
 **Upgrading from 0.4.x and earlier.** Older releases kept the mailbox at `~/.claude/agent-link/mailbox.jsonl` and receipts at `$CODEX_HOME/agent-link-receipts.jsonl`. Unless you set an explicit mailbox or receipt path, reads merge those legacy files with the new ones (deduplicated by id), so pending mail and old receipts stay visible. New messages, delivery marks, and receipts are written only to `~/.agent-link`. The legacy files are never modified, moved, or deleted; remove them yourself once every host runs this version. Orphaned app-servers recorded under `~/.claude/agent-link/managed-app-servers` are still cleaned up.
 
+After upgrading, **restart every Claude and Codex session** so no old plugin copy keeps running. Until then:
+
+- Mail can be delayed. A session still on 0.4.x reads only the legacy mailbox, so it does not see mail the new version writes to `~/.agent-link`.
+- Waits in an old session (`wait_for_claude_session`, `waitForReply`) don't see replies written by the new version until that session is upgraded.
+- Rolling back to 0.4.x can deliver some messages twice: delivery marks written by the new version live in `~/.agent-link`, which 0.4.x doesn't read.
+
 | Variable | Legacy aliases | Effect |
 | --- | --- | --- |
 | `AGENT_LINK_STATE_DIR` | | State directory. Default `~/.agent-link`. |

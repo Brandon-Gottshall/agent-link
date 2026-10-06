@@ -22,6 +22,7 @@ const codex = readJson(".codex-plugin/plugin.json");
 const claudeMarket = readJson(".claude-plugin/marketplace.json");
 const codexMarket = readJson(".agents/plugins/marketplace.json");
 const mcp = readJson(".mcp.json");
+const codexMcp = readJson(".codex-mcp.json");
 const hooks = readJson("hooks/hooks.json");
 
 const NAME = "agent-link";
@@ -71,9 +72,9 @@ test("Codex interface metadata is consistent", () => {
 });
 
 test("both hosts launch the bundled server under the shared MCP key", () => {
-  assert.equal(codex.mcpServers, "./.mcp.json");
-  const codexServer = mcp.mcpServers?.[MCP_KEY];
-  assert.ok(codexServer, ".mcp.json defines the MCP key");
+  assert.equal(codex.mcpServers, "./.codex-mcp.json");
+  const codexServer = codexMcp.mcpServers?.[MCP_KEY];
+  assert.ok(codexServer, ".codex-mcp.json defines the MCP key");
   assert.equal(codexServer.command, "node");
   assert.deepEqual(codexServer.args, [`./${SERVER}`]);
 
@@ -85,6 +86,13 @@ test("both hosts launch the bundled server under the shared MCP key", () => {
   // Each host declares itself, so host detection never has to guess (W2C-08).
   assert.deepEqual(codexServer.env, { AGENT_LINK_HOST: "codex" });
   assert.deepEqual(claudeServer.env, { AGENT_LINK_HOST: "claude" });
+
+  // The repo-root .mcp.json is only for development: Claude Code loads it as
+  // a project config when the repo is opened, so it must not claim a host.
+  const devServer = mcp.mcpServers?.[MCP_KEY];
+  assert.ok(devServer, ".mcp.json defines the MCP key");
+  assert.deepEqual(devServer.args, [`./${SERVER}`]);
+  assert.equal(devServer.env?.AGENT_LINK_HOST, undefined, ".mcp.json leaves host detection automatic");
 
   assert.ok(existsSync(path.join(root, SERVER)), `${SERVER} is committed`);
 });

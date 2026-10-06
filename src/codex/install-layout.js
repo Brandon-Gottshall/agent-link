@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ENV_ALIASES } from "../shared/env.js";
+import { ENV_ALIASES, env as lookupEnv } from "../shared/env.js";
 
 // Codex Desktop ships inside ChatGPT.app today. /Applications/Codex.app can be
 // a stale older copy whose app-server rejects current models and cannot resume
@@ -52,10 +52,11 @@ export function codexBinaryCandidateEntries(options = {}) {
   const env = options.env ?? process.env;
   const layout = options.layout ?? codexInstallLayout(options);
   const entries = [];
-  for (const name of layout.envVars) {
-    if (env[name]) {
-      entries.push({ path: env[name], source: `env:${name}`, explicit: true });
-    }
+  // AGENT_LINK_CODEX_BIN, else its legacy aliases (layout.envVars lists them
+  // in lookup order). The variable that supplied the value is the source.
+  const explicit = lookupEnv("AGENT_LINK_CODEX_BIN", env);
+  if (explicit.value) {
+    entries.push({ path: explicit.value, source: `env:${explicit.source}`, explicit: true });
   }
   for (const bundle of layout.appBundles) {
     for (const binary of bundle.binaries) {

@@ -28,7 +28,7 @@ import { readInboxTool, makeReadInboxHandler } from "./tools/read-inbox.js";
 import { replyAgentLinkMessageTool, makeReplyAgentLinkMessageHandler } from "./tools/claude-reply.js";
 import { makeAgentLinkChannelBridge } from "./claude/channel-bridge.js";
 import { listClaudeSessions, resolveCurrentClaudeSession } from "./claude/session-index.js";
-import { mailboxStatus } from "./claude/mailbox.js";
+import { mailboxReadPaths, mailboxStatus } from "./claude/mailbox.js";
 import {
   buildReceipt,
   listReceipts,
@@ -84,6 +84,22 @@ import {
 } from "./shared/envelope.js";
 
 const HOST_INFO = detectHost();
+
+// The Claude channel bridge resolves the mailbox paths when it starts. A
+// misconfigured path (relative AGENT_LINK_STATE_DIR or AGENT_LINK_MAILBOX_PATH)
+// turns the channel off with a logged error instead of crashing the server;
+// health reports it as claude.channel.error.
+const CHANNEL_REQUESTED = HOST_INFO.host === "claude" && !envFlag("AGENT_LINK_DISABLE_CHANNEL", false);
+let channelError = null;
+if (CHANNEL_REQUESTED) {
+  try {
+    mailboxReadPaths();
+  } catch (error) {
+    channelError = error?.message ?? String(error);
+    getLogger().error("channel.disabled", { reason: channelError });
+  }
+}
+const CHANNEL_ENABLED = CHANNEL_REQUESTED && channelError === null;
 
 const claudeHandlers = HOST_INFO.host === "claude" ? makeClaudeListingHandlers() : null;
 const claudeToolDefs = HOST_INFO.host === "claude" ? claudeListingTools : [];
@@ -149,7 +165,7 @@ const server = new Server(
       "Use reply_agent_link_message with the messageId to reply to an inbound Agent Link message.",
     capabilities: {
       tools: {},
-      experimental: HOST_INFO.host === "claude" && !envFlag("AGENT_LINK_DISABLE_CHANNEL", false)
+      experimental: CHANNEL_ENABLED
         ? { "claude/channel": {} }
         : {}
     }
@@ -1213,7 +1229,8 @@ function claudeHealthSummary() {
       ...(status.error ? { error: status.error } : {})
     },
     channel: {
-      enabled: HOST_INFO.host === "claude" && !envFlag("AGENT_LINK_DISABLE_CHANNEL", false),
+      enabled: CHANNEL_ENABLED && channelError === null,
+      ...(channelError ? { error: channelError } : {}),
       currentSession: current
         ? {
             sessionId: current.sessionId,
@@ -2904,8 +2921,10 @@ try {
   // best effort
 }
 
-const channelBridge = HOST_INFO.host === "claude" && !envFlag("AGENT_LINK_DISABLE_CHANNEL", false)
-  ? makeAgentLinkChannelBridge({
+function startChannelBridge() {
+  if (!CHANNEL_ENABLED) return null;
+  try {
+    const bridge = makeAgentLinkChannelBridge({
       resolveCurrentSession: currentClaudeSession,
       notify: async (notification) => {
         if (typeof server.notification !== "function") {
@@ -2913,9 +2932,18 @@ const channelBridge = HOST_INFO.host === "claude" && !envFlag("AGENT_LINK_DISABL
         }
         await server.notification(notification);
       }
-    })
-  : null;
-channelBridge?.start();
+    });
+    bridge.start();
+    return bridge;
+  } catch (error) {
+    // Never let the channel take the server down; tools keep working.
+    channelError = error?.message ?? String(error);
+    getLogger().error("channel.disabled", { reason: channelError });
+    return null;
+  }
+}
+
+const channelBridge = startChannelBridge();
 
 // Shutdown must take the managed app-server (and its whole process group)
 // down with this server. Previously SIGTERM/SIGINT called the async close()

@@ -19203,10 +19203,9 @@ function codexBinaryCandidateEntries(options = {}) {
   const env2 = options.env ?? process.env;
   const layout = options.layout ?? codexInstallLayout(options);
   const entries = [];
-  for (const name of layout.envVars) {
-    if (env2[name]) {
-      entries.push({ path: env2[name], source: `env:${name}`, explicit: true });
-    }
+  const explicit = env("AGENT_LINK_CODEX_BIN", env2);
+  if (explicit.value) {
+    entries.push({ path: explicit.value, source: `env:${explicit.source}`, explicit: true });
   }
   for (const bundle of layout.appBundles) {
     for (const binary of bundle.binaries) {
@@ -19518,7 +19517,15 @@ function without(paths, current) {
 
 // src/shared/state.js
 import fs from "node:fs";
-var VERSION = true ? "0.4.0" : null;
+function pluginVersion() {
+  if (true) return "0.4.0";
+  try {
+    const pkg = JSON.parse(fs.readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
+    return typeof pkg.version === "string" ? pkg.version : null;
+  } catch {
+    return null;
+  }
+}
 function tightenMode(target, mode) {
   try {
     const stat = fs.statSync(target);
@@ -19543,7 +19550,7 @@ function writeMigrationRecord(options) {
     ...legacyReceiptPaths(options),
     ...legacyManagedAppServerDirs(options)
   ].filter((candidate) => fs.existsSync(candidate));
-  const record2 = { from, at: (/* @__PURE__ */ new Date()).toISOString(), version: VERSION };
+  const record2 = { from, at: (/* @__PURE__ */ new Date()).toISOString(), version: pluginVersion() };
   try {
     fs.writeFileSync(file, `${JSON.stringify(record2, null, 2)}
 `, { encoding: "utf8", mode: FILE_MODE, flag: "wx" });
@@ -21814,11 +21821,8 @@ function idSet(single, many) {
 function mergedView(paths) {
   const messages = /* @__PURE__ */ new Map();
   const stateEvents = [];
-  let filesWithEvents = 0;
   for (const file of paths) {
-    const events = readEvents(file);
-    if (events.length) filesWithEvents += 1;
-    for (const event of events) {
+    for (const event of readEvents(file)) {
       if (event?.type === "message" && event.message?.id) {
         const id = String(event.message.id);
         if (!messages.has(id)) messages.set(id, normalizeMessage(event.message, event.at));
@@ -21826,9 +21830,6 @@ function mergedView(paths) {
         stateEvents.push(event);
       }
     }
-  }
-  if (filesWithEvents > 1) {
-    stateEvents.sort((a, b) => normalizeTimestamp(a.at) - normalizeTimestamp(b.at));
   }
   for (const event of stateEvents) {
     if (event.type === "delivered" && event.messageId && messages.has(event.messageId)) {
@@ -23264,11 +23265,11 @@ function makeAgentLinkChannelBridge({
 } = {}) {
   const customOpener = typeof mailboxOpener === "function";
   const openMb = customOpener ? mailboxOpener : () => openMailbox();
-  const signaturePath = mailboxPath2 ?? (customOpener ? null : resolveMailboxPath());
+  const signaturePaths = mailboxPath2 ? [mailboxPath2] : customOpener ? null : mailboxReadPaths();
   const minDelay = Math.max(1, pollIntervalMs);
   const maxDelay = Math.max(minDelay, maxPollIntervalMs);
   let timer = null;
-  let watcher = null;
+  let watchers = [];
   let unsubscribeWaitEnded = null;
   let running = false;
   let stopped = true;
@@ -23285,13 +23286,18 @@ function makeAgentLinkChannelBridge({
     return session;
   }
   function mailboxSignature() {
-    if (!signaturePath) return null;
-    try {
-      const st = fs7.statSync(signaturePath);
-      return `${st.ino}:${st.size}:${st.mtimeMs}`;
-    } catch (error2) {
-      return error2?.code === "ENOENT" ? "missing" : null;
+    if (!signaturePaths) return null;
+    const parts = [];
+    for (const file of signaturePaths) {
+      try {
+        const st = fs7.statSync(file);
+        parts.push(`${st.ino}:${st.size}:${st.mtimeMs}`);
+      } catch (error2) {
+        if (error2?.code !== "ENOENT") return null;
+        parts.push("missing");
+      }
     }
+    return parts.join("|");
   }
   async function pollOnce({ force = false } = {}) {
     stats.ticks += 1;
@@ -23369,25 +23375,52 @@ function makeAgentLinkChannelBridge({
     delay = minDelay;
     schedule(WAKE_DEBOUNCE_MS);
   }
+  function watchTargets() {
+    const targets = /* @__PURE__ */ new Map();
+    const add = (dir, name) => {
+      if (!targets.has(dir)) targets.set(dir, /* @__PURE__ */ new Set());
+      targets.get(dir).add(name);
+    };
+    for (const file of signaturePaths) {
+      const dir = path11.dirname(file);
+      if (fs7.existsSync(dir)) {
+        add(dir, path11.basename(file));
+      } else if (fs7.existsSync(path11.dirname(dir))) {
+        add(path11.dirname(dir), path11.basename(dir));
+      }
+    }
+    return targets;
+  }
+  function closeWatchers() {
+    for (const w of watchers) w.close();
+    watchers = [];
+  }
   function startWatcher() {
-    if (!watch || !signaturePath) return;
-    try {
-      const dir = path11.dirname(signaturePath);
-      const base = path11.basename(signaturePath);
-      watcher = fs7.watch(dir, { persistent: false }, (_event, filename) => {
-        if (!filename || String(filename) === base) wake();
-      });
-      watcher.on("error", () => {
-        watcher?.close();
-        watcher = null;
-      });
-    } catch {
-      watcher = null;
+    if (!watch || !signaturePaths) return;
+    closeWatchers();
+    for (const [dir, names] of watchTargets()) {
+      try {
+        const w = fs7.watch(dir, { persistent: false }, (_event, filename) => {
+          if (stopped) return;
+          const name = filename ? String(filename) : null;
+          if (name && !names.has(name)) return;
+          if (name && fs7.existsSync(path11.join(dir, name)) && fs7.statSync(path11.join(dir, name)).isDirectory()) {
+            startWatcher();
+          }
+          wake();
+        });
+        w.on("error", () => {
+          w.close();
+          watchers = watchers.filter((other) => other !== w);
+        });
+        watchers.push(w);
+      } catch {
+      }
     }
   }
   return {
     pollOnce,
-    stats: () => ({ ...stats, delayMs: delay, watching: Boolean(watcher) }),
+    stats: () => ({ ...stats, delayMs: delay, watching: watchers.length > 0, watchedDirs: watchers.length }),
     start() {
       if (!stopped) return;
       stopped = false;
@@ -23400,8 +23433,7 @@ function makeAgentLinkChannelBridge({
       stopped = true;
       if (timer) clearTimeout(timer);
       timer = null;
-      watcher?.close();
-      watcher = null;
+      closeWatchers();
       unsubscribeWaitEnded?.();
       unsubscribeWaitEnded = null;
     }
@@ -25509,6 +25541,17 @@ function normalizeCwdFilter(cwd) {
 
 // src/server.js
 var HOST_INFO = detectHost();
+var CHANNEL_REQUESTED = HOST_INFO.host === "claude" && !envFlag("AGENT_LINK_DISABLE_CHANNEL", false);
+var channelError = null;
+if (CHANNEL_REQUESTED) {
+  try {
+    mailboxReadPaths();
+  } catch (error2) {
+    channelError = error2?.message ?? String(error2);
+    getLogger().error("channel.disabled", { reason: channelError });
+  }
+}
+var CHANNEL_ENABLED = CHANNEL_REQUESTED && channelError === null;
 var claudeHandlers = HOST_INFO.host === "claude" ? makeClaudeListingHandlers() : null;
 var claudeToolDefs = HOST_INFO.host === "claude" ? claudeListingTools : [];
 var CURRENT_SESSION_RECHECK_MS = 3e4;
@@ -25560,7 +25603,7 @@ var server = new Server(
     instructions: "Agent Link messages may arrive as <agent-link-message> channel events. Use reply_agent_link_message with the messageId to reply to an inbound Agent Link message.",
     capabilities: {
       tools: {},
-      experimental: HOST_INFO.host === "claude" && !envFlag("AGENT_LINK_DISABLE_CHANNEL", false) ? { "claude/channel": {} } : {}
+      experimental: CHANNEL_ENABLED ? { "claude/channel": {} } : {}
     }
   }
 );
@@ -26589,7 +26632,8 @@ function claudeHealthSummary() {
       ...status.error ? { error: status.error } : {}
     },
     channel: {
-      enabled: HOST_INFO.host === "claude" && !envFlag("AGENT_LINK_DISABLE_CHANNEL", false),
+      enabled: CHANNEL_ENABLED && channelError === null,
+      ...channelError ? { error: channelError } : {},
       currentSession: current ? {
         sessionId: current.sessionId,
         surface: current.surface,
@@ -28087,16 +28131,27 @@ try {
   for (const stateDir2 of managedAppServerReapDirs()) reapOrphanedManagedAppServers({ stateDir: stateDir2 });
 } catch {
 }
-var channelBridge = HOST_INFO.host === "claude" && !envFlag("AGENT_LINK_DISABLE_CHANNEL", false) ? makeAgentLinkChannelBridge({
-  resolveCurrentSession: currentClaudeSession,
-  notify: async (notification) => {
-    if (typeof server.notification !== "function") {
-      throw new Error("MCP server notification API unavailable");
-    }
-    await server.notification(notification);
+function startChannelBridge() {
+  if (!CHANNEL_ENABLED) return null;
+  try {
+    const bridge = makeAgentLinkChannelBridge({
+      resolveCurrentSession: currentClaudeSession,
+      notify: async (notification) => {
+        if (typeof server.notification !== "function") {
+          throw new Error("MCP server notification API unavailable");
+        }
+        await server.notification(notification);
+      }
+    });
+    bridge.start();
+    return bridge;
+  } catch (error2) {
+    channelError = error2?.message ?? String(error2);
+    getLogger().error("channel.disabled", { reason: channelError });
+    return null;
   }
-}) : null;
-channelBridge?.start();
+}
+var channelBridge = startChannelBridge();
 var SHUTDOWN_HARD_LIMIT_MS = 4e3;
 var shutdownPromise = null;
 function shutdown(exitCode) {
