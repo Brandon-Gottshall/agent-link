@@ -1,0 +1,219 @@
+{
+  "cases": [
+    {
+      "id": "positive-pass",
+      "behavior": "positive",
+      "expectedStatus": "pass",
+      "originThreadId": "00000000-0000-4000-8000-000000000001",
+      "targetThreadId": "00000000-0000-4000-8000-000000000002",
+      "requiredToolCalls": [
+        "agent_link_health",
+        "get_codex_thread",
+        "register_dependency_handoff",
+        "check_coordination_obligations"
+      ],
+      "thread": {
+        "thread": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "status": { "type": "idle" },
+          "turns": [
+            {
+              "status": "completed",
+              "items": [
+                { "type": "mcpToolCall", "tool": "agent_link_health", "status": "completed" },
+                { "type": "mcpToolCall", "tool": "get_codex_thread", "status": "completed" },
+                { "type": "mcpToolCall", "tool": "register_dependency_handoff", "status": "completed" },
+                { "type": "mcpToolCall", "tool": "check_coordination_obligations", "status": "completed" },
+                {
+                  "type": "agentMessage",
+                  "phase": "final_answer",
+                  "text": "callback wired: agent-link-receipt-fixture-pass"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "receipts": {
+        "data": [
+          {
+            "id": "agent-link-receipt-fixture-pass",
+            "action": "message_thread",
+            "purpose": "Dependency handoff: WF prototype dependency surface",
+            "tags": ["dependency-handoff", "dependency:wf-prototype-dependency-surface"],
+            "origin": { "threadId": "00000000-0000-4000-8000-000000000001" },
+            "target": { "threadId": "00000000-0000-4000-8000-000000000002" },
+            "messagePreview": "Dependency callback request from thread `00000000-0000-4000-8000-000000000001`."
+          }
+        ]
+      }
+    },
+    {
+      "id": "missing-tool-fail",
+      "behavior": "positive",
+      "expectedStatus": "fail",
+      "expectedFailureCodes": ["missing_required_tool_call"],
+      "originThreadId": "00000000-0000-4000-8000-000000000011",
+      "targetThreadId": "00000000-0000-4000-8000-000000000012",
+      "requiredToolCalls": [
+        "agent_link_health",
+        "get_codex_thread",
+        "register_dependency_handoff",
+        "check_coordination_obligations"
+      ],
+      "thread": {
+        "thread": {
+          "id": "00000000-0000-4000-8000-000000000011",
+          "status": { "type": "idle" },
+          "turns": [
+            {
+              "status": "completed",
+              "items": [
+                { "type": "mcpToolCall", "tool": "agent_link_health", "status": "completed" },
+                { "type": "mcpToolCall", "tool": "get_codex_thread", "status": "completed" },
+                { "type": "mcpToolCall", "tool": "check_coordination_obligations", "status": "completed" },
+                {
+                  "type": "agentMessage",
+                  "phase": "final_answer",
+                  "text": "callback wired: agent-link-receipt-fixture-missing-tool"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "receipts": {
+        "data": [
+          {
+            "id": "agent-link-receipt-fixture-missing-tool",
+            "action": "message_thread",
+            "tags": ["dependency-handoff"],
+            "origin": { "threadId": "00000000-0000-4000-8000-000000000011" },
+            "target": { "threadId": "00000000-0000-4000-8000-000000000012" }
+          }
+        ]
+      }
+    },
+    {
+      "id": "missing-receipt-fail",
+      "behavior": "positive",
+      "expectedStatus": "fail",
+      "expectedFailureCodes": ["missing_dependency_receipt"],
+      "originThreadId": "00000000-0000-4000-8000-000000000021",
+      "targetThreadId": "00000000-0000-4000-8000-000000000022",
+      "requiredToolCalls": [
+        "agent_link_health",
+        "get_codex_thread",
+        "register_dependency_handoff",
+        "check_coordination_obligations"
+      ],
+      "thread": {
+        "thread": {
+          "id": "00000000-0000-4000-8000-000000000021",
+          "status": { "type": "idle" },
+          "turns": [
+            {
+              "status": "completed",
+              "items": [
+                { "type": "mcpToolCall", "tool": "agent_link_health", "status": "completed" },
+                { "type": "mcpToolCall", "tool": "get_codex_thread", "status": "completed" },
+                { "type": "mcpToolCall", "tool": "register_dependency_handoff", "status": "completed" },
+                { "type": "mcpToolCall", "tool": "check_coordination_obligations", "status": "completed" },
+                { "type": "agentMessage", "phase": "final_answer", "text": "callback wired: missing" }
+              ]
+            }
+          ]
+        }
+      },
+      "receipts": { "data": [] }
+    },
+    {
+      "id": "timeout-fail",
+      "behavior": "positive",
+      "expectedStatus": "fail",
+      "expectedFailureCodes": ["timeout_or_stall"],
+      "originThreadId": "00000000-0000-4000-8000-000000000031",
+      "targetThreadId": "00000000-0000-4000-8000-000000000032",
+      "requiredToolCalls": ["register_dependency_handoff"],
+      "timedOut": true,
+      "thread": {
+        "thread": {
+          "id": "00000000-0000-4000-8000-000000000031",
+          "status": { "type": "active" },
+          "turns": [
+            {
+              "status": "inProgress",
+              "items": [
+                { "type": "agentMessage", "phase": "commentary", "text": "I will wire the callback." }
+              ]
+            }
+          ]
+        }
+      },
+      "receipts": { "data": [] }
+    },
+    {
+      "id": "negative-pass",
+      "behavior": "negative",
+      "expectedStatus": "pass",
+      "originThreadId": "00000000-0000-4000-8000-000000000041",
+      "forbiddenToolCalls": [
+        "register_dependency_handoff",
+        "check_coordination_obligations"
+      ],
+      "thread": {
+        "thread": {
+          "id": "00000000-0000-4000-8000-000000000041",
+          "status": { "type": "idle" },
+          "turns": [
+            {
+              "status": "completed",
+              "items": [
+                { "type": "mcpToolCall", "tool": "agent_link_health", "status": "completed" },
+                { "type": "agentMessage", "phase": "final_answer", "text": "No dependency callback is required." }
+              ]
+            }
+          ]
+        }
+      },
+      "receipts": { "data": [] }
+    },
+    {
+      "id": "negative-forbidden-tool-fail",
+      "behavior": "negative",
+      "expectedStatus": "fail",
+      "expectedFailureCodes": ["forbidden_tool_call"],
+      "originThreadId": "00000000-0000-4000-8000-000000000051",
+      "forbiddenToolCalls": [
+        "register_dependency_handoff",
+        "check_coordination_obligations"
+      ],
+      "thread": {
+        "thread": {
+          "id": "00000000-0000-4000-8000-000000000051",
+          "status": { "type": "idle" },
+          "turns": [
+            {
+              "status": "completed",
+              "items": [
+                { "type": "mcpToolCall", "tool": "register_dependency_handoff", "status": "completed" },
+                { "type": "agentMessage", "phase": "final_answer", "text": "callback wired: agent-link-receipt-noise" }
+              ]
+            }
+          ]
+        }
+      },
+      "receipts": {
+        "data": [
+          {
+            "id": "agent-link-receipt-noise",
+            "action": "message_thread",
+            "tags": ["dependency-handoff"],
+            "origin": { "threadId": "00000000-0000-4000-8000-000000000051" },
+            "target": { "threadId": "00000000-0000-4000-8000-000000000052" }
+          }
+        ]
+      }
+    }
+  ]
+}

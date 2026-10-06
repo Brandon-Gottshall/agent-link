@@ -1,0 +1,20 @@
+{
+  "name": "agent-link",
+  "interface": {
+    "displayName": "Agent Link"
+  },
+  "plugins": [
+    {
+      "name": "codex-agent-link",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Coding"
+    }
+  ]
+}

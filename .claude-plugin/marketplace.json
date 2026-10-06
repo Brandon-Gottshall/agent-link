@@ -1,0 +1,18 @@
+{
+  "name": "agent-link",
+  "owner": {
+    "name": "Brandon Gottshall"
+  },
+  "metadata": {
+    "description": "Agent Link: cross-host messaging between Codex threads and Claude sessions."
+  },
+  "plugins": [
+    {
+      "name": "agent-link",
+      "source": "./",
+      "description": "Inspect, resolve, message, and audit Codex threads plus Claude Desktop and Claude Code sessions.",
+      "category": "development",
+      "tags": ["codex", "claude", "agents", "mcp", "coordination"]
+    }
+  ]
+}

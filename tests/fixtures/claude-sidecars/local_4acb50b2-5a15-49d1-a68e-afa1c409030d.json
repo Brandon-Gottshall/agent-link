@@ -1,0 +1,26 @@
+{
+  "sessionId": "local_4acb50b2-5a15-49d1-a68e-afa1c409030d",
+  "processName": "blissful-wonderful-goldberg",
+  "cliSessionId": "36a85a98-8e81-409b-8c1c-07cdaf004d57",
+  "cwd": "/sessions/blissful-wonderful-goldberg",
+  "userSelectedFolders": [
+    "/Users/example/work/sample-project"
+  ],
+  "createdAt": 1770936122718,
+  "lastActivityAt": 1771091504721,
+  "model": "claude-opus-4-6",
+  "isArchived": true,
+  "title": "Investigate game for subject adaptation",
+  "vmProcessName": "blissful-wonderful-goldberg",
+  "initialMessage": "Continue",
+  "slashCommands": [
+    "compact",
+    "context",
+    "review"
+  ],
+  "enabledMcpTools": {
+    "local:Filesystem:read_file": true,
+    "local:Filesystem:list_directory": true,
+    "local:Filesystem:search_files": true
+  }
+}

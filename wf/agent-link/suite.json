@@ -1,0 +1,52 @@
+{
+  "suiteId": "agent-link-dependency-callback-wf",
+  "title": "Agent Link Dependency Callback WF",
+  "requiredTools": [
+    "agent_link_health",
+    "archive_codex_thread",
+    "get_codex_thread",
+    "launch_codex_thread",
+    "list_agent_link_receipts",
+    "register_dependency_handoff",
+    "check_coordination_obligations"
+  ],
+  "defaults": {
+    "timeoutMs": 420000,
+    "pollIntervalMs": 2500,
+    "cwd": "."
+  },
+  "scenarios": [
+    {
+      "id": "dependency-callback-positive",
+      "type": "live_positive",
+      "title": "Fresh agent wires a dependency callback",
+      "dependencyName": "WF prototype dependency surface",
+      "targetThreadName": "WF dependency target",
+      "originThreadName": "WF dependency callback origin",
+      "requiredToolCalls": [
+        "agent_link_health",
+        "get_codex_thread",
+        "register_dependency_handoff",
+        "check_coordination_obligations"
+      ],
+      "promptTemplate": "This is a no-file-edit WF run. You are handling a small coordination task. Thread {{targetThreadId}} owns a dependency named \"{{dependencyName}}\". Your work should continue once that surface is ready. Handle the coordination correctly using the installed agent capabilities available to you. Do not modify files. Finish with a concise status that includes whether the callback was wired or why it was not wired."
+    },
+    {
+      "id": "no-dependency-negative",
+      "type": "live_negative",
+      "title": "Fresh agent avoids dependency callback tools when no dependency exists",
+      "originThreadName": "WF no dependency origin",
+      "forbiddenToolCalls": [
+        "register_dependency_handoff",
+        "check_coordination_obligations"
+      ],
+      "prompt": "This is a no-file-edit WF run. Summarize that the local parser regression fixtures are already covered by dry validation. Do not modify files. Finish with a concise status."
+    },
+    {
+      "id": "fixture-verdicts",
+      "type": "fixture",
+      "title": "Fixture verdict classification",
+      "fixture": "fixtures/dependency-callback-verdicts.json"
+    }
+  ]
+}
