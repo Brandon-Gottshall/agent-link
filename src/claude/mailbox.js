@@ -1,14 +1,10 @@
 // src/claude/mailbox.js
 import path from "node:path";
 import fs from "node:fs";
-import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import {
   legacyMailboxPaths,
-  legacyPaths,
-  mailboxDbPath,
   mailboxPath as defaultMailboxPath,
-  sqliteToJsonl,
   stateDir
 } from "../shared/paths.js";
 import { ensureStateDir, tightenMode } from "../shared/state.js";
@@ -43,16 +39,20 @@ export function messageBodyTooLarge(body) {
   };
 }
 
-// Precedence: explicit options (mailboxPath, then dbPath) always win over the
-// environment, so a caller that names a mailbox gets that mailbox.
-// Relative AGENT_LINK_MAILBOX_PATH / AGENT_LINK_MAILBOX_DB values throw a
-// PathConfigError (src/shared/paths.js) naming the variable.
-/** @typedef {{mailboxPath?: string, dbPath?: string}} MailboxLocation */
+// Precedence: an explicit mailboxPath option always wins over the
+// environment, so a caller that names a mailbox gets that mailbox. A relative
+// AGENT_LINK_MAILBOX_PATH value throws a PathConfigError (src/shared/paths.js)
+// naming the variable.
+/** @typedef {{mailboxPath?: string}} MailboxLocation */
 
 /** @param {MailboxLocation} [location] */
-export function resolveMailboxPath({ mailboxPath, dbPath } = {}) {
-  if (mailboxPath) return mailboxPath;
-  if (dbPath) return sqliteToJsonl(dbPath);
+export function resolveMailboxPath(location = {}) {
+  // The legacy `dbPath` option (deprecated since 0.2.1) was removed in 0.6.0.
+  // Fail loudly rather than silently falling back to the default mailbox.
+  if (Object.hasOwn(location, "dbPath")) {
+    throw new TypeError("The mailbox dbPath option was removed in 0.6.0; pass mailboxPath (the .jsonl file) instead.");
+  }
+  if (location.mailboxPath) return location.mailboxPath;
   return defaultMailboxPath();
 }
 
@@ -62,17 +62,8 @@ export function resolveMailboxPath({ mailboxPath, dbPath } = {}) {
 /** @param {MailboxLocation} [options] */
 export function mailboxReadPaths(options = {}) {
   const writePath = resolveMailboxPath(options);
-  if (options.mailboxPath || options.dbPath) return [writePath];
+  if (options.mailboxPath) return [writePath];
   return [...legacyMailboxPaths(), writePath];
-}
-
-/** @param {MailboxLocation} [location] */
-function resolveLegacyDbPath({ mailboxPath, dbPath } = {}) {
-  if (dbPath) return dbPath;
-  // An explicit mailboxPath is a complete choice; never import a legacy
-  // database named only by the environment into it.
-  if (mailboxPath) return null;
-  return mailboxDbPath();
 }
 
 function isDefaultMailbox(mailboxPath) {
@@ -143,11 +134,6 @@ export function openMailbox(options = {}) {
   const mailboxPath = resolveMailboxPath(options);
   const readPaths = mailboxReadPaths(options);
   ensurePrivateMailbox(mailboxPath);
-  importLegacySqliteIfNeeded({
-    mailboxPath,
-    readPaths,
-    legacyDbPath: resolveLegacyDbPath(options) ?? (isDefaultMailbox(mailboxPath) ? legacyPaths().mailboxDb : null)
-  });
   const view = () => mergedView(readPaths);
 
   function appendEvent(event) {
@@ -362,41 +348,6 @@ function normalizeMessage(message, eventAt) {
     acknowledged_at: message.acknowledged_at ?? null,
     reply_to_message_id: message.reply_to_message_id ?? null
   };
-}
-
-// Imports a 0.3.x SQLite mailbox into the (new, empty) JSONL mailbox. Skipped
-// when any file the view reads already has content: a legacy JSONL mailbox
-// is the newer copy of the same messages.
-function importLegacySqliteIfNeeded({ mailboxPath, readPaths = [mailboxPath], legacyDbPath }) {
-  if (readPaths.some((file) => fs.existsSync(file) && fs.statSync(file).size > 0)) return;
-  if (!legacyDbPath || !legacyDbPath.endsWith(".sqlite") || !fs.existsSync(legacyDbPath)) return;
-
-  const result = spawnSync("sqlite3", [
-    "-json",
-    legacyDbPath,
-    "SELECT id, from_session_id, from_session_kind, to_session_id, to_session_kind, body, metadata_json, sent_at, delivered_at, acknowledged_at, reply_to_message_id FROM messages ORDER BY sent_at"
-  ], { encoding: "utf8" });
-  if (result.status !== 0 || !result.stdout.trim()) return;
-
-  let rows;
-  try {
-    rows = JSON.parse(result.stdout);
-  } catch {
-    return;
-  }
-  if (!Array.isArray(rows) || rows.length === 0) return;
-
-  const events = [];
-  for (const row of rows) {
-    events.push({
-      type: "message",
-      at: normalizeTimestamp(row.sent_at),
-      message: normalizeMessage(row)
-    });
-    if (row.delivered_at) events.push({ type: "delivered", at: Number(row.delivered_at), messageId: row.id });
-    if (row.acknowledged_at) events.push({ type: "acknowledged", at: Number(row.acknowledged_at), messageId: row.id });
-  }
-  fs.appendFileSync(mailboxPath, events.map((event) => JSON.stringify(event)).join("\n") + "\n", { encoding: "utf8", mode: FILE_MODE });
 }
 
 function ulid() {

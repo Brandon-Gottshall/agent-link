@@ -11,14 +11,13 @@ import path from "node:path";
 import {
   legacyManagedAppServerDirs,
   legacyMailboxPaths,
-  legacyPaths,
   legacyReceiptPaths,
   migrationRecordPath
 } from "./paths.js";
 
 /**
  * @typedef {object} LegacyFile
- * @property {"mailbox" | "mailboxDb" | "receipts" | "managedAppServers"} kind
+ * @property {"mailbox" | "receipts" | "managedAppServers"} kind
  * @property {string} path
  * @property {string | null} modifiedAt          ISO 8601
  * @property {boolean | null} writtenAfterMigration   null when there is no migration record
@@ -97,7 +96,6 @@ export function legacyStateReport(options = {}) {
   /** @type {[LegacyFile["kind"], string][]} */
   const candidates = [
     ...legacyMailboxPaths(options).map((p) => /** @type {[LegacyFile["kind"], string]} */ (["mailbox", p])),
-    ["mailboxDb", legacyPaths(options).mailboxDb],
     ...legacyReceiptPaths(options).map((p) => /** @type {[LegacyFile["kind"], string]} */ (["receipts", p])),
     ...legacyManagedAppServerDirs(options).map((p) => /** @type {[LegacyFile["kind"], string]} */ (["managedAppServers", p]))
   ];

@@ -265,7 +265,6 @@ After upgrading, **restart every Claude and Codex session** so no old plugin cop
 | --- | --- | --- |
 | `AGENT_LINK_STATE_DIR` | | State directory. Default `~/.agent-link`. |
 | `AGENT_LINK_MAILBOX_PATH` | | Mailbox file. Default `<state>/mailbox.jsonl`. Setting it turns off the legacy merge. |
-| `AGENT_LINK_MAILBOX_DB` | | Deprecated. A 0.3.x SQLite path; its `.jsonl` sibling is used as the mailbox. |
 | `AGENT_LINK_RECEIPT_LOG` | `CODEX_AGENT_LINK_RECEIPT_LOG`, `CLAUDE_AGENT_LINK_RECEIPT_LOG` | Receipt log. Default `<state>/receipts.jsonl`. Setting it turns off the legacy merge. |
 | `AGENT_LINK_MANAGED_DIR` | `CODEX_AGENT_LINK_STATE_DIR` | Managed app-server records. Default `<state>/managed-app-servers`. (The legacy name only ever meant this directory.) |
 

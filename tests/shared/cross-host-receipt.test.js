@@ -33,7 +33,7 @@ function makeSandbox() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "agent-link-crosshost-"));
   return {
     tmp,
-    dbPath: path.join(tmp, "mailbox.sqlite"),
+    mailboxPath: path.join(tmp, "mailbox.jsonl"),
     receiptLog: path.join(tmp, "receipts.jsonl")
   };
 }
@@ -80,7 +80,7 @@ function withCleanEnv(fn) {
     const handlers = makeClaudeSendHandler({
       host: "codex",
       listSessions: () => SESSIONS,
-      mailboxOpener: () => openMailbox({ dbPath: sb.dbPath })
+      mailboxOpener: () => openMailbox({ mailboxPath: sb.mailboxPath })
     });
 
     // Simulate the runtime caller context Codex hosts pass via _meta.
@@ -110,7 +110,7 @@ function withCleanEnv(fn) {
 
     // Mailbox row records from_session_id from the runtime caller context,
     // not the "external" fallback (since CODEX_THREAD_ID is unset).
-    const mb = openMailbox({ dbPath: sb.dbPath });
+    const mb = openMailbox({ mailboxPath: sb.mailboxPath });
     const rows = mb.inspect({ toSessionId: "local_target_claude" });
     mb.close();
     assert.equal(rows.length, 1, "exactly one mailbox row");
@@ -154,7 +154,7 @@ function withCleanEnv(fn) {
     const handlers = makeClaudeSendHandler({
       host: "codex",
       listSessions: () => SESSIONS,
-      mailboxOpener: () => openMailbox({ dbPath: sb.dbPath })
+      mailboxOpener: () => openMailbox({ mailboxPath: sb.mailboxPath })
     });
 
     const result = await handlers.message_claude_session({
@@ -164,7 +164,7 @@ function withCleanEnv(fn) {
 
     assert.equal(result.error, undefined);
 
-    const mb = openMailbox({ dbPath: sb.dbPath });
+    const mb = openMailbox({ mailboxPath: sb.mailboxPath });
     const rows = mb.inspect({ toSessionId: "local_target_claude" });
     mb.close();
     assert.equal(rows.length, 1);
@@ -187,7 +187,7 @@ function withCleanEnv(fn) {
     const handlers = makeClaudeSendHandler({
       host: "codex",
       listSessions: () => SESSIONS,
-      mailboxOpener: () => openMailbox({ dbPath: sb.dbPath })
+      mailboxOpener: () => openMailbox({ mailboxPath: sb.mailboxPath })
     });
 
     const result = await handlers.message_claude_session({
@@ -197,7 +197,7 @@ function withCleanEnv(fn) {
 
     assert.equal(result.error, undefined);
 
-    const mb = openMailbox({ dbPath: sb.dbPath });
+    const mb = openMailbox({ mailboxPath: sb.mailboxPath });
     const rows = mb.inspect({ toSessionId: "local_target_claude" });
     mb.close();
     assert.equal(rows.length, 1);
@@ -217,7 +217,7 @@ function withCleanEnv(fn) {
     const handlers = makeClaudeSendHandler({
       host: "claude",
       listSessions: () => SESSIONS,
-      mailboxOpener: () => openMailbox({ dbPath: sb.dbPath })
+      mailboxOpener: () => openMailbox({ mailboxPath: sb.mailboxPath })
     });
 
     const result = await handlers.message_claude_session({
@@ -234,7 +234,7 @@ function withCleanEnv(fn) {
     assert.equal(receipt.target.kind, "claude");
     assert.equal(receipt.target.sessionId, "local_target_claude");
 
-    const mb = openMailbox({ dbPath: sb.dbPath });
+    const mb = openMailbox({ mailboxPath: sb.mailboxPath });
     const rows = mb.inspect({ toSessionId: "local_target_claude" });
     mb.close();
     // P4-04: the env carries the raw CLI id; the mailbox records the

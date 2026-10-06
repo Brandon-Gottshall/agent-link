@@ -50,8 +50,7 @@ function makeSandbox() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "agent-link-notify-"));
   return {
     tmp,
-    mailboxPath: path.join(tmp, "mailbox.jsonl"),
-    dbPath: path.join(tmp, "mailbox.sqlite")
+    mailboxPath: path.join(tmp, "mailbox.jsonl")
   };
 }
 
@@ -172,11 +171,11 @@ function insert(mailboxPath, fields) {
   const sessionId = "transcript-only-wf-0001";
   const transcriptPath = path.join(sb.tmp, `${sessionId}.jsonl`);
   fs.writeFileSync(transcriptPath, JSON.stringify({ sessionId, type: "summary" }) + "\n");
-  insert(sb.dbPath.replace(/\.sqlite$/, ".jsonl"), { fromSessionId: SENDER, toSessionId: `local_${sessionId}`, body: "transcript-only receiver body" });
+  insert(sb.mailboxPath, { fromSessionId: SENDER, toSessionId: `local_${sessionId}`, body: "transcript-only receiver body" });
 
   const parsed = spawnHook(
     { session_id: sessionId, transcript_path: transcriptPath, hook_event_name: "UserPromptSubmit" },
-    { AGENT_LINK_MAILBOX_DB: sb.dbPath }
+    { AGENT_LINK_MAILBOX_PATH: sb.mailboxPath }
   );
   assert.ok(parsed.hookSpecificOutput, "transcript-only session must still get the nudge");
   assert.match(parsed.hookSpecificOutput.additionalContext, /read_agent_link_inbox/);

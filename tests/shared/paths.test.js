@@ -79,7 +79,6 @@ test("relative Agent Link path settings are rejected, naming the variable", () =
   const cases = [
     [stateDir, { AGENT_LINK_STATE_DIR: "state" }, "AGENT_LINK_STATE_DIR"],
     [mailboxPath, { AGENT_LINK_MAILBOX_PATH: "./box.jsonl" }, "AGENT_LINK_MAILBOX_PATH"],
-    [mailboxPath, { AGENT_LINK_MAILBOX_DB: "box.sqlite" }, "AGENT_LINK_MAILBOX_DB"],
     [receiptLogPath, { CODEX_AGENT_LINK_RECEIPT_LOG: "r.jsonl" }, "CODEX_AGENT_LINK_RECEIPT_LOG"],
     [managedAppServerDir, { CODEX_AGENT_LINK_STATE_DIR: "managed" }, "CODEX_AGENT_LINK_STATE_DIR"],
     [logFilePath, { AGENT_LINK_LOG_FILE: "x.log" }, "AGENT_LINK_LOG_FILE"],
@@ -108,20 +107,26 @@ test("legacy read lists: defaults, CLAUDE_CONFIG_DIR, and overrides that disable
     path.resolve("/cfg/claude/agent-link/mailbox.jsonl")
   ]);
   assert.deepEqual(legacyMailboxPaths(at({ AGENT_LINK_MAILBOX_PATH: "/m.jsonl" })), []);
-  assert.deepEqual(legacyMailboxPaths(at({ AGENT_LINK_MAILBOX_DB: "/m.sqlite" })), []);
   // A state dir pointed at the old location never lists one file twice.
   assert.deepEqual(legacyMailboxPaths(at({ AGENT_LINK_STATE_DIR: "~/.claude/agent-link" })), []);
   assert.deepEqual(legacyReceiptPaths(at({})), [path.join(home, ".codex", "agent-link-receipts.jsonl")]);
   assert.deepEqual(legacyReceiptPaths(at({ CLAUDE_AGENT_LINK_RECEIPT_LOG: "/r.jsonl" })), []);
   assert.deepEqual(legacyManagedAppServerDirs(at({})), [path.join(home, ".claude", "agent-link", "managed-app-servers")]);
   assert.deepEqual(legacyManagedAppServerDirs(at({ AGENT_LINK_MANAGED_DIR: "/m" })), []);
-  assert.equal(mailboxPath(at({ AGENT_LINK_MAILBOX_DB: "/x/box.sqlite" })), path.resolve("/x/box.jsonl"));
+});
+
+test("AGENT_LINK_MAILBOX_DB was removed in 0.6.0 and is ignored", () => {
+  const env = at({ AGENT_LINK_MAILBOX_DB: "/x/box.sqlite" });
+  assert.equal(mailboxPath(env), mailboxPath(at({})));
+  assert.deepEqual(legacyMailboxPaths(env), legacyMailboxPaths(at({})));
+  // A relative value no longer throws: nothing reads it.
+  assert.doesNotThrow(() => mailboxPath(at({ AGENT_LINK_MAILBOX_DB: "box.sqlite" })));
+  assert.equal("mailboxDb" in legacyPaths(at({})), false);
 });
 
 test("legacyPaths are the 0.4.x locations", () => {
   assert.deepEqual(legacyPaths(at({})), {
     mailbox: path.join(home, ".claude", "agent-link", "mailbox.jsonl"),
-    mailboxDb: path.join(home, ".claude", "agent-link", "mailbox.sqlite"),
     receipts: path.join(home, ".codex", "agent-link-receipts.jsonl"),
     managedAppServers: path.join(home, ".claude", "agent-link", "managed-app-servers")
   });

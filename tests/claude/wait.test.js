@@ -21,23 +21,23 @@ const LOADED_SESSION = {
 
 function makeSandbox() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "agent-link-wait-"));
-  const dbPath = path.join(tmp, "mailbox.sqlite");
-  return { tmp, dbPath };
+  const mailboxPath = path.join(tmp, "mailbox.jsonl");
+  return { tmp, mailboxPath };
 }
 
 function cleanup({ tmp }) {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 
-function makeHandler({ dbPath, sessionsFn }) {
+function makeHandler({ mailboxPath, sessionsFn }) {
   return makeWaitHandler({
     listSessions: sessionsFn,
-    mailboxOpener: () => openMailbox({ dbPath })
+    mailboxOpener: () => openMailbox({ mailboxPath })
   });
 }
 
-function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageId = null }) {
-  const mb = openMailbox({ dbPath });
+function insertReply({ mailboxPath, fromSessionId, toSessionId, body, replyToMessageId = null }) {
+  const mb = openMailbox({ mailboxPath });
   try {
     return mb.insertMessage({
       fromSessionId,
@@ -57,7 +57,7 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
 {
   const sb = makeSandbox();
   const handlers = makeHandler({
-    dbPath: sb.dbPath,
+    mailboxPath: sb.mailboxPath,
     sessionsFn: () => [LOADED_SESSION]
   });
 
@@ -67,7 +67,7 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
   const insertedIdPromise = new Promise((resolve) => {
     setTimeout(() => {
       const id = insertReply({
-        dbPath: sb.dbPath,
+        mailboxPath: sb.mailboxPath,
         fromSessionId: TARGET_SESSION_ID,
         toSessionId: "external",
         body: "thanks for the ping",
@@ -105,13 +105,13 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
 {
   const sb = makeSandbox();
   const handlers = makeHandler({
-    dbPath: sb.dbPath,
+    mailboxPath: sb.mailboxPath,
     sessionsFn: () => [LOADED_SESSION]
   });
 
   setTimeout(() => {
     insertReply({
-      dbPath: sb.dbPath,
+      mailboxPath: sb.mailboxPath,
       fromSessionId: TARGET_SESSION_ID,
       toSessionId: "external",
       body: "fresh inbound, not a reply",
@@ -149,7 +149,7 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
       return false;
     },
     livenessIntervalMs: 50,
-    mailboxOpener: () => openMailbox({ dbPath: sb.dbPath })
+    mailboxOpener: () => openMailbox({ mailboxPath: sb.mailboxPath })
   });
 
   const result = await handlers.wait_for_claude_session({
@@ -181,7 +181,7 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
       livenessCalls += 1;
       return true;
     },
-    mailboxOpener: () => openMailbox({ dbPath: sb.dbPath })
+    mailboxOpener: () => openMailbox({ mailboxPath: sb.mailboxPath })
   });
   const result = await handlers.wait_for_claude_session({ sessionId: TARGET_SESSION_ID, timeoutMs: 1500 });
   assert.equal(result.result, "timeout");
@@ -194,9 +194,9 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
 // the wait started does not resolve it.
 {
   const sb = makeSandbox();
-  insertReply({ dbPath: sb.dbPath, fromSessionId: TARGET_SESSION_ID, toSessionId: "external", body: "stale, from yesterday" });
+  insertReply({ mailboxPath: sb.mailboxPath, fromSessionId: TARGET_SESSION_ID, toSessionId: "external", body: "stale, from yesterday" });
   await new Promise((r) => setTimeout(r, 5));
-  const handlers = makeHandler({ dbPath: sb.dbPath, sessionsFn: () => [{ ...LOADED_SESSION, loaded: false }] });
+  const handlers = makeHandler({ mailboxPath: sb.mailboxPath, sessionsFn: () => [{ ...LOADED_SESSION, loaded: false }] });
   const result = await handlers.wait_for_claude_session({ sessionId: TARGET_SESSION_ID, timeoutMs: 300 });
   assert.equal(result.result, "timeout", `old message must not resolve a new wait (got ${result.result}: ${result.message?.body})`);
   cleanup(sb);
@@ -209,13 +209,13 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
     host: "claude",
     resolveCurrentSession: () => ({ sessionId: "local_waiter", cliSessionId: "uuid-waiter" }),
     listSessions: () => [{ ...LOADED_SESSION, loaded: false }],
-    mailboxOpener: () => openMailbox({ dbPath: sb.dbPath })
+    mailboxOpener: () => openMailbox({ mailboxPath: sb.mailboxPath })
   });
   setTimeout(() => {
-    insertReply({ dbPath: sb.dbPath, fromSessionId: TARGET_SESSION_ID, toSessionId: "local_bystander", body: "for someone else" });
+    insertReply({ mailboxPath: sb.mailboxPath, fromSessionId: TARGET_SESSION_ID, toSessionId: "local_bystander", body: "for someone else" });
   }, 30);
   setTimeout(() => {
-    insertReply({ dbPath: sb.dbPath, fromSessionId: TARGET_SESSION_ID, toSessionId: "uuid-waiter", body: "for the waiter" });
+    insertReply({ mailboxPath: sb.mailboxPath, fromSessionId: TARGET_SESSION_ID, toSessionId: "uuid-waiter", body: "for the waiter" });
   }, 400);
   const result = await handlers.wait_for_claude_session({ sessionId: TARGET_SESSION_ID, timeoutMs: 2000 });
   assert.equal(result.result, "reply");
@@ -227,9 +227,9 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
 // sessionId (and vice versa).
 {
   const sb = makeSandbox();
-  const handlers = makeHandler({ dbPath: sb.dbPath, sessionsFn: () => [{ ...LOADED_SESSION, loaded: false }] });
+  const handlers = makeHandler({ mailboxPath: sb.mailboxPath, sessionsFn: () => [{ ...LOADED_SESSION, loaded: false }] });
   setTimeout(() => {
-    insertReply({ dbPath: sb.dbPath, fromSessionId: TARGET_SESSION_ID, toSessionId: "external", body: "sent under the sidecar id" });
+    insertReply({ mailboxPath: sb.mailboxPath, fromSessionId: TARGET_SESSION_ID, toSessionId: "external", body: "sent under the sidecar id" });
   }, 30);
   const result = await handlers.wait_for_claude_session({ sessionId: "uuid-aaa", timeoutMs: 2000 });
   assert.equal(result.result, "reply", `cliSessionId input must match (got ${result.result})`);
@@ -253,7 +253,7 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
       projectsRoot: path.join(sb.tmp, "no-projects"),
       psOutput: ""
     },
-    mailboxOpener: () => openMailbox({ dbPath: sb.dbPath })
+    mailboxOpener: () => openMailbox({ mailboxPath: sb.mailboxPath })
   });
   const result = await handlers.wait_for_claude_session({ sessionId: "local_arch", timeoutMs: 50 });
   assert.equal(result.error, undefined, "archived session must not be not_found");
@@ -269,7 +269,7 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
 {
   const sb = makeSandbox();
   const handlers = makeHandler({
-    dbPath: sb.dbPath,
+    mailboxPath: sb.mailboxPath,
     sessionsFn: () => [{ ...LOADED_SESSION, loaded: false }]
   });
 
@@ -293,7 +293,7 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
 {
   const sb = makeSandbox();
   const handlers = makeHandler({
-    dbPath: sb.dbPath,
+    mailboxPath: sb.mailboxPath,
     sessionsFn: () => [{ ...LOADED_SESSION, sessionId: "local_other" }]
   });
 
@@ -318,16 +318,16 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
   const sb = makeSandbox();
   const { makeReadInboxHandler } = await import("../../src/tools/read-inbox.js");
   const B = { sessionId: "local_bbbbbbbb-0000-4000-8000-00000000000b", cliSessionId: "bbbbbbbb-1111-4000-8000-00000000000b" };
-  const open = () => openMailbox({ dbPath: sb.dbPath });
+  const open = () => openMailbox({ mailboxPath: sb.mailboxPath });
   const handlers = makeWaitHandler({
     host: "claude",
     resolveCurrentSession: () => B,
     listSessions: () => [{ ...LOADED_SESSION, loaded: false }],
     mailboxOpener: open
   });
-  const question = insertReply({ dbPath: sb.dbPath, fromSessionId: B.sessionId, toSessionId: TARGET_SESSION_ID, body: "question" });
+  const question = insertReply({ mailboxPath: sb.mailboxPath, fromSessionId: B.sessionId, toSessionId: TARGET_SESSION_ID, body: "question" });
   setTimeout(() => {
-    insertReply({ dbPath: sb.dbPath, fromSessionId: TARGET_SESSION_ID, toSessionId: B.sessionId, body: "answer", replyToMessageId: question });
+    insertReply({ mailboxPath: sb.mailboxPath, fromSessionId: TARGET_SESSION_ID, toSessionId: B.sessionId, body: "answer", replyToMessageId: question });
   }, 50);
   const result = await handlers.wait_for_claude_session({ sessionId: TARGET_SESSION_ID, latestMessageId: question, timeoutMs: 2000 });
   assert.equal(envelopeBody(result.message.envelope), "answer");

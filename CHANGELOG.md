@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Breaking, legacy SQLite mailbox support removed.** The mailbox moved from SQLite to JSONL in 0.2.1; the leftover one-time import (which ran the `sqlite3` CLI when the JSONL mailbox was missing or empty and a `mailbox.sqlite` existed) is gone, along with the `.sqlite` to `.jsonl` path mapping. `AGENT_LINK_MAILBOX_DB`, deprecated since 0.2.1, is no longer read: set `AGENT_LINK_MAILBOX_PATH` to the `.jsonl` file instead. The `dbPath` option of `openMailbox`/`resolveMailboxPath` now throws a `TypeError`; pass `mailboxPath`. `agent_link_health` no longer lists `~/.claude/agent-link/mailbox.sqlite` (kind `mailboxDb`) under `legacyState.files`. Agent Link no longer spawns `sqlite3`.
 - Internal refactor, no behavior change: `src/server.js` is split (design doc section 5.1, PR B5). The Codex handlers moved into factories in `src/codex/thread-queries.js`, `loaded-threads.js`, `thread-messaging.js`, `thread-actions.js`, `thread-summary.js`, and `desktop-routing.js`; health into `src/server/health.js`; shutdown, the channel bridge, the orphan reaper, and the signal handlers into `src/server/lifecycle.js`; bootstrap into `src/server/index.js`; spawn helpers into `src/shared/process.js`. `src/server.js` is now the 12-line entry point and still imports `process-guard` first. The `tools/list` snapshots are unchanged, and a new golden replay (60 Codex tool calls against a fake app-server, recorded from 0.5.0) passes unchanged on the split server.
 
 ## 0.5.0 - 2026-10-06 Peer envelope, shared state directory, uniform tool contract

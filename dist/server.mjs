@@ -10534,7 +10534,6 @@ var ENV_ALIASES = Object.freeze({
   AGENT_LINK_RECEIPT_LOG: ["CODEX_AGENT_LINK_RECEIPT_LOG", "CLAUDE_AGENT_LINK_RECEIPT_LOG"],
   AGENT_LINK_INFER_RECEIPT_ORIGIN: ["CODEX_AGENT_LINK_INFER_RECEIPT_ORIGIN"],
   AGENT_LINK_MAILBOX_PATH: [],
-  AGENT_LINK_MAILBOX_DB: [],
   AGENT_LINK_DISABLE_CHANNEL: [],
   AGENT_LINK_INSPECT_ALL: [],
   AGENT_LINK_DEBUG: [],
@@ -10704,7 +10703,6 @@ function toErrorPayload(error2) {
 var AGENT_LINK_PATH_SETTINGS = /* @__PURE__ */ new Set([
   "AGENT_LINK_STATE_DIR",
   "AGENT_LINK_MAILBOX_PATH",
-  "AGENT_LINK_MAILBOX_DB",
   "AGENT_LINK_RECEIPT_LOG",
   "AGENT_LINK_MANAGED_DIR",
   "AGENT_LINK_LOG_FILE"
@@ -10768,15 +10766,7 @@ function codexHome(options = {}) {
 function mailboxPath(options = {}) {
   const explicit = configuredPath("AGENT_LINK_MAILBOX_PATH", options);
   if (explicit) return explicit;
-  const legacyDb = configuredPath("AGENT_LINK_MAILBOX_DB", options);
-  if (legacyDb) return sqliteToJsonl(legacyDb);
   return path2.join(stateDir(options), "mailbox.jsonl");
-}
-function mailboxDbPath(options = {}) {
-  return configuredPath("AGENT_LINK_MAILBOX_DB", options);
-}
-function sqliteToJsonl(file) {
-  return file.endsWith(".sqlite") ? `${file.slice(0, -".sqlite".length)}.jsonl` : file;
 }
 function receiptLogPath(options = {}) {
   return configuredPath("AGENT_LINK_RECEIPT_LOG", options) ?? path2.join(stateDir(options), "receipts.jsonl");
@@ -10798,7 +10788,6 @@ function legacyPaths(options = {}) {
   const legacyClaudeDir = path2.join(home, ".claude", "agent-link");
   return {
     mailbox: path2.join(legacyClaudeDir, "mailbox.jsonl"),
-    mailboxDb: path2.join(legacyClaudeDir, "mailbox.sqlite"),
     receipts: path2.join(codexHome(options), "agent-link-receipts.jsonl"),
     managedAppServers: path2.join(legacyClaudeDir, "managed-app-servers")
   };
@@ -10807,7 +10796,7 @@ function legacyClaudeStateDir(options = {}) {
   return path2.join(claudeConfigDir(options), "agent-link");
 }
 function legacyMailboxPaths(options = {}) {
-  if (isConfigured("AGENT_LINK_MAILBOX_PATH", options) || isConfigured("AGENT_LINK_MAILBOX_DB", options)) return [];
+  if (isConfigured("AGENT_LINK_MAILBOX_PATH", options)) return [];
   return without(unique([
     legacyPaths(options).mailbox,
     path2.join(legacyClaudeStateDir(options), "mailbox.jsonl")
@@ -20554,7 +20543,6 @@ function walk(dir, visit, stop = () => false) {
 // src/claude/mailbox.js
 import path7 from "node:path";
 import fs5 from "node:fs";
-import { spawnSync as spawnSync2 } from "node:child_process";
 import crypto from "node:crypto";
 var MAX_MESSAGE_BODY_BYTES = 64 * 1024;
 var MAX_EVENT_LINE_BYTES = 512 * 1024;
@@ -20570,20 +20558,17 @@ function messageBodyTooLarge(body) {
     maxBodyBytes: MAX_MESSAGE_BODY_BYTES
   };
 }
-function resolveMailboxPath({ mailboxPath: mailboxPath2, dbPath } = {}) {
-  if (mailboxPath2) return mailboxPath2;
-  if (dbPath) return sqliteToJsonl(dbPath);
+function resolveMailboxPath(location = {}) {
+  if (Object.hasOwn(location, "dbPath")) {
+    throw new TypeError("The mailbox dbPath option was removed in 0.6.0; pass mailboxPath (the .jsonl file) instead.");
+  }
+  if (location.mailboxPath) return location.mailboxPath;
   return mailboxPath();
 }
 function mailboxReadPaths(options = {}) {
   const writePath = resolveMailboxPath(options);
-  if (options.mailboxPath || options.dbPath) return [writePath];
+  if (options.mailboxPath) return [writePath];
   return [...legacyMailboxPaths(), writePath];
-}
-function resolveLegacyDbPath({ mailboxPath: mailboxPath2, dbPath } = {}) {
-  if (dbPath) return dbPath;
-  if (mailboxPath2) return null;
-  return mailboxDbPath();
 }
 function isDefaultMailbox(mailboxPath2) {
   return path7.resolve(mailboxPath2) === path7.resolve(stateDir(), "mailbox.jsonl");
@@ -20640,11 +20625,6 @@ function openMailbox(options = {}) {
   const mailboxPath2 = resolveMailboxPath(options);
   const readPaths = mailboxReadPaths(options);
   ensurePrivateMailbox(mailboxPath2);
-  importLegacySqliteIfNeeded({
-    mailboxPath: mailboxPath2,
-    readPaths,
-    legacyDbPath: resolveLegacyDbPath(options) ?? (isDefaultMailbox(mailboxPath2) ? legacyPaths().mailboxDb : null)
-  });
   const view = () => mergedView(readPaths);
   function appendEvent(event) {
     const line = JSON.stringify(event) + "\n";
@@ -20830,34 +20810,6 @@ function normalizeMessage(message, eventAt) {
     reply_to_message_id: message.reply_to_message_id ?? null
   };
 }
-function importLegacySqliteIfNeeded({ mailboxPath: mailboxPath2, readPaths = [mailboxPath2], legacyDbPath }) {
-  if (readPaths.some((file) => fs5.existsSync(file) && fs5.statSync(file).size > 0)) return;
-  if (!legacyDbPath || !legacyDbPath.endsWith(".sqlite") || !fs5.existsSync(legacyDbPath)) return;
-  const result = spawnSync2("sqlite3", [
-    "-json",
-    legacyDbPath,
-    "SELECT id, from_session_id, from_session_kind, to_session_id, to_session_kind, body, metadata_json, sent_at, delivered_at, acknowledged_at, reply_to_message_id FROM messages ORDER BY sent_at"
-  ], { encoding: "utf8" });
-  if (result.status !== 0 || !result.stdout.trim()) return;
-  let rows;
-  try {
-    rows = JSON.parse(result.stdout);
-  } catch {
-    return;
-  }
-  if (!Array.isArray(rows) || rows.length === 0) return;
-  const events = [];
-  for (const row of rows) {
-    events.push({
-      type: "message",
-      at: normalizeTimestamp(row.sent_at),
-      message: normalizeMessage(row)
-    });
-    if (row.delivered_at) events.push({ type: "delivered", at: Number(row.delivered_at), messageId: row.id });
-    if (row.acknowledged_at) events.push({ type: "acknowledged", at: Number(row.acknowledged_at), messageId: row.id });
-  }
-  fs5.appendFileSync(mailboxPath2, events.map((event) => JSON.stringify(event)).join("\n") + "\n", { encoding: "utf8", mode: FILE_MODE2 });
-}
 function ulid2() {
   const ENC = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
   const time3 = Date.now();
@@ -20874,7 +20826,7 @@ function ulid2() {
 }
 
 // src/codex/app-server-client.js
-import { spawn, spawnSync as spawnSync4 } from "node:child_process";
+import { spawn, spawnSync as spawnSync3 } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import http from "node:http";
 import net from "node:net";
@@ -20894,7 +20846,7 @@ var import_websocket_server = __toESM(require_websocket_server(), 1);
 var wrapper_default = import_websocket.default;
 
 // src/codex/install-layout.js
-import { spawnSync as spawnSync3 } from "node:child_process";
+import { spawnSync as spawnSync2 } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import os2 from "node:os";
 import path8 from "node:path";
@@ -21014,7 +20966,7 @@ function codexBinaryVersion(binaryPath, { timeoutMs: timeoutMs2 = 3e3, cachedOnl
   if (cachedOnly) {
     return void 0;
   }
-  const result = spawnSync3(binaryPath, ["--version"], { encoding: "utf8", timeout: timeoutMs2 });
+  const result = spawnSync2(binaryPath, ["--version"], { encoding: "utf8", timeout: timeoutMs2 });
   const version2 = result.status === 0 && !result.error ? (result.stdout || "").trim().split("\n")[0] || null : null;
   versionCache.set(key, version2);
   return version2;
@@ -21972,7 +21924,7 @@ function pidIsAlive(pid) {
   }
 }
 function processCommand(pid) {
-  const result = spawnSync4("ps", ["-p", String(pid), "-o", "command="], {
+  const result = spawnSync3("ps", ["-p", String(pid), "-o", "command="], {
     encoding: "utf8",
     timeout: 1e3
   });
@@ -23282,7 +23234,6 @@ function legacyStateReport(options = {}) {
       /** @type {[LegacyFile["kind"], string]} */
       ["mailbox", p]
     )),
-    ["mailboxDb", legacyPaths(options).mailboxDb],
     ...legacyReceiptPaths(options).map((p) => (
       /** @type {[LegacyFile["kind"], string]} */
       ["receipts", p]

@@ -23,8 +23,7 @@
 //
 // Optional env:
 //   AGENT_LINK_MAILBOX_PATH  override mailbox JSONL path (defaults to
-//                            ~/.claude/agent-link/mailbox.jsonl)
-//   AGENT_LINK_MAILBOX_DB    deprecated legacy SQLite import/source hint
+//                            ~/.agent-link/mailbox.jsonl)
 
 import "./live-guard.js";
 import path from "node:path";

@@ -9,13 +9,16 @@ import { envelopeBodies, envelopeBody } from "../helpers/envelope-body.js";
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "agent-link-mailbox-"));
 const mailboxPath = path.join(tmp, "mailbox.jsonl");
 
-// Path resolution prefers the new JSONL path and maps legacy .sqlite paths.
+// Path resolution uses the explicit JSONL path. The legacy dbPath option was
+// removed in 0.6.0 and now throws instead of silently using the default.
 {
   assert.equal(resolveMailboxPath({ mailboxPath }), mailboxPath);
-  assert.equal(
-    resolveMailboxPath({ dbPath: path.join(tmp, "legacy.sqlite") }),
-    path.join(tmp, "legacy.jsonl")
+  assert.throws(
+    () => resolveMailboxPath({ dbPath: path.join(tmp, "legacy.sqlite") }),
+    (error) => error instanceof TypeError && /dbPath option was removed in 0\.6\.0; pass mailboxPath/.test(error.message)
   );
+  assert.throws(() => openMailbox({ dbPath: path.join(tmp, "legacy.sqlite") }), TypeError);
+  assert.equal(fs.existsSync(path.join(tmp, "legacy.jsonl")), false, "a removed dbPath creates no mailbox file");
 }
 
 // Insert + reopen + drain roundtrip uses append-only JSONL events.
@@ -143,20 +146,14 @@ const mailboxPath = path.join(tmp, "mailbox.jsonl");
 // P4-12: explicit options win over environment variables.
 {
   const envPath = path.join(tmp, "from-env.jsonl");
-  const explicitDb = path.join(tmp, "explicit.sqlite");
   const prevPath = process.env.AGENT_LINK_MAILBOX_PATH;
-  const prevDb = process.env.AGENT_LINK_MAILBOX_DB;
   process.env.AGENT_LINK_MAILBOX_PATH = envPath;
-  process.env.AGENT_LINK_MAILBOX_DB = path.join(tmp, "env-legacy.sqlite");
   try {
-    assert.equal(resolveMailboxPath({ dbPath: explicitDb }), path.join(tmp, "explicit.jsonl"), "explicit dbPath beats AGENT_LINK_MAILBOX_PATH");
-    assert.equal(resolveMailboxPath({ mailboxPath }), mailboxPath);
+    assert.equal(resolveMailboxPath({ mailboxPath }), mailboxPath, "explicit mailboxPath beats AGENT_LINK_MAILBOX_PATH");
     assert.equal(resolveMailboxPath(), envPath, "env applies when nothing explicit is given");
   } finally {
     if (prevPath === undefined) delete process.env.AGENT_LINK_MAILBOX_PATH;
     else process.env.AGENT_LINK_MAILBOX_PATH = prevPath;
-    if (prevDb === undefined) delete process.env.AGENT_LINK_MAILBOX_DB;
-    else process.env.AGENT_LINK_MAILBOX_DB = prevDb;
   }
 }
 

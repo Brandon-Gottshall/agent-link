@@ -25,7 +25,6 @@ import { AgentLinkError } from "./errors.js";
 /**
  * @typedef {object} LegacyPaths
  * @property {string} mailbox
- * @property {string} mailboxDb
  * @property {string} receipts
  * @property {string} managedAppServers
  */
@@ -38,7 +37,6 @@ import { AgentLinkError } from "./errors.js";
 const AGENT_LINK_PATH_SETTINGS = new Set([
   "AGENT_LINK_STATE_DIR",
   "AGENT_LINK_MAILBOX_PATH",
-  "AGENT_LINK_MAILBOX_DB",
   "AGENT_LINK_RECEIPT_LOG",
   "AGENT_LINK_MANAGED_DIR",
   "AGENT_LINK_LOG_FILE"
@@ -152,35 +150,15 @@ export function codexHome(options = {}) {
 }
 
 /**
- * The mailbox file new events are appended to. AGENT_LINK_MAILBOX_PATH wins;
- * the deprecated AGENT_LINK_MAILBOX_DB names a `.sqlite` file whose `.jsonl`
- * sibling is the mailbox.
+ * The mailbox file new events are appended to: AGENT_LINK_MAILBOX_PATH, else
+ * mailbox.jsonl in the state directory.
  * @param {PathOptions} [options]
  * @returns {string}
  */
 export function mailboxPath(options = {}) {
   const explicit = configuredPath("AGENT_LINK_MAILBOX_PATH", options);
   if (explicit) return explicit;
-  const legacyDb = configuredPath("AGENT_LINK_MAILBOX_DB", options);
-  if (legacyDb) return sqliteToJsonl(legacyDb);
   return path.join(stateDir(options), "mailbox.jsonl");
-}
-
-/**
- * The deprecated AGENT_LINK_MAILBOX_DB value (a 0.3.x SQLite mailbox), or null.
- * @param {PathOptions} [options]
- * @returns {string | null}
- */
-export function mailboxDbPath(options = {}) {
-  return configuredPath("AGENT_LINK_MAILBOX_DB", options);
-}
-
-/**
- * @param {string} file
- * @returns {string}
- */
-export function sqliteToJsonl(file) {
-  return file.endsWith(".sqlite") ? `${file.slice(0, -".sqlite".length)}.jsonl` : file;
 }
 
 /**
@@ -243,7 +221,6 @@ export function legacyPaths(options = {}) {
   const legacyClaudeDir = path.join(home, ".claude", "agent-link");
   return {
     mailbox: path.join(legacyClaudeDir, "mailbox.jsonl"),
-    mailboxDb: path.join(legacyClaudeDir, "mailbox.sqlite"),
     receipts: path.join(codexHome(options), "agent-link-receipts.jsonl"),
     managedAppServers: path.join(legacyClaudeDir, "managed-app-servers")
   };
@@ -263,13 +240,13 @@ export function legacyClaudeStateDir(options = {}) {
 /**
  * Legacy mailbox files merged into reads (R4.5): the 0.4.x default under
  * ~/.claude, plus <CLAUDE_CONFIG_DIR>/agent-link when that differs. Empty when
- * AGENT_LINK_MAILBOX_PATH or AGENT_LINK_MAILBOX_DB names the mailbox: an
- * explicit choice is never mixed with other files.
+ * AGENT_LINK_MAILBOX_PATH names the mailbox: an explicit choice is never mixed
+ * with other files.
  * @param {PathOptions} [options]
  * @returns {string[]}
  */
 export function legacyMailboxPaths(options = {}) {
-  if (isConfigured("AGENT_LINK_MAILBOX_PATH", options) || isConfigured("AGENT_LINK_MAILBOX_DB", options)) return [];
+  if (isConfigured("AGENT_LINK_MAILBOX_PATH", options)) return [];
   return without(unique([
     legacyPaths(options).mailbox,
     path.join(legacyClaudeStateDir(options), "mailbox.jsonl")
