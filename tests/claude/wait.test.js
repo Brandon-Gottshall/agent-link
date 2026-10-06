@@ -85,6 +85,11 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
 
   const insertedId = await insertedIdPromise;
   assert.equal(result.error, undefined, "no error on reply path");
+  // Section 3.4 shape; result/message/sessionId stay as deprecated duplicates.
+  assert.equal(result.outcome, "reply");
+  assert.ok(Number.isInteger(result.waitedMs));
+  assert.deepEqual(result.target, { sessionId: TARGET_SESSION_ID });
+  assert.deepEqual(result.reply, result.message);
   assert.equal(result.result, "reply");
   assert.equal(result.sessionId, TARGET_SESSION_ID);
   assert.ok(result.message, "message field populated");
@@ -293,15 +298,15 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
   });
 
   const started = Date.now();
-  const result = await handlers.wait_for_claude_session({
+  await assert.rejects(handlers.wait_for_claude_session({
     sessionId: TARGET_SESSION_ID,
     timeoutMs: 5000
+  }), (error) => {
+    assert.equal(error.errorCode, "not_found");
+    assert.equal(error.details.query, TARGET_SESSION_ID);
+    return true;
   });
   const elapsed = Date.now() - started;
-
-  assert.equal(result.error, "not_found");
-  assert.equal(result.sessionId, TARGET_SESSION_ID);
-  assert.equal(result.result, undefined);
   assert.ok(elapsed < 100, `expected immediate return for not_found, got ${elapsed}ms`);
   cleanup(sb);
 }
@@ -340,7 +345,8 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
   const { claudeWaitTool } = await import("../../src/tools/claude-wait.js");
   assert.match(claudeWaitTool.description, /addressed to the caller/);
   assert.match(claudeWaitTool.description, /after the wait started/);
-  assert.match(claudeWaitTool.inputSchema.properties.latestMessageId.description, /^Recommended/);
+  assert.match(claudeWaitTool.inputSchema.properties.replyToMessageId.description, /^Recommended/);
+  assert.deepEqual(claudeWaitTool.aliases, [{ canonical: "replyToMessageId", aliases: ["latestMessageId"] }]);
 }
 
 console.log("claude-wait tests passed");

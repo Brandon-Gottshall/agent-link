@@ -151,13 +151,11 @@ const SESSION_ME = { sessionId: "local_me", cliSessionId: "fake-cli-id", title: 
   cleanup(sb);
 }
 
-// Test 6: no current session resolvable -> returns {error: "no_current_session"}.
+// Test 6: no current session resolvable -> no_current_session error.
 {
   const sb = makeSandbox();
   const handler = makeHandler({ dbPath: sb.dbPath, session: null });
-  const r = await handler.read_agent_link_inbox({});
-  assert.equal(r.error, "no_current_session");
-  assert.deepEqual(r.messages, []);
+  await assert.rejects(handler.read_agent_link_inbox({}), { errorCode: "no_current_session" });
   cleanup(sb);
 }
 
@@ -173,6 +171,7 @@ const SESSION_ME = { sessionId: "local_me", cliSessionId: "fake-cli-id", title: 
   const handler = makeHandler({ dbPath: sb.dbPath, session: SESSION_ME });
   const r1 = await handler.read_agent_link_inbox({ limit: 1 });
   assert.deepEqual(envelopeBodies(r1.renderedBlock), ["msg-0"]);
+  assert.equal(r1.remainingCount, 2, "the result says how many are still pending");
   const r2 = await handler.read_agent_link_inbox({});
   assert.deepEqual(envelopeBodies(r2.renderedBlock), ["msg-1", "msg-2"], "messages beyond the limit must not be lost");
   cleanup(sb);

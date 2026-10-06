@@ -201,7 +201,7 @@ try {
   // the whole tool result (receipt included) holds nothing raw.
   for (const body of INJECTION_CORPUS) {
     replyText = body;
-    r = await call("message_codex_thread", { threadId: TARGET, message: "hi", waitForReply: true, timeoutMs: 2000, pollIntervalMs: 50 });
+    r = await call("message_codex_thread", { threadId: TARGET, message: "hi", waitForReply: true, timeoutMs: 2000, pollIntervalMs: 250 });
     assert.ok(!r.isError, JSON.stringify(r.payload));
     const label = `reply ${JSON.stringify(body).slice(0, 40)}`;
     assertNoRawInjection(r.payload, label);
@@ -217,16 +217,16 @@ try {
     assert.match(confirmation.recentItemsEnvelope, /\[commandExecution i9\] \$ /);
   }
   replyText = "plain answer";
-  r = await call("message_codex_thread", { threadId: TARGET, message: "hi", waitForReply: true, timeoutMs: 2000, pollIntervalMs: 50 });
+  r = await call("message_codex_thread", { threadId: TARGET, message: "hi", waitForReply: true, timeoutMs: 2000, pollIntervalMs: 250 });
   assert.equal(envelopeBody(r.payload.replyConfirmation.finalResponse), "plain answer");
 
   // The wrappers return the same enveloped confirmation.
   replyText = INJECTION_CORPUS[0];
-  r = await call("message_project_orchestrator", { orchestratorThreadId: TARGET, message: "status?", waitForReply: true, timeoutMs: 2000, pollIntervalMs: 50 });
+  r = await call("message_project_orchestrator", { orchestratorThreadId: TARGET, message: "status?", waitForReply: true, timeoutMs: 2000, pollIntervalMs: 250 });
   assert.ok(!r.isError, JSON.stringify(r.payload));
   assertNoRawInjection(r.payload, "message_project_orchestrator reply");
   assert.equal(r.payload.messageResult.replyConfirmation.enveloped, true);
-  r = await call("register_dependency_handoff", { targetThreadId: TARGET, dependencyName: "schema v2", readinessContract: "merged", waitForReply: true, timeoutMs: 2000, pollIntervalMs: 50 });
+  r = await call("register_dependency_handoff", { targetThreadId: TARGET, dependencyName: "schema v2", readinessContract: "merged", waitForReply: true, timeoutMs: 2000, pollIntervalMs: 250 });
   assert.ok(!r.isError, JSON.stringify(r.payload));
   assertNoRawInjection(r.payload, "register_dependency_handoff reply");
   replyText = "plain answer";
@@ -244,12 +244,13 @@ try {
     mark = received.length;
     r = await call(tool, args);
     assert.equal(r.isError, true, tool);
-    assert.match(r.payload.error, pattern, tool);
-    assert.match(r.payload.error, /limit|template/);
+    assert.equal(r.payload.error.code, "body_too_large", tool);
+    assert.match(r.payload.error.message, pattern, tool);
+    assert.match(r.payload.error.message, /limit|template/);
     assert.equal(received.length, mark, `${tool}: no app-server request for an oversized body`);
     if (tool !== "message_project_orchestrator") {
-      assert.ok(r.payload.details.suppliedBytes > 0 && r.payload.details.templateBytes > 0, tool);
-      assert.ok(r.payload.details.actualBytes > MAX_PEER_BODY_BYTES, tool);
+      assert.ok(r.payload.error.details.suppliedBytes > 0 && r.payload.error.details.templateBytes > 0, tool);
+      assert.ok(r.payload.error.details.actualBytes > MAX_PEER_BODY_BYTES, tool);
     }
   }
 
@@ -257,8 +258,10 @@ try {
   mark = received.length;
   r = await call("message_codex_thread", { threadId: TARGET, message: "a".repeat(MAX_PEER_BODY_BYTES + 1) });
   assert.equal(r.isError, true);
-  assert.match(r.payload.error, /limited to 65536 bytes/);
-  assert.deepEqual(r.payload.details, { limitBytes: MAX_PEER_BODY_BYTES, actualBytes: MAX_PEER_BODY_BYTES + 1 });
+  // body_too_large reaches the client with its code and details (B4).
+  assert.equal(r.payload.error.code, "body_too_large");
+  assert.match(r.payload.error.message, /limited to 65536 bytes/);
+  assert.deepEqual(r.payload.error.details, { limitBytes: MAX_PEER_BODY_BYTES, actualBytes: MAX_PEER_BODY_BYTES + 1 });
   assert.equal(received.length, mark, "no app-server request for an oversized body");
   mark = received.length;
   r = await call("launch_codex_thread", { message: "a".repeat(MAX_PEER_BODY_BYTES + 1) });
@@ -268,8 +271,14 @@ try {
   // Sender identity comes from runtime context only. No caller context (and
   // no CODEX_THREAD_ID in the server env): external, unverified, no reply
   // address. Tool arguments never set the sender.
+  // Sender-like arguments are not part of the schema: rejected before
+  // anything is sent (R3.12).
   mark = received.length;
   r = await call("message_codex_thread", { threadId: TARGET, message: BODY, from: CALLER, callbackThreadId: CALLER }, null);
+  assert.equal(r.payload.error.code, "invalid_arguments");
+  assert.deepEqual(r.payload.error.details.errors.map((e) => e.path).sort(), ["callbackThreadId", "from"]);
+  assert.equal(received.length, mark, "nothing sent for invalid arguments");
+  r = await call("message_codex_thread", { threadId: TARGET, message: BODY }, null);
   text = lastTurn("turn/start", mark).input[0].text;
   assert.match(text, /from="external" fromHarness="external" fromVerified="false"/);
   assert.match(text, /<reply>The sender has no verified address, so this message cannot be answered directly.<\/reply>/);

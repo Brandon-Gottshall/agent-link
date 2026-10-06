@@ -101,7 +101,12 @@ async function connect(extraEnv) {
   }));
   const call = async (name, args) => {
     const result = await client.callTool({ name, arguments: args });
-    return { isError: result.isError, payload: JSON.parse(result.content[0].text) };
+    const payload = JSON.parse(result.content[0].text);
+    // R3.2: the same envelope in text and structuredContent (no key dropped
+    // by the closed outputSchema), and isError exactly when ok is false.
+    assert.deepEqual(result.structuredContent, payload, `${name}: structuredContent matches the text copy`);
+    assert.equal(result.isError, payload.ok === false, `${name}: isError iff !ok`);
+    return { isError: result.isError, payload };
   };
   return { client, call };
 }
@@ -115,13 +120,14 @@ try {
     received.length = 0;
     let result = await call("message_codex_thread", { threadId, message: "hi", cwd: "/tmp/elsewhere" });
     assert.equal(result.isError, true);
-    assert.equal(result.payload.details.code, "target-override-rejected");
-    assert.deepEqual(result.payload.details.conflicts, [{ field: "cwd", requested: "/tmp/elsewhere", threadValue: baseThread.cwd }]);
+    assert.equal(result.payload.error.code, "permission_denied");
+    assert.equal(result.payload.error.details.reason, "target-override-rejected");
+    assert.deepEqual(result.payload.error.details.conflicts, [{ field: "cwd", requested: "/tmp/elsewhere", threadValue: baseThread.cwd }]);
     assert.ok(!received.some((msg) => ["turn/start", "thread/resume", "turn/steer"].includes(msg.method)), "nothing was started");
 
     result = await call("message_codex_thread", { threadId, message: "hi", model: "other-model" });
     assert.equal(result.isError, true, "a model different from the reported one is refused");
-    assert.deepEqual(result.payload.details.conflicts, [{ field: "model", requested: "other-model", threadValue: "gpt-known" }]);
+    assert.deepEqual(result.payload.error.details.conflicts, [{ field: "model", requested: "other-model", threadValue: "gpt-known" }]);
 
     // Same values pass, cwd compared by real path; an effort the thread does
     // not report (null) is not forwarded and is flagged, not refused.
@@ -157,6 +163,14 @@ try {
     assert.equal(envelopeBody(result.payload.replyConfirmation.finalResponse), "second answer");
     assert.match(result.payload.replyConfirmation.recentItemsEnvelope, /\[agentMessage i5\] second answer/);
     assert.deepEqual(result.payload.replyConfirmation.recentItems.map((entry) => [entry.turnId, entry.id]), [["turn-2", "i4"], ["turn-2", "i5"]]);
+    // Section 3.4: the same wait as `wait`, plus the top-level message fields.
+    assert.equal(result.payload.wait.outcome, "turn_completed");
+    assert.equal(result.payload.wait.turn.status, "completed");
+    assert.equal(envelopeBody(result.payload.wait.turn.finalResponse), "second answer");
+    assert.deepEqual(result.payload.wait.recentItems, result.payload.replyConfirmation.recentItems);
+    assert.equal(result.payload.deliveredVia, "turn/start");
+    assert.equal(result.payload.messageId, result.payload.peerMessage.messageId);
+    assert.deepEqual(result.payload.target, { threadId });
 
     // W2B-06: get/wait slice items, not turns, under one key.
     result = await call("get_codex_thread", { threadId, includeTurns: true, recentItems: 3 });
@@ -166,6 +180,30 @@ try {
 
     result = await call("wait_for_codex_thread", { threadId, timeoutMs: 1000, pollIntervalMs: 250, recentItems: 1 });
     assert.deepEqual(result.payload.thread.recentItems.map((entry) => entry.id), ["i5"]);
+    assert.equal(result.payload.outcome, "turn_completed");
+    assert.deepEqual(result.payload.target, { threadId });
+    assert.equal(result.payload.turn.turnId, "turn-2");
+    assert.equal(result.payload.turn.finalResponse, "second answer");
+    assert.ok(Number.isInteger(result.payload.waitedMs));
+
+    // Out-of-range numbers are rejected, not clamped (R3.12).
+    result = await call("wait_for_codex_thread", { threadId, pollIntervalMs: 10 });
+    assert.equal(result.payload.error.code, "invalid_arguments");
+    assert.deepEqual(result.payload.error.details.errors, [{ path: "pollIntervalMs", rule: "range", expected: "integer 250..10000" }]);
+
+    // A missing app-server capability is `unsupported` (section 3.7).
+    result = await call("get_codex_sidebar_state", {});
+    assert.equal(result.payload.error.code, "unsupported");
+    assert.equal(result.payload.error.details.capability, "desktop/sidebar/state/read");
+
+    // Steering with no active turn to steer is active_turn_conflict.
+    result = await call("message_codex_thread", { threadId, message: "hi", mode: "steer_active" });
+    assert.equal(result.payload.error.code, "active_turn_conflict");
+
+    // An unknown thread is not_found with candidates.
+    result = await call("get_codex_thread", { threadId: "019d2000-0000-7000-8000-00000000ffff", useLocalFallback: true });
+    assert.equal(result.payload.error.code, "not_found");
+    assert.ok(Array.isArray(result.payload.error.details.candidates));
 
     // Local fallback path: same key, same item semantics.
     result = await call("get_codex_thread", { threadId: localOnlyId, includeTurns: true, recentItems: 2 });
@@ -178,6 +216,21 @@ try {
     assert.equal(result.isError, false);
     assert.equal(result.payload.source, "local-jsonl-fallback");
     assert.equal(result.payload.data[0].id, localOnlyId);
+    // searchTerm is a deprecated alias of query (R3.6).
+    assert.deepEqual(result.payload.warnings.map((warning) => [warning.code, warning.replacement]), [["deprecated_argument", "query"]]);
+    result = await call("list_codex_threads", { query: "Fallback Search Target", archiveScope: "all" });
+    assert.equal(result.payload.data[0].id, localOnlyId);
+    assert.equal(result.payload.warnings, undefined, "no warnings without an alias");
+    result = await call("list_codex_threads", { query: "a", searchTerm: "b" });
+    assert.equal(result.payload.error.code, "invalid_arguments");
+    assert.equal(result.payload.error.details.errors[0].rule, "alias_conflict");
+
+    // resolve: the verdict is a status, not an error (R3.4).
+    result = await call("resolve_codex_thread", { query: "zzzz-no-such-thread-zzzz" });
+    assert.equal(result.isError, false);
+    assert.equal(result.payload.status, "not_found");
+    result = await call("resolve_codex_thread", { query: "Fallback Search Target" });
+    assert.equal(result.payload.status, "resolved");
   } finally {
     await client.close();
   }
@@ -199,7 +252,8 @@ try {
       // Other Codex tools fail with the specific hint, not the generic one.
       const list = await bareCall("list_loaded_codex_threads", {});
       assert.equal(list.isError, true);
-      assert.match(list.payload.hint, /No Codex binary was found/);
+      assert.equal(list.payload.error.code, "codex_unavailable");
+      assert.match(list.payload.error.hint, /No Codex binary was found/);
     } finally {
       await bare.close();
     }

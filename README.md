@@ -202,6 +202,16 @@ These tools are listed only when Agent Link runs inside Claude Code or Claude De
 | `get_claude_session` | Read one session's metadata. |
 | `resolve_claude_session` | Find a session by alias, title, or partial ID. |
 
+### Results and errors
+
+Every tool returns one JSON object, in the text content and in `structuredContent`, and declares its `outputSchema`:
+
+- Success: `{"ok": true, ...}`, with `warnings` when there is something to note (for example `deprecated_argument` for an old argument name).
+- Failure: `{"ok": false, "error": {"code", "message", "details", "hint"}}`, with `isError: true`. Codes: `invalid_arguments`, `unknown_tool`, `not_found`, `ambiguous`, `archived`, `wrong_recipient`, `no_current_session`, `body_too_large`, `permission_denied`, `active_turn_conflict`, `codex_unavailable`, `claude_unavailable`, `upstream_error`, `unsupported`, `state_io_error`, `internal_error`.
+- A search that finds nothing is a verdict, not an error: resolve tools report `status`. Waits report `outcome` (`reply`, `turn_completed`, `idle`, `timeout`), and a timeout is `ok: true`.
+- Arguments are checked against the schema. Unknown properties and out-of-range numbers fail with `invalid_arguments`; `details.errors` names each field.
+- Renamed arguments keep working until 0.6.0 with a warning: `searchTerm` is now `query`, `body` is `message`, `latestMessageId` is `replyToMessageId`, `message_claude_session`'s `to` is `sessionId` (exact) or `query` (fuzzy), and `return_project_work_result`'s `status` is `resultStatus`.
+
 ## How it works
 
 ### Codex side
@@ -282,6 +292,7 @@ After upgrading, **restart every Claude and Codex session** so no old plugin cop
 | `AGENT_LINK_DISABLE_CHANNEL=1` | Don't push `<agent-link-message>` channel events in Claude Code. |
 | `AGENT_LINK_DEBUG=1` | Debug logging to stderr and to `<state>/logs/agent-link.log`. |
 | `AGENT_LINK_LOG_LEVEL` | `error`, `warn` (default), `info`, or `debug`. Overrides `AGENT_LINK_DEBUG`. |
+| `AGENT_LINK_INSPECT_ALL=1` | Lets `agent_link_mailbox_inspect` use `scope: "all"` (every session's mail). Off by default. |
 | `AGENT_LINK_LOG_FILE` | Log file path. Setting it also turns the file on at the current level. |
 
 Agent Link also reads, but never renames, variables its hosts set: `HOME`, `CODEX_HOME`, `CODEX_THREAD_ID`, `CODEX_TURN_ID`, `CLAUDE_SESSION_ID`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_PROJECT_DIR`, `CLAUDE_PLUGIN_ROOT`, and `CLAUDE_CONFIG_DIR`.
@@ -301,10 +312,10 @@ What each tool does to real state, and what its results do and don't prove.
 
 - `message_codex_thread` starts or steers a real turn. Read the target first and check its preview, working directory, and status.
 - A `resumed+started_turn` result means the app-server accepted the message. It doesn't prove the thread is visible, loaded, selected, or unarchived in the GUI.
-- Results separate these facts into `delivery`, `runtimeState`, `archiveState`, `desktopVisibility`, `warnings`, and `replyConfirmation`.
-- `waitForReply: true` adds a `replyConfirmation` once the target answers.
+- Results separate these facts into `delivery`, `runtimeState`, `archiveState`, `desktopVisibility`, `warnings`, and `wait`.
+- `waitForReply: true` adds `wait` (`outcome`, `waitedMs`, `target`, and `turn` with the final response) once the target answers. The 0.4 `replyConfirmation` key is kept beside it until 0.6.0.
 - If a turn has finished but the thread still reports `active`, the wait completes with a `stale-top-level-active-status` warning.
-- Ephemeral threads may reject reply confirmation. The message still counts as delivered, and `replyConfirmation` carries the error. For tests that need the final response, use a non-ephemeral thread with `openInGui: false`.
+- Ephemeral threads may reject reply confirmation. The message still counts as delivered, and `wait.outcome` is `unavailable` with the error. For tests that need the final response, use a non-ephemeral thread with `openInGui: false`.
 
 ### Finding threads
 

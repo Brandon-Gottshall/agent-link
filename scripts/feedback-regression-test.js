@@ -531,7 +531,8 @@ try {
     });
     assert.equal(missing.isError, true);
     const missingPayload = JSON.parse(missing.content[0].text);
-    assert.equal(missingPayload.details.didYouMean[0].id, "4ae84b56-ed41-76eb-a4a4-e4681764e75a");
+    assert.equal(missingPayload.error.code, "not_found");
+    assert.equal(missingPayload.error.details.candidates[0].id, "4ae84b56-ed41-76eb-a4a4-e4681764e75a");
 
     const missingAnteChamber = await client.callTool({
       name: "get_codex_thread",
@@ -541,7 +542,7 @@ try {
     });
     assert.equal(missingAnteChamber.isError, true);
     const missingAnteChamberPayload = JSON.parse(missingAnteChamber.content[0].text);
-    assert.equal(missingAnteChamberPayload.details.didYouMean[0].id, "4ae8454f-22c7-7c34-a0f7-6791625b4161");
+    assert.equal(missingAnteChamberPayload.error.details.candidates[0].id, "4ae8454f-22c7-7c34-a0f7-6791625b4161");
 
     const receiptList = await client.callTool({
       name: "list_agent_link_receipts",

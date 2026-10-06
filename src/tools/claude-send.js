@@ -1,5 +1,5 @@
 // src/tools/claude-send.js
-import { openMailbox, messageBodyTooLarge } from "../claude/mailbox.js";
+import { openMailbox } from "../claude/mailbox.js";
 import { listClaudeSessions } from "../claude/session-index.js";
 import { resolveSession } from "../claude/session-resolver.js";
 import {
@@ -9,75 +9,95 @@ import {
   resolveCallerIdentity
 } from "../claude/identity.js";
 import { registerActiveWait } from "../claude/active-waits.js";
-import { peerMessageFromMailbox, peerMessageResult } from "../shared/envelope.js";
+import { assertPeerBodyWithinLimit, peerMessageFromMailbox, peerMessageResult } from "../shared/envelope.js";
 import { buildReceipt, normalizeReceiptInput, safeAppendReceipt } from "../shared/receipt-index.js";
+import { AgentLinkError } from "../shared/errors.js";
+import { applyAliases, deprecationWarning } from "../server/registry.js";
+import { LIMITS, bool, commonOut, enumOf, out, receiptInput, str, timeoutMs as timeoutMsSchema } from "../server/schemas.js";
 
-const DEFAULT_WAIT_TIMEOUT_MS = 60_000;
+const DEFAULT_WAIT_TIMEOUT_MS = LIMITS.timeoutMs.def;
 const DEFAULT_POLL_INTERVAL_MS = 250;
 
-const receiptInputSchema = {
-  type: "object",
-  description:
-    "Optional provenance metadata for the local Agent Link receipt index. Receipts are recorded by default; set record=false to opt out.",
-  properties: {
-    record: { type: "boolean" },
-    purpose: { type: "string" },
-    originThreadId: { type: "string" },
-    originTurnId: { type: "string" },
-    originToolCallId: { type: "string" },
-    cleanupRecommendation: { type: "string" },
-    note: { type: "string" },
-    tags: { type: "array", items: { type: "string" } }
-  },
-  additionalProperties: false
-};
-
+/** @type {import("../server/registry.js").ToolDefinition} */
 export const claudeSendTool = {
   name: "message_claude_session",
   description:
-    "Deliver a message to a Claude Desktop or Claude Code session by exact sessionId or fuzzy query (title, cwd, partial id). " +
-    "The message is queued in the local Agent Link JSONL mailbox. Claude Code sessions can receive through Channels when enabled; " +
+    "Deliver a message to a Claude Desktop or Claude Code session by exact sessionId or by fuzzy query (title, cwd, partial id). " +
+    "Pass exactly one of sessionId or query. The message is queued in the local Agent Link JSONL mailbox. Claude Code sessions can receive through Channels when enabled; " +
     "Desktop sessions receive through the UserPromptSubmit hook and read_agent_link_inbox visible tool result. " +
-    "Returns {messageId, delivery, target} on success, or {error: 'ambiguous'|'not_found', candidates} on failed " +
-    "resolution. delivery is 'queued-online' when the target session is currently loaded as a `claude --resume` " +
-    "process, otherwise 'queued-offline'. Set waitForReply=true to block until the receiver acks with a reply " +
-    "body, or timeoutMs elapses.",
+    "Returns {messageId, delivery, target, resolution, receipt}. An unmatched target is a not_found error and a query matching several " +
+    "sessions is an ambiguous error (details.candidates). delivery is 'queued-online' when the target session is currently loaded as a `claude --resume` " +
+    "process, otherwise 'queued-offline'. Set waitForReply=true to block until the target replies to this message (from the target, " +
+    "addressed to the caller) or timeoutMs elapses; the result is in `wait` ({outcome: 'reply' | 'timeout', waitedMs, target, reply?}).",
   inputSchema: {
     type: "object",
     properties: {
+      sessionId: str("Exact target session: sessionId (local_<uuid>), cliSessionId, or local_<cli>. Archived sessions are reachable by exact id."),
+      query: str("Fuzzy target lookup over title, cwd, and partial id. Archived sessions are skipped. Ambiguous matches fail with ambiguous."),
       to: {
         type: "string",
-        description: "Exact local_<uuid> sessionId, or a fuzzy query (title, cwd, partial id)."
+        description: "Deprecated (removed in 0.6.0): an exact id or a fuzzy query. Use sessionId or query.",
+        deprecated: true
       },
-      body: { type: "string", description: "Message body to deliver." },
-      surface: {
-        type: "string",
-        enum: ["desktop", "code"],
-        description: "Optional target surface filter. Defaults to either Desktop or Code."
-      },
-      deliveryPreference: {
-        type: "string",
-        enum: ["auto", "channel", "mailbox"],
-        description: "Delivery preference. Defaults to auto: channel for loaded Claude Code sessions, mailbox otherwise."
-      },
-      replyToMessageId: {
-        type: "string",
-        description: "If this send is itself a reply to a prior inbound message, set the original messageId."
-      },
-      waitForReply: {
-        type: "boolean",
-        description: "Block until the receiver acks with a reply body or timeoutMs elapses."
-      },
-      timeoutMs: {
-        type: "number",
-        description: "Maximum wait when waitForReply=true. Defaults to 60000."
-      },
-      receipt: receiptInputSchema
+      message: str("Message text to deliver (at most 64 KiB)."),
+      surface: enumOf(["desktop", "code"], "Optional target surface filter. Defaults to either Desktop or Code."),
+      deliveryPreference: enumOf(["auto", "channel", "mailbox"], "Delivery preference. Defaults to auto: channel for loaded Claude Code sessions, mailbox otherwise."),
+      replyToMessageId: str("If this send is itself a reply to a prior inbound message addressed to the caller, set the original messageId."),
+      waitForReply: bool("Block until the target replies to this message or timeoutMs elapses."),
+      timeoutMs: timeoutMsSchema("Maximum wait when waitForReply=true, in milliseconds."),
+      receipt: receiptInput
     },
-    required: ["to", "body"]
-  }
+    additionalProperties: false
+  },
+  aliases: [{ canonical: "message", aliases: ["body"], required: true }],
+  output: {
+    messageId: out("string", "Id of the queued message."),
+    delivery: out("string", "queued-channel, queued-online, queued-offline, or queued-mailbox."),
+    target: out("object", "{sessionId, title, loaded, surface} of the target session."),
+    resolution: out("object", "How the target was found: {via: exact|fuzzy, query, matchReasons, candidates?}."),
+    receipt: commonOut.receipt,
+    wait: out("object", "With waitForReply: {outcome: reply|timeout, waitedMs, target: {sessionId}, reply?} (section 3.4)."),
+    replyConfirmation: out("object", "Deprecated duplicate of wait in the 0.4 shape ({received, replyMessageId?, reply?, error?}); removed in 0.6.0.")
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false }
 };
 
+/**
+ * The target argument: sessionId (exact), query (fuzzy), or the deprecated
+ * `to` (exact first, then fuzzy, as before).
+ * @param {Record<string, any>} args
+ * @param {((w: any) => void) | undefined} warn
+ * @returns {{value: string, mode: "exact" | "fuzzy" | "either"}}
+ */
+function targetArgument(args, warn) {
+  const given = ["sessionId", "query", "to"].filter((key) => typeof args[key] === "string" && args[key].trim());
+  if (args.to !== undefined) warn?.(deprecationWarning("to", "sessionId or query"));
+  if (given.length === 0) {
+    throw new AgentLinkError("invalid_arguments", "Pass sessionId (exact id) or query (fuzzy lookup).", {
+      details: { errors: [{ path: "sessionId", rule: "required", expected: "sessionId or query" }] }
+    });
+  }
+  const values = new Set(given.map((key) => args[key]));
+  if (given.length > 1 && (values.size > 1 || (given.includes("sessionId") && given.includes("query")))) {
+    throw new AgentLinkError("invalid_arguments", `Pass only one of ${given.join(", ")}.`, {
+      details: { errors: given.slice(1).map((key) => ({ path: key, rule: "alias_conflict", expected: `only ${given[0]}` })) }
+    });
+  }
+  const key = given[0];
+  return { value: args[key], mode: key === "sessionId" ? "exact" : key === "query" ? "fuzzy" : "either" };
+}
+
+/**
+ * @typedef {object} ClaudeSendDeps
+ * @property {string} [host]                         this server's host, recorded in receipts
+ * @property {(args?: {surface?: string}) => any[]} [listSessions]   session listing (tests inject one)
+ * @property {Record<string, unknown>} [listOptions]  options for the default listing
+ * @property {() => any} [mailboxOpener]             opens the mailbox (tests inject one)
+ * @property {(() => any) | null} [resolveCurrentSession]
+ * @property {(receipt: any) => Promise<any>} [appendReceipt]
+ */
+
+/** @param {ClaudeSendDeps} [deps] */
 export function makeClaudeSendHandler({
   host,
   listSessions,
@@ -96,10 +116,17 @@ export function makeClaudeSendHandler({
     : () => openMailbox();
 
   return {
-    message_claude_session: async (args = {}, toolContext = {}) => {
+    /**
+     * @param {Record<string, any>} [rawArgs]
+     * @param {{runtimeCallerContext?: unknown, warn?: (w: any) => void}} [toolContext]
+     */
+    message_claude_session: async (rawArgs = {}, toolContext = {}) => {
+      /** @type {any[]} */
+      const aliasWarnings = [];
+      const args = applyAliases(claudeSendTool, rawArgs, aliasWarnings);
+      for (const warning of aliasWarnings) toolContext.warn?.(warning);
       const {
-        to,
-        body,
+        message: body,
         replyToMessageId,
         waitForReply,
         timeoutMs,
@@ -109,14 +136,13 @@ export function makeClaudeSendHandler({
       } = args;
       const runtimeCallerContext = toolContext.runtimeCallerContext ?? null;
 
-      if (typeof to !== "string" || !to.trim()) {
-        return { error: "invalid_arguments", message: "`to` must be a non-empty string" };
-      }
+      const { value: to, mode } = targetArgument(args, toolContext.warn);
       if (typeof body !== "string" || !body.length) {
-        return { error: "invalid_arguments", message: "`body` must be a non-empty string" };
+        throw new AgentLinkError("invalid_arguments", "`message` must be a non-empty string.", {
+          details: { errors: [{ path: "message", rule: "required", expected: "non-empty string" }] }
+        });
       }
-      const tooLarge = messageBodyTooLarge(body);
-      if (tooLarge) return tooLarge;
+      assertPeerBodyWithinLimit(body);
 
       const sessions = (sessionsFn({ surface: surface ?? "all" }) ?? [])
         .filter((s) => !surface || s.surface === surface);
@@ -126,7 +152,7 @@ export function makeClaudeSendHandler({
       let resolution = null;
       // Exact ids (sidecar id, CLI id, or local_<cli>) also reach archived
       // sessions; fuzzy queries only consider active ones.
-      const exact = sessions.find((s) => claudeSessionMatches(s, to));
+      const exact = mode === "fuzzy" ? null : sessions.find((s) => claudeSessionMatches(s, to));
       if (exact) {
         target = exact;
         resolution = {
@@ -134,17 +160,24 @@ export function makeClaudeSendHandler({
           query: to,
           matchReasons: ["sessionId-exact"]
         };
+      } else if (mode === "exact") {
+        throw new AgentLinkError("not_found", `No Claude session has id ${JSON.stringify(to).slice(0, 120)}.`, {
+          details: { query: to, candidates: [] },
+          hint: "Pass query for a fuzzy lookup, or call list_claude_sessions."
+        });
       } else {
         const r = resolveSession({ query: to }, sessions.filter((s) => !s.isArchived));
         if (!r.best) {
-          return { error: "not_found", candidates: [], query: to };
+          throw new AgentLinkError("not_found", `No Claude session matches ${JSON.stringify(to).slice(0, 120)}.`, {
+            details: { query: to, candidates: [] },
+            hint: "Call list_claude_sessions to see addressable sessions."
+          });
         }
         if (r.selection.ambiguous) {
-          return {
-            error: "ambiguous",
-            candidates: r.candidates,
-            query: to
-          };
+          throw new AgentLinkError("ambiguous", `Several Claude sessions match ${JSON.stringify(to).slice(0, 120)}.`, {
+            details: { query: to, candidates: r.candidates.slice(0, 5).map(candidateSummary) },
+            hint: "Pass the exact sessionId of one candidate."
+          });
         }
         target = r.best;
         resolution = {
@@ -168,30 +201,21 @@ export function makeClaudeSendHandler({
         if (replyToMessageId !== undefined && replyToMessageId !== null) {
           const original = typeof replyToMessageId === "string" ? mb.getMessage({ messageId: replyToMessageId }) : null;
           if (!original || !caller.aliases.includes(original.to_session_id)) {
-            return {
-              error: "invalid_arguments",
-              message: "`replyToMessageId` must reference an Agent Link message addressed to the caller.",
-              replyToMessageId
-            };
+            throw new AgentLinkError("invalid_arguments", "`replyToMessageId` must reference an Agent Link message addressed to the caller.", {
+              details: { errors: [{ path: "replyToMessageId", rule: "reference", expected: "a message addressed to the caller" }] }
+            });
           }
         }
 
-        try {
-          messageId = mb.insertMessage({
-            fromSessionId: caller.id,
-            fromSessionKind: caller.kind,
-            toSessionId: canonicalClaudeSessionId(target),
-            toSessionKind: "claude",
-            body,
-            metadata: mailboxMetadata({ receipt, resolution, senderSource: caller.source }),
-            replyToMessageId: replyToMessageId ?? null
-          });
-        } catch (error) {
-          if (/limited to \d+ bytes/.test(error.message)) {
-            return { error: "invalid_arguments", message: error.message };
-          }
-          throw error;
-        }
+        messageId = mb.insertMessage({
+          fromSessionId: caller.id,
+          fromSessionKind: caller.kind,
+          toSessionId: canonicalClaudeSessionId(target),
+          toSessionKind: "claude",
+          body,
+          metadata: mailboxMetadata({ receipt, resolution, senderSource: caller.source }),
+          replyToMessageId: replyToMessageId ?? null
+        });
         // Register the reply wait before the receipt write yields, so this
         // process's channel bridge never pushes the reply pollForReply will
         // return. Released in the finally below however the call ends.
@@ -246,12 +270,20 @@ export function makeClaudeSendHandler({
 
         // 4. Optionally wait for a reply
         if (waitForReply) {
-          result.replyConfirmation = await pollForReply(mb, {
+          const startedAt = Date.now();
+          const confirmation = await pollForReply(mb, {
             messageId,
             fromIds: claudeSessionAliases(target),
             toIds: caller.aliases,
             timeoutMs: typeof timeoutMs === "number" && timeoutMs >= 0 ? timeoutMs : DEFAULT_WAIT_TIMEOUT_MS
           });
+          result.wait = {
+            outcome: confirmation.received ? "reply" : "timeout",
+            waitedMs: Date.now() - startedAt,
+            target: { sessionId: target.sessionId },
+            ...(confirmation.received ? { reply: confirmation.reply } : {})
+          };
+          result.replyConfirmation = confirmation;
         }
 
         return result;
@@ -298,6 +330,17 @@ function mailboxMetadata({ receipt, resolution, senderSource = null }) {
             : {})
         }
       : null
+  };
+}
+
+/** @param {any} candidate */
+function candidateSummary(candidate) {
+  return {
+    sessionId: candidate.sessionId,
+    title: candidate.title ?? null,
+    surface: candidate.surface ?? null,
+    score: candidate.score,
+    matchReasons: candidate.matchReasons
   };
 }
 
@@ -351,4 +394,16 @@ export function consumeReply(mb, message) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * @param {Parameters<typeof makeClaudeSendHandler>[0]} deps
+ * @returns {import("../server/registry.js").ToolEntry[]}
+ */
+export function claudeSendEntries(deps) {
+  const handlers = makeClaudeSendHandler(deps);
+  return [{
+    definition: claudeSendTool,
+    handler: (args, ctx) => handlers.message_claude_session(args, { runtimeCallerContext: ctx.callerContext, warn: ctx.warn })
+  }];
 }

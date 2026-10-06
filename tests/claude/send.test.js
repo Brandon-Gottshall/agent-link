@@ -142,16 +142,16 @@ function cleanup({ tmp, receiptLog }) {
   process.env.CODEX_AGENT_LINK_RECEIPT_LOG = sb.receiptLog;
   const handlers = makeHandler({ dbPath: sb.dbPath });
 
-  const result = await handlers.message_claude_session({
-    to: "Investigate",
-    body: "should not insert"
+  await assert.rejects(handlers.message_claude_session({
+    query: "Investigate",
+    message: "should not insert"
+  }), (error) => {
+    assert.equal(error.errorCode, "ambiguous");
+    assert.equal(error.details.query, "Investigate");
+    assert.ok(Array.isArray(error.details.candidates));
+    assert.ok(error.details.candidates.length >= 2);
+    return true;
   });
-
-  assert.equal(result.error, "ambiguous");
-  assert.ok(Array.isArray(result.candidates));
-  assert.ok(result.candidates.length >= 2);
-  assert.equal(result.messageId, undefined);
-  assert.equal(result.delivery, undefined);
 
   // No mailbox rows
   const mb = openMailbox({ dbPath: sb.dbPath });
@@ -170,14 +170,18 @@ function cleanup({ tmp, receiptLog }) {
   process.env.CODEX_AGENT_LINK_RECEIPT_LOG = sb.receiptLog;
   const handlers = makeHandler({ dbPath: sb.dbPath });
 
-  const result = await handlers.message_claude_session({
+  await assert.rejects(handlers.message_claude_session({
     to: "xyz-no-such-query-1234",
     body: "should not insert"
+  }), (error) => {
+    assert.equal(error.errorCode, "not_found");
+    assert.deepEqual(error.details.candidates, []);
+    return true;
   });
-
-  assert.equal(result.error, "not_found");
-  assert.deepEqual(result.candidates, []);
-  assert.equal(result.messageId, undefined);
+  // sessionId is exact only: a fuzzy text there is not_found, not a lookup.
+  await assert.rejects(handlers.message_claude_session({ sessionId: "Investigate", message: "x" }), { errorCode: "not_found" });
+  // sessionId and query together are rejected.
+  await assert.rejects(handlers.message_claude_session({ sessionId: "local_aaa1111", query: "payment", message: "x" }), { errorCode: "invalid_arguments" });
 
   const mb = openMailbox({ dbPath: sb.dbPath });
   assert.equal(mb.inspect({}).length, 0);
@@ -206,6 +210,8 @@ function cleanup({ tmp, receiptLog }) {
   assert.equal(result.error, undefined);
   assert.ok(result.replyConfirmation);
   assert.equal(result.replyConfirmation.received, false);
+  assert.equal(result.wait.outcome, "timeout");
+  assert.ok(Number.isInteger(result.wait.waitedMs));
   assert.equal(result.replyConfirmation.error, "timeout");
   assert.ok(elapsed >= 200, `expected wait >= 200ms, got ${elapsed}`);
   assert.ok(elapsed < 2000, `expected wait far below 2s, got ${elapsed}`);
@@ -243,6 +249,8 @@ function cleanup({ tmp, receiptLog }) {
   assert.ok(result.replyConfirmation);
   assert.equal(result.replyConfirmation.received, true);
   assert.equal(envelopeBody(result.replyConfirmation.reply.envelope), "pong");
+  assert.equal(result.wait.outcome, "reply");
+  assert.deepEqual(result.wait.reply, result.replyConfirmation.reply);
   assert.ok(!("body" in result.replyConfirmation), "no raw reply body");
   assert.match(result.replyConfirmation.replyMessageId, /^[0-9A-Z]{26}$/);
   cleanup(sb);
@@ -328,11 +336,12 @@ function insertRaw(dbPath, fields) {
   });
   const notMine = insertRaw(sb.dbPath, { fromSessionId: "local_bbb2222", toSessionId: "local_someone", body: "x" });
   const mine = insertRaw(sb.dbPath, { fromSessionId: "local_bbb2222", toSessionId: "uuid-me", body: "y" });
-  const refused = await handlers.message_claude_session({ to: "local_bbb2222", body: "reply", replyToMessageId: notMine });
-  assert.equal(refused.error, "invalid_arguments");
-  assert.match(refused.message, /replyToMessageId/);
-  const missing = await handlers.message_claude_session({ to: "local_bbb2222", body: "reply", replyToMessageId: "01NOSUCHMESSAGE" });
-  assert.equal(missing.error, "invalid_arguments");
+  await assert.rejects(handlers.message_claude_session({ to: "local_bbb2222", body: "reply", replyToMessageId: notMine }), (error) => {
+    assert.equal(error.errorCode, "invalid_arguments");
+    assert.match(error.message, /replyToMessageId/);
+    return true;
+  });
+  await assert.rejects(handlers.message_claude_session({ to: "local_bbb2222", body: "reply", replyToMessageId: "01NOSUCHMESSAGE" }), { errorCode: "invalid_arguments" });
   const accepted = await handlers.message_claude_session({ to: "local_bbb2222", body: "reply", replyToMessageId: mine });
   assert.equal(accepted.error, undefined, "a message addressed to any of the caller's id forms is valid");
   cleanup(sb);
@@ -392,9 +401,12 @@ function insertRaw(dbPath, fields) {
   const sb = makeSandbox();
   process.env.CODEX_AGENT_LINK_RECEIPT_LOG = sb.receiptLog;
   const handlers = makeHandler({ dbPath: sb.dbPath });
-  const result = await handlers.message_claude_session({ to: "local_aaa1111", body: "z".repeat(64 * 1024 + 1) });
-  assert.equal(result.error, "invalid_arguments");
-  assert.match(result.message, /64 KiB/);
+  await assert.rejects(handlers.message_claude_session({ sessionId: "local_aaa1111", message: "z".repeat(64 * 1024 + 1) }), (error) => {
+    assert.equal(error.errorCode, "body_too_large");
+    assert.match(error.message, /64 KiB/);
+    assert.equal(error.details.limitBytes, 64 * 1024);
+    return true;
+  });
   const mb = openMailbox({ dbPath: sb.dbPath });
   assert.equal(mb.inspect({}).length, 0);
   mb.close();

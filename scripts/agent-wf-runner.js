@@ -305,7 +305,7 @@ async function runLivePositive(mcpClient, currentSuite, scenario) {
     const receiptsPayload = await callJson(mcpClient, "list_agent_link_receipts", {
       originThreadId,
       action: "message_thread",
-      searchTerm: "dependency-handoff",
+      query: "dependency-handoff",
       limit: 20
     });
     const verdict = evaluatePositive({
@@ -382,7 +382,7 @@ async function runLiveNegative(mcpClient, currentSuite, scenario) {
     const receiptsPayload = await callJson(mcpClient, "list_agent_link_receipts", {
       originThreadId,
       action: "message_thread",
-      searchTerm: "dependency-handoff",
+      query: "dependency-handoff",
       limit: 20
     });
     const verdict = evaluateNegative({
@@ -631,7 +631,7 @@ async function callJson(mcpClient, name, toolArgs) {
     throw new Error(`${name} returned non-JSON content: ${text.slice(0, 500)}`);
   }
   if (result.isError || payload.ok === false) {
-    const message = payload.error || `${name} failed`;
+    const message = payload.error?.message || `${name} failed`;
     const err = new Error(message);
     err.details = payload;
     throw err;

@@ -1,3 +1,4 @@
+import { AgentLinkError } from "../shared/errors.js";
 import { forwardMessageOptions } from "./project-orchestrator.js";
 import { assertPeerBodyWithinLimit } from "../shared/envelope.js";
 
@@ -166,9 +167,9 @@ export async function registerDependencyHandoff(args = {}, deps = {}, toolContex
   const suppliedCallbackThreadId = cleanString(args.callbackThreadId || args.originThreadId);
   const callbackThreadId = callerThreadId || suppliedCallbackThreadId;
   if (!callbackThreadId) {
-    const error = new Error("callbackThreadId is required when caller thread context is unavailable");
-    error.details = { callerContext: toolContext.callerContext ?? null };
-    throw error;
+    throw new AgentLinkError("invalid_arguments", "callbackThreadId is required when caller thread context is unavailable.", {
+      details: { errors: [{ path: "callbackThreadId", rule: "required", expected: "string (no caller thread context)" }] }
+    });
   }
   const callbackMismatch = callerThreadId && suppliedCallbackThreadId && suppliedCallbackThreadId !== callerThreadId
     ? { supplied: suppliedCallbackThreadId, used: callerThreadId, reason: "caller context thread id takes precedence over callbackThreadId" }
@@ -354,7 +355,9 @@ function satisfactionScope(args, analysis, originThreadId, toolContext) {
   const sinceText = cleanString(args.since);
   const sinceMs = sinceText ? Date.parse(sinceText) : NaN;
   if (sinceText && Number.isNaN(sinceMs)) {
-    throw new Error(`since must be an ISO-8601 timestamp, got ${JSON.stringify(sinceText)}`);
+    throw new AgentLinkError("invalid_arguments", `since must be an ISO-8601 timestamp, got ${JSON.stringify(sinceText).slice(0, 80)}.`, {
+      details: { errors: [{ path: "since", rule: "format", expected: "ISO 8601 timestamp" }] }
+    });
   }
   const byThreadIds = analysis.referencedThreadIds.length > 0;
   const rule = byThreadIds
@@ -451,14 +454,14 @@ async function resolveDependencyTarget(args, deps) {
       useLocalFallback: args.useLocalFallback
     });
     if (resolution.selection?.ambiguous) {
-      const error = new Error("Dependency target resolution is ambiguous; supply targetThreadId.");
-      error.details = { resolution };
-      throw error;
+      throw new AgentLinkError("ambiguous", "Dependency target resolution is ambiguous; supply targetThreadId.", {
+        details: { query: targetQuery, candidates: (resolution.candidates ?? []).slice(0, 5) }
+      });
     }
     if (!resolution.best?.id) {
-      const error = new Error(`No dependency target thread matched ${JSON.stringify(targetQuery)}`);
-      error.details = { resolution };
-      throw error;
+      throw new AgentLinkError("not_found", `No dependency target thread matched ${JSON.stringify(targetQuery)}.`, {
+        details: { query: targetQuery, candidates: [] }
+      });
     }
     return {
       kind: "thread_search",
@@ -469,7 +472,9 @@ async function resolveDependencyTarget(args, deps) {
     };
   }
 
-  throw new Error("targetThreadId, targetQuery, projectRoot, projectId, or orchestratorThreadId is required");
+  throw new AgentLinkError("invalid_arguments", "targetThreadId, targetQuery, projectRoot, projectId, or orchestratorThreadId is required.", {
+    details: { errors: [{ path: "targetThreadId", rule: "required", expected: "targetThreadId, targetQuery, projectRoot, projectId, or orchestratorThreadId" }] }
+  });
 }
 
 function buildDependencyHandoffMessage(args) {
@@ -533,7 +538,9 @@ function normalizeStringList(value) {
 
 function requiredString(value, name) {
   if (typeof value !== "string" || !value.trim()) {
-    throw new Error(`${name} is required`);
+    throw new AgentLinkError("invalid_arguments", `${name} is required`, {
+      details: { errors: [{ path: name, rule: "required", expected: "non-empty string" }] }
+    });
   }
   return value;
 }

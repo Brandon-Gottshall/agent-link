@@ -1,3 +1,4 @@
+import { AgentLinkError } from "../shared/errors.js";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { inferArchiveState, normalizeArchiveScope, scoreThreadMatch } from "./thread-utils.js";
@@ -120,7 +121,7 @@ export async function readLocalThread(threadId, options = {}) {
   const codexHome = resolveCodexHome(options);
   const located = await findLocalThreadFile(threadId, { codexHome });
   if (!located) {
-    throw new Error(`Thread ${threadId} was not found under ${codexHome}`);
+    throw new AgentLinkError("not_found", `Thread ${threadId} was not found under ${codexHome}`, { details: { id: threadId, candidates: [] } });
   }
   const sessionIndex = await readSessionIndex(codexHome);
   const summary = await readLocalThreadSummary(located.file, located.stat, sessionIndex);
@@ -197,7 +198,7 @@ export async function archiveLocalThread(threadId, options = {}) {
 
   const relative = path.relative(activeRoot, located.path);
   if (relative.startsWith("..") || path.isAbsolute(relative)) {
-    throw new Error(`Thread ${threadId} is not under ${activeRoot}; refusing to archive ${located.path}`);
+    throw new AgentLinkError("permission_denied", `Thread ${threadId} is not under ${activeRoot}; refusing to archive ${located.path}`, { details: { reason: "outside active sessions root" } });
   }
 
   const destination = path.join(archivedRoot, relative);
@@ -233,7 +234,7 @@ async function moveFileWithoutOverwrite(source, destination, threadId) {
     placeholder = await fs.open(destination, "wx");
   } catch (error) {
     if (error.code === "EEXIST") {
-      throw new Error(`Archive destination already exists for thread ${threadId}: ${destination}`);
+      throw new AgentLinkError("state_io_error", `Archive destination already exists for thread ${threadId}: ${destination}`, { details: { errno: "EEXIST" } });
     }
     throw error;
   }

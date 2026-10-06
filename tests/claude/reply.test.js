@@ -54,8 +54,20 @@ assert.equal(replyAgentLinkMessageTool.name, "reply_agent_link_message");
     mailboxOpener: () => openMailbox({ mailboxPath }),
     resolveCurrentSession: () => ({ sessionId: "local_receiver", surface: "code" })
   });
-  const result = await handler.reply_agent_link_message({ messageId: "missing", body: "nope" });
-  assert.equal(result.error, "not_found");
+  await assert.rejects(handler.reply_agent_link_message({ messageId: "missing", message: "nope" }), { errorCode: "not_found" });
+  // The deprecated `body` alias still works, with a warning; body and message
+  // that differ are invalid_arguments.
+  const warnings = [];
+  await assert.rejects(
+    handler.reply_agent_link_message({ messageId: "missing", body: "nope" }, { warn: (w) => warnings.push(w) }),
+    { errorCode: "not_found" }
+  );
+  assert.equal(warnings[0].code, "deprecated_argument");
+  assert.equal(warnings[0].replacement, "message");
+  await assert.rejects(
+    handler.reply_agent_link_message({ messageId: "missing", body: "a", message: "b" }),
+    { errorCode: "invalid_arguments" }
+  );
 }
 
 // P1-15 / W2B-15: a reply writes a reply_message receipt and reports the
@@ -117,8 +129,12 @@ assert.equal(replyAgentLinkMessageTool.name, "reply_agent_link_message");
     mailboxOpener: () => openMailbox({ mailboxPath }),
     resolveCurrentSession: () => ({ sessionId: "local_bystander", cliSessionId: "cli-bystander" })
   });
-  const refused = await other.reply_agent_link_message({ messageId: legacyId, body: "not mine" });
-  assert.equal(refused.error, "wrong_recipient");
+  await assert.rejects(other.reply_agent_link_message({ messageId: legacyId, message: "not mine" }), (error) => {
+    assert.equal(error.errorCode, "wrong_recipient");
+    assert.equal(error.details.messageId, legacyId);
+    assert.equal(error.details.caller, "local_bystander");
+    return true;
+  });
 }
 
 // W2A-08: reply bodies over 64 KiB are refused with a clear error.
@@ -127,10 +143,13 @@ assert.equal(replyAgentLinkMessageTool.name, "reply_agent_link_message");
     mailboxOpener: () => openMailbox({ mailboxPath }),
     resolveCurrentSession: () => ({ sessionId: "local_receiver" })
   });
-  const result = await handler.reply_agent_link_message({ messageId: "anything", body: "x".repeat(64 * 1024 + 1) });
-  assert.equal(result.error, "invalid_arguments");
-  assert.match(result.message, /64 KiB/);
-  assert.equal(result.maxBodyBytes, 64 * 1024);
+  await assert.rejects(handler.reply_agent_link_message({ messageId: "anything", message: "x".repeat(64 * 1024 + 1) }), (error) => {
+    assert.equal(error.errorCode, "body_too_large");
+    assert.match(error.message, /64 KiB/);
+    assert.equal(error.details.limitBytes, 64 * 1024);
+    assert.equal(error.details.actualBytes, 64 * 1024 + 1);
+    return true;
+  });
 }
 
 // W2A-09 (review item 6): the receipt log's new directory is 0700 and the

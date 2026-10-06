@@ -6,7 +6,7 @@
 //
 //   node scripts/run-offline-tests.js [group...] [-- node --test flags]
 //
-// Groups: manifest, claude, codex, mcp, all (default). Example:
+// Groups: manifest, claude, codex, server, mcp, all (default). Example:
 //   node scripts/run-offline-tests.js codex -- --test-concurrency=1
 //
 // New offline test files must be added to a group below. Any file matching
@@ -41,6 +41,7 @@ const groups = {
     "tests/shared/envelope.test.js",
     "tests/shared/errors.test.js",
     "tests/shared/jsonl.test.js",
+    "tests/shared/legacy-state.test.js",
     "tests/shared/log.test.js",
     "tests/shared/paths.test.js",
     "tests/shared/process-handlers.test.js",
@@ -67,11 +68,15 @@ const groups = {
   mcp: [
     "scripts/mcp-smoke-test.js"
   ],
+  server: [
+    "tests/server/registry.test.js",
+    "tests/server/tools-contract.test.js"
+  ],
   manifest: [
     "tests/manifest.test.js"
   ]
 };
-groups.all = [...groups.manifest, ...groups.claude, ...groups.codex, ...groups.mcp];
+groups.all = [...groups.manifest, ...groups.claude, ...groups.codex, ...groups.server, ...groups.mcp];
 
 // Mirrors node --test's default discovery patterns closely enough to catch an
 // offline test nobody wired in.

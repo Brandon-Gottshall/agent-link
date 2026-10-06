@@ -200,8 +200,24 @@ const mailboxPath = path.join(tmp, "mailbox.jsonl");
   assert.deepEqual(withBodies.messages.map((m) => envelopeBody(m.envelope)).sort(), ["from me", "to me"]);
   const filtered = await handlers.agent_link_mailbox_inspect({ toSessionId: "local_third" });
   assert.equal(filtered.messages.length, 0, "filters cannot widen past the caller's mail");
-  const all = await handlers.agent_link_mailbox_inspect({ scope: "all" });
+  // scope:"all" is refused unless the server allows it (AGENT_LINK_INSPECT_ALL).
+  await assert.rejects(handlers.agent_link_mailbox_inspect({ scope: "all" }), { errorCode: "permission_denied" });
+  const allowed = makeMailboxInspectHandler({
+    host: "claude",
+    inspectAll: true,
+    mailboxOpener: () => openMailbox({ mailboxPath: p }),
+    resolveCurrentSession: () => ({ sessionId: "local_me", cliSessionId: "cli-me" })
+  });
+  const all = await allowed.agent_link_mailbox_inspect({ scope: "all" });
   assert.equal(all.messages.length, 3);
+  // since: ISO string is canonical; epoch milliseconds still works with a warning.
+  const warnings = [];
+  const sinceMs = await allowed.agent_link_mailbox_inspect({ scope: "all", since: 0 }, { warn: (w) => warnings.push(w) });
+  assert.equal(sinceMs.messages.length, 3);
+  assert.equal(warnings[0].code, "deprecated_argument");
+  const sinceIso = await allowed.agent_link_mailbox_inspect({ scope: "all", since: "2999-01-01T00:00:00.000Z" });
+  assert.equal(sinceIso.messages.length, 0);
+  await assert.rejects(allowed.agent_link_mailbox_inspect({ since: "yesterday" }), { errorCode: "invalid_arguments" });
 }
 
 // W2A-08 (review item 1): the whole serialized event line is capped, so
@@ -227,7 +243,7 @@ const mailboxPath = path.join(tmp, "mailbox.jsonl");
   mb.insertMessage({ fromSessionId: "local_x", fromSessionKind: "claude", toSessionId: "external", toSessionKind: "external", body: "to some external caller" });
   mb.close();
   const { makeMailboxInspectHandler } = await import("../../src/tools/mailbox-inspect.js");
-  const handlers = makeMailboxInspectHandler({ host: "unknown", mailboxOpener: () => openMailbox({ mailboxPath: p }) });
+  const handlers = makeMailboxInspectHandler({ host: "unknown", inspectAll: true, mailboxOpener: () => openMailbox({ mailboxPath: p }) });
   const result = await handlers.agent_link_mailbox_inspect({});
   assert.deepEqual(result.messages, []);
   assert.match(result.note, /Could not identify the calling session/);

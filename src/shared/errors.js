@@ -1,9 +1,8 @@
 // src/shared/errors.js
 //
 // The one error type tool handlers throw (design doc section 3.2/3.3). The
-// registry wrapper (a later PR) turns it into the `{ok:false, error:{...}}`
-// envelope; until then the existing catch in server.js keeps reading
-// `message`, `details` and the app-server hint exactly as before.
+// registry wrapper (src/server/registry.js) turns it into the
+// `{ok:false, error:{code, message, details, hint}}` envelope.
 
 /**
  * @typedef {"invalid_arguments" | "unknown_tool" | "not_found" | "ambiguous"

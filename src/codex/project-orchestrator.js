@@ -1,3 +1,4 @@
+import { AgentLinkError } from "../shared/errors.js";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { rankThreadSummaries } from "./thread-utils.js";
@@ -11,7 +12,7 @@ const ALLOWED_RETURN_STATUSES = new Set(["done", "done_with_concerns", "blocked"
 export async function resolveProjectOrchestrator(args = {}, deps = {}) {
   const projectRoot = cleanString(args.projectRoot || args.cwd);
   const explicitThreadId = cleanString(args.orchestratorThreadId || args.threadId);
-  const limit = clamp(args.limit ?? 5, 1, 20);
+  const limit = clamp(args.limit ?? 10, 1, 50);
 
   if (explicitThreadId) {
     const verification = await verifyThreadReadable(explicitThreadId, deps);
@@ -57,9 +58,13 @@ export async function resolveProjectOrchestrator(args = {}, deps = {}) {
 
   const query = buildFallbackQuery({ ...args, projectRoot, binding });
   if (!query) {
-    const error = new Error("projectRoot, query, projectId, or orchestratorThreadId is required to resolve a project orchestrator");
-    error.details = { projectRoot: projectRoot || null, binding };
-    throw error;
+    throw new AgentLinkError("invalid_arguments", "projectRoot, query, projectId, or orchestratorThreadId is required to resolve a project orchestrator.", {
+      details: {
+        errors: [{ path: "projectRoot", rule: "required", expected: "projectRoot, query, projectId, or orchestratorThreadId" }],
+        projectRoot: projectRoot || null,
+        binding
+      }
+    });
   }
 
   const listed = await deps.listThreads({
@@ -71,25 +76,28 @@ export async function resolveProjectOrchestrator(args = {}, deps = {}) {
   });
   const candidates = rankThreadSummaries(listed.data ?? [], query, limit);
   if (candidates.length === 0) {
-    const error = new Error(`No project orchestrator thread matched ${JSON.stringify(query)}`);
-    error.details = {
-      source: listed.source ?? null,
-      query,
-      projectRoot: projectRoot || null,
-      binding
-    };
-    throw error;
+    throw new AgentLinkError("not_found", `No project orchestrator thread matched ${JSON.stringify(query)}.`, {
+      details: {
+        query,
+        candidates: [],
+        source: listed.source ?? null,
+        projectRoot: projectRoot || null,
+        binding
+      },
+      hint: "Pass orchestratorThreadId, or add .codex/project-orchestrator.json to the project."
+    });
   }
 
   const selection = buildSelection(candidates);
   if (selection.ambiguous) {
-    const error = new Error("Project orchestrator resolution is ambiguous; supply orchestratorThreadId or fix .codex/project-orchestrator.json");
-    error.details = {
-      query,
-      selection,
-      candidates
-    };
-    throw error;
+    throw new AgentLinkError("ambiguous", "Project orchestrator resolution is ambiguous.", {
+      details: {
+        query,
+        selection,
+        candidates: candidates.slice(0, 5)
+      },
+      hint: "Supply orchestratorThreadId or fix .codex/project-orchestrator.json."
+    });
   }
 
   const best = candidates[0];
@@ -470,7 +478,9 @@ function defaultReceipt(purpose, resolution) {
 function normalizeReturnStatus(value) {
   const status = cleanString(value).toLowerCase();
   if (!ALLOWED_RETURN_STATUSES.has(status)) {
-    throw new Error("status must be one of done, done_with_concerns, or blocked");
+    throw new AgentLinkError("invalid_arguments", "resultStatus must be one of done, done_with_concerns, or blocked.", {
+      details: { errors: [{ path: "resultStatus", rule: "enum", expected: "one of \"done\", \"done_with_concerns\", \"blocked\"" }] }
+    });
   }
   return status;
 }
