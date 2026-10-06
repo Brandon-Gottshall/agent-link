@@ -39,6 +39,13 @@ const FIXTURE_DIR = path.join(REPO_ROOT, "tests/fixtures/hook-stdin");
 const USER_PROMPT_FIXTURE = path.join(FIXTURE_DIR, "sample-userpromptsubmit-stdin.json");
 const SESSION_START_FIXTURE = path.join(FIXTURE_DIR, "sample-sessionstart-stdin.json");
 
+// Rendered sender ids must have a known shape (local_<uuid>, uuid, external).
+const OTHER = "local_1a2b3c4d-0000-4000-8000-00000000000a";
+const SENDER = "local_1a2b3c4d-0000-4000-8000-00000000000b";
+const SENDER_A = "local_1a2b3c4d-0000-4000-8000-0000000000a1";
+const SENDER_B = "local_1a2b3c4d-0000-4000-8000-0000000000b2";
+const SENDER_C = "local_1a2b3c4d-0000-4000-8000-0000000000c3";
+
 function makeSandbox() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "agent-link-notify-"));
   return {
@@ -92,7 +99,7 @@ function insert(mailboxPath, fields) {
   const sb = makeSandbox();
   const stdinFixture = loadFixture(USER_PROMPT_FIXTURE);
   const registry = [{ sessionId: "local_test1", cliSessionId: stdinFixture.session_id, title: "Test session" }];
-  insert(sb.mailboxPath, { fromSessionId: "local_other", toSessionId: "local_test1", body: "hello receiver" });
+  insert(sb.mailboxPath, { fromSessionId: OTHER, toSessionId: "local_test1", body: "hello receiver" });
 
   const parsed = runWithRegistry(stdinFixture, { mailboxPath: sb.mailboxPath, registry });
   assert.ok(parsed.hookSpecificOutput, "hookSpecificOutput must be present");
@@ -102,7 +109,7 @@ function insert(mailboxPath, fields) {
   assert.match(ctx, /pending/i, "additionalContext should mention pending messages");
   assert.match(ctx, /1\b/, "additionalContext should include the count");
   assert.match(ctx, /read_agent_link_inbox/, "additionalContext must instruct calling the read_agent_link_inbox tool");
-  assert.match(ctx, /local_other/, "additionalContext should mention the sender id");
+  assert.match(ctx, new RegExp(OTHER), "additionalContext should mention the sender id");
   assert.ok(!ctx.includes("hello receiver"),
     "notify hook leaked the message body — body must stay in the mailbox until the tool reads it");
   cleanup(sb);
@@ -113,7 +120,7 @@ function insert(mailboxPath, fields) {
   const sb = makeSandbox();
   const stdinFixture = loadFixture(USER_PROMPT_FIXTURE);
   const registry = [{ sessionId: "local_test1", cliSessionId: stdinFixture.session_id }];
-  insert(sb.mailboxPath, { fromSessionId: "local_other", toSessionId: "local_test1", body: "still pending" });
+  insert(sb.mailboxPath, { fromSessionId: OTHER, toSessionId: "local_test1", body: "still pending" });
   runWithRegistry(stdinFixture, { mailboxPath: sb.mailboxPath, registry });
   const mb2 = openMailbox({ mailboxPath: sb.mailboxPath });
   const stillPending = mb2.listPendingFor({ toSessionId: "local_test1" });
@@ -137,7 +144,7 @@ function insert(mailboxPath, fields) {
   const sb = makeSandbox();
   const stdinFixture = loadFixture(USER_PROMPT_FIXTURE);
   const registry = [{ sessionId: "local_someone-else", cliSessionId: "totally-unrelated-uuid" }];
-  insert(sb.mailboxPath, { fromSessionId: "local_other", toSessionId: "local_someone-else", body: "x" });
+  insert(sb.mailboxPath, { fromSessionId: OTHER, toSessionId: "local_someone-else", body: "x" });
   assert.deepEqual(runWithRegistry(stdinFixture, { mailboxPath: sb.mailboxPath, registry }), {});
   cleanup(sb);
 }
@@ -148,7 +155,7 @@ function insert(mailboxPath, fields) {
   const stdinFixture = loadFixture(SESSION_START_FIXTURE);
   assert.equal(stdinFixture.hook_event_name, "SessionStart", "fixture sanity check");
   const registry = [{ sessionId: "local_sessionstart", cliSessionId: stdinFixture.session_id }];
-  insert(sb.mailboxPath, { fromSessionId: "local_sender", toSessionId: "local_sessionstart", body: "queued before resume" });
+  insert(sb.mailboxPath, { fromSessionId: SENDER, toSessionId: "local_sessionstart", body: "queued before resume" });
   const parsed = runWithRegistry(stdinFixture, { mailboxPath: sb.mailboxPath, registry });
   assert.equal(parsed.hookSpecificOutput.hookEventName, "SessionStart");
   assert.match(parsed.hookSpecificOutput.additionalContext, /read_agent_link_inbox/);
@@ -165,7 +172,7 @@ function insert(mailboxPath, fields) {
   const sessionId = "transcript-only-wf-0001";
   const transcriptPath = path.join(sb.tmp, `${sessionId}.jsonl`);
   fs.writeFileSync(transcriptPath, JSON.stringify({ sessionId, type: "summary" }) + "\n");
-  insert(sb.dbPath.replace(/\.sqlite$/, ".jsonl"), { fromSessionId: "local_sender", toSessionId: `local_${sessionId}`, body: "transcript-only receiver body" });
+  insert(sb.dbPath.replace(/\.sqlite$/, ".jsonl"), { fromSessionId: SENDER, toSessionId: `local_${sessionId}`, body: "transcript-only receiver body" });
 
   const parsed = spawnHook(
     { session_id: sessionId, transcript_path: transcriptPath, hook_event_name: "UserPromptSubmit" },
@@ -173,7 +180,7 @@ function insert(mailboxPath, fields) {
   );
   assert.ok(parsed.hookSpecificOutput, "transcript-only session must still get the nudge");
   assert.match(parsed.hookSpecificOutput.additionalContext, /read_agent_link_inbox/);
-  assert.match(parsed.hookSpecificOutput.additionalContext, /local_sender/);
+  assert.match(parsed.hookSpecificOutput.additionalContext, new RegExp(SENDER));
   assert.ok(!parsed.hookSpecificOutput.additionalContext.includes("transcript-only receiver body"),
     "notify hook leaked the body for a transcript-only session");
   cleanup(sb);
@@ -186,7 +193,7 @@ function insert(mailboxPath, fields) {
   const registryPath = path.join(sb.tmp, "fake-registry.json");
   const cli = "registry-only-0002";
   fs.writeFileSync(registryPath, JSON.stringify([{ sessionId: "local_registry", cliSessionId: cli }]));
-  insert(sb.mailboxPath, { fromSessionId: "local_sender", toSessionId: "local_registry", body: "x" });
+  insert(sb.mailboxPath, { fromSessionId: SENDER, toSessionId: "local_registry", body: "x" });
   const parsed = spawnHook(
     { session_id: cli, hook_event_name: "UserPromptSubmit" },
     { AGENT_LINK_MAILBOX_PATH: sb.mailboxPath, AGENT_LINK_TEST_REGISTRY: registryPath, CLAUDE_CONFIG_DIR: path.join(sb.tmp, "empty-config") }
@@ -203,7 +210,7 @@ function insert(mailboxPath, fields) {
   const configDir = path.join(sb.tmp, "relocated-claude");
   fs.mkdirSync(path.join(configDir, "projects", "-tmp-proj"), { recursive: true });
   fs.writeFileSync(path.join(configDir, "projects", "-tmp-proj", `${cli}.jsonl`), JSON.stringify({ sessionId: cli }) + "\n");
-  insert(sb.mailboxPath, { fromSessionId: "local_sender", toSessionId: `local_${cli}`, body: "x" });
+  insert(sb.mailboxPath, { fromSessionId: SENDER, toSessionId: `local_${cli}`, body: "x" });
   const parsed = spawnHook(
     { session_id: cli, hook_event_name: "UserPromptSubmit" },
     { AGENT_LINK_MAILBOX_PATH: sb.mailboxPath, CLAUDE_CONFIG_DIR: configDir }
@@ -221,9 +228,9 @@ function insert(mailboxPath, fields) {
   const cli = "alias-cli-0004";
   const transcriptPath = path.join(sb.tmp, `${cli}.jsonl`);
   fs.writeFileSync(transcriptPath, JSON.stringify({ sessionId: cli }) + "\n");
-  insert(sb.mailboxPath, { fromSessionId: "local_a", toSessionId: cli, body: "to raw cli" });
-  insert(sb.mailboxPath, { fromSessionId: "local_b", toSessionId: "local_sidecar-of-alias", body: "to sidecar id" });
-  insert(sb.mailboxPath, { fromSessionId: "local_c", toSessionId: "local_unrelated-sidecar", body: "not ours" });
+  insert(sb.mailboxPath, { fromSessionId: SENDER_A, toSessionId: cli, body: "to raw cli" });
+  insert(sb.mailboxPath, { fromSessionId: SENDER_B, toSessionId: "local_sidecar-of-alias", body: "to sidecar id" });
+  insert(sb.mailboxPath, { fromSessionId: SENDER_C, toSessionId: "local_unrelated-sidecar", body: "not ours" });
   const lookedUp = [];
   const parsed = notifyHook.runNotifyHook(
     { session_id: cli, transcript_path: transcriptPath, hook_event_name: "UserPromptSubmit" },
@@ -240,9 +247,9 @@ function insert(mailboxPath, fields) {
   );
   assert.ok(parsed.hookSpecificOutput);
   assert.match(parsed.hookSpecificOutput.additionalContext, /\b2 pending messages\b/);
-  assert.match(parsed.hookSpecificOutput.additionalContext, /local_a/);
-  assert.match(parsed.hookSpecificOutput.additionalContext, /local_b/);
-  assert.ok(!parsed.hookSpecificOutput.additionalContext.includes("local_c"));
+  assert.match(parsed.hookSpecificOutput.additionalContext, new RegExp(SENDER_A));
+  assert.match(parsed.hookSpecificOutput.additionalContext, new RegExp(SENDER_B));
+  assert.ok(!parsed.hookSpecificOutput.additionalContext.includes(SENDER_C));
   cleanup(sb);
 }
 

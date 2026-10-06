@@ -13,7 +13,9 @@
 //     was provided, it must also have reply_to_message_id == latestMessageId
 //     (and may predate the wait). Without latestMessageId, only messages sent
 //     since the wait started count, so an old message never resolves a new
-//     wait. Returns {result: "reply", message, sessionId}.
+//     wait. The returned message is marked delivered and acknowledged, so
+//     the caller's inbox, hook and channel do not deliver it again.
+//     Returns {result: "reply", message, sessionId}.
 //   - "idle": The target session was loaded (running) at the start, and a
 //     later liveness check shows it is no longer loaded. Liveness is checked
 //     for that one session only, at most every 2 s. Returns
@@ -26,6 +28,7 @@
 import { openMailbox } from "../claude/mailbox.js";
 import { isClaudeSessionLoaded, listClaudeSessions } from "../claude/session-index.js";
 import { claudeSessionAliases, claudeSessionMatches, resolveCallerIdentity } from "../claude/identity.js";
+import { consumeReply } from "./claude-send.js";
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_POLL_INTERVAL_MS = 250;
@@ -34,20 +37,23 @@ const DEFAULT_LIVENESS_INTERVAL_MS = 2_000;
 export const claudeWaitTool = {
   name: "wait_for_claude_session",
   description:
-    "Block until the target Claude Desktop or Claude Code session sends a reply (matching `latestMessageId` if provided) or " +
-    "goes idle (was loaded, now isn't). Returns one of {result: 'reply', message} | {result: 'idle', target} | " +
+    "Block until the target Claude Desktop or Claude Code session sends a message addressed to the caller, or goes idle " +
+    "(was loaded, now isn't). With `latestMessageId` (recommended: pass the messageId message_claude_session returned), " +
+    "only a reply to that message counts, even one that arrived before the wait started. Without it, only messages sent " +
+    "after the wait started count. A reply returned by this tool counts as delivered, so it is not shown again by " +
+    "read_agent_link_inbox or the channel. Returns one of {result: 'reply', message} | {result: 'idle', target} | " +
     "{result: 'timeout'} | {error: 'not_found'}. Default timeout 60s. Use this when message_claude_session was " +
-    "called without waitForReply, or to wait for any inbound message from a particular session.",
+    "called without waitForReply.",
   inputSchema: {
     type: "object",
     properties: {
       sessionId: {
         type: "string",
-        description: "Exact local_<uuid> sessionId of the session to wait on. Use resolve_claude_session first if you only have a fuzzy reference."
+        description: "Exact sessionId (local_<uuid>) or cliSessionId of the session to wait on; archived sessions are included. Use resolve_claude_session first if you only have a fuzzy reference."
       },
       latestMessageId: {
         type: "string",
-        description: "If set, only resolve when a message with reply_to_message_id == latestMessageId arrives. If absent, resolve on any message from the target session."
+        description: "Recommended. Only resolve on a reply (reply_to_message_id == latestMessageId) from the target addressed to the caller; a reply that arrived before the wait started also counts. If absent, resolve on any message from the target addressed to the caller and sent after the wait started."
       },
       timeoutMs: {
         type: "number",
@@ -127,6 +133,9 @@ export function makeWaitHandler({
           }
           const messages = mb.inspect(filters).sort((a, b) => a.sent_at - b.sent_at);
           if (messages.length > 0) {
+            // A reply consumed by a wait counts as delivered (and
+            // acknowledged); the caller's inbox and channel skip it.
+            consumeReply(mb, messages[0]);
             return {
               result: "reply",
               message: messages[0],

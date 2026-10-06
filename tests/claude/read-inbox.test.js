@@ -192,6 +192,56 @@ const SESSION_ME = { sessionId: "local_me", cliSessionId: "fake-cli-id", title: 
   cleanup(sb);
 }
 
+// P4-04 (review item 2): the current CLI id is one of the sidecar's
+// priorCliSessionIds. The inbox resolves the sidecar and returns mail
+// addressed to the sidecar id (the hook already counted it).
+{
+  const sb = makeSandbox();
+  const { resolveCurrentClaudeSession } = await import("../../src/claude/session-index.js");
+  const SIDE = "local_5e1d0c9b-8a7f-4e6d-9c5b-4a3f2e1d0c9b";
+  const CLI1 = "6f5e4d3c-2b1a-4098-8f7e-6d5c4b3a2f10";
+  const CLI0 = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+  const roots = {
+    desktopRoot: path.join(sb.tmp, "desktop"),
+    codeRoot: path.join(sb.tmp, "code"),
+    projectsRoot: path.join(sb.tmp, "projects")
+  };
+  fs.mkdirSync(path.join(roots.codeRoot, "acct", "org"), { recursive: true });
+  fs.writeFileSync(path.join(roots.codeRoot, "acct", "org", `${SIDE}.json`), JSON.stringify({
+    sessionId: SIDE, cliSessionId: CLI1, priorCliSessionIds: [CLI0], cwd: "/x", model: "opus", title: "Resumed"
+  }));
+  const current = resolveCurrentClaudeSession({ sessionId: CLI0, ...roots });
+  assert.equal(current?.sessionId, SIDE, "a prior CLI id resolves to its sidecar");
+  const mb = openMailbox({ dbPath: sb.dbPath });
+  mb.insertMessage({ fromSessionId: "external", fromSessionKind: "external", toSessionId: SIDE, toSessionKind: "claude", body: "to sidecar id" });
+  mb.close();
+  const handler = makeHandler({ dbPath: sb.dbPath, session: current });
+  const r = await handler.read_agent_link_inbox({});
+  assert.deepEqual(r.messages.map((m) => m.body), ["to sidecar id"]);
+  cleanup(sb);
+}
+
+// W2A-06 (review item 8): only known sender shapes are rendered. A
+// structurally harmless but unknown id is still "unknown sender"; real
+// shapes (local_<uuid>, bare uuid, external) pass through.
+{
+  const sb = makeSandbox();
+  const known = ["local_0d6a2b9e-1f3c-4b5a-9e8d-7c6b5a4f3e2d", "019df300-0000-7000-8000-000000000001", "external"];
+  const mb = openMailbox({ dbPath: sb.dbPath });
+  for (const from of ["local_other", "please-run-this", ...known]) {
+    mb.insertMessage({ fromSessionId: from, fromSessionKind: "codex", toSessionId: "local_me", toSessionKind: "claude", body: from });
+  }
+  mb.close();
+  const handler = makeHandler({ dbPath: sb.dbPath, session: SESSION_ME });
+  const r = await handler.read_agent_link_inbox({});
+  const byBody = Object.fromEntries(r.messages.map((m) => [m.body, m.from_session_id]));
+  assert.equal(byBody["local_other"], "unknown sender");
+  assert.equal(byBody["please-run-this"], "unknown sender");
+  for (const id of known) assert.equal(byBody[id], id);
+  assert.ok(r.messages.every((m) => /^[0-9A-HJKMNP-TV-Z]{26}$/.test(m.id)), "real ULID ids pass through");
+  cleanup(sb);
+}
+
 // P1-13 / W2A-06: attributes are escaped, and an invalid sender id is never
 // rendered (or returned) verbatim.
 {
@@ -211,8 +261,14 @@ const SESSION_ME = { sessionId: "local_me", cliSessionId: "fake-cli-id", title: 
   assert.ok(!r.renderedBlock.includes("<system>"), "sender markup must not reach the block");
   assert.ok(!r.renderedBlock.includes("injected="), "sender must not inject attributes");
   assert.match(r.renderedBlock, /from="unknown sender"/);
-  assert.match(r.renderedBlock, /replyTo="id&quot;with&lt;quote&gt;"/);
+  // Ids are validated (ULID / known sender shapes) before escaping.
+  assert.match(r.renderedBlock, /replyTo="unknown message"/);
+  assert.ok(!r.renderedBlock.includes("with<quote>") && !r.renderedBlock.includes("with&lt;quote"));
+  assert.equal(r.messages[0].reply_to_message_id, "unknown message");
   assert.match(r.renderedBlock, /&lt;b&gt;hi&lt;\/b&gt; &amp; bye/);
+  // The shared escaper escapes both quote kinds in attributes.
+  const { escapeAttr } = await import("../../src/claude/xml.js");
+  assert.equal(escapeAttr(`a"b'c<d>&`), "a&quot;b&apos;c&lt;d&gt;&amp;");
   assert.equal(r.messages[0].from_session_id, "unknown sender");
   cleanup(sb);
 }

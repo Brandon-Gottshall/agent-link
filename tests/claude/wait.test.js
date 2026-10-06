@@ -305,4 +305,41 @@ function insertReply({ dbPath, fromSessionId, toSessionId, body, replyToMessageI
   cleanup(sb);
 }
 
+// Review item 3: a reply returned by wait_for_claude_session counts as
+// delivered. B waits on A, A replies to B, the wait returns the reply, and
+// B's inbox then returns nothing.
+{
+  const sb = makeSandbox();
+  const { makeReadInboxHandler } = await import("../../src/tools/read-inbox.js");
+  const B = { sessionId: "local_bbbbbbbb-0000-4000-8000-00000000000b", cliSessionId: "bbbbbbbb-1111-4000-8000-00000000000b" };
+  const open = () => openMailbox({ dbPath: sb.dbPath });
+  const handlers = makeWaitHandler({
+    host: "claude",
+    resolveCurrentSession: () => B,
+    listSessions: () => [{ ...LOADED_SESSION, loaded: false }],
+    mailboxOpener: open
+  });
+  const question = insertReply({ dbPath: sb.dbPath, fromSessionId: B.sessionId, toSessionId: TARGET_SESSION_ID, body: "question" });
+  setTimeout(() => {
+    insertReply({ dbPath: sb.dbPath, fromSessionId: TARGET_SESSION_ID, toSessionId: B.sessionId, body: "answer", replyToMessageId: question });
+  }, 50);
+  const result = await handlers.wait_for_claude_session({ sessionId: TARGET_SESSION_ID, latestMessageId: question, timeoutMs: 2000 });
+  assert.equal(result.message.body, "answer");
+  const inbox = await makeReadInboxHandler({ mailboxOpener: open, resolveCurrentSession: () => B }).read_agent_link_inbox({});
+  assert.deepEqual(inbox.messages, [], "a reply returned by the wait must not be delivered again");
+  const mb = open();
+  const stored = mb.getMessage({ messageId: result.message.id });
+  mb.close();
+  assert.ok(stored.delivered_at && stored.acknowledged_at);
+  cleanup(sb);
+}
+
+// Review item 4: the tool description states the new semantics.
+{
+  const { claudeWaitTool } = await import("../../src/tools/claude-wait.js");
+  assert.match(claudeWaitTool.description, /addressed to the caller/);
+  assert.match(claudeWaitTool.description, /after the wait started/);
+  assert.match(claudeWaitTool.inputSchema.properties.latestMessageId.description, /^Recommended/);
+}
+
 console.log("claude-wait tests passed");

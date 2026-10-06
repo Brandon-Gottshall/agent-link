@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { openMailbox, resolveMailboxPath } from "./mailbox.js";
-import { claudeSessionAliases, displaySenderId } from "./identity.js";
+import { claudeSessionAliases, displayMessageId, displaySenderId, displaySenderKind } from "./identity.js";
 import { escapeAttr, escapeXml } from "./xml.js";
 
 // Poll cadence: start at 1s, double on every tick that finds nothing to
@@ -12,17 +12,20 @@ const DEFAULT_MAX_POLL_INTERVAL_MS = 30_000;
 const WAKE_DEBOUNCE_MS = 50;
 
 export function renderChannelMessage(message) {
+  // Every id reaching the model is checked against the shapes Agent Link
+  // produces; anything else is rendered as unknown.
+  const id = displayMessageId(message.id);
   const from = displaySenderId(message.from_session_id);
-  const fromKind = displaySenderId(message.from_session_kind);
+  const fromKind = displaySenderKind(message.from_session_kind);
   return {
     content: [
-      `<agent-link-message id="${escapeAttr(message.id)}" from="${escapeAttr(from)}" fromKind="${escapeAttr(fromKind)}">`,
+      `<agent-link-message id="${escapeAttr(id)}" from="${escapeAttr(from)}" fromKind="${escapeAttr(fromKind)}">`,
       `  <body>${escapeXml(message.body)}</body>`,
-      `  <reply>Use reply_agent_link_message with messageId="${escapeAttr(message.id)}" to reply.</reply>`,
+      `  <reply>Use reply_agent_link_message with messageId="${escapeAttr(id)}" to reply.</reply>`,
       `</agent-link-message>`
     ].join("\n"),
     meta: {
-      message_id: String(message.id),
+      message_id: id,
       from_session_id: from,
       from_kind: fromKind
     }

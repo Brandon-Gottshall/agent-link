@@ -133,6 +133,29 @@ assert.equal(replyAgentLinkMessageTool.name, "reply_agent_link_message");
   assert.equal(result.maxBodyBytes, 64 * 1024);
 }
 
+// W2A-09 (review item 6): the receipt log's new directory is 0700 and the
+// file 0600; an existing world-readable log this user owns is tightened.
+{
+  const { appendReceipt, buildReceipt } = await import("../../src/shared/receipt-index.js");
+  const built = buildReceipt({ action: "reply_message", target: { sessionId: "local_x" }, message: "m" });
+  const nestedDir = path.join(tmp, "receipts-dir", "nested");
+  const nested = path.join(nestedDir, "receipts.jsonl");
+  await appendReceipt(built, { path: nested });
+  assert.equal(fs.statSync(nestedDir).mode & 0o777, 0o700, "new receipt dir must be 0700");
+  assert.equal(fs.statSync(nested).mode & 0o777, 0o600, "new receipt log must be 0600");
+  const loose = path.join(tmp, "loose-receipts.jsonl");
+  fs.writeFileSync(loose, "");
+  fs.chmodSync(loose, 0o644);
+  await appendReceipt(built, { path: loose });
+  assert.equal(fs.statSync(loose).mode & 0o777, 0o600, "existing receipt log is tightened to 0600");
+  // An existing parent directory is not changed.
+  const sharedDir = path.join(tmp, "shared-dir");
+  fs.mkdirSync(sharedDir, { mode: 0o755 });
+  fs.chmodSync(sharedDir, 0o755);
+  await appendReceipt(built, { path: path.join(sharedDir, "r.jsonl") });
+  assert.equal(fs.statSync(sharedDir).mode & 0o777, 0o755);
+}
+
 delete process.env.CODEX_AGENT_LINK_RECEIPT_LOG;
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("claude-reply tests passed");

@@ -319,6 +319,30 @@ fs.rmSync(fakeBin, { recursive: true, force: true });
   fs.rmSync(r.base, { recursive: true, force: true });
 }
 
+// Review finding 11: two sidecars claiming the same prior CLI id are
+// ambiguous. Neither is picked for that id, and the prior id's transcript is
+// not merged into either; each sidecar's current id still resolves.
+{
+  const r = makeRoots("prior-ambiguous");
+  const shared = "22222222-3333-4444-8555-666666666666";
+  for (const [sid, cli] of [["local_aaaaaaaa-0000-4000-8000-000000000001", "cli-one"], ["local_aaaaaaaa-0000-4000-8000-000000000002", "cli-two"]]) {
+    fs.writeFileSync(path.join(r.codeRoot, "acct", "org", `${sid}.json`), JSON.stringify({
+      sessionId: sid, cliSessionId: cli, priorCliSessionIds: [shared], cwd: "/x", model: "opus", title: sid
+    }));
+  }
+  writeTranscript(r.projectsRoot, "-tmp-proj", shared, [{ sessionId: shared }]);
+  const found = findClaudeSessionById(shared, rootsOnly(r));
+  assert.equal(found?.source, "transcript", "ambiguous prior id must not pick a sidecar");
+  assert.equal(found.sessionId, `local_${shared}`);
+  assert.equal(findClaudeSessionById("cli-two", rootsOnly(r)).sessionId, "local_aaaaaaaa-0000-4000-8000-000000000002");
+  const listed = listClaudeSessions({ ...rootsOnly(r), psOutput: "" });
+  assert.equal(listed.length, 3, "two sidecars plus the unmerged prior transcript");
+  // Unambiguous prior id: resolves to its sidecar.
+  fs.rmSync(path.join(r.codeRoot, "acct", "org", "local_aaaaaaaa-0000-4000-8000-000000000002.json"));
+  assert.equal(findClaudeSessionById(shared, rootsOnly(r)).sessionId, "local_aaaaaaaa-0000-4000-8000-000000000001");
+  fs.rmSync(r.base, { recursive: true, force: true });
+}
+
 // W2C-04: CLAUDE_CONFIG_DIR relocates the transcripts the index and the
 // current-session resolver read.
 {

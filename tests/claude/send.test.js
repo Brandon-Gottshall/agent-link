@@ -456,5 +456,61 @@ function insertRaw(dbPath, fields) {
   cleanup(sb);
 }
 
+// W2A-08 (review item 1): the raw receipt argument never reaches the
+// mailbox. A 5 MiB receipt.note leaves the mailbox small; only sanitized
+// purpose/tags/cleanupRecommendation are stored.
+{
+  const sb = makeSandbox();
+  process.env.CODEX_AGENT_LINK_RECEIPT_LOG = sb.receiptLog;
+  const handlers = makeHandler({ dbPath: sb.dbPath });
+  const result = await handlers.message_claude_session({
+    to: "local_aaa1111",
+    body: "small body",
+    receipt: { purpose: "p".repeat(10_000), note: "n".repeat(5 * 1024 * 1024), tags: ["t"], originThreadId: "x".repeat(1_000_000) }
+  });
+  assert.equal(result.error, undefined);
+  const mailboxFile = sb.dbPath.replace(/\.sqlite$/, ".jsonl");
+  assert.ok(fs.statSync(mailboxFile).size < 16 * 1024, `mailbox grew to ${fs.statSync(mailboxFile).size} bytes`);
+  const mb = openMailbox({ dbPath: sb.dbPath });
+  const meta = JSON.parse(mb.getMessage({ messageId: result.messageId }).metadata_json);
+  mb.close();
+  assert.deepEqual(Object.keys(meta.receipt).sort(), ["cleanupRecommendation", "purpose", "record", "tags"]);
+  assert.ok(meta.receipt.purpose.length <= 160);
+  assert.deepEqual(meta.receipt.tags, ["t"]);
+  cleanup(sb);
+}
+
+// Review item 3: a reply consumed by waitForReply counts as delivered. B
+// messages A, A replies, B's wait returns the reply, and B's inbox then
+// returns nothing.
+{
+  const sb = makeSandbox();
+  process.env.CODEX_AGENT_LINK_RECEIPT_LOG = sb.receiptLog;
+  const { makeReplyAgentLinkMessageHandler } = await import("../../src/tools/claude-reply.js");
+  const { makeReadInboxHandler } = await import("../../src/tools/read-inbox.js");
+  const B = { sessionId: "local_bbbbbbbb-0000-4000-8000-00000000000b", cliSessionId: "bbbbbbbb-1111-4000-8000-00000000000b" };
+  const A = SESSIONS[0];
+  const open = () => openMailbox({ dbPath: sb.dbPath });
+  const sendFromB = makeClaudeSendHandler({ host: "claude", listSessions: () => SESSIONS, mailboxOpener: open, resolveCurrentSession: () => B });
+  const replyAsA = makeReplyAgentLinkMessageHandler({ mailboxOpener: open, resolveCurrentSession: () => A });
+  const inboxOfB = makeReadInboxHandler({ mailboxOpener: open, resolveCurrentSession: () => B });
+  const pending = sendFromB.message_claude_session({ to: A.sessionId, body: "question", waitForReply: true, timeoutMs: 3000 });
+  setTimeout(async () => {
+    const mb = open();
+    const q = mb.inspect({ toSessionId: A.sessionId, limit: 1 })[0];
+    mb.close();
+    await replyAsA.reply_agent_link_message({ messageId: q.id, body: "answer" });
+  }, 50);
+  const result = await pending;
+  assert.equal(result.replyConfirmation.body, "answer");
+  const inbox = await inboxOfB.read_agent_link_inbox({});
+  assert.deepEqual(inbox.messages, [], "a reply returned by waitForReply must not be delivered again");
+  const mb = open();
+  const reply = mb.getMessage({ messageId: result.replyConfirmation.replyMessageId });
+  mb.close();
+  assert.ok(reply.delivered_at && reply.acknowledged_at, "consumed reply is delivered and acknowledged");
+  cleanup(sb);
+}
+
 delete process.env.CODEX_AGENT_LINK_RECEIPT_LOG;
 console.log("claude-send tests passed");

@@ -20082,6 +20082,13 @@ function findClaudeSessionById(id, {
     const parsed = findSidecar(root, (s) => s.cliSessionId === cliId || s.sessionId === value);
     if (parsed) return withTranscript(normalizeSidecar(parsed, surface), projectsRoot);
   }
+  const priorMatches = [];
+  for (const [root, surface] of roots) {
+    for (const parsed of filterSidecars(root, (s) => Array.isArray(s.priorCliSessionIds) && s.priorCliSessionIds.includes(cliId))) {
+      priorMatches.push(normalizeSidecar(parsed, surface));
+    }
+  }
+  if (priorMatches.length === 1) return withTranscript(priorMatches[0], projectsRoot);
   return findTranscriptSessionByCliId(cliId, { transcriptPath, projectsRoot });
 }
 function resolveCurrentClaudeSession({
@@ -20188,6 +20195,16 @@ function findSidecar(root, predicate) {
     if (parsed && predicate(parsed)) found = parsed;
   }, () => Boolean(found));
   return found;
+}
+function filterSidecars(root, predicate) {
+  if (!root || !fs2.existsSync(root)) return [];
+  const out = [];
+  walk(root, (file) => {
+    if (!isSidecarFile(file)) return;
+    const parsed = parseSidecarCached(file);
+    if (parsed && predicate(parsed)) out.push(parsed);
+  });
+  return out;
 }
 function isSidecarFile(file) {
   return /^local_[0-9a-zA-Z-]+\.json$/.test(path4.basename(file));
@@ -20348,13 +20365,19 @@ function dedupeSessions(sessions) {
     return cli ? `cli:${cli}` : `id:${session.sessionId}`;
   };
   const ordered = [...sessions].sort((a, b) => sourceRank(b.source) - sourceRank(a.source));
+  const priorClaims = /* @__PURE__ */ new Map();
+  for (const session of ordered) {
+    for (const prior of new Set(Array.isArray(session.priorCliSessionIds) ? session.priorCliSessionIds : [])) {
+      priorClaims.set(prior, (priorClaims.get(prior) ?? 0) + 1);
+    }
+  }
   for (const session of ordered) {
     const key = keyFor(session);
     const existing = byKey.get(key);
     if (!existing) {
       byKey.set(key, session);
       for (const prior of Array.isArray(session.priorCliSessionIds) ? session.priorCliSessionIds : []) {
-        if (typeof prior === "string" && prior && !aliasToKey.has(prior)) aliasToKey.set(prior, key);
+        if (typeof prior === "string" && prior && priorClaims.get(prior) === 1 && !aliasToKey.has(prior)) aliasToKey.set(prior, key);
       }
       if (session.cliSessionId && !aliasToKey.has(session.cliSessionId)) aliasToKey.set(session.cliSessionId, key);
       continue;
@@ -20466,12 +20489,26 @@ function resolveSession({ query }, sessions) {
 // src/claude/identity.js
 var SENDER_ID_PATTERN = /^[A-Za-z0-9_.:-]{1,80}$/;
 var UNKNOWN_SENDER = "unknown sender";
+var UNKNOWN_MESSAGE_ID = "unknown message";
 var EXTERNAL_SENDER = "external";
+var UUID = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
+var KNOWN_SENDER_PATTERN = new RegExp(`^(?:external|(?:local_)?${UUID})$`);
+var MESSAGE_ID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+var KNOWN_KINDS = /* @__PURE__ */ new Set(["claude", "codex", "external"]);
 function isValidSenderId(id) {
   return typeof id === "string" && SENDER_ID_PATTERN.test(id);
 }
+function isKnownSenderId(id) {
+  return typeof id === "string" && KNOWN_SENDER_PATTERN.test(id);
+}
 function displaySenderId(id) {
-  return isValidSenderId(id) ? id : UNKNOWN_SENDER;
+  return isKnownSenderId(id) ? id : UNKNOWN_SENDER;
+}
+function displaySenderKind(kind) {
+  return typeof kind === "string" && KNOWN_KINDS.has(kind) ? kind : "unknown";
+}
+function displayMessageId(id) {
+  return typeof id === "string" && MESSAGE_ID_PATTERN.test(id) ? id : UNKNOWN_MESSAGE_ID;
 }
 function canonicalClaudeSessionId(sessionOrId) {
   if (sessionOrId && typeof sessionOrId === "object") {
@@ -20634,6 +20671,7 @@ var DEFAULT_DIR = path5.join(homedir4(), ".claude/agent-link");
 var DEFAULT_MAILBOX_PATH = path5.join(DEFAULT_DIR, "mailbox.jsonl");
 var DEFAULT_LEGACY_DB_PATH = path5.join(DEFAULT_DIR, "mailbox.sqlite");
 var MAX_MESSAGE_BODY_BYTES = 64 * 1024;
+var MAX_EVENT_LINE_BYTES = 512 * 1024;
 var DIR_MODE = 448;
 var FILE_MODE = 384;
 function messageBodyTooLarge(body) {
@@ -20715,7 +20753,12 @@ function openMailbox(options = {}) {
     legacyDbPath: resolveLegacyDbPath(options) ?? (mailboxPath === DEFAULT_MAILBOX_PATH ? DEFAULT_LEGACY_DB_PATH : null)
   });
   function appendEvent(event) {
-    fs3.appendFileSync(mailboxPath, JSON.stringify(event) + "\n", { encoding: "utf8", mode: FILE_MODE });
+    const line = JSON.stringify(event) + "\n";
+    const bytes = Buffer.byteLength(line, "utf8");
+    if (bytes > MAX_EVENT_LINE_BYTES) {
+      throw new Error(`Agent Link mailbox event is ${bytes} bytes; one event is limited to ${MAX_EVENT_LINE_BYTES} bytes (512 KiB). Shorten the message or its metadata.`);
+    }
+    fs3.appendFileSync(mailboxPath, line, { encoding: "utf8", mode: FILE_MODE });
   }
   function insertMessage({
     fromSessionId,
@@ -21049,11 +21092,21 @@ function buildReceipt({
     appServer: summarizeAppServer(appServer2)
   };
 }
+async function tightenFileMode(target, mode) {
+  try {
+    const stat = await fs4.stat(target);
+    const uid = typeof process.getuid === "function" ? process.getuid() : null;
+    if (uid !== null && stat.uid !== uid) return;
+    if ((stat.mode & 511 & ~mode) !== 0) await fs4.chmod(target, mode);
+  } catch {
+  }
+}
 async function appendReceipt(receipt, options = {}) {
   const logPath = receiptLogPath(options);
-  await fs4.mkdir(path6.dirname(logPath), { recursive: true });
+  await fs4.mkdir(path6.dirname(logPath), { recursive: true, mode: 448 });
   await fs4.appendFile(logPath, `${JSON.stringify(receipt)}
-`, "utf8");
+`, { encoding: "utf8", mode: 384 });
+  await tightenFileMode(logPath, 384);
   return {
     ok: true,
     id: receipt.id,
@@ -21418,15 +21471,22 @@ function makeClaudeSendHandler({
             };
           }
         }
-        messageId = mb.insertMessage({
-          fromSessionId: caller.id,
-          fromSessionKind: caller.kind,
-          toSessionId: canonicalClaudeSessionId(target),
-          toSessionKind: "claude",
-          body,
-          metadata: { receipt: receipt ?? null, resolution },
-          replyToMessageId: replyToMessageId ?? null
-        });
+        try {
+          messageId = mb.insertMessage({
+            fromSessionId: caller.id,
+            fromSessionKind: caller.kind,
+            toSessionId: canonicalClaudeSessionId(target),
+            toSessionKind: "claude",
+            body,
+            metadata: mailboxMetadata({ receipt, resolution }),
+            replyToMessageId: replyToMessageId ?? null
+          });
+        } catch (error2) {
+          if (/limited to \d+ bytes/.test(error2.message)) {
+            return { error: "invalid_arguments", message: error2.message };
+          }
+          throw error2;
+        }
         const delivery = classifyDelivery({ target, deliveryPreference });
         const targetSummary = {
           sessionId: target.sessionId,
@@ -21478,6 +21538,31 @@ function makeClaudeSendHandler({
     }
   };
 }
+var MAX_METADATA_QUERY = 200;
+var MAX_METADATA_CANDIDATES = 10;
+function mailboxMetadata({ receipt, resolution }) {
+  const normalized = receipt ? normalizeReceiptInput(receipt) : null;
+  return {
+    receipt: normalized ? {
+      record: normalized.record,
+      purpose: normalized.purpose,
+      cleanupRecommendation: normalized.cleanupRecommendation,
+      tags: normalized.tags
+    } : null,
+    resolution: resolution ? {
+      via: resolution.via,
+      query: String(resolution.query ?? "").slice(0, MAX_METADATA_QUERY),
+      matchReasons: Array.isArray(resolution.matchReasons) ? resolution.matchReasons.slice(0, 20) : [],
+      ...Array.isArray(resolution.candidates) ? {
+        candidates: resolution.candidates.slice(0, MAX_METADATA_CANDIDATES).map((c) => ({
+          sessionId: c.sessionId,
+          score: c.score,
+          matchReasons: c.matchReasons
+        }))
+      } : {}
+    } : null
+  };
+}
 function classifyDelivery({ target, deliveryPreference }) {
   if (deliveryPreference === "channel") {
     return target.surface === "code" && target.loaded ? "queued-channel" : "queued-mailbox";
@@ -21493,6 +21578,7 @@ async function pollForReply(mb, { messageId, fromIds, toIds, timeoutMs }) {
   while (true) {
     const replies = mb.inspect({ replyToMessageId: messageId, limit: Number.MAX_SAFE_INTEGER }).filter((m) => from.has(m.from_session_id) && to.has(m.to_session_id)).sort((a, b) => a.sent_at - b.sent_at);
     if (replies.length) {
+      consumeReply(mb, replies[0]);
       return {
         received: true,
         body: replies[0].body,
@@ -21506,6 +21592,10 @@ async function pollForReply(mb, { messageId, fromIds, toIds, timeoutMs }) {
     await sleep2(Math.min(DEFAULT_POLL_INTERVAL_MS, Math.max(remaining, 10)));
   }
 }
+function consumeReply(mb, message) {
+  if (!message.delivered_at) mb.markDelivered({ messageId: message.id });
+  if (!message.acknowledged_at) mb.markAcknowledged({ messageId: message.id });
+}
 function sleep2(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -21516,17 +21606,17 @@ var DEFAULT_POLL_INTERVAL_MS2 = 250;
 var DEFAULT_LIVENESS_INTERVAL_MS = 2e3;
 var claudeWaitTool = {
   name: "wait_for_claude_session",
-  description: "Block until the target Claude Desktop or Claude Code session sends a reply (matching `latestMessageId` if provided) or goes idle (was loaded, now isn't). Returns one of {result: 'reply', message} | {result: 'idle', target} | {result: 'timeout'} | {error: 'not_found'}. Default timeout 60s. Use this when message_claude_session was called without waitForReply, or to wait for any inbound message from a particular session.",
+  description: "Block until the target Claude Desktop or Claude Code session sends a message addressed to the caller, or goes idle (was loaded, now isn't). With `latestMessageId` (recommended: pass the messageId message_claude_session returned), only a reply to that message counts, even one that arrived before the wait started. Without it, only messages sent after the wait started count. A reply returned by this tool counts as delivered, so it is not shown again by read_agent_link_inbox or the channel. Returns one of {result: 'reply', message} | {result: 'idle', target} | {result: 'timeout'} | {error: 'not_found'}. Default timeout 60s. Use this when message_claude_session was called without waitForReply.",
   inputSchema: {
     type: "object",
     properties: {
       sessionId: {
         type: "string",
-        description: "Exact local_<uuid> sessionId of the session to wait on. Use resolve_claude_session first if you only have a fuzzy reference."
+        description: "Exact sessionId (local_<uuid>) or cliSessionId of the session to wait on; archived sessions are included. Use resolve_claude_session first if you only have a fuzzy reference."
       },
       latestMessageId: {
         type: "string",
-        description: "If set, only resolve when a message with reply_to_message_id == latestMessageId arrives. If absent, resolve on any message from the target session."
+        description: "Recommended. Only resolve on a reply (reply_to_message_id == latestMessageId) from the target addressed to the caller; a reply that arrived before the wait started also counts. If absent, resolve on any message from the target addressed to the caller and sent after the wait started."
       },
       timeoutMs: {
         type: "number",
@@ -21588,6 +21678,7 @@ function makeWaitHandler({
           }
           const messages = mb.inspect(filters).sort((a, b) => a.sent_at - b.sent_at);
           if (messages.length > 0) {
+            consumeReply(mb, messages[0]);
             return {
               result: "reply",
               message: messages[0],
@@ -21652,6 +21743,14 @@ function makeMailboxInspectHandler({ host, mailboxOpener, resolveCurrentSession 
         runtimeCallerContext: toolContext.runtimeCallerContext ?? null,
         currentSession: resolveCurrentSession
       });
+      if (!all && caller.source === "fallback") {
+        return {
+          scope: "caller",
+          callerSessionId: null,
+          messages: [],
+          note: "Could not identify the calling session, so no mail is shown. Pass scope='all' to inspect every session's mail."
+        };
+      }
       const mb = openMb();
       try {
         const messages = mb.inspect(all ? filters : { ...filters, involvingSessionIds: caller.aliases });
@@ -21714,8 +21813,10 @@ function makeReadInboxHandler({ resolveCurrentSession, mailboxOpener } = {}) {
         const rows = markAsDelivered ? mb.drainFor({ toSessionIds, limit: limit ?? void 0 }) : mb.listPendingFor({ toSessionIds }).slice(0, limit ?? void 0);
         const messages = rows.map((m) => ({
           ...m,
+          id: displayMessageId(m.id),
           from_session_id: displaySenderId(m.from_session_id),
-          from_session_kind: displaySenderId(m.from_session_kind)
+          from_session_kind: displaySenderKind(m.from_session_kind),
+          reply_to_message_id: m.reply_to_message_id ? displayMessageId(m.reply_to_message_id) : null
         }));
         return {
           sessionId: session.sessionId,
@@ -21735,10 +21836,10 @@ function renderInbox(messages) {
   }
   const lines = [`<agent-link-inbox count="${messages.length}">`];
   for (const m of messages) {
-    const replyAttr = m.reply_to_message_id ? ` replyTo="${escapeAttr(m.reply_to_message_id)}"` : "";
+    const replyAttr = m.reply_to_message_id ? ` replyTo="${escapeAttr(displayMessageId(m.reply_to_message_id))}"` : "";
     const sentAt = Number.isFinite(m.sent_at) ? new Date(m.sent_at).toISOString() : "";
     lines.push(
-      `  <message id="${escapeAttr(m.id)}" from="${escapeAttr(displaySenderId(m.from_session_id))}" fromKind="${escapeAttr(displaySenderId(m.from_session_kind))}" sentAt="${escapeAttr(sentAt)}"${replyAttr}>`
+      `  <message id="${escapeAttr(displayMessageId(m.id))}" from="${escapeAttr(displaySenderId(m.from_session_id))}" fromKind="${escapeAttr(displaySenderKind(m.from_session_kind))}" sentAt="${escapeAttr(sentAt)}"${replyAttr}>`
     );
     lines.push(`    <body>${escapeXml(m.body)}</body>`);
     lines.push(`  </message>`);
@@ -21844,17 +21945,18 @@ var DEFAULT_POLL_INTERVAL_MS3 = 1e3;
 var DEFAULT_MAX_POLL_INTERVAL_MS = 3e4;
 var WAKE_DEBOUNCE_MS = 50;
 function renderChannelMessage(message) {
+  const id = displayMessageId(message.id);
   const from = displaySenderId(message.from_session_id);
-  const fromKind = displaySenderId(message.from_session_kind);
+  const fromKind = displaySenderKind(message.from_session_kind);
   return {
     content: [
-      `<agent-link-message id="${escapeAttr(message.id)}" from="${escapeAttr(from)}" fromKind="${escapeAttr(fromKind)}">`,
+      `<agent-link-message id="${escapeAttr(id)}" from="${escapeAttr(from)}" fromKind="${escapeAttr(fromKind)}">`,
       `  <body>${escapeXml(message.body)}</body>`,
-      `  <reply>Use reply_agent_link_message with messageId="${escapeAttr(message.id)}" to reply.</reply>`,
+      `  <reply>Use reply_agent_link_message with messageId="${escapeAttr(id)}" to reply.</reply>`,
       `</agent-link-message>`
     ].join("\n"),
     meta: {
-      message_id: String(message.id),
+      message_id: id,
       from_session_id: from,
       from_kind: fromKind
     }

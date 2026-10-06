@@ -8,7 +8,7 @@ import {
   claudeSessionMatches,
   resolveCallerIdentity
 } from "../claude/identity.js";
-import { buildReceipt, safeAppendReceipt } from "../shared/receipt-index.js";
+import { buildReceipt, normalizeReceiptInput, safeAppendReceipt } from "../shared/receipt-index.js";
 
 const DEFAULT_WAIT_TIMEOUT_MS = 60_000;
 const DEFAULT_POLL_INTERVAL_MS = 250;
@@ -173,15 +173,22 @@ export function makeClaudeSendHandler({
           }
         }
 
-        messageId = mb.insertMessage({
-          fromSessionId: caller.id,
-          fromSessionKind: caller.kind,
-          toSessionId: canonicalClaudeSessionId(target),
-          toSessionKind: "claude",
-          body,
-          metadata: { receipt: receipt ?? null, resolution },
-          replyToMessageId: replyToMessageId ?? null
-        });
+        try {
+          messageId = mb.insertMessage({
+            fromSessionId: caller.id,
+            fromSessionKind: caller.kind,
+            toSessionId: canonicalClaudeSessionId(target),
+            toSessionKind: "claude",
+            body,
+            metadata: mailboxMetadata({ receipt, resolution }),
+            replyToMessageId: replyToMessageId ?? null
+          });
+        } catch (error) {
+          if (/limited to \d+ bytes/.test(error.message)) {
+            return { error: "invalid_arguments", message: error.message };
+          }
+          throw error;
+        }
 
         const delivery = classifyDelivery({ target, deliveryPreference });
         const targetSummary = {
@@ -242,6 +249,41 @@ export function makeClaudeSendHandler({
   };
 }
 
+// Only bounded, sanitized fields go into the mailbox: the raw `receipt`
+// argument (e.g. an unbounded `note`) and full candidate session objects
+// would bypass the body cap and bloat every mailbox read.
+const MAX_METADATA_QUERY = 200;
+const MAX_METADATA_CANDIDATES = 10;
+function mailboxMetadata({ receipt, resolution }) {
+  const normalized = receipt ? normalizeReceiptInput(receipt) : null;
+  return {
+    receipt: normalized
+      ? {
+          record: normalized.record,
+          purpose: normalized.purpose,
+          cleanupRecommendation: normalized.cleanupRecommendation,
+          tags: normalized.tags
+        }
+      : null,
+    resolution: resolution
+      ? {
+          via: resolution.via,
+          query: String(resolution.query ?? "").slice(0, MAX_METADATA_QUERY),
+          matchReasons: Array.isArray(resolution.matchReasons) ? resolution.matchReasons.slice(0, 20) : [],
+          ...(Array.isArray(resolution.candidates)
+            ? {
+                candidates: resolution.candidates.slice(0, MAX_METADATA_CANDIDATES).map((c) => ({
+                  sessionId: c.sessionId,
+                  score: c.score,
+                  matchReasons: c.matchReasons
+                }))
+              }
+            : {})
+        }
+      : null
+  };
+}
+
 function classifyDelivery({ target, deliveryPreference }) {
   if (deliveryPreference === "channel") {
     return target.surface === "code" && target.loaded ? "queued-channel" : "queued-mailbox";
@@ -265,6 +307,10 @@ async function pollForReply(mb, { messageId, fromIds, toIds, timeoutMs }) {
       .filter((m) => from.has(m.from_session_id) && to.has(m.to_session_id))
       .sort((a, b) => a.sent_at - b.sent_at);
     if (replies.length) {
+      // The wait consumed this reply: it counts as delivered (and
+      // acknowledged), so the sender's channel, hook and inbox do not
+      // deliver it a second time.
+      consumeReply(mb, replies[0]);
       return {
         received: true,
         body: replies[0].body,
@@ -277,6 +323,11 @@ async function pollForReply(mb, { messageId, fromIds, toIds, timeoutMs }) {
     const remaining = deadline - Date.now();
     await sleep(Math.min(DEFAULT_POLL_INTERVAL_MS, Math.max(remaining, 10)));
   }
+}
+
+export function consumeReply(mb, message) {
+  if (!message.delivered_at) mb.markDelivered({ messageId: message.id });
+  if (!message.acknowledged_at) mb.markAcknowledged({ messageId: message.id });
 }
 
 function sleep(ms) {

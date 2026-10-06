@@ -15,6 +15,12 @@ const DEFAULT_LEGACY_DB_PATH = path.join(DEFAULT_DIR, "mailbox.sqlite");
 // would stall every session. Bodies are capped at 64 KiB (UTF-8 bytes).
 export const MAX_MESSAGE_BODY_BYTES = 64 * 1024;
 
+// Hard cap on one serialized mailbox event (one JSONL line), whatever its
+// source: metadata, ids, or a body that JSON escaping expands. JSON escaping
+// can grow a body up to 6x (control characters become \uXXXX), so 512 KiB
+// never rejects a body within MAX_MESSAGE_BODY_BYTES plus bounded metadata.
+export const MAX_EVENT_LINE_BYTES = 512 * 1024;
+
 const DIR_MODE = 0o700;
 const FILE_MODE = 0o600;
 
@@ -123,7 +129,12 @@ export function openMailbox(options = {}) {
   });
 
   function appendEvent(event) {
-    fs.appendFileSync(mailboxPath, JSON.stringify(event) + "\n", { encoding: "utf8", mode: FILE_MODE });
+    const line = JSON.stringify(event) + "\n";
+    const bytes = Buffer.byteLength(line, "utf8");
+    if (bytes > MAX_EVENT_LINE_BYTES) {
+      throw new Error(`Agent Link mailbox event is ${bytes} bytes; one event is limited to ${MAX_EVENT_LINE_BYTES} bytes (512 KiB). Shorten the message or its metadata.`);
+    }
+    fs.appendFileSync(mailboxPath, line, { encoding: "utf8", mode: FILE_MODE });
   }
 
   function insertMessage({

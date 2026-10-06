@@ -94,6 +94,16 @@ export function findClaudeSessionById(id, {
     const parsed = findSidecar(root, (s) => s.cliSessionId === cliId || s.sessionId === value);
     if (parsed) return withTranscript(normalizeSidecar(parsed, surface), projectsRoot);
   }
+  // A CLI id the session used before (`priorCliSessionIds`) still belongs to
+  // that sidecar, matching claudeSessionAliases(). If more than one sidecar
+  // claims the prior id, none is picked.
+  const priorMatches = [];
+  for (const [root, surface] of roots) {
+    for (const parsed of filterSidecars(root, (s) => Array.isArray(s.priorCliSessionIds) && s.priorCliSessionIds.includes(cliId))) {
+      priorMatches.push(normalizeSidecar(parsed, surface));
+    }
+  }
+  if (priorMatches.length === 1) return withTranscript(priorMatches[0], projectsRoot);
   return findTranscriptSessionByCliId(cliId, { transcriptPath, projectsRoot });
 }
 
@@ -234,6 +244,17 @@ function findSidecar(root, predicate) {
     if (parsed && predicate(parsed)) found = parsed;
   }, () => Boolean(found));
   return found;
+}
+
+function filterSidecars(root, predicate) {
+  if (!root || !fs.existsSync(root)) return [];
+  const out = [];
+  walk(root, (file) => {
+    if (!isSidecarFile(file)) return;
+    const parsed = parseSidecarCached(file);
+    if (parsed && predicate(parsed)) out.push(parsed);
+  });
+  return out;
 }
 
 function isSidecarFile(file) {
@@ -418,13 +439,21 @@ function dedupeSessions(sessions) {
     return cli ? `cli:${cli}` : `id:${session.sessionId}`;
   };
   const ordered = [...sessions].sort((a, b) => sourceRank(b.source) - sourceRank(a.source));
+  // A prior CLI id claimed by more than one sidecar is ambiguous: it merges
+  // into neither.
+  const priorClaims = new Map();
+  for (const session of ordered) {
+    for (const prior of new Set(Array.isArray(session.priorCliSessionIds) ? session.priorCliSessionIds : [])) {
+      priorClaims.set(prior, (priorClaims.get(prior) ?? 0) + 1);
+    }
+  }
   for (const session of ordered) {
     const key = keyFor(session);
     const existing = byKey.get(key);
     if (!existing) {
       byKey.set(key, session);
       for (const prior of Array.isArray(session.priorCliSessionIds) ? session.priorCliSessionIds : []) {
-        if (typeof prior === "string" && prior && !aliasToKey.has(prior)) aliasToKey.set(prior, key);
+        if (typeof prior === "string" && prior && priorClaims.get(prior) === 1 && !aliasToKey.has(prior)) aliasToKey.set(prior, key);
       }
       if (session.cliSessionId && !aliasToKey.has(session.cliSessionId)) aliasToKey.set(session.cliSessionId, key);
       continue;

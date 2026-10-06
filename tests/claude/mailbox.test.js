@@ -199,6 +199,36 @@ const mailboxPath = path.join(tmp, "mailbox.jsonl");
   assert.equal(all.messages.length, 3);
 }
 
+// W2A-08 (review item 1): the whole serialized event line is capped, so
+// metadata cannot bypass the body cap.
+{
+  const p = path.join(tmp, "line-cap.jsonl");
+  const mb = openMailbox({ mailboxPath: p });
+  assert.throws(
+    () => mb.insertMessage({ fromSessionId: "a", fromSessionKind: "claude", toSessionId: "b", toSessionKind: "claude", body: "small", metadata: { note: "n".repeat(600 * 1024) } }),
+    /limited to 524288 bytes \(512 KiB\)/
+  );
+  // A maximal body that JSON escaping expands 6x still fits.
+  mb.insertMessage({ fromSessionId: "a", fromSessionKind: "claude", toSessionId: "b", toSessionKind: "claude", body: "\u0001".repeat(64 * 1024) });
+  mb.close();
+  assert.ok(fs.statSync(p).size < 512 * 1024);
+}
+
+// W2A-10 (review item 7): an unresolved caller (fallback "external") sees
+// no mail by default, not every other unresolved caller's mail.
+{
+  const p = path.join(tmp, "inspect-unresolved.jsonl");
+  const mb = openMailbox({ mailboxPath: p });
+  mb.insertMessage({ fromSessionId: "local_x", fromSessionKind: "claude", toSessionId: "external", toSessionKind: "external", body: "to some external caller" });
+  mb.close();
+  const { makeMailboxInspectHandler } = await import("../../src/tools/mailbox-inspect.js");
+  const handlers = makeMailboxInspectHandler({ host: "unknown", mailboxOpener: () => openMailbox({ mailboxPath: p }) });
+  const result = await handlers.agent_link_mailbox_inspect({});
+  assert.deepEqual(result.messages, []);
+  assert.match(result.note, /Could not identify the calling session/);
+  assert.equal((await handlers.agent_link_mailbox_inspect({ scope: "all" })).messages.length, 1);
+}
+
 // Health uses mailboxStatus(), which never creates the mailbox dir or file.
 {
   const { mailboxStatus } = await import("../../src/claude/mailbox.js");

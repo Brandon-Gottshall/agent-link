@@ -38,6 +38,17 @@ export function makeMailboxInspectHandler({ host, mailboxOpener, resolveCurrentS
             runtimeCallerContext: toolContext.runtimeCallerContext ?? null,
             currentSession: resolveCurrentSession
           });
+      // An unresolved caller falls back to the shared "external" id. Its
+      // "own" mail would be every other unresolved caller's mail, so return
+      // nothing instead.
+      if (!all && caller.source === "fallback") {
+        return {
+          scope: "caller",
+          callerSessionId: null,
+          messages: [],
+          note: "Could not identify the calling session, so no mail is shown. Pass scope='all' to inspect every session's mail."
+        };
+      }
       const mb = openMb();
       try {
         const messages = mb.inspect(all ? filters : { ...filters, involvingSessionIds: caller.aliases });

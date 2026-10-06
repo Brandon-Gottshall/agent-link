@@ -17,18 +17,42 @@
 // found.
 import { currentClaudeSessionId } from "../shared/host-detect.js";
 
+// Write-time check: what may be stored as a from_session_id at all.
 export const SENDER_ID_PATTERN = /^[A-Za-z0-9_.:-]{1,80}$/;
 export const UNKNOWN_SENDER = "unknown sender";
+export const UNKNOWN_MESSAGE_ID = "unknown message";
 export const EXTERNAL_SENDER = "external";
+
+const UUID = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
+// Render-time check: only the id shapes Agent Link itself produces —
+// `external`, a Claude `local_<uuid>` sidecar/transcript id, or a bare uuid
+// (Claude CLI session id or Codex thread id).
+export const KNOWN_SENDER_PATTERN = new RegExp(`^(?:external|(?:local_)?${UUID})$`);
+// Mailbox message ids are ULIDs (Crockford base32, 26 characters).
+export const MESSAGE_ID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+const KNOWN_KINDS = new Set(["claude", "codex", "external"]);
 
 export function isValidSenderId(id) {
   return typeof id === "string" && SENDER_ID_PATTERN.test(id);
 }
 
-// Sender ids reach hidden hook context and visible transcript blocks. Never
-// render one that could carry markup or instructions.
+export function isKnownSenderId(id) {
+  return typeof id === "string" && KNOWN_SENDER_PATTERN.test(id);
+}
+
+// Sender ids reach hidden hook context and visible transcript blocks. Only
+// known shapes are rendered; anything else could carry markup or
+// instructions and is shown as "unknown sender".
 export function displaySenderId(id) {
-  return isValidSenderId(id) ? id : UNKNOWN_SENDER;
+  return isKnownSenderId(id) ? id : UNKNOWN_SENDER;
+}
+
+export function displaySenderKind(kind) {
+  return typeof kind === "string" && KNOWN_KINDS.has(kind) ? kind : "unknown";
+}
+
+export function displayMessageId(id) {
+  return typeof id === "string" && MESSAGE_ID_PATTERN.test(id) ? id : UNKNOWN_MESSAGE_ID;
 }
 
 export function canonicalClaudeSessionId(sessionOrId) {

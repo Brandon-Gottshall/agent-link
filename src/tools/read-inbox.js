@@ -8,7 +8,7 @@
 // By default the tool drains pending messages (marks them delivered) in the
 // same transaction. Set markAsDelivered:false to inspect without draining.
 import { openMailbox } from "../claude/mailbox.js";
-import { claudeSessionAliases, displaySenderId } from "../claude/identity.js";
+import { claudeSessionAliases, displayMessageId, displaySenderId, displaySenderKind } from "../claude/identity.js";
 import { escapeAttr, escapeXml } from "../claude/xml.js";
 
 export const readInboxTool = {
@@ -70,11 +70,13 @@ export function makeReadInboxHandler({ resolveCurrentSession, mailboxOpener } = 
         const rows = markAsDelivered
           ? mb.drainFor({ toSessionIds, limit: limit ?? undefined })
           : mb.listPendingFor({ toSessionIds }).slice(0, limit ?? undefined);
-        // Sender ids are untrusted; never hand an invalid one to the model.
+        // Ids are untrusted; only shapes Agent Link produces reach the model.
         const messages = rows.map((m) => ({
           ...m,
+          id: displayMessageId(m.id),
           from_session_id: displaySenderId(m.from_session_id),
-          from_session_kind: displaySenderId(m.from_session_kind)
+          from_session_kind: displaySenderKind(m.from_session_kind),
+          reply_to_message_id: m.reply_to_message_id ? displayMessageId(m.reply_to_message_id) : null
         }));
         return {
           sessionId: session.sessionId,
@@ -95,10 +97,10 @@ function renderInbox(messages) {
   }
   const lines = [`<agent-link-inbox count="${messages.length}">`];
   for (const m of messages) {
-    const replyAttr = m.reply_to_message_id ? ` replyTo="${escapeAttr(m.reply_to_message_id)}"` : "";
+    const replyAttr = m.reply_to_message_id ? ` replyTo="${escapeAttr(displayMessageId(m.reply_to_message_id))}"` : "";
     const sentAt = Number.isFinite(m.sent_at) ? new Date(m.sent_at).toISOString() : "";
     lines.push(
-      `  <message id="${escapeAttr(m.id)}" from="${escapeAttr(displaySenderId(m.from_session_id))}" fromKind="${escapeAttr(displaySenderId(m.from_session_kind))}" sentAt="${escapeAttr(sentAt)}"${replyAttr}>`
+      `  <message id="${escapeAttr(displayMessageId(m.id))}" from="${escapeAttr(displaySenderId(m.from_session_id))}" fromKind="${escapeAttr(displaySenderKind(m.from_session_kind))}" sentAt="${escapeAttr(sentAt)}"${replyAttr}>`
     );
     lines.push(`    <body>${escapeXml(m.body)}</body>`);
     lines.push(`  </message>`);

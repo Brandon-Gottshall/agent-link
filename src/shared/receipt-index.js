@@ -131,10 +131,25 @@ export function buildReceipt({
   };
 }
 
+async function tightenFileMode(target, mode) {
+  try {
+    const stat = await fs.stat(target);
+    const uid = typeof process.getuid === "function" ? process.getuid() : null;
+    if (uid !== null && stat.uid !== uid) return;
+    if ((stat.mode & 0o777 & ~mode) !== 0) await fs.chmod(target, mode);
+  } catch {
+    // missing or not ours: leave it alone
+  }
+}
+
 export async function appendReceipt(receipt, options = {}) {
   const logPath = receiptLogPath(options);
-  await fs.mkdir(path.dirname(logPath), { recursive: true });
-  await fs.appendFile(logPath, `${JSON.stringify(receipt)}\n`, "utf8");
+  // Directories this creates are 0700 and the log file 0600. An existing log
+  // file this user owns is tightened to 0600. Existing directories (such as
+  // $CODEX_HOME) are left alone.
+  await fs.mkdir(path.dirname(logPath), { recursive: true, mode: 0o700 });
+  await fs.appendFile(logPath, `${JSON.stringify(receipt)}\n`, { encoding: "utf8", mode: 0o600 });
+  await tightenFileMode(logPath, 0o600);
   return {
     ok: true,
     id: receipt.id,
