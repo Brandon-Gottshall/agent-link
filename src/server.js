@@ -704,10 +704,36 @@ function buildResolveSelection(candidates) {
   };
 }
 
+// One page of loaded thread ids (cursor passes through to the app-server),
+// or, with threadId, a scan of every page for that one thread so "is X
+// loaded?" is a single call.
+const LOADED_LOOKUP_MAX_PAGES = 50;
+async function readLoadedPage(args) {
+  const limit = clamp(args.limit ?? LIMITS.list.def, LIMITS.list.min, LIMITS.list.max);
+  if (!args.threadId) {
+    const response = await appServer.request("thread/loaded/list", { limit, cursor: args.cursor ?? null });
+    return { response, lookup: null };
+  }
+  let cursor = args.cursor ?? null;
+  let pagesScanned = 0;
+  while (pagesScanned < LOADED_LOOKUP_MAX_PAGES) {
+    const page = await appServer.request("thread/loaded/list", { limit: LIMITS.list.max, cursor });
+    pagesScanned += 1;
+    const match = normalizeLoadedThreadEntries(page, extractLoadedThreadIds(page)).find((entry) => entry.id === args.threadId);
+    if (match) {
+      return { response: { data: [match], nextCursor: null }, lookup: { threadId: args.threadId, loaded: true, pagesScanned, complete: true } };
+    }
+    cursor = page.nextCursor ?? null;
+    if (!cursor) break;
+  }
+  return {
+    response: { data: [], nextCursor: null },
+    lookup: { threadId: args.threadId, loaded: cursor ? null : false, pagesScanned, complete: !cursor }
+  };
+}
+
 async function listLoadedThreads(args) {
-  const response = await appServer.request("thread/loaded/list", {
-    limit: clamp(args.limit ?? LIMITS.list.def, LIMITS.list.min, LIMITS.list.max)
-  });
+  const { response, lookup } = await readLoadedPage(args);
   const loadedThreadIds = extractLoadedThreadIds(response);
   const sidebarProbe = await readSidebarStateForMembership();
   const sidebarState = sidebarProbe.sidebarState;
@@ -731,6 +757,8 @@ async function listLoadedThreads(args) {
     // Named keys only: app-server response fields are not passed through.
     data: response.data ?? null,
     nextCursor: response.nextCursor ?? null,
+    hasMore: Boolean(response.nextCursor),
+    ...(lookup ? { lookup } : {}),
     sidebarState,
     sidebarStateError: sidebarProbe.error,
     sidebarMembershipSemantics: sidebarMembershipSemantics(),
@@ -948,14 +976,10 @@ async function getThread(args) {
         })
       }, args, threadId);
     } catch (localError) {
-      throw new AgentLinkError("not_found", `Thread ${threadId} was not found by the app-server or the local transcript fallback.`, {
-        details: {
-          id: threadId,
-          candidates: (await getThreadIdSuggestions(threadId)).slice(0, 5),
-          appServerError: error.message,
-          localError: localError.message
-        },
-        hint: "Call resolve_codex_thread or list_codex_threads to find the thread id."
+      // Codes and booleans only: the raw errors carry local paths.
+      throw await threadNotFound(threadId, {
+        appServerReachable: error instanceof AppServerError && typeof error.code === "number",
+        localTranscriptFound: false
       });
     }
   }
@@ -1568,11 +1592,16 @@ function buildPeerTurnInput({ toolContext = {}, threadId, message, overrides = n
 
 async function waitForThread(args) {
   const threadId = requiredString(args.threadId, "threadId");
-  const latest = await waitForThreadRead({
-    threadId,
-    timeoutMs: args.timeoutMs,
-    pollIntervalMs: args.pollIntervalMs
-  });
+  let latest;
+  try {
+    latest = await waitForThreadRead({
+      threadId,
+      timeoutMs: args.timeoutMs,
+      pollIntervalMs: args.pollIntervalMs
+    });
+  } catch (error) {
+    throw await enrichThreadLookupError(error, threadId);
+  }
   const waitState = latest.waitState;
   const observed = (latest.thread?.turns ?? []).find((turn) => turn.id === waitState.observedTurnId) ?? null;
   const outcome = latest.timedOut ? "timeout" : observed ? "turn_completed" : "idle";
@@ -1946,17 +1975,43 @@ function isTransientIncludeTurnsUnavailable(error) {
     || /includeTurns is unavailable before first user message/i.test(message);
 }
 
+// An app-server JSON-RPC error for a thread read means the thread does not
+// exist (or its id is malformed): not_found with ranked candidates, like
+// get_codex_thread (section 3.2). Transport failures keep their own code.
+const THREAD_MISSING_TEXT = /not found|no such|unknown thread|does not exist|no rollout|invalid thread|invalid uuid|failed to parse/i;
 async function enrichThreadLookupError(error, threadId) {
-  error.details = {
-    ...(error.details ?? {}),
-    didYouMean: await getThreadIdSuggestions(threadId)
-  };
-  return error;
+  const rpcCode = error instanceof AppServerError && typeof error.code === "number" ? error.code : null;
+  if (rpcCode === null || !THREAD_MISSING_TEXT.test(String(error.message ?? ""))) {
+    return error;
+  }
+  return threadNotFound(threadId, { appServerReachable: true, rpcCode });
+}
+
+async function threadNotFound(threadId, extra = {}) {
+  return new AgentLinkError("not_found", `Codex thread ${threadId} was not found.`, {
+    details: {
+      id: threadId,
+      candidates: await getThreadIdSuggestions(threadId),
+      ...extra
+    },
+    hint: "Call resolve_codex_thread or list_codex_threads to find the thread id."
+  });
 }
 
 // Rank by id similarity using transcript filenames only, then read just the
 // few winners for their names and previews.
+// At most 5 candidates, as {id, name, score}: no previews (another agent's
+// text) and no paths.
 async function getThreadIdSuggestions(threadId) {
+  const brief = (candidate) => ({
+    id: candidate.id,
+    name: typeof candidate.name === "string" ? truncate(candidate.name, 120) : null,
+    score: candidate.score ?? null
+  });
+  return (await rankedThreadIdSuggestions(threadId)).slice(0, 5).map(brief);
+}
+
+async function rankedThreadIdSuggestions(threadId) {
   try {
     const ids = await listLocalThreadIds();
     const ranked = suggestThreadIds(ids.map((entry) => ({ id: entry.id, path: entry.path })), threadId);

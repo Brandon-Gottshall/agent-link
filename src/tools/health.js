@@ -59,13 +59,32 @@ const RECENT_EVENT_LIMIT = 50;
 export function redactEvents(events) {
   return events.map((event) => {
     if (!event.fields) return event;
-    /** @type {Record<string, unknown>} */
-    const fields = {};
-    for (const [key, value] of Object.entries(event.fields)) {
-      fields[key] = REDACTED_FIELD.test(key) ? "[redacted]" : value;
+    const fields = /** @type {Record<string, unknown>} */ (redactValue(event.fields, 0));
+    // The envelope shows an internal error only as its class; health must
+    // not show more.
+    if (event.event === "tool.internal_error" && fields.error && typeof fields.error === "object") {
+      fields.error = { ...fields.error, message: "[redacted]" };
     }
     return { ...event, fields };
   });
+}
+
+/**
+ * Redacts stack/output-like keys at any depth.
+ * @param {unknown} value
+ * @param {number} depth
+ * @returns {unknown}
+ */
+function redactValue(value, depth) {
+  if (depth > 6) return "[redacted]";
+  if (Array.isArray(value)) return value.map((item) => redactValue(item, depth + 1));
+  if (!value || typeof value !== "object") return value;
+  /** @type {Record<string, unknown>} */
+  const out = {};
+  for (const [key, item] of Object.entries(value)) {
+    out[key] = REDACTED_FIELD.test(key) ? "[redacted]" : redactValue(item, depth + 1);
+  }
+  return out;
 }
 
 /**

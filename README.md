@@ -176,7 +176,7 @@ Then point either host at the folder instead of GitHub: `claude plugin marketpla
 | Tool | Purpose |
 | --- | --- |
 | `list_codex_threads` | List threads. Pass `includeSubagents: true` to include spawned subagents. |
-| `list_loaded_codex_threads` | List threads loaded in the running app-server, with sidebar membership. |
+| `list_loaded_codex_threads` | List threads loaded in the running app-server, with sidebar membership. Pages with `cursor`; `threadId` checks one thread. |
 | `get_codex_thread` | Read one thread's status, turns, and optionally its receipts. |
 | `resolve_codex_thread` | Find a thread by title, preview text, automation name, or partial ID. |
 | `get_codex_sidebar_state` | Read the Codex Desktop sidebar as the app reports it. |
@@ -209,7 +209,7 @@ Every tool returns one JSON object, in the text content and in `structuredConten
 - Success: `{"ok": true, ...}`, with `warnings` when there is something to note (for example `deprecated_argument` for an old argument name).
 - Failure: `{"ok": false, "error": {"code", "message", "details", "hint"}}`, with `isError: true`. Codes: `invalid_arguments`, `unknown_tool`, `not_found`, `ambiguous`, `archived`, `wrong_recipient`, `no_current_session`, `body_too_large`, `permission_denied`, `active_turn_conflict`, `codex_unavailable`, `claude_unavailable`, `upstream_error`, `unsupported`, `state_io_error`, `internal_error`.
 - A search that finds nothing is a verdict, not an error: resolve tools report `status`. Waits report `outcome` (`reply`, `turn_completed`, `idle`, `timeout`), and a timeout is `ok: true`.
-- Arguments are checked against the schema. Unknown properties and out-of-range numbers fail with `invalid_arguments`; `details.errors` names each field.
+- Arguments are checked against the schema. Unknown properties and out-of-range numbers fail with `invalid_arguments`; `details.errors` names each field. `null` for an optional argument counts as not set, and a number or boolean sent as an exact string (`"20"`, `"true"`) is read as that value with a `coerced_argument` warning.
 - Renamed arguments keep working until 0.6.0 with a warning: `searchTerm` is now `query`, `body` is `message`, `latestMessageId` is `replyToMessageId`, `message_claude_session`'s `to` is `sessionId` (exact) or `query` (fuzzy), and `return_project_work_result`'s `status` is `resultStatus`.
 
 ## How it works

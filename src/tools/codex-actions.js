@@ -82,7 +82,7 @@ export const codexActionTools = [
   },
   {
     name: "archive_codex_thread",
-    description: "Archive a Codex thread through the app-server when available, falling back to a guarded local sessions move. status is archived or already_archived. A thread the app-server reports as loaded is refused with active_turn_conflict unless forceLoaded is true.",
+    description: "Archive a Codex thread through the app-server when available, falling back to a guarded local sessions move. status is archived or already_archived. The app-server archive works on loaded threads too; only the local fallback refuses a thread the app-server reports as loaded (active_turn_conflict) unless forceLoaded is true.",
     inputSchema: {
       type: "object",
       properties: {

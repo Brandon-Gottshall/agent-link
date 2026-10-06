@@ -3238,8 +3238,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path15) {
-      let input = path15;
+    function removeDotSegments(path16) {
+      let input = path16;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3491,8 +3491,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path15, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path15 && path15 !== "/" ? path15 : void 0;
+        const [path16, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path16 && path16 !== "/" ? path16 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -10517,7 +10517,7 @@ var require_websocket_server = __commonJS({
 // src/server.js
 import { spawn as spawn2 } from "node:child_process";
 import { realpathSync } from "node:fs";
-import path14 from "node:path";
+import path15 from "node:path";
 
 // node_modules/zod/v4/core/core.js
 var _a;
@@ -10759,10 +10759,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path15) {
-  if (!path15)
+function getElementAtPath(obj, path16) {
+  if (!path16)
     return obj;
-  return path15.reduce((acc, key) => acc?.[key], obj);
+  return path16.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -11171,11 +11171,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path15, issues) {
+function prefixIssues(path16, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path15);
+    iss.path.unshift(path16);
     return iss;
   });
 }
@@ -11322,16 +11322,16 @@ function flattenError(error2, mapper = (issue2) => issue2.message) {
 }
 function formatError(error2, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error3, path15 = []) => {
+  const processError = (error3, path16 = []) => {
     for (const issue2 of error3.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path15, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path16, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path15, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path16, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path15, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path16, ...issue2.path]);
       } else {
-        const fullpath = [...path15, ...issue2.path];
+        const fullpath = [...path16, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -19120,7 +19120,11 @@ var AgentLinkError = class extends Error {
 function toErrorPayload(error2) {
   if (error2 instanceof AgentLinkError && isErrorCode(error2.errorCode)) {
     const payload = { code: error2.errorCode, message: error2.message };
-    if (error2.details && Object.keys(error2.details).length > 0) payload.details = error2.details;
+    const details = (
+      /** @type {{envelopeDetails?: Record<string, unknown>}} */
+      error2.envelopeDetails ?? error2.details
+    );
+    if (details && Object.keys(details).length > 0) payload.details = details;
     if (error2.hint) payload.hint = error2.hint;
     return payload;
   }
@@ -19568,16 +19572,16 @@ function typeMatches(actual, wanted) {
 function join(base, key) {
   return base ? `${base}.${key}` : key;
 }
-function validateSchema(schema, value, path15 = "") {
+function validateSchema(schema, value, path16 = "") {
   const problems = [];
   if (!schema || typeof schema !== "object") return problems;
-  const where = path15 || "(arguments)";
+  const where = path16 || "(arguments)";
   if (Array.isArray(schema.oneOf) || Array.isArray(schema.anyOf)) {
     const options = (
       /** @type {JsonSchema[]} */
       schema.oneOf ?? schema.anyOf
     );
-    const matches = options.filter((option) => validateSchema(option, value, path15).length === 0).length;
+    const matches = options.filter((option) => validateSchema(option, value, path16).length === 0).length;
     const ok = schema.oneOf ? matches === 1 : matches >= 1;
     if (!ok) {
       problems.push({ path: where, rule: schema.oneOf ? "oneOf" : "anyOf", expected: options.map(describe2).join(" or ") });
@@ -19619,7 +19623,7 @@ function validateSchema(schema, value, path15 = "") {
           /** @type {JsonSchema} */
           schema.items,
           item,
-          `${path15 || ""}[${index}]`
+          `${path16 || ""}[${index}]`
         ));
       });
     }
@@ -19632,17 +19636,17 @@ function validateSchema(schema, value, path15 = "") {
     const properties = schema.properties ?? {};
     for (const key of schema.required ?? []) {
       if (record2[key] === void 0) {
-        problems.push({ path: join(path15, key), rule: "required", expected: describe2(properties[key]) });
+        problems.push({ path: join(path16, key), rule: "required", expected: describe2(properties[key]) });
       }
     }
     for (const [key, item] of Object.entries(record2)) {
       if (item === void 0) continue;
       if (Object.prototype.hasOwnProperty.call(properties, key)) {
-        problems.push(...validateSchema(properties[key], item, join(path15, key)));
+        problems.push(...validateSchema(properties[key], item, join(path16, key)));
       } else if (schema.additionalProperties === false) {
-        problems.push({ path: join(path15, key), rule: "additionalProperties", expected: "no such property" });
+        problems.push({ path: join(path16, key), rule: "additionalProperties", expected: "no such property" });
       } else if (schema.additionalProperties && typeof schema.additionalProperties === "object") {
-        problems.push(...validateSchema(schema.additionalProperties, item, join(path15, key)));
+        problems.push(...validateSchema(schema.additionalProperties, item, join(path16, key)));
       }
     }
   }
@@ -19662,6 +19666,64 @@ function describe2(schema) {
   if (Array.isArray(schema.type)) return schema.type.join(" or ");
   if (schema.type === "array" && schema.items) return `array of ${describe2(schema.items)}`;
   return schema.type ?? "a value";
+}
+function typesOf(schema) {
+  if (!schema || schema.type === void 0) return [];
+  return Array.isArray(schema.type) ? schema.type : [schema.type];
+}
+function allowsNull(schema) {
+  if (!schema) return true;
+  if (typesOf(schema).includes("null")) return true;
+  if (Array.isArray(schema.enum) && schema.enum.includes(null)) return true;
+  const options = schema.oneOf ?? schema.anyOf;
+  return Array.isArray(options) && options.some(allowsNull);
+}
+var INTEGER_TEXT = /^-?\d+$/;
+function coerceScalar(schema, text) {
+  const types = typesOf(schema);
+  if (types.length === 0 || types.includes("string")) return void 0;
+  if (types.includes("integer") && INTEGER_TEXT.test(text)) {
+    const n = Number(text);
+    if (Number.isSafeInteger(n)) return n;
+  }
+  if (types.includes("number") && text !== "" && text.trim() === text) {
+    const n = Number(text);
+    if (Number.isFinite(n)) return n;
+  }
+  if (types.includes("boolean") && (text === "true" || text === "false")) return text === "true";
+  return void 0;
+}
+function normalizeArguments(schema, value, notes, path16 = "") {
+  if (!schema || !value || typeof value !== "object" || Array.isArray(value) || !schema.properties) return value;
+  const record2 = (
+    /** @type {Record<string, unknown>} */
+    value
+  );
+  const required2 = new Set(schema.required ?? []);
+  const out2 = {};
+  for (const [key, item] of Object.entries(record2)) {
+    const property = schema.properties[key];
+    const where = join(path16, key);
+    if (!property) {
+      out2[key] = item;
+      continue;
+    }
+    if (item === null && !required2.has(key) && !allowsNull(property)) continue;
+    if (typeof item === "string") {
+      const coerced = coerceScalar(property, item);
+      if (coerced !== void 0) {
+        notes.push({
+          code: "coerced_argument",
+          message: `${where} was the string ${JSON.stringify(item).slice(0, 40)}; it was read as ${String(coerced)}. Send a ${typeof coerced} instead.`,
+          path: where
+        });
+        out2[key] = coerced;
+        continue;
+      }
+    }
+    out2[key] = normalizeArguments(property, item, notes, where);
+  }
+  return out2;
 }
 
 // src/server/schemas.js
@@ -19861,7 +19923,7 @@ function createRegistry(entries, options = {}) {
           hint: "Call tools/list for the available tools."
         });
       }
-      const args = rawArgs === void 0 || rawArgs === null ? {} : rawArgs;
+      const args = normalizeArguments(found.tool.inputSchema, rawArgs === void 0 || rawArgs === null ? {} : rawArgs, warnings);
       const problems = validateSchema(found.tool.inputSchema, args);
       if (problems.length > 0) {
         throw new AgentLinkError("invalid_arguments", `Invalid arguments for ${name}: ${problems.map((p) => `${p.path} (${p.rule}: expected ${p.expected})`).join("; ")}.`, {
@@ -20024,6 +20086,7 @@ import fs4 from "node:fs";
 
 // src/shared/legacy-state.js
 import fs3 from "node:fs";
+import path5 from "node:path";
 var LEGACY_STILL_WRITTEN_WARNING = "A legacy Agent Link state file changed after the migration to ~/.agent-link: an older plugin copy is still running. Upgrade the plugin in every harness and restart its sessions.";
 function statOrNull(file) {
   try {
@@ -20031,6 +20094,21 @@ function statOrNull(file) {
   } catch {
     return null;
   }
+}
+function newestRecordMtimeMs(dir) {
+  let names = [];
+  try {
+    names = fs3.readdirSync(dir);
+  } catch {
+    return null;
+  }
+  let newest = null;
+  for (const name of names) {
+    if (!name.endsWith(".json")) continue;
+    const stat = statOrNull(path5.join(dir, name));
+    if (stat?.isFile() && (newest === null || stat.mtimeMs > newest)) newest = stat.mtimeMs;
+  }
+  return newest;
 }
 function readMigration(options) {
   const file = migrationRecordPath(options);
@@ -20068,13 +20146,12 @@ function legacyStateReport(options = {}) {
   for (const [kind, file] of candidates) {
     const stat = statOrNull(file);
     if (!stat) continue;
+    const mtimeMs = kind === "managedAppServers" ? newestRecordMtimeMs(file) : stat.mtimeMs;
     files.push({
       kind,
       path: file,
-      modifiedAt: stat.mtime.toISOString(),
-      // Managed app-server record directories change when a 0.4.x server
-      // starts or stops; the mailbox and receipt logs when it writes mail.
-      writtenAfterMigration: Number.isFinite(migratedAt) ? stat.mtimeMs > migratedAt : null
+      modifiedAt: mtimeMs === null ? null : new Date(mtimeMs).toISOString(),
+      writtenAfterMigration: Number.isFinite(migratedAt) && mtimeMs !== null ? mtimeMs > migratedAt : null
     });
   }
   const stillWritten = files.some((file) => file.writtenAfterMigration === true);
@@ -20125,12 +20202,25 @@ var RECENT_EVENT_LIMIT = 50;
 function redactEvents(events) {
   return events.map((event) => {
     if (!event.fields) return event;
-    const fields = {};
-    for (const [key, value] of Object.entries(event.fields)) {
-      fields[key] = REDACTED_FIELD.test(key) ? "[redacted]" : value;
+    const fields = (
+      /** @type {Record<string, unknown>} */
+      redactValue(event.fields, 0)
+    );
+    if (event.event === "tool.internal_error" && fields.error && typeof fields.error === "object") {
+      fields.error = { ...fields.error, message: "[redacted]" };
     }
     return { ...event, fields };
   });
+}
+function redactValue(value, depth) {
+  if (depth > 6) return "[redacted]";
+  if (Array.isArray(value)) return value.map((item) => redactValue(item, depth + 1));
+  if (!value || typeof value !== "object") return value;
+  const out2 = {};
+  for (const [key, item] of Object.entries(value)) {
+    out2[key] = REDACTED_FIELD.test(key) ? "[redacted]" : redactValue(item, depth + 1);
+  }
+  return out2;
 }
 function exists(file) {
   try {
@@ -20248,11 +20338,13 @@ var codexThreadTools = [
   },
   {
     name: "list_loaded_codex_threads",
-    description: "List thread IDs currently loaded in the reachable Codex app-server runtime, with best-effort GUI sidebar membership from rendererSidebarModel when available.",
+    description: "List thread IDs currently loaded in the reachable Codex app-server runtime, with best-effort GUI sidebar membership from rendererSidebarModel when available. Returns one page (limit, default 20); page with cursor while hasMore is true. To check whether one thread is loaded, pass threadId: every page is scanned and lookup.loaded answers it.",
     inputSchema: {
       type: "object",
       properties: {
-        limit: limit("list", "loaded thread ids")
+        limit: limit("list", "loaded thread ids"),
+        cursor: str("Continue from the nextCursor of a previous call."),
+        threadId: str("Only report this thread: lookup.loaded is true or false (null if the scan stopped after 50 pages), and threadIds/loadedThreads hold it when loaded.")
       },
       additionalProperties: false
     },
@@ -20261,7 +20353,9 @@ var codexThreadTools = [
       appServer: commonOut.appServer,
       stateSemantics: commonOut.stateSemantics,
       data: outAny("The app-server's loaded-thread entries."),
-      nextCursor: outAny("App-server pagination cursor."),
+      nextCursor: outAny("Pass as cursor to read the next page; null on the last page."),
+      hasMore: out("boolean", "More loaded threads exist beyond this page."),
+      lookup: out("object", "With threadId: {threadId, loaded, pagesScanned, complete}."),
       threadIds: out("array", "Loaded thread ids."),
       loadedThreads: out("array", "Loaded threads with sidebarMembership."),
       sidebarState: out("object", "Normalized sidebar state, or the unsupported shape."),
@@ -20405,7 +20499,7 @@ var codexActionTools = [
   },
   {
     name: "archive_codex_thread",
-    description: "Archive a Codex thread through the app-server when available, falling back to a guarded local sessions move. status is archived or already_archived. A thread the app-server reports as loaded is refused with active_turn_conflict unless forceLoaded is true.",
+    description: "Archive a Codex thread through the app-server when available, falling back to a guarded local sessions move. status is archived or already_archived. The app-server archive works on loaded threads too; only the local fallback refuses a thread the app-server reports as loaded (active_turn_conflict) unless forceLoaded is true.",
     inputSchema: {
       type: "object",
       properties: {
@@ -20651,7 +20745,7 @@ function orchestrationEntries(handlers) {
 // src/shared/receipt-index.js
 import { randomUUID } from "node:crypto";
 import { promises as fs5 } from "node:fs";
-import path5 from "node:path";
+import path6 from "node:path";
 
 // src/shared/caller-context.js
 var MAX_TEXT = 300;
@@ -20986,7 +21080,7 @@ async function tightenFileMode(target, mode) {
 }
 async function appendReceipt(receipt, options = {}) {
   const logPath = receiptWritePath(options);
-  if (path5.resolve(path5.dirname(logPath)) === path5.resolve(stateDir())) ensureStateDir();
+  if (path6.resolve(path6.dirname(logPath)) === path6.resolve(stateDir())) ensureStateDir();
   await appendJsonl(logPath, receipt);
   await tightenFileMode(logPath, 384);
   return {
@@ -21261,7 +21355,7 @@ import http from "node:http";
 import net from "node:net";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync as readFileSync2, readdirSync, rmSync, writeFileSync } from "node:fs";
 import os3 from "node:os";
-import path7 from "node:path";
+import path8 from "node:path";
 
 // node_modules/ws/wrapper.mjs
 var import_stream = __toESM(require_stream(), 1);
@@ -21278,7 +21372,7 @@ var wrapper_default = import_websocket.default;
 import { spawnSync } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import os2 from "node:os";
-import path6 from "node:path";
+import path7 from "node:path";
 var APP_BUNDLES = [
   {
     app: "ChatGPT.app",
@@ -21295,7 +21389,7 @@ var APP_BUNDLES = [
 function codexInstallLayout(options = {}) {
   const home = options.home ?? os2.homedir();
   const platform = options.platform ?? process.platform;
-  const applicationDirs = options.applicationDirs ?? (platform === "darwin" ? ["/Applications", path6.join(home, "Applications")] : []);
+  const applicationDirs = options.applicationDirs ?? (platform === "darwin" ? ["/Applications", path7.join(home, "Applications")] : []);
   const executable = platform === "win32" ? "codex.exe" : "codex";
   return {
     platform,
@@ -21303,11 +21397,11 @@ function codexInstallLayout(options = {}) {
     envVars: ["AGENT_LINK_CODEX_BIN", ...ENV_ALIASES.AGENT_LINK_CODEX_BIN],
     appBundles: applicationDirs.flatMap((dir) => APP_BUNDLES.map((bundle) => ({
       app: bundle.app,
-      appPath: path6.join(dir, bundle.app),
-      binaries: bundle.binaries.map((relative) => path6.join(dir, bundle.app, relative))
+      appPath: path7.join(dir, bundle.app),
+      binaries: bundle.binaries.map((relative) => path7.join(dir, bundle.app, relative))
     }))),
     pathDirs: options.pathDirs ?? splitPath(options.pathEnv ?? process.env.PATH ?? ""),
-    wellKnownDirs: options.wellKnownDirs ?? (platform === "win32" ? [] : [path6.join(home, ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin"])
+    wellKnownDirs: options.wellKnownDirs ?? (platform === "win32" ? [] : [path7.join(home, ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin"])
   };
 }
 function codexBinaryCandidateEntries(options = {}) {
@@ -21324,10 +21418,10 @@ function codexBinaryCandidateEntries(options = {}) {
     }
   }
   for (const dir of layout.pathDirs) {
-    entries.push({ path: path6.join(dir, layout.executable), source: "PATH" });
+    entries.push({ path: path7.join(dir, layout.executable), source: "PATH" });
   }
   for (const dir of layout.wellKnownDirs) {
-    entries.push({ path: path6.join(dir, layout.executable), source: "well-known" });
+    entries.push({ path: path7.join(dir, layout.executable), source: "well-known" });
   }
   const seen = /* @__PURE__ */ new Set();
   return entries.filter((entry) => {
@@ -21344,9 +21438,9 @@ function discoverCodexBinary(options = {}) {
   const searched = [];
   for (const entry of entries) {
     searched.push(entry.path);
-    if (entry.explicit && !entry.path.includes(path6.sep)) {
+    if (entry.explicit && !entry.path.includes(path7.sep)) {
       const layout = options.layout ?? codexInstallLayout(options);
-      const resolved = layout.pathDirs.map((dir) => path6.join(dir, entry.path)).find((candidate) => isExecutable(candidate));
+      const resolved = layout.pathDirs.map((dir) => path7.join(dir, entry.path)).find((candidate) => isExecutable(candidate));
       if (resolved) {
         return { found: true, path: resolved, source: entry.source, searched };
       }
@@ -21412,7 +21506,7 @@ function defaultIsExecutable(candidate) {
   }
 }
 function splitPath(value) {
-  return String(value).split(path6.delimiter).filter((dir) => dir && path6.isAbsolute(dir));
+  return String(value).split(path7.delimiter).filter((dir) => dir && path7.isAbsolute(dir));
 }
 
 // src/codex/app-server-client.js
@@ -21440,6 +21534,13 @@ var AppServerError = class extends AgentLinkError {
     this.name = "AppServerError";
     this.details = details;
     this.code = details.code ?? null;
+    if (typeof details.code === "number") {
+      this.envelopeDetails = {
+        method: typeof details.method === "string" ? details.method : null,
+        rpcCode: details.code,
+        rpcMessage: String(message ?? "").slice(0, 500)
+      };
+    }
   }
 };
 function managedAppServerStateDir() {
@@ -21771,7 +21872,7 @@ var CodexAppServerClient = class {
     }
     const explicitSocket = envValue("AGENT_LINK_CODEX_SOCK");
     if (explicitSocket) {
-      return { kind: "socket", socketPath: path7.resolve(explicitSocket), managed: false };
+      return { kind: "socket", socketPath: path8.resolve(explicitSocket), managed: false };
     }
     if (!this.options.autoStart) {
       throw new AppServerError(
@@ -21839,14 +21940,14 @@ var CodexAppServerClient = class {
   // The name is fixed per Agent Link process (<pid>.sock): Codex keeps
   // per-socket lock files, so a fresh name per spawn would pile them up.
   allocateEndpoint() {
-    if (path7.resolve(path7.dirname(this.stateDir())) === path7.resolve(stateDir())) {
+    if (path8.resolve(path8.dirname(this.stateDir())) === path8.resolve(stateDir())) {
       ensureStateDir();
     }
     const stateDir2 = ensurePrivateDir(this.stateDir());
     const stem = `${process.pid}`;
     if (this.options.transport === "ws-token") {
       const token = randomBytes(32).toString("hex");
-      const tokenFile = path7.join(stateDir2, `${stem}.token`);
+      const tokenFile = path8.join(stateDir2, `${stem}.token`);
       writeFileSync(tokenFile, token, { mode: 384 });
       chmodSync(tokenFile, 384);
       return {
@@ -21860,11 +21961,11 @@ var CodexAppServerClient = class {
       };
     }
     let socketDir = stateDir2;
-    if (Buffer.byteLength(path7.join(socketDir, `${stem}.sock`)) > MAX_UNIX_SOCKET_PATH_BYTES) {
+    if (Buffer.byteLength(path8.join(socketDir, `${stem}.sock`)) > MAX_UNIX_SOCKET_PATH_BYTES) {
       const base = process.platform === "darwin" ? os3.tmpdir() : "/tmp";
-      socketDir = ensurePrivateDir(path7.join(base, `agent-link-${process.getuid?.() ?? "user"}`));
+      socketDir = ensurePrivateDir(path8.join(base, `agent-link-${process.getuid?.() ?? "user"}`));
     }
-    const socketPath = path7.join(socketDir, `${stem}.sock`);
+    const socketPath = path8.join(socketDir, `${stem}.sock`);
     rmSync(socketPath, { force: true });
     return {
       transport: "unix",
@@ -22195,7 +22296,7 @@ function processGroupAlive(pgid) {
 function writeManagedRecord(stateDir2, record2) {
   try {
     mkdirSync(stateDir2, { recursive: true, mode: 448 });
-    const file = path7.join(stateDir2, `${record2.pid}.json`);
+    const file = path8.join(stateDir2, `${record2.pid}.json`);
     writeFileSync(file, `${JSON.stringify(record2)}
 `, { mode: 384 });
     return file;
@@ -22224,7 +22325,7 @@ function reapOrphanedManagedAppServers({ stateDir: stateDir2 = managedAppServerS
     if (!name.endsWith(".json")) {
       continue;
     }
-    const file = path7.join(stateDir2, name);
+    const file = path8.join(stateDir2, name);
     let record2;
     try {
       record2 = JSON.parse(readFileSync2(file, "utf8"));
@@ -22483,17 +22584,17 @@ function sleep(ms) {
 
 // src/claude/session-index.js
 import fs7 from "node:fs";
-import path9 from "node:path";
+import path10 from "node:path";
 import { homedir as homedir2 } from "node:os";
 import { spawnSync as spawnSync3 } from "node:child_process";
 
 // src/claude/desktop-registry.js
 import fs6 from "node:fs";
-import path8 from "node:path";
+import path9 from "node:path";
 import { homedir } from "node:os";
 var DEFAULT_SIDECAR_ROOTS = [
-  path8.join(homedir(), "Library/Application Support/Claude/local-agent-mode-sessions"),
-  path8.join(homedir(), "Library/Application Support/Claude/claude-code-sessions")
+  path9.join(homedir(), "Library/Application Support/Claude/local-agent-mode-sessions"),
+  path9.join(homedir(), "Library/Application Support/Claude/claude-code-sessions")
 ];
 var REQUIRED = ["sessionId"];
 var OPTIONAL = [
@@ -22529,8 +22630,8 @@ function parseSidecar(filePath) {
 }
 
 // src/claude/session-index.js
-var DEFAULT_DESKTOP_ROOT = path9.join(homedir2(), "Library/Application Support/Claude/local-agent-mode-sessions");
-var DEFAULT_CODE_ROOT = path9.join(homedir2(), "Library/Application Support/Claude/claude-code-sessions");
+var DEFAULT_DESKTOP_ROOT = path10.join(homedir2(), "Library/Application Support/Claude/local-agent-mode-sessions");
+var DEFAULT_CODE_ROOT = path10.join(homedir2(), "Library/Application Support/Claude/claude-code-sessions");
 function defaultProjectsRoot() {
   return claudeProjectsRoot();
 }
@@ -22607,7 +22708,7 @@ function isClaudeSessionLoaded(cliSessionId, { psOutput } = {}) {
 function findTranscriptSessionByCliId(cliSessionId, { transcriptPath, projectsRoot = defaultProjectsRoot() } = {}) {
   if (!cliSessionId) return null;
   let file = null;
-  if (transcriptPath && path9.basename(transcriptPath, ".jsonl") === cliSessionId && fs7.existsSync(transcriptPath)) {
+  if (transcriptPath && path10.basename(transcriptPath, ".jsonl") === cliSessionId && fs7.existsSync(transcriptPath)) {
     file = transcriptPath;
   } else {
     file = findTranscriptFileByCliId(cliSessionId, projectsRoot);
@@ -22646,7 +22747,7 @@ function findTranscriptFileByCliId(cliSessionId, projectsRoot) {
   const target = `${cliSessionId}.jsonl`;
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    const candidate = path9.join(projectsRoot, entry.name, target);
+    const candidate = path10.join(projectsRoot, entry.name, target);
     try {
       if (fs7.existsSync(candidate)) return candidate;
     } catch {
@@ -22663,7 +22764,7 @@ function findSidecarFileById(root, sessionId, { maxDepth = 3 } = {}) {
   if (!root || !sessionId || !/^local_[0-9A-Za-z-]+$/.test(sessionId)) return null;
   const name = `${sessionId}.json`;
   const visit = (dir, depth) => {
-    const direct = path9.join(dir, name);
+    const direct = path10.join(dir, name);
     try {
       if (fs7.statSync(direct).isFile()) return direct;
     } catch {
@@ -22677,7 +22778,7 @@ function findSidecarFileById(root, sessionId, { maxDepth = 3 } = {}) {
     }
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
-      const found = visit(path9.join(dir, entry.name), depth + 1);
+      const found = visit(path10.join(dir, entry.name), depth + 1);
       if (found) return found;
     }
     return null;
@@ -22705,7 +22806,7 @@ function filterSidecars(root, predicate) {
   return out2;
 }
 function isSidecarFile(file) {
-  return /^local_[0-9a-zA-Z-]+\.json$/.test(path9.basename(file));
+  return /^local_[0-9a-zA-Z-]+\.json$/.test(path10.basename(file));
 }
 function listSidecarSessions(root, surface2) {
   if (!root || !fs7.existsSync(root)) return [];
@@ -22758,7 +22859,7 @@ function listTranscriptSessions(projectsRoot) {
   }
   for (const project of projects) {
     if (!project.isDirectory()) continue;
-    const dir = path9.join(projectsRoot, project.name);
+    const dir = path10.join(projectsRoot, project.name);
     let entries;
     try {
       entries = fs7.readdirSync(dir, { withFileTypes: true });
@@ -22767,7 +22868,7 @@ function listTranscriptSessions(projectsRoot) {
     }
     for (const entry of entries) {
       if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
-      const session = parseTranscriptSummary(path9.join(dir, entry.name), projectsRoot);
+      const session = parseTranscriptSummary(path10.join(dir, entry.name), projectsRoot);
       if (session) out2.push(session);
     }
   }
@@ -22826,17 +22927,17 @@ function buildTranscriptSummary(file, projectsRoot, stat) {
   } catch {
     return null;
   }
-  const cliSessionId = path9.basename(file, ".jsonl");
+  const cliSessionId = path10.basename(file, ".jsonl");
   if (!cliSessionId) return null;
   const cwd = firstRecord?.cwd ?? inferCwdFromProjectPath(file, projectsRoot);
   const createdAt = Date.parse(firstRecord?.timestamp ?? firstRecord?.createdAt ?? "");
   return {
     sessionId: cliSessionId.startsWith("local_") ? cliSessionId : `local_${cliSessionId}`,
     cliSessionId,
-    processName: path9.basename(path9.dirname(file)),
+    processName: path10.basename(path10.dirname(file)),
     cwd,
     model: firstRecord?.model ?? "unknown",
-    title: firstRecord?.title ?? firstRecord?.content?.title ?? path9.basename(path9.dirname(file)),
+    title: firstRecord?.title ?? firstRecord?.content?.title ?? path10.basename(path10.dirname(file)),
     isArchived: false,
     createdAt: Number.isFinite(createdAt) ? createdAt : null,
     lastActivityAt: stat.mtimeMs,
@@ -22850,7 +22951,7 @@ function buildTranscriptSummary(file, projectsRoot, stat) {
   };
 }
 function inferCwdFromProjectPath(file, projectsRoot) {
-  const rel = path9.relative(projectsRoot, path9.dirname(file));
+  const rel = path10.relative(projectsRoot, path10.dirname(file));
   if (!rel || rel.startsWith("..")) return "";
   return rel.replace(/-/g, "/");
 }
@@ -22929,7 +23030,7 @@ function walk(dir, visit, stop = () => false) {
   }
   for (const entry of entries) {
     if (stop()) return;
-    const fp = path9.join(dir, entry.name);
+    const fp = path10.join(dir, entry.name);
     if (entry.isDirectory()) walk(fp, visit, stop);
     else if (entry.isFile()) visit(fp);
   }
@@ -23199,7 +23300,7 @@ function claudeListingEntries() {
 }
 
 // src/claude/mailbox.js
-import path10 from "node:path";
+import path11 from "node:path";
 import fs8 from "node:fs";
 import { spawnSync as spawnSync4 } from "node:child_process";
 import crypto from "node:crypto";
@@ -23233,13 +23334,13 @@ function resolveLegacyDbPath({ mailboxPath: mailboxPath2, dbPath } = {}) {
   return mailboxDbPath();
 }
 function isDefaultMailbox(mailboxPath2) {
-  return path10.resolve(mailboxPath2) === path10.resolve(stateDir(), "mailbox.jsonl");
+  return path11.resolve(mailboxPath2) === path11.resolve(stateDir(), "mailbox.jsonl");
 }
 function ensurePrivateMailbox(mailboxPath2) {
   if (isDefaultMailbox(mailboxPath2)) {
     ensureStateDir();
   } else {
-    fs8.mkdirSync(path10.dirname(mailboxPath2), { recursive: true, mode: DIR_MODE2 });
+    fs8.mkdirSync(path11.dirname(mailboxPath2), { recursive: true, mode: DIR_MODE2 });
   }
   tightenMode(mailboxPath2, FILE_MODE2);
 }
@@ -23262,13 +23363,13 @@ function mailboxStatus(options = {}) {
     path: mailboxPath2,
     exists: exists2,
     readable,
-    writable: canWrite(exists2 ? mailboxPath2 : path10.dirname(mailboxPath2)),
+    writable: canWrite(exists2 ? mailboxPath2 : path11.dirname(mailboxPath2)),
     pendingMessagesCount,
     legacyReadPaths
   };
 }
 function canWrite(target) {
-  let current = path10.resolve(target);
+  let current = path11.resolve(target);
   while (true) {
     if (fs8.existsSync(current)) {
       try {
@@ -23278,7 +23379,7 @@ function canWrite(target) {
         return false;
       }
     }
-    const parent = path10.dirname(current);
+    const parent = path11.dirname(current);
     if (parent === current) return false;
     current = parent;
   }
@@ -24434,7 +24535,8 @@ function makeReadInboxHandler({ resolveCurrentSession, mailboxOpener } = {}) {
           messages,
           remainingCount: pending.length - rows.length,
           ...held > 0 ? { heldByActiveWait: held } : {},
-          renderedBlock: renderInbox(peers)
+          renderedBlock: rows.length < pending.length ? `${renderInbox(peers)}
+${pending.length - rows.length} more pending message(s): call read_agent_link_inbox again to read them.` : renderInbox(peers)
         };
       } finally {
         mb.close();
@@ -24558,9 +24660,9 @@ function makeReplyAgentLinkMessageHandler({
     }
   };
 }
-function invalid(path15, message) {
+function invalid(path16, message) {
   return new AgentLinkError("invalid_arguments", message, {
-    details: { errors: [{ path: path15, rule: "required", expected: "non-empty string" }] }
+    details: { errors: [{ path: path16, rule: "required", expected: "non-empty string" }] }
   });
 }
 function replyAgentLinkMessageEntries(deps) {
@@ -24573,7 +24675,7 @@ function replyAgentLinkMessageEntries(deps) {
 
 // src/claude/channel-bridge.js
 import fs9 from "node:fs";
-import path11 from "node:path";
+import path12 from "node:path";
 var DEFAULT_POLL_INTERVAL_MS3 = 1e3;
 var DEFAULT_MAX_POLL_INTERVAL_MS = 3e4;
 var WAKE_DEBOUNCE_MS = 50;
@@ -24718,11 +24820,11 @@ function makeAgentLinkChannelBridge({
       targets.get(dir).add(name);
     };
     for (const file of signaturePaths) {
-      const dir = path11.dirname(file);
+      const dir = path12.dirname(file);
       if (fs9.existsSync(dir)) {
-        add(dir, path11.basename(file));
-      } else if (fs9.existsSync(path11.dirname(dir))) {
-        add(path11.dirname(dir), path11.basename(dir));
+        add(dir, path12.basename(file));
+      } else if (fs9.existsSync(path12.dirname(dir))) {
+        add(path12.dirname(dir), path12.basename(dir));
       }
     }
     return targets;
@@ -24740,7 +24842,7 @@ function makeAgentLinkChannelBridge({
           if (stopped) return;
           const name = filename ? String(filename) : null;
           if (name && !names.has(name)) return;
-          if (name && fs9.existsSync(path11.join(dir, name)) && fs9.statSync(path11.join(dir, name)).isDirectory()) {
+          if (name && fs9.existsSync(path12.join(dir, name)) && fs9.statSync(path12.join(dir, name)).isDirectory()) {
             startWatcher();
           }
           wake();
@@ -24778,7 +24880,7 @@ function makeAgentLinkChannelBridge({
 
 // src/codex/project-orchestrator.js
 import { promises as fs10 } from "node:fs";
-import path12 from "node:path";
+import path13 from "node:path";
 
 // src/codex/thread-utils.js
 var MAX_REASON_TEXT = 160;
@@ -24789,32 +24891,32 @@ function normalizeArchiveScope(args = {}) {
   return args.archived === true ? "archived" : "active";
 }
 function inferArchiveState(threadOrPath) {
-  const path15 = typeof threadOrPath === "string" ? threadOrPath : threadOrPath?.path ?? null;
-  if (!path15) {
+  const path16 = typeof threadOrPath === "string" ? threadOrPath : threadOrPath?.path ?? null;
+  if (!path16) {
     return {
       scope: "unknown",
       inferredFrom: "missingPath",
       path: null
     };
   }
-  if (path15.includes("/archived_sessions/")) {
+  if (path16.includes("/archived_sessions/")) {
     return {
       scope: "archived",
       inferredFrom: "path",
-      path: path15
+      path: path16
     };
   }
-  if (path15.includes("/sessions/")) {
+  if (path16.includes("/sessions/")) {
     return {
       scope: "active",
       inferredFrom: "path",
-      path: path15
+      path: path16
     };
   }
   return {
     scope: "unknown",
     inferredFrom: "path",
-    path: path15
+    path: path16
   };
 }
 function desktopVisibilityContract(appServerSummary = {}) {
@@ -25284,7 +25386,7 @@ function boundedEditDistance(a, b, maxDistance) {
 }
 
 // src/codex/project-orchestrator.js
-var PROJECT_ORCHESTRATOR_BINDING_PATH = path12.join(".codex", "project-orchestrator.json");
+var PROJECT_ORCHESTRATOR_BINDING_PATH = path13.join(".codex", "project-orchestrator.json");
 var DEFAULT_POLICY_VERSION = "v0";
 var ALLOWED_RETURN_STATUSES = /* @__PURE__ */ new Set(["done", "done_with_concerns", "blocked"]);
 async function resolveProjectOrchestrator(args = {}, deps = {}) {
@@ -25493,7 +25595,7 @@ async function returnProjectWorkResult(args = {}, deps = {}, toolContext = {}) {
   };
 }
 async function readProjectOrchestratorBinding(projectRoot) {
-  const bindingPath = path12.join(requiredString(projectRoot, "projectRoot"), PROJECT_ORCHESTRATOR_BINDING_PATH);
+  const bindingPath = path13.join(requiredString(projectRoot, "projectRoot"), PROJECT_ORCHESTRATOR_BINDING_PATH);
   let raw;
   try {
     raw = await fs10.readFile(bindingPath, "utf8");
@@ -25574,8 +25676,8 @@ function validateBinding(value, { bindingPath, requestedProjectRoot }) {
       throwBindingError(`Binding field ${field} is required`, { bindingPath, field });
     }
   }
-  const resolvedBindingRoot = path12.resolve(value.projectRoot);
-  const resolvedRequestedRoot = path12.resolve(requestedProjectRoot);
+  const resolvedBindingRoot = path13.resolve(value.projectRoot);
+  const resolvedRequestedRoot = path13.resolve(requestedProjectRoot);
   if (resolvedBindingRoot !== resolvedRequestedRoot) {
     throwBindingError("Binding projectRoot does not match the source root that contains it", {
       bindingPath,
@@ -25651,7 +25753,7 @@ function buildFallbackQuery(args) {
     return `Project Orchestrator ${projectId}`;
   }
   if (args.projectRoot) {
-    return `${path12.basename(args.projectRoot)} Project Orchestrator`;
+    return `${path13.basename(args.projectRoot)} Project Orchestrator`;
   }
   return "";
 }
@@ -26206,7 +26308,7 @@ function isPlainObject5(value) {
 
 // src/codex/session-index.js
 import { promises as fs11 } from "node:fs";
-import path13 from "node:path";
+import path14 from "node:path";
 var MAX_PREVIEW_CHARS = 500;
 var HEAD_WINDOW_BYTES = 64 * 1024;
 var MAX_HEAD_BYTES = 4 * 1024 * 1024;
@@ -26277,9 +26379,9 @@ async function listLocalThreads(options = {}) {
 async function listLocalThreadIds(options = {}) {
   const codexHome2 = resolveCodexHome(options);
   const out2 = [];
-  for (const root of [path13.join(codexHome2, "sessions"), path13.join(codexHome2, "archived_sessions")]) {
+  for (const root of [path14.join(codexHome2, "sessions"), path14.join(codexHome2, "archived_sessions")]) {
     for (const file of await collectJsonlFiles(root)) {
-      const id = threadIdFromFilename(path13.basename(file));
+      const id = threadIdFromFilename(path14.basename(file));
       if (id) {
         out2.push({ id, path: file });
       }
@@ -26316,7 +26418,7 @@ async function findLocalThreadFile(threadId, options = {}) {
   if (!id || id.includes("/") || id.includes("\\") || id.includes("..")) {
     return null;
   }
-  const roots = options.roots ?? [path13.join(codexHome2, "sessions"), path13.join(codexHome2, "archived_sessions")];
+  const roots = options.roots ?? [path14.join(codexHome2, "sessions"), path14.join(codexHome2, "archived_sessions")];
   const suffix = `-${id}.jsonl`;
   for (const root of roots) {
     const file = await findNewestFirst(root, (name) => name.endsWith(suffix) || name === `${id}.jsonl`, async (candidate) => {
@@ -26340,8 +26442,8 @@ async function findLocalThreadFile(threadId, options = {}) {
 async function archiveLocalThread(threadId, options = {}) {
   const codexHome2 = resolveCodexHome(options);
   const located = await findLocalThread(threadId, { codexHome: codexHome2 });
-  const activeRoot = path13.join(codexHome2, "sessions");
-  const archivedRoot = path13.join(codexHome2, "archived_sessions");
+  const activeRoot = path14.join(codexHome2, "sessions");
+  const archivedRoot = path14.join(codexHome2, "archived_sessions");
   const before = located.thread.archiveState ?? inferArchiveState(located.path);
   if (before.scope === "archived") {
     return {
@@ -26356,12 +26458,12 @@ async function archiveLocalThread(threadId, options = {}) {
       codexHome: codexHome2
     };
   }
-  const relative = path13.relative(activeRoot, located.path);
-  if (relative.startsWith("..") || path13.isAbsolute(relative)) {
+  const relative = path14.relative(activeRoot, located.path);
+  if (relative.startsWith("..") || path14.isAbsolute(relative)) {
     throw new AgentLinkError("permission_denied", `Thread ${threadId} is not under ${activeRoot}; refusing to archive ${located.path}`, { details: { reason: "outside active sessions root" } });
   }
-  const destination = path13.join(archivedRoot, relative);
-  await fs11.mkdir(path13.dirname(destination), { recursive: true });
+  const destination = path14.join(archivedRoot, relative);
+  await fs11.mkdir(path14.dirname(destination), { recursive: true });
   await moveFileWithoutOverwrite(located.path, destination, threadId);
   const afterThread = {
     ...located.thread,
@@ -26439,7 +26541,7 @@ async function findNewestFirst(root, nameMatches, confirm) {
   entries.sort((a, b) => a.name < b.name ? 1 : a.name > b.name ? -1 : 0);
   for (const entry of entries) {
     if (entry.isFile() && entry.name.endsWith(".jsonl") && nameMatches(entry.name)) {
-      const full = path13.join(root, entry.name);
+      const full = path14.join(root, entry.name);
       if (await confirm(full)) {
         return full;
       }
@@ -26447,7 +26549,7 @@ async function findNewestFirst(root, nameMatches, confirm) {
   }
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      const found = await findNewestFirst(path13.join(root, entry.name), nameMatches, confirm);
+      const found = await findNewestFirst(path14.join(root, entry.name), nameMatches, confirm);
       if (found) {
         return found;
       }
@@ -26476,7 +26578,7 @@ async function collectJsonlFiles(root) {
   }
   const out2 = [];
   for (const entry of entries) {
-    const fullPath = path13.join(root, entry.name);
+    const fullPath = path14.join(root, entry.name);
     if (entry.isDirectory()) {
       out2.push(...await collectJsonlFiles(fullPath));
     } else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
@@ -26486,7 +26588,7 @@ async function collectJsonlFiles(root) {
   return out2;
 }
 async function readSessionIndex(codexHome2) {
-  const indexPath = path13.join(codexHome2, "session_index.jsonl");
+  const indexPath = path14.join(codexHome2, "session_index.jsonl");
   let raw;
   try {
     raw = await fs11.readFile(indexPath, "utf8");
@@ -26852,15 +26954,15 @@ function threadMatches(thread, searchTerm) {
 }
 function rootsForArchiveScope(codexHome2, archiveScope2) {
   if (archiveScope2 === "archived") {
-    return [path13.join(codexHome2, "archived_sessions")];
+    return [path14.join(codexHome2, "archived_sessions")];
   }
   if (archiveScope2 === "all") {
     return [
-      path13.join(codexHome2, "sessions"),
-      path13.join(codexHome2, "archived_sessions")
+      path14.join(codexHome2, "sessions"),
+      path14.join(codexHome2, "archived_sessions")
     ];
   }
-  return [path13.join(codexHome2, "sessions")];
+  return [path14.join(codexHome2, "sessions")];
 }
 function normalizeCwdFilter(cwd) {
   if (!cwd) {
@@ -27386,10 +27488,32 @@ function buildResolveSelection(candidates) {
     note: tied.length > 1 ? "Multiple candidates have the same top score; inspect candidates and match reasons before messaging." : "Best candidate has the highest match score."
   };
 }
+var LOADED_LOOKUP_MAX_PAGES = 50;
+async function readLoadedPage(args) {
+  const limit2 = clampInt(args.limit ?? LIMITS.list.def, LIMITS.list.min, LIMITS.list.max);
+  if (!args.threadId) {
+    const response = await appServer.request("thread/loaded/list", { limit: limit2, cursor: args.cursor ?? null });
+    return { response, lookup: null };
+  }
+  let cursor = args.cursor ?? null;
+  let pagesScanned = 0;
+  while (pagesScanned < LOADED_LOOKUP_MAX_PAGES) {
+    const page = await appServer.request("thread/loaded/list", { limit: LIMITS.list.max, cursor });
+    pagesScanned += 1;
+    const match = normalizeLoadedThreadEntries(page, extractLoadedThreadIds(page)).find((entry) => entry.id === args.threadId);
+    if (match) {
+      return { response: { data: [match], nextCursor: null }, lookup: { threadId: args.threadId, loaded: true, pagesScanned, complete: true } };
+    }
+    cursor = page.nextCursor ?? null;
+    if (!cursor) break;
+  }
+  return {
+    response: { data: [], nextCursor: null },
+    lookup: { threadId: args.threadId, loaded: cursor ? null : false, pagesScanned, complete: !cursor }
+  };
+}
 async function listLoadedThreads(args) {
-  const response = await appServer.request("thread/loaded/list", {
-    limit: clampInt(args.limit ?? LIMITS.list.def, LIMITS.list.min, LIMITS.list.max)
-  });
+  const { response, lookup } = await readLoadedPage(args);
   const loadedThreadIds = extractLoadedThreadIds(response);
   const sidebarProbe = await readSidebarStateForMembership();
   const sidebarState = sidebarProbe.sidebarState;
@@ -27412,6 +27536,8 @@ async function listLoadedThreads(args) {
     // Named keys only: app-server response fields are not passed through.
     data: response.data ?? null,
     nextCursor: response.nextCursor ?? null,
+    hasMore: Boolean(response.nextCursor),
+    ...lookup ? { lookup } : {},
     sidebarState,
     sidebarStateError: sidebarProbe.error,
     sidebarMembershipSemantics: sidebarMembershipSemantics(),
@@ -27610,14 +27736,9 @@ async function getThread(args) {
         })
       }, args, threadId);
     } catch (localError) {
-      throw new AgentLinkError("not_found", `Thread ${threadId} was not found by the app-server or the local transcript fallback.`, {
-        details: {
-          id: threadId,
-          candidates: (await getThreadIdSuggestions(threadId)).slice(0, 5),
-          appServerError: error2.message,
-          localError: localError.message
-        },
-        hint: "Call resolve_codex_thread or list_codex_threads to find the thread id."
+      throw await threadNotFound(threadId, {
+        appServerReachable: error2 instanceof AppServerError && typeof error2.code === "number",
+        localTranscriptFound: false
       });
     }
   }
@@ -28164,11 +28285,16 @@ function buildPeerTurnInput({ toolContext = {}, threadId, message, overrides = n
 }
 async function waitForThread(args) {
   const threadId = requiredString(args.threadId, "threadId");
-  const latest = await waitForThreadRead({
-    threadId,
-    timeoutMs: args.timeoutMs,
-    pollIntervalMs: args.pollIntervalMs
-  });
+  let latest;
+  try {
+    latest = await waitForThreadRead({
+      threadId,
+      timeoutMs: args.timeoutMs,
+      pollIntervalMs: args.pollIntervalMs
+    });
+  } catch (error2) {
+    throw await enrichThreadLookupError(error2, threadId);
+  }
   const waitState = latest.waitState;
   const observed = (latest.thread?.turns ?? []).find((turn) => turn.id === waitState.observedTurnId) ?? null;
   const outcome = latest.timedOut ? "timeout" : observed ? "turn_completed" : "idle";
@@ -28490,14 +28616,33 @@ function isTransientIncludeTurnsUnavailable(error2) {
   const message = String(error2?.message ?? "");
   return /not materialized yet/i.test(message) || /includeTurns is unavailable before first user message/i.test(message);
 }
+var THREAD_MISSING_TEXT = /not found|no such|unknown thread|does not exist|no rollout|invalid thread|invalid uuid|failed to parse/i;
 async function enrichThreadLookupError(error2, threadId) {
-  error2.details = {
-    ...error2.details ?? {},
-    didYouMean: await getThreadIdSuggestions(threadId)
-  };
-  return error2;
+  const rpcCode = error2 instanceof AppServerError && typeof error2.code === "number" ? error2.code : null;
+  if (rpcCode === null || !THREAD_MISSING_TEXT.test(String(error2.message ?? ""))) {
+    return error2;
+  }
+  return threadNotFound(threadId, { appServerReachable: true, rpcCode });
+}
+async function threadNotFound(threadId, extra = {}) {
+  return new AgentLinkError("not_found", `Codex thread ${threadId} was not found.`, {
+    details: {
+      id: threadId,
+      candidates: await getThreadIdSuggestions(threadId),
+      ...extra
+    },
+    hint: "Call resolve_codex_thread or list_codex_threads to find the thread id."
+  });
 }
 async function getThreadIdSuggestions(threadId) {
+  const brief = (candidate) => ({
+    id: candidate.id,
+    name: typeof candidate.name === "string" ? truncate(candidate.name, 120) : null,
+    score: candidate.score ?? null
+  });
+  return (await rankedThreadIdSuggestions(threadId)).slice(0, 5).map(brief);
+}
+async function rankedThreadIdSuggestions(threadId) {
   try {
     const ids = await listLocalThreadIds();
     const ranked = suggestThreadIds(ids.map((entry) => ({ id: entry.id, path: entry.path })), threadId);
@@ -28624,7 +28769,7 @@ function sameDirectory(a, b) {
     try {
       return realpathSync(value);
     } catch {
-      return path14.resolve(value);
+      return path15.resolve(value);
     }
   };
   return canonical(a) === canonical(b);

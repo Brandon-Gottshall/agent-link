@@ -172,6 +172,7 @@ const SESSION_ME = { sessionId: "local_me", cliSessionId: "fake-cli-id", title: 
   const r1 = await handler.read_agent_link_inbox({ limit: 1 });
   assert.deepEqual(envelopeBodies(r1.renderedBlock), ["msg-0"]);
   assert.equal(r1.remainingCount, 2, "the result says how many are still pending");
+  assert.match(r1.renderedBlock, /<\/agent-link-inbox>\n2 more pending message\(s\): call read_agent_link_inbox again to read them\.$/);
   const r2 = await handler.read_agent_link_inbox({});
   assert.deepEqual(envelopeBodies(r2.renderedBlock), ["msg-1", "msg-2"], "messages beyond the limit must not be lost");
   cleanup(sb);

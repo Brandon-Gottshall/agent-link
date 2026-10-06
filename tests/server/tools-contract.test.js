@@ -144,6 +144,10 @@ for (const host of ["claude", "codex"]) {
       assert.equal(claudeOnly.structuredContent.error.code, "unknown_tool", "Claude listing tools are not registered on the Codex host");
     }
 
+    // Review I1: nulls for optional properties are "not set" on the Claude tools too.
+    const nulls = await client.callTool({ name: "message_claude_session", arguments: { sessionId: "local_no_such_session", message: "x", surface: null, replyToMessageId: null, timeoutMs: null } });
+    assert.equal(nulls.structuredContent.error.code, "not_found", JSON.stringify(nulls.structuredContent));
+
     // Health: the B4 additions are present and never carry stacks or output tails.
     const health = await client.callTool({ name: "agent_link_health", arguments: { startAppServer: false } });
     assert.equal(health.isError, false);

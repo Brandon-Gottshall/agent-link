@@ -97,7 +97,9 @@ export function makeReadInboxHandler({ resolveCurrentSession, mailboxOpener } = 
           messages,
           remainingCount: pending.length - rows.length,
           ...(held > 0 ? { heldByActiveWait: held } : {}),
-          renderedBlock: renderInbox(peers)
+          renderedBlock: rows.length < pending.length
+            ? `${renderInbox(peers)}\n${pending.length - rows.length} more pending message(s): call read_agent_link_inbox again to read them.`
+            : renderInbox(peers)
         };
       } finally {
         mb.close();

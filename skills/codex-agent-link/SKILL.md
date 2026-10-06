@@ -12,16 +12,16 @@ Use the `codex-agent-link` MCP tools for cross-thread coordination.
 Every tool returns one JSON envelope (also in `structuredContent`):
 
 - Success: `{"ok": true, ...payload}`, plus `warnings: [{code, message, ...}]` when there is something to note.
-- Failure: `{"ok": false, "error": {"code", "message", "details", "hint"}}`, and the MCP result has `isError: true`. Branch on `error.code`: `invalid_arguments` (see `details.errors`), `not_found` (`details.candidates`), `ambiguous` (`details.candidates`), `wrong_recipient`, `no_current_session`, `body_too_large` (`details.limitBytes`, `details.actualBytes`), `permission_denied`, `active_turn_conflict`, `codex_unavailable` (follow `hint`), `unsupported`, `upstream_error`, `state_io_error`, `internal_error`.
+- Failure: `{"ok": false, "error": {"code", "message", "details", "hint"}}`, and the MCP result has `isError: true`. Branch on `error.code`: `invalid_arguments` (see `details.errors`), `unknown_tool`, `not_found` (`details.candidates`), `ambiguous` (`details.candidates`), `archived`, `wrong_recipient`, `no_current_session`, `body_too_large` (`details.limitBytes`, `details.actualBytes`), `permission_denied`, `active_turn_conflict`, `codex_unavailable` (follow `hint`), `claude_unavailable`, `unsupported`, `upstream_error` (`details.method`, `rpcCode`, `rpcMessage`), `state_io_error`, `internal_error`.
 - Verdicts are not failures. Resolve tools put theirs in `status` (`resolved`, `ambiguous`, `not_found`); `archive_codex_thread` in `status` (`archived`, `already_archived`); `check_coordination_obligations` in `status` (`not_applicable`, `satisfied`, `needs_handoff`, `blocked`).
-- Waits put how they ended in `outcome` (`reply`, `turn_completed`, `idle`, `timeout`). A timeout is `ok: true`. Message tools with `waitForReply: true` return the same shape as `wait`.
-- Arguments are validated: unknown properties and out-of-range numbers fail with `invalid_arguments` instead of being ignored or clamped.
+- Waits put how they ended in `outcome` (`reply`, `turn_completed`, `idle`, `timeout`). A timeout is `ok: true`. Message tools with `waitForReply: true` return the same shape as `wait`; there `outcome` can also be `unavailable` (the reply could not be checked, for example on an ephemeral thread; the message was still delivered).
+- Arguments are validated: unknown properties and out-of-range numbers fail with `invalid_arguments` instead of being ignored or clamped. `null` for an optional argument means "not set". A number or boolean sent as an exact string (`"5"`, `"true"`) is accepted with a `coerced_argument` warning; send the typed value instead.
 - A `deprecated_argument` warning means you used an old argument name; switch to the `replacement` it names.
 
 ## Workflow
 
 1. Use `agent_link_health` when you need to confirm the plugin can reach a Codex app-server.
-2. Use `list_loaded_codex_threads` for runtime-loaded thread IDs when an app-server endpoint is reachable. Its `sidebarMembership` field is only authoritative when `sidebarState.authority === "rendererSidebarModel"`.
+2. Use `list_loaded_codex_threads` for runtime-loaded thread IDs when an app-server endpoint is reachable. It returns one page (20 by default): to check whether a specific thread is loaded, pass `threadId` and read `lookup.loaded`, or pass a higher `limit` / page with `cursor` while `hasMore` is true. Its `sidebarMembership` field is only authoritative when `sidebarState.authority === "rendererSidebarModel"`.
 3. Use `get_codex_sidebar_state` when you specifically need the Desktop sidebar contract. It fails with `unsupported` when the app-server has no renderer authority; that is meaningful, so do not infer sidebar membership from delivery, route, or loaded-thread evidence.
 4. Use `list_codex_threads` to find recent persisted threads; pass `query` to filter by preview, cwd, title, or ID. Use `archiveScope: "all"` when the user-facing name might belong to an archived automation or older thread.
 5. Use `get_codex_thread` before messaging so you verify the target thread is the intended one.

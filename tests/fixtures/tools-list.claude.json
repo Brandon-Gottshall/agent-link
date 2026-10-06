@@ -571,7 +571,7 @@
   },
   {
     "name": "list_loaded_codex_threads",
-    "description": "List thread IDs currently loaded in the reachable Codex app-server runtime, with best-effort GUI sidebar membership from rendererSidebarModel when available.",
+    "description": "List thread IDs currently loaded in the reachable Codex app-server runtime, with best-effort GUI sidebar membership from rendererSidebarModel when available. Returns one page (limit, default 20); page with cursor while hasMore is true. To check whether one thread is loaded, pass threadId: every page is scanned and lookup.loaded answers it.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -581,6 +581,14 @@
           "maximum": 200,
           "default": 20,
           "description": "Maximum loaded thread ids to return. Integer 1..200; defaults to 20."
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Continue from the nextCursor of a previous call."
+        },
+        "threadId": {
+          "type": "string",
+          "description": "Only report this thread: lookup.loaded is true or false (null if the scan stopped after 50 pages), and threadIds/loadedThreads hold it when loaded."
         }
       },
       "additionalProperties": false
@@ -678,7 +686,15 @@
           "description": "The app-server's loaded-thread entries."
         },
         "nextCursor": {
-          "description": "App-server pagination cursor."
+          "description": "Pass as cursor to read the next page; null on the last page."
+        },
+        "hasMore": {
+          "type": "boolean",
+          "description": "More loaded threads exist beyond this page."
+        },
+        "lookup": {
+          "type": "object",
+          "description": "With threadId: {threadId, loaded, pagesScanned, complete}."
         },
         "threadIds": {
           "type": "array",
@@ -1395,7 +1411,7 @@
   },
   {
     "name": "archive_codex_thread",
-    "description": "Archive a Codex thread through the app-server when available, falling back to a guarded local sessions move. status is archived or already_archived. A thread the app-server reports as loaded is refused with active_turn_conflict unless forceLoaded is true.",
+    "description": "Archive a Codex thread through the app-server when available, falling back to a guarded local sessions move. status is archived or already_archived. The app-server archive works on loaded threads too; only the local fallback refuses a thread the app-server reports as loaded (active_turn_conflict) unless forceLoaded is true.",
     "inputSchema": {
       "type": "object",
       "properties": {

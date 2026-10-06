@@ -66,6 +66,15 @@ export class AppServerError extends AgentLinkError {
     this.name = "AppServerError";
     this.details = details;
     this.code = details.code ?? null;
+    // What a tool result shows (section 3.2): a JSON-RPC error is
+    // {method, rpcCode, rpcMessage}; the legacy `details` stay for callers.
+    if (typeof details.code === "number") {
+      this.envelopeDetails = {
+        method: typeof details.method === "string" ? details.method : null,
+        rpcCode: details.code,
+        rpcMessage: String(message ?? "").slice(0, 500)
+      };
+    }
   }
 }
 

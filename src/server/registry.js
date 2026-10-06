@@ -7,16 +7,17 @@
 //
 // tools/call goes through one wrapper:
 //   1. unknown name            -> unknown_tool
-//   2. schema validation       -> invalid_arguments with details.errors (R3.12)
-//   3. deprecated aliases      -> canonical argument + deprecated_argument warning (R3.6)
-//   4. handler                 -> payload, or a thrown AgentLinkError
-//   5. envelope                -> {ok:true, ...payload, warnings?} or {ok:false, error} (R3.1)
+//   2. lenient pass            -> optional nulls dropped; "5"/"true" read as 5/true (coerced_argument)
+//   3. schema validation       -> invalid_arguments with details.errors (R3.12)
+//   4. deprecated aliases      -> canonical argument + deprecated_argument warning (R3.6)
+//   5. handler                 -> payload, or a thrown AgentLinkError
+//   6. envelope               -> {ok:true, ...payload, warnings?} or {ok:false, error} (R3.1)
 // and the MCP result carries the JSON in content[0].text and structuredContent,
 // with isError exactly when ok is false (R3.2).
 
 import { AgentLinkError, toErrorPayload } from "../shared/errors.js";
 import { getLogger } from "../shared/log.js";
-import { validateSchema } from "./validate.js";
+import { normalizeArguments, validateSchema } from "./validate.js";
 import { ALIAS_REMOVAL_VERSION, envelopeOutput } from "./schemas.js";
 
 /** @typedef {import("./validate.js").JsonSchema} JsonSchema */
@@ -179,7 +180,9 @@ export function createRegistry(entries, options = {}) {
           hint: "Call tools/list for the available tools."
         });
       }
-      const args = rawArgs === undefined || rawArgs === null ? {} : rawArgs;
+      // null for an optional property means "not set"; exact-format scalar
+      // strings are read as their type with a coerced_argument warning.
+      const args = normalizeArguments(found.tool.inputSchema, rawArgs === undefined || rawArgs === null ? {} : rawArgs, warnings);
       const problems = validateSchema(found.tool.inputSchema, args);
       if (problems.length > 0) {
         throw new AgentLinkError("invalid_arguments", `Invalid arguments for ${name}: ${problems.map((p) => `${p.path} (${p.rule}: expected ${p.expected})`).join("; ")}.`, {

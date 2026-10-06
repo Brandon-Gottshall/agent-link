@@ -98,11 +98,13 @@ export const codexThreadTools = [
   },
   {
     name: "list_loaded_codex_threads",
-    description: "List thread IDs currently loaded in the reachable Codex app-server runtime, with best-effort GUI sidebar membership from rendererSidebarModel when available.",
+    description: "List thread IDs currently loaded in the reachable Codex app-server runtime, with best-effort GUI sidebar membership from rendererSidebarModel when available. Returns one page (limit, default 20); page with cursor while hasMore is true. To check whether one thread is loaded, pass threadId: every page is scanned and lookup.loaded answers it.",
     inputSchema: {
       type: "object",
       properties: {
-        limit: limit("list", "loaded thread ids")
+        limit: limit("list", "loaded thread ids"),
+        cursor: str("Continue from the nextCursor of a previous call."),
+        threadId: str("Only report this thread: lookup.loaded is true or false (null if the scan stopped after 50 pages), and threadIds/loadedThreads hold it when loaded.")
       },
       additionalProperties: false
     },
@@ -111,7 +113,9 @@ export const codexThreadTools = [
       appServer: commonOut.appServer,
       stateSemantics: commonOut.stateSemantics,
       data: outAny("The app-server's loaded-thread entries."),
-      nextCursor: outAny("App-server pagination cursor."),
+      nextCursor: outAny("Pass as cursor to read the next page; null on the last page."),
+      hasMore: out("boolean", "More loaded threads exist beyond this page."),
+      lookup: out("object", "With threadId: {threadId, loaded, pagesScanned, complete}."),
       threadIds: out("array", "Loaded thread ids."),
       loadedThreads: out("array", "Loaded threads with sidebarMembership."),
       sidebarState: out("object", "Normalized sidebar state, or the unsupported shape."),

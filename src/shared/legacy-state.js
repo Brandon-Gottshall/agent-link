@@ -7,6 +7,7 @@
 // never creates the state directory.
 
 import fs from "node:fs";
+import path from "node:path";
 import {
   legacyManagedAppServerDirs,
   legacyMailboxPaths,
@@ -47,6 +48,28 @@ function statOrNull(file) {
 }
 
 /**
+ * Newest mtime of the managed app-server records (`<pid>.json`) in `dir`,
+ * or null when it holds none.
+ * @param {string} dir
+ * @returns {number | null}
+ */
+function newestRecordMtimeMs(dir) {
+  let names = [];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return null;
+  }
+  let newest = null;
+  for (const name of names) {
+    if (!name.endsWith(".json")) continue;
+    const stat = statOrNull(path.join(dir, name));
+    if (stat?.isFile() && (newest === null || stat.mtimeMs > newest)) newest = stat.mtimeMs;
+  }
+  return newest;
+}
+
+/**
  * @param {import("./paths.js").PathOptions} [options]
  */
 function readMigration(options) {
@@ -83,13 +106,16 @@ export function legacyStateReport(options = {}) {
   for (const [kind, file] of candidates) {
     const stat = statOrNull(file);
     if (!stat) continue;
+    // A managed app-server directory's own mtime also changes when this
+    // version reaps a stale record there (a delete), so only the records'
+    // own mtimes count: a record newer than the migration was written by a
+    // 0.4.x server.
+    const mtimeMs = kind === "managedAppServers" ? newestRecordMtimeMs(file) : stat.mtimeMs;
     files.push({
       kind,
       path: file,
-      modifiedAt: stat.mtime.toISOString(),
-      // Managed app-server record directories change when a 0.4.x server
-      // starts or stops; the mailbox and receipt logs when it writes mail.
-      writtenAfterMigration: Number.isFinite(migratedAt) ? stat.mtimeMs > migratedAt : null
+      modifiedAt: mtimeMs === null ? null : new Date(mtimeMs).toISOString(),
+      writtenAfterMigration: Number.isFinite(migratedAt) && mtimeMs !== null ? mtimeMs > migratedAt : null
     });
   }
   const stillWritten = files.some((file) => file.writtenAfterMigration === true);

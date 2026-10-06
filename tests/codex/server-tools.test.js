@@ -19,6 +19,7 @@ const tmp = mkdtempSync(path.join(os.tmpdir(), "agent-link-tools-"));
 const codexHome = path.join(tmp, "codex");
 const threadId = "019d2000-0000-7000-8000-000000000001";
 const localOnlyId = "019d2000-0000-7000-8000-000000000002";
+const secondLoadedId = "019d2000-0000-7000-8000-000000000003";
 
 // One local transcript for the fallback paths.
 const day = path.join(codexHome, "sessions", "2026", "09", "01");
@@ -63,7 +64,10 @@ wss.on("connection", (socket) => {
       case "turn/start":
         return reply({ result: { turn: { id: "turn-2", status: "inProgress", items: [] } } });
       case "thread/loaded/list":
-        return reply({ result: { data: [], nextCursor: null } });
+        // Two pages, so cursor paging and the threadId lookup are exercised.
+        return msg.params.cursor === "page-2"
+          ? reply({ result: { data: [secondLoadedId], nextCursor: null } })
+          : reply({ result: { data: [threadId], nextCursor: "page-2" } });
       case "turn/steer":
         return reply({ result: { turnId: "turn-2" } });
       case "thread/list":
@@ -233,6 +237,74 @@ try {
     assert.equal(result.payload.status, "resolved");
   } finally {
     await client.close();
+  }
+
+  // Review I1, I3, M1, m3 over MCP.
+  {
+    const { client: c2, call: call2 } = await connect({ CODEX_AGENT_LINK_URL: url });
+    try {
+      // I1: null for an optional property is "not set", not invalid.
+      let r = await call2("message_codex_thread", { threadId, message: "hi", model: null, effort: null, receipt: { record: false, note: null } });
+      assert.equal(r.isError, false, JSON.stringify(r.payload));
+      r = await call2("list_codex_threads", { cwd: null, limit: null });
+      assert.equal(r.isError, false, JSON.stringify(r.payload));
+      assert.equal(r.payload.warnings, undefined);
+      // A required property is never dropped.
+      r = await call2("get_codex_thread", { threadId: null });
+      assert.equal(r.payload.error.code, "invalid_arguments");
+      // Exact-format scalar strings are coerced with a warning; others are not.
+      r = await call2("list_codex_threads", { limit: "5", useLocalFallback: "true" });
+      assert.equal(r.isError, false, JSON.stringify(r.payload));
+      assert.deepEqual(r.payload.warnings.map((w) => [w.code, w.path]), [["coerced_argument", "limit"], ["coerced_argument", "useLocalFallback"]]);
+      for (const bad of [{ limit: "5x" }, { limit: "1e2" }, { limit: " 5" }, { useLocalFallback: "yes" }, { limit: "201" }]) {
+        r = await call2("list_codex_threads", bad);
+        assert.equal(r.payload.error?.code, "invalid_arguments", JSON.stringify(bad));
+      }
+
+      // I3: one page by default, cursor paging, and a threadId lookup across pages.
+      r = await call2("list_loaded_codex_threads", { limit: 1 });
+      assert.deepEqual(r.payload.threadIds, [threadId]);
+      assert.equal(r.payload.hasMore, true);
+      assert.equal(r.payload.nextCursor, "page-2");
+      r = await call2("list_loaded_codex_threads", { cursor: "page-2" });
+      assert.deepEqual(r.payload.threadIds, [secondLoadedId]);
+      assert.equal(r.payload.hasMore, false);
+      r = await call2("list_loaded_codex_threads", { threadId: secondLoadedId });
+      assert.deepEqual(r.payload.lookup, { threadId: secondLoadedId, loaded: true, pagesScanned: 2, complete: true });
+      assert.deepEqual(r.payload.threadIds, [secondLoadedId]);
+      r = await call2("list_loaded_codex_threads", { threadId: "019d2000-0000-7000-8000-00000000dead" });
+      assert.equal(r.payload.lookup.loaded, false);
+      assert.deepEqual(r.payload.threadIds, []);
+
+      // M1: an unknown thread is not_found with candidates on message and wait too.
+      const unknown = "019d2000-0000-7000-8000-00000000beef";
+      for (const [tool, args] of [["message_codex_thread", { threadId: unknown, message: "hi" }], ["wait_for_codex_thread", { threadId: unknown, timeoutMs: 1000 }]]) {
+        r = await call2(tool, args);
+        assert.equal(r.payload.error.code, "not_found", `${tool}: ${JSON.stringify(r.payload)}`);
+        assert.equal(r.payload.error.details.id, unknown);
+        assert.ok(Array.isArray(r.payload.error.details.candidates));
+        assert.equal(r.payload.error.details.didYouMean, undefined);
+      }
+      // Other JSON-RPC errors are upstream_error with {method, rpcCode, rpcMessage}.
+      r = await call2("launch_codex_thread", {});
+      assert.equal(r.payload.error.code, "upstream_error");
+      assert.deepEqual(r.payload.error.details, { method: "thread/start", rpcCode: -32601, rpcMessage: "fake: thread/start" });
+
+      // m3: get_codex_thread not_found carries codes and booleans, no paths or raw error text.
+      r = await call2("get_codex_thread", { threadId: unknown });
+      assert.equal(r.payload.error.code, "not_found");
+      assert.deepEqual(Object.keys(r.payload.error.details).sort(), ["appServerReachable", "candidates", "id", "localTranscriptFound"]);
+      assert.equal(r.payload.error.details.appServerReachable, true);
+      assert.ok(!JSON.stringify(r.payload.error).includes(codexHome), "no CODEX_HOME path");
+      // Candidates are {id, name, score}: no preview text, no paths.
+      r = await call2("get_codex_thread", { threadId: localOnlyId.replace(/2$/, "9") });
+      for (const candidate of r.payload.error.details.candidates) {
+        assert.deepEqual(Object.keys(candidate).sort(), ["id", "name", "score"]);
+      }
+      assert.equal(r.payload.error.details.candidates[0]?.id, localOnlyId);
+    } finally {
+      await c2.close();
+    }
   }
 
   // W2C-05: no Codex binary is a normal health state, with the host and what was searched.

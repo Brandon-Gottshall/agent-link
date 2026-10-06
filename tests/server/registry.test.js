@@ -177,6 +177,34 @@ const registry = createRegistry([echo, failing], { hintFor: () => "fallback hint
   assert.deepEqual(applyAliases(echo.definition, { message: "y" }, []), { message: "y" });
 }
 
+// Review I1: null for an optional property is dropped before validation and
+// before the handler; exact-format scalar strings are coerced with a
+// coerced_argument warning; everything else of the wrong type is rejected.
+{
+  let envelope = await registry.invoke("echo", { message: "x", limit: null, count: null, receipt: null });
+  assert.equal(envelope.ok, true, JSON.stringify(envelope));
+  assert.deepEqual(envelope.echoed, { message: "x" }, "nulls never reach the handler");
+  assert.equal(envelope.warnings, undefined);
+  envelope = await registry.invoke("echo", { message: "x", receipt: { purpose: null, record: "false", tags: ["a"] } });
+  assert.deepEqual(envelope.echoed.receipt, { record: false, tags: ["a"] });
+  assert.deepEqual(envelope.warnings.map((w) => [w.code, w.path]), [["coerced_argument", "receipt.record"]]);
+  envelope = await registry.invoke("echo", { message: "x", count: "6" });
+  assert.deepEqual(envelope.error.details.errors.map((e) => [e.path, e.rule]), [["count", "range"]], "coerced values are still range-checked");
+  envelope = await registry.invoke("echo", { message: "x", limit: "7" });
+  assert.deepEqual(envelope.echoed, { message: "x", limit: 7 });
+  for (const bad of [{ limit: "7.0" }, { limit: "seven" }, { limit: "" }, { limit: "0" }, { limit: true }, { receipt: { record: "TRUE" } }, { receipt: { record: 1 } }]) {
+    envelope = await registry.invoke("echo", { message: "x", ...bad });
+    assert.equal(envelope.error?.code, "invalid_arguments", JSON.stringify(bad));
+  }
+  // A required argument given as null is not dropped.
+  const required = createRegistry([{ ...echo, definition: { ...echo.definition, aliases: [], inputSchema: { ...echo.definition.inputSchema, required: ["message"] } } }]);
+  envelope = await required.invoke("echo", { message: null });
+  assert.equal(envelope.error.code, "invalid_arguments");
+  // A string property is never coerced.
+  envelope = await registry.invoke("echo", { message: "5" });
+  assert.deepEqual(envelope.echoed, { message: "5" });
+}
+
 // The validator handles oneOf and type lists.
 {
   const schema = { oneOf: [{ type: "string" }, { type: "array", items: { type: "string" } }] };

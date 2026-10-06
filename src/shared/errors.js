@@ -106,7 +106,9 @@ export function toErrorPayload(error) {
   if (error instanceof AgentLinkError && isErrorCode(error.errorCode)) {
     /** @type {ErrorPayload} */
     const payload = { code: error.errorCode, message: error.message };
-    if (error.details && Object.keys(error.details).length > 0) payload.details = error.details;
+    // A subclass can show narrower details than it keeps (AppServerError).
+    const details = /** @type {{envelopeDetails?: Record<string, unknown>}} */ (error).envelopeDetails ?? error.details;
+    if (details && Object.keys(details).length > 0) payload.details = details;
     if (error.hint) payload.hint = error.hint;
     return payload;
   }

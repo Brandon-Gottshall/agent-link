@@ -173,3 +173,103 @@ export function describe(schema) {
   if (schema.type === "array" && schema.items) return `array of ${describe(schema.items)}`;
   return schema.type ?? "a value";
 }
+
+/**
+ * @typedef {object} ArgumentNote
+ * @property {"coerced_argument"} code
+ * @property {string} message
+ * @property {string} path
+ */
+
+/**
+ * @param {JsonSchema} schema
+ * @returns {string[]}
+ */
+function typesOf(schema) {
+  if (!schema || schema.type === undefined) return [];
+  return Array.isArray(schema.type) ? schema.type : [schema.type];
+}
+
+/**
+ * @param {JsonSchema} schema
+ * @returns {boolean}
+ */
+function allowsNull(schema) {
+  if (!schema) return true;
+  if (typesOf(schema).includes("null")) return true;
+  if (Array.isArray(schema.enum) && schema.enum.includes(null)) return true;
+  const options = schema.oneOf ?? schema.anyOf;
+  return Array.isArray(options) && options.some(allowsNull);
+}
+
+const INTEGER_TEXT = /^-?\d+$/;
+
+/**
+ * An exact-format scalar string for an integer, number, or boolean property,
+ * as the typed value; undefined when the string does not qualify.
+ * @param {JsonSchema} schema
+ * @param {string} text
+ * @returns {number | boolean | undefined}
+ */
+function coerceScalar(schema, text) {
+  const types = typesOf(schema);
+  if (types.length === 0 || types.includes("string")) return undefined;
+  if (types.includes("integer") && INTEGER_TEXT.test(text)) {
+    const n = Number(text);
+    if (Number.isSafeInteger(n)) return n;
+  }
+  if (types.includes("number") && text !== "" && text.trim() === text) {
+    const n = Number(text);
+    if (Number.isFinite(n)) return n;
+  }
+  if (types.includes("boolean") && (text === "true" || text === "false")) return text === "true";
+  return undefined;
+}
+
+/**
+ * Lenient pass before validation, for clients that send `null` for "not set"
+ * or quote scalars. Returns a copy of `value` where, at every object level
+ * the schema describes:
+ *   - a property whose value is null, that is not required and whose schema
+ *     does not allow null, is removed (treated as absent);
+ *   - an integer, number, or boolean property given as an exact-format string
+ *     ("5", "-3", "2.5", "true", "false") becomes that value, and a
+ *     coerced_argument note is added.
+ * Everything else is left for validateSchema to accept or reject; ranges are
+ * still enforced there.
+ * @param {JsonSchema} schema
+ * @param {unknown} value
+ * @param {{code: string, message: string, path?: string}[]} notes
+ * @param {string} [path]
+ * @returns {unknown}
+ */
+export function normalizeArguments(schema, value, notes, path = "") {
+  if (!schema || !value || typeof value !== "object" || Array.isArray(value) || !schema.properties) return value;
+  const record = /** @type {Record<string, unknown>} */ (value);
+  const required = new Set(schema.required ?? []);
+  /** @type {Record<string, unknown>} */
+  const out = {};
+  for (const [key, item] of Object.entries(record)) {
+    const property = schema.properties[key];
+    const where = join(path, key);
+    if (!property) {
+      out[key] = item;
+      continue;
+    }
+    if (item === null && !required.has(key) && !allowsNull(property)) continue;
+    if (typeof item === "string") {
+      const coerced = coerceScalar(property, item);
+      if (coerced !== undefined) {
+        notes.push({
+          code: "coerced_argument",
+          message: `${where} was the string ${JSON.stringify(item).slice(0, 40)}; it was read as ${String(coerced)}. Send a ${typeof coerced} instead.`,
+          path: where
+        });
+        out[key] = coerced;
+        continue;
+      }
+    }
+    out[key] = normalizeArguments(property, item, notes, where);
+  }
+  return out;
+}
