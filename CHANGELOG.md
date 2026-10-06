@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Internal refactor, no behavior change: `src/server.js` is split (design doc section 5.1, PR B5). The Codex handlers moved into factories in `src/codex/thread-queries.js`, `loaded-threads.js`, `thread-messaging.js`, `thread-actions.js`, `thread-summary.js`, and `desktop-routing.js`; health into `src/server/health.js`; shutdown, the channel bridge, the orphan reaper, and the signal handlers into `src/server/lifecycle.js`; bootstrap into `src/server/index.js`; spawn helpers into `src/shared/process.js`. `src/server.js` is now the 12-line entry point and still imports `process-guard` first. The `tools/list` snapshots are unchanged, and a new golden replay (60 Codex tool calls against a fake app-server, recorded from 0.5.0) passes unchanged on the split server.
+
 ## 0.5.0 - 2026-10-06 Peer envelope, shared state directory, uniform tool contract
 
 **Upgrade:** restart every Claude and Codex session after upgrading. State moves to `~/.agent-link`; existing mail in `~/.claude/agent-link` and receipts in `$CODEX_HOME/agent-link-receipts.jsonl` are still read (never modified). While old and new versions run side by side, mail can be delayed and old-version waits won't see replies written by the new version; rolling back can re-deliver some mail. `agent_link_health` reports `legacyState` if an old copy is still writing.

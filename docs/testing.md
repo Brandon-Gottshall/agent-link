@@ -10,7 +10,7 @@ Run these from a clone after `npm ci`. Protocol smoke tests are necessary but no
 | --- | --- |
 | `npm test` | Everything below, in one `node --test` run. |
 | `npm run test:claude` | Claude side: mailbox, session index and resolver, Desktop sidecars, send, reply, read-inbox, wait, notify hook, Code channel bridge, plus shared host detection, runtime context, and cross-host receipts (`tests/claude`, `tests/shared`). |
-| `npm run test:codex` | Codex side: binary discovery, app-server lifecycle, idle churn and shutdown, chat-style close (`tests/codex`), plus the feedback, sidebar-state, project-orchestrator, dependency-handoff, and archive-EXDEV regressions in `scripts/`. |
+| `npm run test:codex` | Codex side: binary discovery, app-server lifecycle, idle churn and shutdown, chat-style close, in-process unit tests of the thread handler modules, and the golden replay (`tests/codex`), plus the feedback, sidebar-state, project-orchestrator, dependency-handoff, and archive-EXDEV regressions in `scripts/`. |
 | `npm run smoke` | The bundled MCP server (`dist/server.mjs`) starts, reports the package version, and exposes the expected tools per host. Also part of `npm test`. |
 | `npm run check:dist` | The committed bundle `dist/server.mjs` matches a fresh `npm run build`. |
 | `npm run check:approval-config` | Codex approval settings let the model call every tool. Scripted calls can pass while model-selected calls are still blocked. Set `CODEX_AGENT_LINK_PLUGIN_ID` if you installed from a different marketplace. Reads your real Codex config, so it is not part of `npm test`. |
@@ -25,6 +25,8 @@ The file list lives in `scripts/run-offline-tests.js`, because Node 20's `--test
 
 - Spawn the server with `hermeticEnv()` from `tests/helpers/env.js`. It strips inherited `CODEX_*`, `CLAUDE_*`, and `AGENT_LINK_*` variables, points `HOME` at a temp directory, and puts the running Node first on `PATH`. Pass `home`, `codexHome`, or `overrides` as needed.
 - `tests/helpers/codex-stub.js` has the stub path, spawn-log reader, `taggedStub()`/`taggedProcesses()` for finding every app-server a run started, and `waitFor()`/`waitForExit()`. Wait on events (a response id, a spawn-log line, process exit), not fixed sleeps.
+- Prefer in-process tests for handler logic. `src/server/index.js` and the modules under `src/codex/` and `src/server/` have no import-time side effects (`tests/server/server-modules.test.js` checks this), and their factories (`makeThreadQueries`, `makeThreadMessaging`, `makeThreadActions`, `makeLoadedThreads`, `makeDesktopRouting`, `makeHealth`, `createLifecycle`, `createAgentLinkServer`) take the app-server client, host, clock, and command runner as arguments, so a test can pass fakes instead of spawning the server.
+- `tests/codex/golden-replay.test.js` replays a fixed script of Codex tool calls against a stateful fake app-server and compares the normalized results and app-server requests with `tests/fixtures/golden/codex-tools.golden.json`. A change that is meant to alter Codex tool output re-records it with `node tests/codex/golden-replay.test.js --update`; list the diff in the PR. `--server <path>` replays against another tree's `src/server.js` or `dist/server.mjs`.
 - Do not name helpers `test-*.js`, `*-test.js`, `*.test.js`, or put them in a `test/` directory: `node --test` would run them as tests.
 
 ## Live checks

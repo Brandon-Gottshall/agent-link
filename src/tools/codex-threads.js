@@ -2,8 +2,9 @@
 //
 // Read-only Codex thread tools: list_codex_threads, resolve_codex_thread,
 // list_loaded_codex_threads, get_codex_sidebar_state, get_codex_thread,
-// wait_for_codex_thread. Definitions only; the handlers still live in
-// src/server.js (moved in a later, behavior-free PR) and are passed in.
+// wait_for_codex_thread. Definitions only; the handlers live in
+// src/codex/thread-queries.js and src/codex/loaded-threads.js and are passed
+// in by src/server/index.js.
 
 import {
   LIMITS,

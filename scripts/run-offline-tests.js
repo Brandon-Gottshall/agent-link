@@ -59,6 +59,7 @@ const groups = {
     "tests/codex/peer-envelope.test.js",
     "tests/codex/server-idle-churn.test.js",
     "tests/codex/server-tools.test.js",
+    "tests/codex/thread-modules.test.js",
     "tests/codex/session-index.test.js",
     "scripts/archive-exdev-regression-test.js",
     "scripts/dependency-handoff-regression-test.js",
@@ -71,6 +72,7 @@ const groups = {
   ],
   server: [
     "tests/server/registry.test.js",
+    "tests/server/server-modules.test.js",
     "tests/server/tools-contract.test.js"
   ],
   manifest: [
