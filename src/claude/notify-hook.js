@@ -45,7 +45,7 @@ import {
 import { claudeSessionAliases } from "./identity.js";
 import { renderHookNotice } from "../shared/envelope.js";
 import { isAnticipating, reminderSettings } from "../delivery/message-status.js";
-import { REMINDER_VIA, claimReminders, dueReminders, reminderNoticeFor, takeStopSlot } from "../delivery/reminders.js";
+import { REMINDER_VIA, claimReminders, dueUnanswered, reminderNoticeFor, takeStopSlot } from "../delivery/reminders.js";
 import { createLogger } from "../shared/log.js";
 import { createRoleStore } from "../registry/roles.js";
 import { addressNames, handedOverTo, isPendingFor, readRoleTable } from "../delivery/role-handover.js";
@@ -171,20 +171,7 @@ export function runNotifyHook(payload, {
 function remindersFor(mb, all, mine, { isStop, now, settings, recipientIds, recipientKey, recipientAddress, stopHookActive }) {
   const open = mine.filter((m) => isAnticipating(m));
   if (!open.length) return null;
-  const due0 = dueReminders(open, { now, settings });
-  if (!due0.length) return null;
-  // A message the recipient already answered the older way (a reply row
-  // without a resolution event) is not open any more: no reminder. The
-  // replies are indexed once from the rows already read (one pass, not one
-  // mailbox read per due message).
-  const recipient = new Set(recipientIds);
-  const repliedTo = new Map();
-  for (const row of all) {
-    if (!row.reply_to_message_id || !recipient.has(row.from_session_id)) continue;
-    if (!repliedTo.has(row.reply_to_message_id)) repliedTo.set(row.reply_to_message_id, new Set());
-    repliedTo.get(row.reply_to_message_id).add(row.to_session_id);
-  }
-  const due = due0.filter((m) => !repliedTo.get(m.id)?.has(m.from_session_id));
+  const due = dueUnanswered(all, mine, { recipientIds, now, settings });
   if (!due.length) return null;
   if (isStop && !takeStopSlot(mb, { recipientKey, recipientIds, open, now, settings, stopHookActive })) return null;
   const claimed = claimReminders(mb, due, {

@@ -28583,7 +28583,9 @@ function recipientMatcher({ aliases, address = null, table = null }) {
 var REMINDER_VIA = Object.freeze({
   prompt: "claude-prompt-hook",
   stop: "claude-stop-hook",
-  codex: "codex-turn"
+  codex: "codex-turn",
+  // The Codex UserPromptSubmit hook (R1.14), for threads the desktop app holds.
+  codexPrompt: "codex-prompt-hook"
 });
 var CODEX_REMINDER_TURN_TRIGGER = "agent-link-reminder";
 function dueReminders(rows, { now = Date.now(), settings = reminderSettings() } = {}) {
@@ -32639,8 +32641,10 @@ function toCodexAgent(thread, { fromAppServer = true } = {}) {
     loaded: fromAppServer && LOADED_STATUS.has(statusType2),
     archived: thread.archiveState?.scope === "archived",
     lastActivityAt: typeof thread.updatedAt === "string" ? thread.updatedAt : null,
-    // nudge: the Codex prompt hook (R1.9, R1.14), once the user trusts it.
-    receive: { push: "codex-turn", nudge: "codex-hook", pull: false },
+    // R1.9: push by turn (when loaded in Agent Link's app-server), nudge by
+    // the Codex prompt hook once the user trusts it (R1.14), pull by
+    // read_agent_link_inbox (R1.13).
+    receive: { push: "codex-turn", nudge: "codex-hook", pull: true },
     threadId: thread.id,
     status: statusType2
   };

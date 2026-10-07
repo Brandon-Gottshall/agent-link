@@ -123,11 +123,14 @@ test("the Codex manifest declares only the Codex prompt hook", () => {
   const [hook] = entries;
   assert.equal(hook.type, "command");
   assert.ok(hook.timeout > 0 && hook.timeout <= 10, "short timeout");
-  assert.equal(hook.command, "node \"${PLUGIN_ROOT}/src/codex/prompt-hook.js\" 2>/dev/null; exit 0",
+  // The root comes from the PLUGIN_ROOT variable Codex exports, never from
+  // `${PLUGIN_ROOT}` text substitution: Codex pastes the root into the
+  // command unescaped, so a root with a quote, $( ) or a backtick would be
+  // parsed as shell syntax (R1.14a).
+  assert.equal(hook.command, "node \"$PLUGIN_ROOT/src/codex/prompt-hook.js\" 2>/dev/null; exit 0",
     "the exact command is the trust hash: changing it makes users trust the hook again");
-  const refs = [...hook.command.matchAll(/\$\{PLUGIN_ROOT\}\/([^"'\s;]+)/g)].map((m) => m[1]);
-  assert.deepEqual(refs, ["src/codex/prompt-hook.js"]);
-  for (const rel of refs) assert.ok(existsSync(path.join(root, rel)), `hook target exists: ${rel}`);
+  assert.ok(!hook.command.includes("${"), "no text substitution");
+  assert.ok(existsSync(path.join(root, "src/codex/prompt-hook.js")), "hook target exists");
   assert.ok(!JSON.stringify(codexHooks).includes("notify-hook"), "no Claude hook in the Codex file");
 });
 

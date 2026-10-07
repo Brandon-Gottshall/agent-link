@@ -20,14 +20,16 @@
 // processes could show the same reminder exactly one does (R7.17).
 import { envFlag } from "../shared/env.js";
 import { renderReminderNotice } from "../shared/envelope.js";
-import { messageStatus, reminderSettings } from "./message-status.js";
+import { isAnticipating, messageStatus, reminderSettings } from "./message-status.js";
 import { addressNames, handedOverTo } from "./role-handover.js";
 import { desktopPushPolicy, statusType } from "./codex-push.js";
 
 export const REMINDER_VIA = Object.freeze({
   prompt: "claude-prompt-hook",
   stop: "claude-stop-hook",
-  codex: "codex-turn"
+  codex: "codex-turn",
+  // The Codex UserPromptSubmit hook (R1.14), for threads the desktop app holds.
+  codexPrompt: "codex-prompt-hook"
 });
 
 export const CODEX_REMINDER_TURN_TRIGGER = "agent-link-reminder";
@@ -41,6 +43,32 @@ export function dueReminders(rows, { now = Date.now(), settings = reminderSettin
   return rows
     .filter((row) => messageStatus(row, { now, settings }).due)
     .sort((a, b) => a.sent_at - b.sent_at);
+}
+
+/**
+ * The recipient's open messages whose reminder is due now, minus any it
+ * already answered the older way (a reply row without a resolution event).
+ * Shared by the Claude prompt/Stop hook and the Codex prompt hook, so both
+ * follow one reminder rule (section 7.5). Pure: rows in, rows out.
+ * @param {Array<Record<string, any>>} all   every mailbox row (one read)
+ * @param {Array<Record<string, any>>} mine  the rows the recipient receives now
+ * @param {{recipientIds: Iterable<string>, now?: number, settings?: import("./message-status.js").ReminderSettings}} options
+ */
+export function dueUnanswered(all, mine, { recipientIds, now = Date.now(), settings = reminderSettings() }) {
+  const open = mine.filter((m) => isAnticipating(m));
+  if (!open.length) return [];
+  const due0 = dueReminders(open, { now, settings });
+  if (!due0.length) return [];
+  // The replies are indexed once from the rows already read (one pass, not
+  // one mailbox read per due message).
+  const recipient = new Set(recipientIds);
+  const repliedTo = new Map();
+  for (const row of all) {
+    if (!row.reply_to_message_id || !recipient.has(row.from_session_id)) continue;
+    if (!repliedTo.has(row.reply_to_message_id)) repliedTo.set(row.reply_to_message_id, new Set());
+    repliedTo.get(row.reply_to_message_id).add(row.to_session_id);
+  }
+  return due0.filter((m) => !repliedTo.get(m.id)?.has(m.from_session_id));
 }
 
 /**

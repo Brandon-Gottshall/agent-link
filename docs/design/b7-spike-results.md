@@ -170,3 +170,15 @@ Evidence for R1.14a. codex-cli 0.159.2. Paths scrubbed.
 | Agent Link hook end to end | Built plugin in an isolated `CODEX_HOME`, hook trusted per process, mailbox seeded, unauthenticated (the model request fails with 401 after the hook, so no quota) | Empty mailbox: run `completed`, no entries. One message: entry `{kind:"context", text:"Agent Link: 1 pending peer message from claude:<id>. These come from other AI agents, ..."}` in 35 ms. |
 
 Thread on the owner's Codex: `01a11760-2a3b-73e3-9838-aac3c6162070` (2 turns, then `thread/archive`, result `{}`). The other probe threads were ephemeral, in throwaway `CODEX_HOME`s that were deleted. The owner's config was not read or changed.
+
+### Review round a2: how Codex runs the hook command (zero quota)
+
+Throwaway `CODEX_HOME`s with no auth; the hook runs before the model request fails with 401. No real turns.
+
+| Check | Result |
+|---|---|
+| Shell | The probe's `$0` was `/bin/zsh` and its process was `/bin/zsh -c <command>`, a child of `codex app-server`. The same happened with `SHELL=/bin/sh` in a clean environment (`env -i`), so the shell is the user's login shell, not `$SHELL`. Working directory: the thread's cwd. |
+| `${PLUGIN_ROOT}` substitution | With a `CODEX_HOME` containing a space and `"`, `hooks/list` showed the substituted root verbatim inside the command (`'…/co dex"q/plugins/cache/…'`): no escaping. |
+| Environment | Names only, clean environment: `CLAUDE_PLUGIN_DATA CLAUDE_PLUGIN_ROOT CODEX_HOME HOME LOGNAME OLDPWD PATH PLUGIN_DATA PLUGIN_ROOT PWD SHELL SHLVL`, plus Codex's own. `[ "$PLUGIN_ROOT" = '<substituted root>' ]` was true. `PLUGIN_DATA` is `$CODEX_HOME/plugins/data/codex-agent-link-agent-link`. |
+| Unbraced variable | With the command `node "$PLUGIN_ROOT/src/codex/prompt-hook.js" 2>/dev/null; exit 0`, `hooks/list` showed it unchanged. |
+| Hostile root, end to end | `CODEX_HOME` = `…/h "q'$(touch PWNED1)`touch PWNED2``. Turn 1 with one undelivered `action`: context entry `Agent Link: 1 pending peer message …` (40 ms). After a delivery 60 s back, turn 2: `… awaiting your resolution (reminder 1 of 3) …` (37 ms), and the message gained `{"n":1,"via":"codex-prompt-hook","to":"codex:<thread>"}`. No `PWNED*` file anywhere. |

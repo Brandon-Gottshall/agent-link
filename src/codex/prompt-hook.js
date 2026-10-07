@@ -4,16 +4,23 @@
 // Codex UserPromptSubmit hook (design R1.14). Threads the Codex desktop app
 // holds get mail by inbox only (R1.12a): Agent Link never pushes a turn into
 // them. When the user types a prompt in such a thread, this hook adds a short
-// hidden notice (section 2.4) so the model calls read_agent_link_inbox:
+// hidden notice so the model calls read_agent_link_inbox:
 //
-//   - new mail for codex:<threadId> (the section 2.4 pending notice), and
-//   - delivered reply/action mail it still has to resolve (the open notice).
+//   - new mail for codex:<threadId>: the section 2.4 notice, on every prompt
+//     until the inbox is read (nothing is marked delivered here);
+//   - delivered reply/action mail still open: the R7.15 reminder notice,
+//     under the same rule as the Claude hooks (section 7.5): at most once
+//     per interval, up to the cap, recorded as a claimed `reminded` event
+//     (via codex-prompt-hook, to codex:<threadId>). After the cap the
+//     message turns `unresolved` for the sender and the notice stops.
 //
-// It selects rows exactly as read_agent_link_inbox does, role handover
-// included (R7.20), from one read of the mailbox.
+// Mail is selected as read_agent_link_inbox selects it, role handover
+// included (R7.20), from one read of the mailbox. The hook cannot see an
+// in-process wait in an MCP server, so it may count a reply that a running
+// wait is holding (the inbox would not show it).
 //
 // Codex hook contract (verified against codex-cli 0.159.2, see
-// docs/design/host-neutral-agent-link.md R1.14): stdin is
+// docs/design/host-neutral-agent-link.md R1.14a): stdin is
 //   {session_id: <threadId>, turn_id, transcript_path, cwd,
 //    hook_event_name: "UserPromptSubmit", model, permission_mode, prompt}
 // and stdout `{hookSpecificOutput: {hookEventName: "UserPromptSubmit",
@@ -21,20 +28,20 @@
 // nothing. Exit 2 would block the prompt, so this hook never uses it.
 //
 // Rules:
-//   - It never writes: no delivery mark (the notice repeats until the inbox
-//     is read, like the Claude hook), no reminder claim, no state directory.
+//   - It writes only reminder claims and events, and only when a reminder
+//     is due (so a mailbox already exists): with no mail it creates nothing.
 //   - It never talks to the app-server.
 //   - It never includes a message body; senders are validated addresses.
 //   - Any failure prints nothing and exits 0, so a broken install never
 //     breaks the user's prompt. The hooks file also maps every exit to 0.
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { readMailboxRows } from "../claude/mailbox.js";
-import { isOpenMailFor } from "../delivery/inbox-view.js";
+import { openMailbox, readMailboxRows } from "../claude/mailbox.js";
 import { reminderSettings } from "../delivery/message-status.js";
+import { REMINDER_VIA, claimReminders, dueUnanswered, reminderNoticeFor } from "../delivery/reminders.js";
 import { readRoleTable, recipientView } from "../delivery/role-handover.js";
 import { createRoleStore } from "../registry/roles.js";
-import { renderHookNotice, renderOpenNotice } from "../shared/envelope.js";
+import { renderHookNotice } from "../shared/envelope.js";
 import { parseAddress } from "../shared/identity.js";
 
 export const PROMPT_EVENT = "UserPromptSubmit";
@@ -56,10 +63,12 @@ export function threadFromPayload(payload) {
 }
 
 /**
- * Pure entry point: payload in, hook output object (or null for no output).
+ * Entry point: payload in, hook output object (or null for no output).
+ * Writes only through `mailboxOpener`, and only to claim due reminders.
  * @param {any} payload
  * @param {{
  *   readRows?: () => Array<Record<string, any>>,
+ *   mailboxOpener?: () => ReturnType<typeof openMailbox>,
  *   roleTable?: () => import("../registry/roles.js").RoleTable | null,
  *   now?: () => number,
  *   settings?: import("../delivery/message-status.js").ReminderSettings
@@ -68,6 +77,7 @@ export function threadFromPayload(payload) {
  */
 export function runCodexPromptHook(payload, {
   readRows = () => readMailboxRows(),
+  mailboxOpener = () => openMailbox(),
   roleTable = () => readRoleTable(createRoleStore()),
   now = () => Date.now(),
   settings = undefined
@@ -78,18 +88,27 @@ export function runCodexPromptHook(payload, {
   const all = readRows();
   if (!all.length) return null;
   const inbox = recipientView({ aliases: [thread.threadId], address: thread.address, table: roleTable() });
+  const mine = all.filter((row) => inbox.isRecipient(row)).sort((a, b) => a.sent_at - b.sent_at);
+  if (!mine.length) return null;
+  const pending = mine.filter((row) => inbox.isPending(row));
   const at = now();
   const config = settings ?? reminderSettings();
-  const pending = [];
-  const open = [];
-  for (const row of all) {
-    if (!inbox.isRecipient(row)) continue;
-    if (inbox.isPending(row)) pending.push(row);
-    else if (isOpenMailFor(row, inbox, at, config)) open.push(row);
+  // Reminders (section 7.5), as the Claude UserPromptSubmit hook does them.
+  // Only due rows are claimed; the writable mailbox is opened only then.
+  const due = dueUnanswered(all, mine, { recipientIds: [thread.threadId, thread.address], now: at, settings: config });
+  let reminder = null;
+  if (due.length) {
+    const mb = mailboxOpener();
+    try {
+      const claimed = claimReminders(mb, due, { via: REMINDER_VIA.codexPrompt, to: thread.address, now: at, settings: config });
+      reminder = reminderNoticeFor(claimed, { settings: config });
+    } finally {
+      mb.close();
+    }
   }
   const parts = [];
-  if (pending.length) parts.push(renderHookNotice(pending.sort((a, b) => a.sent_at - b.sent_at)));
-  if (open.length) parts.push(renderOpenNotice(open.sort((a, b) => a.sent_at - b.sent_at)));
+  if (pending.length) parts.push(renderHookNotice(pending));
+  if (reminder) parts.push(reminder);
   if (!parts.length) return null;
   return { hookSpecificOutput: { hookEventName: PROMPT_EVENT, additionalContext: parts.join("\n") } };
 }

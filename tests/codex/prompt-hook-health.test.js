@@ -37,7 +37,7 @@ const listed = (overrides = {}) => ({
         key: "codex-agent-link@agent-link:hooks/codex-hooks.json:user_prompt_submit:0:0",
         eventName: "userPromptSubmit",
         handlerType: "command",
-        command: "node \"/plugins/cache/agent-link/codex-agent-link/0.5.0/src/codex/prompt-hook.js\" 2>/dev/null; exit 0",
+        command: "node \"$PLUGIN_ROOT/src/codex/prompt-hook.js\" 2>/dev/null; exit 0",
         timeoutSec: 5,
         sourcePath: "/plugins/cache/agent-link/codex-agent-link/0.5.0/hooks/codex-hooks.json",
         source: "plugin",

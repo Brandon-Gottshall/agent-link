@@ -141,7 +141,7 @@ test("list: both providers, merged newest first, one session shape", async () =>
   const codex = sessions.find((s) => s.id === T2);
   assert.deepEqual(
     { title: codex.title, surface: codex.surface, loaded: codex.loaded, archived: codex.archived, threadId: codex.threadId, status: codex.status, receive: codex.receive },
-    { title: "Docs writer", surface: ["cli"], loaded: false, archived: false, threadId: T2, status: "notLoaded", receive: { push: "codex-turn", nudge: "codex-hook", pull: false } }
+    { title: "Docs writer", surface: ["cli"], loaded: false, archived: false, threadId: T2, status: "notLoaded", receive: { push: "codex-turn", nudge: "codex-hook", pull: true } }
   );
 });
 
