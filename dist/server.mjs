@@ -6885,12 +6885,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs16, exportName) {
+    function addFormats(ajv, list, fs17, exportName) {
       var _a3;
       var _b;
       (_a3 = (_b = ajv.opts.code).formats) !== null && _a3 !== void 0 ? _a3 : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs16[f]);
+        ajv.addFormat(f, fs17[f]);
     }
     module.exports = exports = formatsPlugin;
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -7239,26 +7239,26 @@ var require_permessage_deflate = __commonJS({
             value = value[0];
             if (key === "client_max_window_bits") {
               if (value !== true) {
-                const num = +value;
-                if (!Number.isInteger(num) || num < 8 || num > 15) {
+                const num2 = +value;
+                if (!Number.isInteger(num2) || num2 < 8 || num2 > 15) {
                   throw new TypeError(
                     `Invalid value for parameter "${key}": ${value}`
                   );
                 }
-                value = num;
+                value = num2;
               } else if (!this._isServer) {
                 throw new TypeError(
                   `Invalid value for parameter "${key}": ${value}`
                 );
               }
             } else if (key === "server_max_window_bits") {
-              const num = +value;
-              if (!Number.isInteger(num) || num < 8 || num > 15) {
+              const num2 = +value;
+              if (!Number.isInteger(num2) || num2 < 8 || num2 > 15) {
                 throw new TypeError(
                   `Invalid value for parameter "${key}": ${value}`
                 );
               }
-              value = num;
+              value = num2;
             } else if (key === "client_no_context_takeover" || key === "server_no_context_takeover") {
               if (value !== true) {
                 throw new TypeError(
@@ -7953,8 +7953,8 @@ var require_receiver = __commonJS({
           return;
         }
         const buf = this.consume(8);
-        const num = buf.readUInt32BE(0);
-        if (num > Math.pow(2, 53 - 32) - 1) {
+        const num2 = buf.readUInt32BE(0);
+        if (num2 > Math.pow(2, 53 - 32) - 1) {
           const error2 = this.createError(
             RangeError,
             "Unsupported WebSocket frame: payload length > 2^53 - 1",
@@ -7965,7 +7965,7 @@ var require_receiver = __commonJS({
           cb(error2);
           return;
         }
-        this._payloadLength = num * Math.pow(2, 32) + buf.readUInt32BE(4);
+        this._payloadLength = num2 * Math.pow(2, 32) + buf.readUInt32BE(4);
         this.haveLength(cb);
       }
       /**
@@ -10515,7 +10515,7 @@ var require_websocket_server = __commonJS({
 });
 
 // src/shared/log.js
-import fs2 from "node:fs";
+import fs3 from "node:fs";
 import path3 from "node:path";
 
 // src/shared/env.js
@@ -10610,6 +10610,7 @@ function envReport(source = process.env) {
 }
 
 // src/shared/jsonl.js
+import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 var FILE_MODE = 384;
@@ -10627,6 +10628,21 @@ function parseJsonlLines(raw) {
   }
   return records;
 }
+function readJsonlSync(filePath) {
+  let raw;
+  try {
+    raw = fs.readFileSync(filePath, "utf8");
+  } catch (error2) {
+    if (
+      /** @type {NodeJS.ErrnoException} */
+      error2.code === "ENOENT"
+    ) {
+      return [];
+    }
+    throw error2;
+  }
+  return parseJsonlLines(raw);
+}
 function toJsonl(records) {
   return records.map((record2) => `${JSON.stringify(record2)}
 `).join("");
@@ -10635,6 +10651,11 @@ async function appendJsonl(filePath, records) {
   const text2 = toJsonl(Array.isArray(records) ? records : [records]);
   await fsp.mkdir(path.dirname(filePath), { recursive: true, mode: DIR_MODE });
   await fsp.appendFile(filePath, text2, { encoding: "utf8", mode: FILE_MODE });
+}
+function appendJsonlSync(filePath, records) {
+  const text2 = toJsonl(Array.isArray(records) ? records : [records]);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: DIR_MODE });
+  fs.appendFileSync(filePath, text2, { encoding: "utf8", mode: FILE_MODE });
 }
 
 // src/shared/paths.js
@@ -10774,6 +10795,9 @@ function mailboxPath(options = {}) {
   if (explicit) return explicit;
   return path2.join(stateDir(options), "mailbox.jsonl");
 }
+function forkJobsPath(options = {}) {
+  return path2.join(stateDir(options), "forks.jsonl");
+}
 function receiptLogPath(options = {}) {
   return configuredPath("AGENT_LINK_RECEIPT_LOG", options) ?? path2.join(stateDir(options), "receipts.jsonl");
 }
@@ -10834,11 +10858,11 @@ function without(paths, current) {
 }
 
 // src/shared/state.js
-import fs from "node:fs";
+import fs2 from "node:fs";
 function pluginVersion() {
   if (true) return "0.5.0";
   try {
-    const pkg = JSON.parse(fs.readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
+    const pkg = JSON.parse(fs2.readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
     return typeof pkg.version === "string" ? pkg.version : null;
   } catch {
     return null;
@@ -10846,31 +10870,31 @@ function pluginVersion() {
 }
 function tightenMode(target, mode) {
   try {
-    const stat = fs.statSync(target);
+    const stat = fs2.statSync(target);
     const uid = typeof process.getuid === "function" ? process.getuid() : null;
     if (uid !== null && stat.uid !== uid) return;
-    if ((stat.mode & 511 & ~mode) !== 0) fs.chmodSync(target, mode);
+    if ((stat.mode & 511 & ~mode) !== 0) fs2.chmodSync(target, mode);
   } catch {
   }
 }
 function ensureStateDir(options = {}) {
   const dir = stateDir(options);
-  fs.mkdirSync(dir, { recursive: true, mode: DIR_MODE });
+  fs2.mkdirSync(dir, { recursive: true, mode: DIR_MODE });
   tightenMode(dir, DIR_MODE);
   writeMigrationRecord(options);
   return dir;
 }
 function writeMigrationRecord(options) {
   const file = migrationRecordPath(options);
-  if (fs.existsSync(file)) return;
+  if (fs2.existsSync(file)) return;
   const from = [
     ...legacyMailboxPaths(options),
     ...legacyReceiptPaths(options),
     ...legacyManagedAppServerDirs(options)
-  ].filter((candidate) => fs.existsSync(candidate));
+  ].filter((candidate) => fs2.existsSync(candidate));
   const record2 = { from, at: (/* @__PURE__ */ new Date()).toISOString(), version: pluginVersion() };
   try {
-    fs.writeFileSync(file, `${JSON.stringify(record2, null, 2)}
+    fs2.writeFileSync(file, `${JSON.stringify(record2, null, 2)}
 `, { encoding: "utf8", mode: FILE_MODE, flag: "wx" });
   } catch {
   }
@@ -10937,20 +10961,20 @@ function createLogger(options = {}) {
   function writeFile(line) {
     if (!filePath) return;
     try {
-      fs2.mkdirSync(path3.dirname(filePath), { recursive: true, mode: DIR_MODE });
+      fs3.mkdirSync(path3.dirname(filePath), { recursive: true, mode: DIR_MODE });
       if (!fileChecked) {
         fileChecked = true;
         tightenMode(filePath, FILE_MODE);
       }
       let size = 0;
       try {
-        size = fs2.statSync(filePath).size;
+        size = fs3.statSync(filePath).size;
       } catch {
       }
       if (size > 0 && size + Buffer.byteLength(line) > maxFileBytes) {
-        fs2.renameSync(filePath, `${filePath}.1`);
+        fs3.renameSync(filePath, `${filePath}.1`);
       }
-      fs2.appendFileSync(filePath, line, { encoding: "utf8", mode: FILE_MODE });
+      fs3.appendFileSync(filePath, line, { encoding: "utf8", mode: FILE_MODE });
     } catch (error2) {
       const failed = filePath;
       filePath = null;
@@ -19758,8 +19782,11 @@ var RECEIPT_ACTIONS = Object.freeze([
   "message_status",
   "model_switch",
   "effort_change",
-  "cwd_change"
+  "cwd_change",
+  "fork_thread",
+  "reconcile_fork"
 ]);
+var RECEIPT_KINDS = Object.freeze(["fork", "reconcile", "model-switch", "effort-change", "cwd-change"]);
 var str = (description) => ({ type: "string", description });
 var bool = (description) => ({ type: "boolean", description });
 var stringList = (description) => ({ type: "array", items: { type: "string", description: "One entry." }, description });
@@ -20222,13 +20249,13 @@ function loadConfig(source = process.env) {
 }
 
 // src/claude/session-index.js
-import fs4 from "node:fs";
+import fs5 from "node:fs";
 import path6 from "node:path";
 import { homedir as homedir2 } from "node:os";
 import { spawnSync } from "node:child_process";
 
 // src/claude/desktop-registry.js
-import fs3 from "node:fs";
+import fs4 from "node:fs";
 import path5 from "node:path";
 import { homedir } from "node:os";
 var DEFAULT_SIDECAR_ROOTS = [
@@ -20252,7 +20279,7 @@ var OPTIONAL = [
   "slashCommands"
 ];
 function parseSidecar(filePath) {
-  const raw = JSON.parse(fs3.readFileSync(filePath, "utf8"));
+  const raw = JSON.parse(fs4.readFileSync(filePath, "utf8"));
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new Error(`sidecar ${filePath} is not a JSON object`);
   }
@@ -20347,7 +20374,7 @@ function isClaudeSessionLoaded(cliSessionId, { psOutput } = {}) {
 function findTranscriptSessionByCliId(cliSessionId, { transcriptPath, projectsRoot = defaultProjectsRoot() } = {}) {
   if (!cliSessionId) return null;
   let file = null;
-  if (transcriptPath && path6.basename(transcriptPath, ".jsonl") === cliSessionId && fs4.existsSync(transcriptPath)) {
+  if (transcriptPath && path6.basename(transcriptPath, ".jsonl") === cliSessionId && fs5.existsSync(transcriptPath)) {
     file = transcriptPath;
   } else {
     file = findTranscriptFileByCliId(cliSessionId, projectsRoot);
@@ -20355,7 +20382,7 @@ function findTranscriptSessionByCliId(cliSessionId, { transcriptPath, projectsRo
   if (!file) return null;
   let lastActivityAt = null;
   try {
-    lastActivityAt = fs4.statSync(file).mtimeMs;
+    lastActivityAt = fs5.statSync(file).mtimeMs;
   } catch {
   }
   return {
@@ -20376,10 +20403,10 @@ function findTranscriptSessionByCliId(cliSessionId, { transcriptPath, projectsRo
   };
 }
 function findTranscriptFileByCliId(cliSessionId, projectsRoot) {
-  if (!projectsRoot || !fs4.existsSync(projectsRoot)) return null;
+  if (!projectsRoot || !fs5.existsSync(projectsRoot)) return null;
   let entries;
   try {
-    entries = fs4.readdirSync(projectsRoot, { withFileTypes: true });
+    entries = fs5.readdirSync(projectsRoot, { withFileTypes: true });
   } catch {
     return null;
   }
@@ -20388,7 +20415,7 @@ function findTranscriptFileByCliId(cliSessionId, projectsRoot) {
     if (!entry.isDirectory()) continue;
     const candidate = path6.join(projectsRoot, entry.name, target);
     try {
-      if (fs4.existsSync(candidate)) return candidate;
+      if (fs5.existsSync(candidate)) return candidate;
     } catch {
     }
   }
@@ -20405,13 +20432,13 @@ function findSidecarFileById(root, sessionId, { maxDepth = 3 } = {}) {
   const visit = (dir, depth) => {
     const direct = path6.join(dir, name);
     try {
-      if (fs4.statSync(direct).isFile()) return direct;
+      if (fs5.statSync(direct).isFile()) return direct;
     } catch {
     }
     if (depth >= maxDepth) return null;
     let entries;
     try {
-      entries = fs4.readdirSync(dir, { withFileTypes: true });
+      entries = fs5.readdirSync(dir, { withFileTypes: true });
     } catch {
       return null;
     }
@@ -20425,7 +20452,7 @@ function findSidecarFileById(root, sessionId, { maxDepth = 3 } = {}) {
   return visit(root, 0);
 }
 function findSidecar(root, predicate) {
-  if (!root || !fs4.existsSync(root)) return null;
+  if (!root || !fs5.existsSync(root)) return null;
   let found = null;
   walk(root, (file) => {
     if (found || !isSidecarFile(file)) return;
@@ -20435,7 +20462,7 @@ function findSidecar(root, predicate) {
   return found;
 }
 function filterSidecars(root, predicate) {
-  if (!root || !fs4.existsSync(root)) return [];
+  if (!root || !fs5.existsSync(root)) return [];
   const out2 = [];
   walk(root, (file) => {
     if (!isSidecarFile(file)) return;
@@ -20448,7 +20475,7 @@ function isSidecarFile(file) {
   return /^local_[0-9a-zA-Z-]+\.json$/.test(path6.basename(file));
 }
 function listSidecarSessions(root, surface2) {
-  if (!root || !fs4.existsSync(root)) return [];
+  if (!root || !fs5.existsSync(root)) return [];
   const out2 = [];
   walk(root, (file) => {
     if (!isSidecarFile(file)) return;
@@ -20460,7 +20487,7 @@ function listSidecarSessions(root, surface2) {
 function parseSidecarCached(file) {
   let stat;
   try {
-    stat = fs4.statSync(file);
+    stat = fs5.statSync(file);
   } catch {
     return null;
   }
@@ -20488,11 +20515,11 @@ function normalizeSidecar(session, surface2) {
   };
 }
 function listTranscriptSessions(projectsRoot) {
-  if (!projectsRoot || !fs4.existsSync(projectsRoot)) return [];
+  if (!projectsRoot || !fs5.existsSync(projectsRoot)) return [];
   const out2 = [];
   let projects;
   try {
-    projects = fs4.readdirSync(projectsRoot, { withFileTypes: true });
+    projects = fs5.readdirSync(projectsRoot, { withFileTypes: true });
   } catch {
     return [];
   }
@@ -20501,7 +20528,7 @@ function listTranscriptSessions(projectsRoot) {
     const dir = path6.join(projectsRoot, project.name);
     let entries;
     try {
-      entries = fs4.readdirSync(dir, { withFileTypes: true });
+      entries = fs5.readdirSync(dir, { withFileTypes: true });
     } catch {
       continue;
     }
@@ -20519,7 +20546,7 @@ function summarizeTranscriptSession(file, { projectsRoot = defaultProjectsRoot()
 function parseTranscriptSummary(file, projectsRoot) {
   let stat;
   try {
-    stat = fs4.statSync(file);
+    stat = fs5.statSync(file);
   } catch {
     return null;
   }
@@ -20539,7 +20566,7 @@ function parseTranscriptSummary(file, projectsRoot) {
 function readPrefixLines(fd, size, limit2) {
   const length = Math.min(limit2, size);
   const buf = Buffer.allocUnsafe(length);
-  if (length) fs4.readSync(fd, buf, 0, length, 0);
+  if (length) fs5.readSync(fd, buf, 0, length, 0);
   const lines = buf.toString("utf8").split("\n");
   const atEof = length >= size;
   if (!atEof) lines.pop();
@@ -20548,7 +20575,7 @@ function readPrefixLines(fd, size, limit2) {
 function buildTranscriptSummary(file, projectsRoot, stat) {
   let firstRecord = null;
   try {
-    const fd = fs4.openSync(file, "r");
+    const fd = fs5.openSync(file, "r");
     try {
       for (let limit2 = TRANSCRIPT_PREFIX_BYTES; ; limit2 *= 2) {
         const { lines, atEof } = readPrefixLines(fd, stat.size, limit2);
@@ -20564,7 +20591,7 @@ function buildTranscriptSummary(file, projectsRoot, stat) {
         if (firstRecord || atEof || limit2 >= TRANSCRIPT_PREFIX_MAX_BYTES) break;
       }
     } finally {
-      fs4.closeSync(fd);
+      fs5.closeSync(fd);
     }
   } catch {
     return null;
@@ -20666,7 +20693,7 @@ function isLoaded(psLines, cliSessionId) {
 function walk(dir, visit, stop = () => false) {
   let entries;
   try {
-    entries = fs4.readdirSync(dir, { withFileTypes: true });
+    entries = fs5.readdirSync(dir, { withFileTypes: true });
   } catch {
     return;
   }
@@ -20680,7 +20707,7 @@ function walk(dir, visit, stop = () => false) {
 
 // src/claude/mailbox.js
 import path7 from "node:path";
-import fs5 from "node:fs";
+import fs6 from "node:fs";
 import crypto from "node:crypto";
 var MAX_MESSAGE_BODY_BYTES = 64 * 1024;
 var MAX_EVENT_LINE_BYTES = 512 * 1024;
@@ -20717,15 +20744,15 @@ function ensurePrivateMailbox(mailboxPath2) {
   if (isDefaultMailbox(mailboxPath2)) {
     ensureStateDir();
   } else {
-    fs5.mkdirSync(path7.dirname(mailboxPath2), { recursive: true, mode: DIR_MODE2 });
+    fs6.mkdirSync(path7.dirname(mailboxPath2), { recursive: true, mode: DIR_MODE2 });
   }
   tightenMode(mailboxPath2, FILE_MODE2);
 }
 function mailboxStatus(options = {}) {
   const mailboxPath2 = resolveMailboxPath(options);
   const readPaths = mailboxReadPaths(options);
-  const exists3 = fs5.existsSync(mailboxPath2);
-  const legacyReadPaths = readPaths.filter((p) => p !== mailboxPath2 && fs5.existsSync(p));
+  const exists3 = fs6.existsSync(mailboxPath2);
+  const legacyReadPaths = readPaths.filter((p) => p !== mailboxPath2 && fs6.existsSync(p));
   let pendingMessagesCount = 0;
   let readable = true;
   if (exists3 || legacyReadPaths.length) {
@@ -20748,9 +20775,9 @@ function mailboxStatus(options = {}) {
 function canWrite(target) {
   let current = path7.resolve(target);
   while (true) {
-    if (fs5.existsSync(current)) {
+    if (fs6.existsSync(current)) {
       try {
-        fs5.accessSync(current, fs5.constants.W_OK);
+        fs6.accessSync(current, fs6.constants.W_OK);
         return true;
       } catch {
         return false;
@@ -20773,7 +20800,7 @@ function openMailbox(options = {}) {
     if (bytes > MAX_EVENT_LINE_BYTES) {
       throw new Error(`Agent Link mailbox event is ${bytes} bytes; one event is limited to ${MAX_EVENT_LINE_BYTES} bytes (512 KiB). Shorten the message or its metadata.`);
     }
-    fs5.appendFileSync(mailboxPath2, line, { encoding: "utf8", mode: FILE_MODE2 });
+    fs6.appendFileSync(mailboxPath2, line, { encoding: "utf8", mode: FILE_MODE2 });
   }
   function insertMessage({
     fromSessionId,
@@ -20824,13 +20851,13 @@ function openMailbox(options = {}) {
   }
   function claim(key, content = "") {
     try {
-      fs5.mkdirSync(claimsDir, { recursive: true, mode: DIR_MODE2 });
+      fs6.mkdirSync(claimsDir, { recursive: true, mode: DIR_MODE2 });
       tightenMode(claimsDir, DIR_MODE2);
-      const fd = fs5.openSync(path7.join(claimsDir, claimName(key)), "wx", FILE_MODE2);
+      const fd = fs6.openSync(path7.join(claimsDir, claimName(key)), "wx", FILE_MODE2);
       try {
-        if (content) fs5.writeSync(fd, String(content).slice(0, 200));
+        if (content) fs6.writeSync(fd, String(content).slice(0, 200));
       } finally {
-        fs5.closeSync(fd);
+        fs6.closeSync(fd);
       }
       return true;
     } catch {
@@ -20839,14 +20866,14 @@ function openMailbox(options = {}) {
   }
   function claimTakenAt(key) {
     try {
-      return fs5.statSync(path7.join(claimsDir, claimName(key))).mtimeMs;
+      return fs6.statSync(path7.join(claimsDir, claimName(key))).mtimeMs;
     } catch {
       return null;
     }
   }
   function claimContent(key) {
     try {
-      return fs5.readFileSync(path7.join(claimsDir, claimName(key)), "utf8");
+      return fs6.readFileSync(path7.join(claimsDir, claimName(key)), "utf8");
     } catch {
       return null;
     }
@@ -20856,7 +20883,7 @@ function openMailbox(options = {}) {
   }
   function removeClaim(name) {
     try {
-      fs5.unlinkSync(path7.join(claimsDir, claimName(name)));
+      fs6.unlinkSync(path7.join(claimsDir, claimName(name)));
       return true;
     } catch {
       return false;
@@ -20965,7 +20992,7 @@ function claimName(key) {
 }
 function listClaimNames(dir) {
   try {
-    return fs5.readdirSync(dir);
+    return fs6.readdirSync(dir);
   } catch {
     return [];
   }
@@ -21037,7 +21064,7 @@ function mergedView(paths, claimsDir = null) {
       if (n < 1 || message.reminders.some((r) => r.n === n)) continue;
       let at = null;
       try {
-        at = fs5.statSync(path7.join(claimsDir, name)).mtimeMs;
+        at = fs6.statSync(path7.join(claimsDir, name)).mtimeMs;
       } catch {
         continue;
       }
@@ -21047,8 +21074,8 @@ function mergedView(paths, claimsDir = null) {
   return [...messages.values()];
 }
 function readEvents(mailboxPath2) {
-  if (!fs5.existsSync(mailboxPath2)) return [];
-  const raw = fs5.readFileSync(mailboxPath2, "utf8");
+  if (!fs6.existsSync(mailboxPath2)) return [];
+  const raw = fs6.readFileSync(mailboxPath2, "utf8");
   if (!raw.trim()) return [];
   const events = [];
   for (const line of raw.split("\n")) {
@@ -21359,6 +21386,7 @@ var CodexAppServerClient = class {
     this.lastStartupFailure = null;
     this.pendingStops = /* @__PURE__ */ new Set();
     this.notifications = { total: 0, parseErrors: 0, byMethod: {}, recent: [] };
+    this.notificationListeners = /* @__PURE__ */ new Set();
     this.serverRequests = { total: 0, declined: 0, rejected: 0, unanswered: 0, byMethod: {}, last: null };
   }
   async request(method, params = {}) {
@@ -21576,7 +21604,23 @@ var CodexAppServerClient = class {
       if (this.notifications.recent.length > RECENT_NOTIFICATIONS) {
         this.notifications.recent.shift();
       }
+      for (const listener of this.notificationListeners) {
+        try {
+          listener(message);
+        } catch (error2) {
+          getLogger().warn("app_server.notification_listener_failed", { method: message.method, error: error2 });
+        }
+      }
     }
+  }
+  // Notifications (no id) are handed to every listener, for example the
+  // token-usage tracker (src/codex/token-usage.js). Returns an unsubscribe.
+  /** @param {(notification: {method: string, params?: any}) => void} listener */
+  onNotification(listener) {
+    this.notificationListeners.add(listener);
+    return () => {
+      this.notificationListeners.delete(listener);
+    };
   }
   // Only an app-server Agent Link started itself is answered automatically.
   // An explicitly configured endpoint (AGENT_LINK_CODEX_URL / _SOCK) may be a
@@ -22909,173 +22953,105 @@ function boundedEditDistance(a, b, maxDistance) {
   return previous[b.length];
 }
 
-// src/shared/caller-context.js
-var MAX_TEXT = 300;
-var MAX_META_KEYS = 50;
-var NAMESPACES = [null, "openai/codex", "codex", "claudecode"];
-var FIELD_SPECS = {
-  threadId: [
-    ["callerThreadId"],
-    ["caller", "thread", "id"],
-    ["threadId"],
-    ["thread_id"],
-    ["codexThreadId"],
-    ["thread", "id"],
-    ["originThreadId"]
-  ],
-  turnId: [
-    ["callerTurnId"],
-    ["caller", "turn", "id"],
-    ["turnId"],
-    ["turn_id"],
-    ["codexTurnId"],
-    ["turn", "id"],
-    ["originTurnId"]
-  ],
-  toolCallId: [
-    ["callerToolCallId"],
-    ["caller", "toolCall", "id"],
-    ["toolCallId"],
-    ["tool_call_id"],
-    ["claudecode/toolUseId"],
-    ["toolUseId"],
-    ["tool_use_id"],
-    ["originToolCallId"]
-  ]
-};
-function callerContextContract() {
-  return {
-    purpose: "Automatically attach caller thread/turn/tool-call provenance to Agent Link receipts when Codex supplies it in MCP runtime metadata.",
-    precedence: [
-      "receipt.originThreadId / originTurnId / originToolCallId",
-      "MCP tools/call runtime metadata from request.params._meta or handler extra._meta",
-      "CODEX_THREAD_ID / CODEX_TURN_ID process environment",
-      "not_supplied"
-    ],
-    runtimeMetadataShape: {
-      accepted: [
-        "threadId (priority order): " + FIELD_SPECS.threadId.map((spec) => spec.join(".")).join(", "),
-        "turnId (priority order): " + FIELD_SPECS.turnId.map((spec) => spec.join(".")).join(", "),
-        "toolCallId (priority order): " + FIELD_SPECS.toolCallId.map((spec) => spec.join(".")).join(", "),
-        "each key is exact (case-sensitive) and read at the top of _meta or inside one of: " + NAMESPACES.filter(Boolean).join(", ")
-      ],
-      sources: [
-        "request.params._meta",
-        "handler extra._meta"
-      ]
-    }
-  };
+// src/shared/process.js
+import { spawn as spawn2 } from "node:child_process";
+function spawnAndWait(command, args, { spawnImpl = spawn2 } = {}) {
+  return new Promise((resolve) => {
+    const child = spawnImpl(command, args, {
+      stdio: "ignore"
+    });
+    child.on("error", (error2) => {
+      resolve({ error: error2 });
+    });
+    child.on("exit", (code, signal) => {
+      resolve({ code, signal });
+    });
+  });
 }
-function extractRuntimeCallerContext(request = {}, extra = {}) {
-  const requestMeta = request?.params?._meta;
-  const extraMeta = extra?._meta;
-  const metas = [
-    [requestMeta, "request.params._meta"],
-    [extraMeta, "handler.extra._meta"]
-  ];
-  const threadId = findField(metas, FIELD_SPECS.threadId);
-  const turnId = findField(metas, FIELD_SPECS.turnId);
-  const toolCallId = findField(metas, FIELD_SPECS.toolCallId);
-  return {
-    available: Boolean(threadId || turnId || toolCallId),
-    threadId: threadId?.value ?? null,
-    turnId: turnId?.value ?? null,
-    toolCallId: toolCallId?.value ?? null,
-    source: threadId?.source ?? turnId?.source ?? toolCallId?.source ?? "not_supplied",
-    sources: {
-      threadId: summarizeMatch(threadId),
-      turnId: summarizeMatch(turnId),
-      toolCallId: summarizeMatch(toolCallId)
-    },
-    requestId: cleanText(extra?.requestId, MAX_TEXT),
-    sessionId: cleanText(extra?.sessionId, MAX_TEXT),
-    metaKeys: {
-      requestParams: topLevelKeys(requestMeta),
-      extra: topLevelKeys(extraMeta)
-    }
-  };
-}
-function summarizeRuntimeCallerContext(context) {
-  const ctx = context ?? {};
-  return {
-    available: Boolean(ctx.available),
-    threadId: cleanText(ctx.threadId, MAX_TEXT),
-    turnId: cleanText(ctx.turnId, MAX_TEXT),
-    toolCallId: cleanText(ctx.toolCallId, MAX_TEXT),
-    source: ctx.source ?? "not_supplied",
-    sources: ctx.sources ?? {},
-    requestId: cleanText(ctx.requestId, MAX_TEXT),
-    sessionId: cleanText(ctx.sessionId, MAX_TEXT),
-    metaKeys: {
-      requestParams: Array.isArray(ctx.metaKeys?.requestParams) ? ctx.metaKeys.requestParams.slice(0, MAX_META_KEYS) : [],
-      extra: Array.isArray(ctx.metaKeys?.extra) ? ctx.metaKeys.extra.slice(0, MAX_META_KEYS) : []
-    }
-  };
-}
-function findField(metas, specs) {
-  for (const [meta2, source] of metas) {
-    if (!isPlainObject3(meta2)) continue;
-    for (const spec of specs) {
-      for (const namespace of NAMESPACES) {
-        const container = namespace === null ? meta2 : meta2[namespace];
-        if (!isPlainObject3(container)) continue;
-        const value = cleanText(readPath(container, spec), MAX_TEXT);
-        if (value) {
-          return {
-            value,
-            source,
-            path: [...namespace === null ? [] : [namespace], ...spec].join(".")
-          };
-        }
-      }
-    }
+function shellQuoteForDisplay(value) {
+  if (/^[A-Za-z0-9_/:.=+-]+$/.test(value)) {
+    return value;
   }
-  return null;
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
-function readPath(container, spec) {
-  let node = container;
-  for (const key of spec) {
-    if (!isPlainObject3(node) || !Object.prototype.hasOwnProperty.call(node, key)) return null;
-    node = node[key];
-  }
-  return typeof node === "string" || typeof node === "number" ? node : null;
-}
-function isPlainObject3(value) {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-function summarizeMatch(match) {
-  if (!match) {
-    return null;
-  }
-  return {
-    source: match.source,
-    path: match.path
-  };
-}
-function topLevelKeys(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return [];
-  }
-  return Object.keys(value).slice(0, MAX_META_KEYS);
-}
-function cleanText(value, max) {
-  if (value === null || value === void 0) {
-    return null;
-  }
-  const text2 = String(value).trim();
-  if (!text2) {
-    return null;
-  }
-  if (text2.length <= max) {
-    return text2;
-  }
-  return `${text2.slice(0, max - 3)}...`;
+function sleep2(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// src/shared/receipt-index.js
-import { randomUUID } from "node:crypto";
-import { promises as fs6 } from "node:fs";
-import path10 from "node:path";
+// src/codex/desktop-routing.js
+function codexThreadDeepLink(threadId) {
+  return `codex://threads/${encodeURIComponent(threadId)}`;
+}
+function makeDesktopRouting({
+  appServer,
+  platform = () => process.platform,
+  dryRun = () => envFlag("AGENT_LINK_GUI_OPEN_DRY_RUN", false),
+  run = spawnAndWait
+}) {
+  function guiRoutingWarnings({ ephemeral }) {
+    const warnings = [];
+    if (ephemeral) {
+      warnings.push("The thread was created as ephemeral; Codex Desktop may not be able to reload it from persisted session history.");
+    }
+    const appServerSummary = appServer.getConnectionSummary();
+    if (appServerSummary.managed) {
+      warnings.push("Agent Link is connected to a managed app-server, not the Codex Desktop stdio app-server. The deep link targets the persisted thread id, but runtime-loaded state is not shared.");
+    }
+    return warnings;
+  }
+  async function openCodexDesktopThread({ threadId, ephemeral }) {
+    if (platform() !== "darwin") {
+      return {
+        attempted: false,
+        reason: "Codex Desktop thread routing is currently implemented for macOS only",
+        deepLink: codexThreadDeepLink(threadId),
+        threadId
+      };
+    }
+    const deepLink = codexThreadDeepLink(threadId);
+    const command = "open";
+    const args = ["-g", deepLink];
+    const commandDisplay = `${command} ${args.map(shellQuoteForDisplay).join(" ")}`;
+    if (dryRun()) {
+      return {
+        attempted: true,
+        ok: true,
+        dryRun: true,
+        command: commandDisplay,
+        deepLink,
+        threadId,
+        behavior: "Dry run only; no GUI process was contacted.",
+        focusPolicy: "No keyboard, mouse, menu, or window automation is used. The real path uses LaunchServices with -g, but Codex Desktop may still focus itself while handling valid deep links.",
+        warnings: guiRoutingWarnings({ ephemeral })
+      };
+    }
+    const outcome = await run(command, args);
+    if (outcome.error) {
+      return {
+        attempted: true,
+        ok: false,
+        command: commandDisplay,
+        deepLink,
+        error: outcome.error.message,
+        threadId,
+        warnings: guiRoutingWarnings({ ephemeral })
+      };
+    }
+    return {
+      attempted: true,
+      ok: outcome.code === 0,
+      command: commandDisplay,
+      deepLink,
+      exitCode: outcome.code,
+      signal: outcome.signal,
+      threadId,
+      behavior: "Routed Codex Desktop to the created thread via the official codex://threads/<id> deep link. No keyboard, mouse, menu, or window automation was used.",
+      focusPolicy: "LaunchServices was invoked with -g. Codex Desktop currently focuses its primary window while handling valid deep links, so callers should keep openInGui false when they need a strictly quiet launch.",
+      warnings: guiRoutingWarnings({ ephemeral })
+    };
+  }
+  return { openCodexDesktopThread, guiRoutingWarnings };
+}
 
 // src/shared/args.js
 function requiredString(value, name) {
@@ -23108,513 +23084,1022 @@ function normalizeStringList(value) {
   return text2 ? [text2] : [];
 }
 
-// src/shared/receipt-index.js
-var DEFAULT_ADDRESS_RESOLVER = {
-  targetAddress(target) {
-    if (!target || typeof target !== "object") return null;
-    if (typeof target.address === "string" && target.address) return parseAddress(target.address) ? target.address : null;
-    if (typeof target.threadId === "string" && target.threadId && target.kind !== "claude") return codexAddress(target.threadId);
-    if (typeof target.sessionId === "string" && target.sessionId) {
-      const address = canonicalAddress(target.sessionId, target.kind === "codex" ? "codex" : "claude");
-      return address.includes(":") ? address : null;
+// src/codex/loaded-threads.js
+var LOADED_LOOKUP_MAX_PAGES = 50;
+function extractLoadedThreadIds(response = {}) {
+  const values = Array.isArray(response.data) ? response.data : Array.isArray(response.threadIds) ? response.threadIds : [];
+  return values.map((entry) => typeof entry === "string" ? entry : entry?.id ?? entry?.threadId ?? entry?.localThreadId).filter(Boolean);
+}
+function normalizeLoadedThreadEntries(response = {}, loadedThreadIds = []) {
+  const values = Array.isArray(response.data) ? response.data : Array.isArray(response.threadIds) ? response.threadIds : loadedThreadIds;
+  return values.map((entry) => {
+    if (typeof entry === "string") {
+      return { id: entry };
+    }
+    if (entry && typeof entry === "object") {
+      const id = entry.id ?? entry.threadId ?? entry.localThreadId ?? null;
+      return {
+        ...entry,
+        id
+      };
     }
     return null;
-  },
-  canonical: (address) => parseAddress(address) ? address : null,
-  aliases: (address) => [address]
-};
-var addressResolver = DEFAULT_ADDRESS_RESOLVER;
-function setReceiptAddressResolver(resolver) {
-  addressResolver = resolver ?? DEFAULT_ADDRESS_RESOLVER;
+  }).filter((entry) => typeof entry?.id === "string" && entry.id.trim().length > 0);
 }
-var RECEIPT_VERSION = 1;
-var DEFAULT_LIMIT = 20;
-var MAX_LIMIT = 500;
-var MAX_TEXT2 = 700;
-function receiptWritePath(options = {}) {
-  return options.path || receiptLogPath();
+function buildSubagentRegistryEntry(thread, sidebarMembership) {
+  const spawn3 = extractThreadSpawnSource(thread.source) ?? {};
+  return {
+    id: thread.id,
+    parentThreadId: spawn3.parentThreadId ?? null,
+    depth: spawn3.depth ?? null,
+    agentPath: spawn3.agentPath ?? null,
+    agentNickname: thread.agentNickname ?? spawn3.agentNickname ?? null,
+    agentRole: thread.agentRole ?? spawn3.agentRole ?? null,
+    status: thread.status ?? null,
+    cwd: thread.cwd ?? null,
+    path: thread.path ?? null,
+    archiveState: thread.archiveState ?? inferArchiveState(thread),
+    updatedAt: thread.updatedAt ?? null,
+    sidebarMembership: sidebarMembership ?? "unknown",
+    source: thread.source ?? null
+  };
 }
-function receiptReadPaths(options = {}) {
-  const writePath = receiptWritePath(options);
-  if (options.path) return [writePath];
-  return [...legacyReceiptPaths(), writePath];
-}
-function receiptIndexSummary(options = {}) {
-  let paths;
-  try {
-    paths = { path: receiptWritePath(options), readPaths: receiptReadPaths(options) };
-  } catch (error2) {
-    paths = { path: null, readPaths: [], error: error2.message };
+function extractThreadSpawnSource(source) {
+  if (!source || typeof source !== "object") {
+    return null;
+  }
+  const subagent = source.subAgent ?? source.subagent ?? null;
+  if (!subagent || typeof subagent !== "object") {
+    return null;
+  }
+  const spawn3 = subagent.threadSpawn ?? subagent.thread_spawn ?? null;
+  if (!spawn3 || typeof spawn3 !== "object") {
+    return null;
   }
   return {
-    ...paths,
-    format: "jsonl",
-    version: RECEIPT_VERSION,
-    note: "Agent Link writes local action receipts for launch, message, and archive operations so later agents can query provenance by target or origin thread. Origin fields come from caller-supplied receipt data, MCP runtime caller context, or environment fallback. Reads also merge the legacy log listed in readPaths; writes go only to path."
+    parentThreadId: spawn3.parentThreadId ?? spawn3.parent_thread_id ?? null,
+    depth: spawn3.depth ?? null,
+    agentPath: spawn3.agentPath ?? spawn3.agent_path ?? null,
+    agentNickname: spawn3.agentNickname ?? spawn3.agent_nickname ?? null,
+    agentRole: spawn3.agentRole ?? spawn3.agent_role ?? null
   };
 }
-function normalizeReceiptInput(value = {}, options = {}) {
-  if (isNormalizedReceiptInput(value)) {
-    return value;
+function groupSubagentsByParentThreadId(subagents) {
+  const grouped = {};
+  for (const subagent of subagents) {
+    const parentThreadId = subagent.parentThreadId ?? "unknown";
+    grouped[parentThreadId] ??= [];
+    grouped[parentThreadId].push(subagent);
   }
-  const input = isPlainObject4(value) ? value : {};
-  const runtimeCallerContext = summarizeRuntimeCallerContext(options.runtimeCallerContext);
-  const callerOriginThreadId = cleanText2(input.originThreadId, 160);
-  const callerOriginTurnId = cleanText2(input.originTurnId, 160);
-  const callerOriginToolCallId = cleanText2(input.originToolCallId, 160);
-  const runtimeOriginThreadId = cleanText2(runtimeCallerContext.threadId, 160);
-  const runtimeOriginTurnId = cleanText2(runtimeCallerContext.turnId, 160);
-  const runtimeOriginToolCallId = cleanText2(runtimeCallerContext.toolCallId, 160);
-  const canInferOrigin = envFlag("AGENT_LINK_INFER_RECEIPT_ORIGIN", true);
-  const inferredOriginThreadId = canInferOrigin ? cleanText2(env("CODEX_THREAD_ID").value, 160) : null;
-  const inferredOriginTurnId = canInferOrigin ? cleanText2(env("CODEX_TURN_ID").value, 160) : null;
-  const originThread = firstOriginValue([
-    ["caller_supplied", callerOriginThreadId],
-    ["runtime_context", runtimeOriginThreadId],
-    ["environment", inferredOriginThreadId]
-  ]);
-  const originTurn = firstOriginValue([
-    ["caller_supplied", callerOriginTurnId],
-    ["runtime_context", runtimeOriginTurnId],
-    ["environment", inferredOriginTurnId]
-  ]);
-  const originToolCall = firstOriginValue([
-    ["caller_supplied", callerOriginToolCallId],
-    ["runtime_context", runtimeOriginToolCallId]
-  ]);
-  const originSources = {
-    threadId: originThread.source,
-    turnId: originTurn.source,
-    toolCallId: originToolCall.source
-  };
-  return {
-    record: input.record !== false,
-    purpose: cleanText2(input.purpose, 160),
-    originThreadId: originThread.value,
-    originTurnId: originTurn.value,
-    originToolCallId: originToolCall.value,
-    originSource: summarizeOriginSource(originSources),
-    originSources,
-    runtimeCallerContext,
-    cleanupRecommendation: normalizeCleanupRecommendation(input.cleanupRecommendation),
-    note: cleanText2(input.note, MAX_TEXT2),
-    tags: cleanTags(input.tags)
-  };
+  return grouped;
 }
-function buildReceipt({
-  action,
-  receipt,
-  target,
-  message,
-  finalResponse,
-  delivery,
-  replyConfirmation,
-  evidence,
-  runtimeCallerContext,
-  appServer,
-  host,
-  resolution = null
-}) {
-  const input = normalizeReceiptInput(receipt, { runtimeCallerContext });
-  const createdAt = (/* @__PURE__ */ new Date()).toISOString();
-  return {
-    version: RECEIPT_VERSION,
-    id: `agent-link-receipt-${createdAt.replace(/[:.]/g, "-")}-${randomUUID()}`,
-    createdAt,
-    action,
-    host: cleanText2(host, 40),
-    purpose: input.purpose,
-    cleanupRecommendation: input.cleanupRecommendation,
-    tags: input.tags,
-    origin: {
-      threadId: input.originThreadId,
-      turnId: input.originTurnId,
-      toolCallId: input.originToolCallId,
-      note: input.note,
-      source: input.originSource,
-      sources: input.originSources,
-      runtime: input.runtimeCallerContext
-    },
-    target: {
-      // The canonical address (design doc section 1.3); the legacy id
-      // fields below stay.
-      address: cleanText2(target?.address, 200) ?? addressResolver.targetAddress(target),
-      threadId: cleanText2(target?.threadId, 160),
-      turnId: cleanText2(target?.turnId, 160),
-      name: cleanText2(target?.name, 200),
-      cwd: cleanText2(target?.cwd, 1e3),
-      archiveState: target?.archiveState ?? null,
-      status: target?.status ?? null,
-      deepLink: cleanText2(target?.deepLink, 300),
-      sessionId: cleanText2(target?.sessionId, 160),
-      loaded: typeof target?.loaded === "boolean" ? target.loaded : null,
-      kind: cleanText2(target?.kind, 40)
-    },
-    messagePreview: cleanText2(message, MAX_TEXT2),
-    finalResponse: cleanText2(finalResponse, MAX_TEXT2),
-    delivery: delivery ?? null,
-    evidence: summarizeEvidence(evidence),
-    replyConfirmation: summarizeReplyConfirmation(replyConfirmation),
-    appServer: summarizeAppServer(appServer),
-    // Design R7.12 / R7.17: a resolution, or an observed transition to
-    // unresolved or expired. Omitted from every other receipt.
-    ...resolution ? { resolution: summarizeResolution(resolution) } : {}
-  };
-}
-function summarizeResolution(resolution) {
-  return {
-    kind: resolution.kind === "status" ? "status" : "resolution",
-    messageId: cleanText2(resolution.messageId, 80),
-    resolution: cleanText2(resolution.resolution, 20),
-    status: cleanText2(resolution.status, 20),
-    by: cleanText2(resolution.by, 200),
-    at: cleanText2(resolution.at, 40),
-    late: resolution.late === true
-  };
-}
-async function tightenFileMode(target, mode) {
-  try {
-    const stat = await fs6.stat(target);
-    const uid = typeof process.getuid === "function" ? process.getuid() : null;
-    if (uid !== null && stat.uid !== uid) return;
-    if ((stat.mode & 511 & ~mode) !== 0) await fs6.chmod(target, mode);
-  } catch {
-  }
-}
-async function appendReceipt(receipt, options = {}) {
-  const logPath = receiptWritePath(options);
-  if (path10.resolve(path10.dirname(logPath)) === path10.resolve(stateDir())) ensureStateDir();
-  await appendJsonl(logPath, receipt);
-  await tightenFileMode(logPath, 384);
-  return {
-    ok: true,
-    id: receipt.id,
-    path: logPath,
-    receipt: receiptSummary(receipt)
-  };
-}
-async function safeAppendReceipt(receipt, options = {}) {
-  try {
-    return await appendReceipt(receipt, options);
-  } catch (error2) {
+function makeLoadedThreads({ appServer, collectAppServerThreadSummaries }) {
+  async function readLoadedPage(args) {
+    const limit2 = clampInt(args.limit ?? LIMITS.list.def, LIMITS.list.min, LIMITS.list.max);
+    if (!args.threadId) {
+      const response = await appServer.request("thread/loaded/list", { limit: limit2, cursor: args.cursor ?? null });
+      return { response, lookup: null };
+    }
+    let cursor = args.cursor ?? null;
+    let pagesScanned = 0;
+    while (pagesScanned < LOADED_LOOKUP_MAX_PAGES) {
+      const page = await appServer.request("thread/loaded/list", { limit: LIMITS.list.max, cursor });
+      pagesScanned += 1;
+      const match = normalizeLoadedThreadEntries(page, extractLoadedThreadIds(page)).find((entry) => entry.id === args.threadId);
+      if (match) {
+        return { response: { data: [match], nextCursor: null }, lookup: { threadId: args.threadId, loaded: true, pagesScanned, complete: true } };
+      }
+      cursor = page.nextCursor ?? null;
+      if (!cursor) break;
+    }
     return {
-      ok: false,
-      id: receipt.id,
-      path: safeWritePath(options),
-      error: error2.message,
-      receipt: receiptSummary(receipt)
+      response: { data: [], nextCursor: null },
+      lookup: { threadId: args.threadId, loaded: cursor ? null : false, pagesScanned, complete: !cursor }
     };
   }
-}
-function safeWritePath(options) {
-  try {
-    return receiptWritePath(options);
-  } catch {
-    return null;
+  async function listLoadedThreads(args) {
+    const { response, lookup } = await readLoadedPage(args);
+    const loadedThreadIds = extractLoadedThreadIds(response);
+    const sidebarProbe = await readSidebarStateForMembership();
+    const sidebarState = sidebarProbe.sidebarState;
+    const loadedThreads = normalizeLoadedThreadEntries(response, loadedThreadIds).map((thread) => ({
+      ...thread,
+      sidebarMembership: classifySidebarMembership(thread.id, sidebarState)
+    }));
+    const sidebarMembershipByThreadId = Object.fromEntries(
+      loadedThreads.map((thread) => [thread.id, thread.sidebarMembership])
+    );
+    const subagentRegistry = await buildLoadedSubagentRegistry({
+      loadedThreads,
+      sidebarMembershipByThreadId
+    });
+    return {
+      ok: true,
+      source: "app-server",
+      appServer: appServer.getConnectionSummary(),
+      stateSemantics: loadedStateSemantics(),
+      // Named keys only: app-server response fields are not passed through.
+      data: response.data ?? null,
+      nextCursor: response.nextCursor ?? null,
+      hasMore: Boolean(response.nextCursor),
+      ...lookup ? { lookup } : {},
+      sidebarState,
+      sidebarStateError: sidebarProbe.error,
+      sidebarMembershipSemantics: sidebarMembershipSemantics(),
+      threadIds: Array.isArray(response.threadIds) ? response.threadIds : loadedThreadIds,
+      loadedThreads,
+      sidebarMembershipByThreadId,
+      subagentRegistry
+    };
   }
-}
-async function readReceiptFile(file) {
-  try {
-    return parseJsonlLines(await fs6.readFile(file, "utf8"));
-  } catch (error2) {
-    if (error2.code === "ENOENT") return [];
-    throw error2;
-  }
-}
-async function listReceipts(options = {}) {
-  const logPath = receiptWritePath(options);
-  const readPaths = receiptReadPaths(options);
-  const limit2 = clampInt(options.limit ?? DEFAULT_LIMIT, 1, MAX_LIMIT);
-  const filters = {
-    targetThreadId: cleanText2(options.targetThreadId, 160),
-    originThreadId: cleanText2(options.originThreadId, 160),
-    action: cleanText2(options.action, 80),
-    targetKind: cleanText2(options.targetKind, 40),
-    host: cleanText2(options.host, 40),
-    targetSessionId: cleanText2(options.targetSessionId, 160),
-    targetAddress: targetAddressFilter(options),
-    searchTerm: normalizeSearch2(options.searchTerm)
-  };
-  const seen = /* @__PURE__ */ new Set();
-  const receipts = [];
-  for (const file of readPaths) {
-    for (const receipt of await readReceiptFile(file)) {
-      const id = typeof receipt?.id === "string" ? receipt.id : null;
-      if (id && seen.has(id)) continue;
-      if (id) seen.add(id);
-      receipts.push(receipt);
+  async function buildLoadedSubagentRegistry({ loadedThreads, sidebarMembershipByThreadId }) {
+    const loadedThreadIds = new Set(
+      loadedThreads.map((thread) => optionalString(thread.id).trim()).filter(Boolean)
+    );
+    const empty = {
+      source: "app-server-thread-list",
+      loadedSubagents: [],
+      byParentThreadId: {},
+      loadedSubagentCount: 0,
+      error: null,
+      note: "Thread-spawn subagents are tracked separately from renderer sidebar membership so background workers remain queryable even when the sidebar omits them."
+    };
+    if (loadedThreadIds.size === 0) {
+      return empty;
+    }
+    try {
+      const response = await collectAppServerThreadSummaries({
+        archiveScope: "all",
+        limit: 1e3,
+        searchTerm: "",
+        cwd: null,
+        sourceKinds: ["subAgentThreadSpawn"]
+      });
+      const loadedSubagents = response.data.filter((thread) => loadedThreadIds.has(thread.id)).map((thread) => buildSubagentRegistryEntry(thread, sidebarMembershipByThreadId[thread.id]));
+      return {
+        ...empty,
+        loadedSubagents,
+        byParentThreadId: groupSubagentsByParentThreadId(loadedSubagents),
+        loadedSubagentCount: loadedSubagents.length
+      };
+    } catch (error2) {
+      return {
+        ...empty,
+        source: "app-server-thread-list-error",
+        error: {
+          message: error2.message,
+          details: error2.details ?? null
+        },
+        note: "Loaded thread IDs were available, but Agent Link could not read subagent source metadata from thread/list."
+      };
     }
   }
-  const data = receipts.filter((receipt) => receiptMatches(receipt, filters)).sort((a, b) => Date.parse(b.createdAt ?? 0) - Date.parse(a.createdAt ?? 0)).slice(0, limit2).map(receiptSummary);
+  async function getSidebarState(_args = {}) {
+    let response;
+    try {
+      response = await appServer.request("desktop/sidebar/state/read", {});
+    } catch (error2) {
+      if (error2 instanceof AppServerError && typeof error2.code === "number") {
+        throw new AgentLinkError("unsupported", "This Codex app-server does not support desktop/sidebar/state/read.", {
+          details: { capability: "desktop/sidebar/state/read", rpcCode: error2.code, rpcMessage: error2.message },
+          hint: "Sidebar state needs a Codex Desktop app-server with renderer authority. Agent Link does not infer GUI membership."
+        });
+      }
+      throw error2;
+    }
+    const sidebarState = normalizeSidebarStateResponse(response);
+    if (sidebarState.supported === false) {
+      throw new AgentLinkError("unsupported", "The Codex app-server reports sidebar state as unsupported.", {
+        details: { capability: "desktop/sidebar/state/read", reason: sidebarState.unsupported?.reason ?? null, authority: sidebarState.authority ?? null },
+        hint: "Sidebar state needs a Codex Desktop app-server with renderer authority. Agent Link does not infer GUI membership."
+      });
+    }
+    return {
+      ok: true,
+      source: "app-server",
+      appServer: appServer.getConnectionSummary(),
+      sidebarState,
+      sidebarMembershipSemantics: sidebarMembershipSemantics()
+    };
+  }
+  async function readSidebarStateForMembership() {
+    try {
+      const response = await appServer.request("desktop/sidebar/state/read", {});
+      return {
+        sidebarState: normalizeSidebarStateResponse(response),
+        error: null
+      };
+    } catch (error2) {
+      return {
+        sidebarState: normalizeSidebarStateResponse(null),
+        error: {
+          message: error2.message,
+          details: error2.details ?? null,
+          note: "Sidebar state read failed; loaded thread sidebarMembership is unknown because Agent Link does not infer GUI membership from runtime-loaded state."
+        }
+      };
+    }
+  }
+  return { readLoadedPage, listLoadedThreads, getSidebarState };
+}
+
+// src/codex/session-index.js
+import { promises as fs7 } from "node:fs";
+import path10 from "node:path";
+var MAX_PREVIEW_CHARS = 500;
+var HEAD_WINDOW_BYTES = 64 * 1024;
+var MAX_HEAD_BYTES = 4 * 1024 * 1024;
+var TAIL_WINDOW_BYTES = 256 * 1024;
+var MAX_TAIL_BYTES = 4 * 1024 * 1024;
+var MAX_RECENT_ITEMS_BYTES = 32 * 1024 * 1024;
+var SUMMARY_CACHE_LIMIT = 5e3;
+var LOCAL_LIFECYCLE_EVENTS = Object.freeze({
+  task_started: "possiblyActive",
+  turn_started: "possiblyActive",
+  task_complete: "idle",
+  turn_aborted: "idle",
+  // Older transcript spellings.
+  task_completed: "idle",
+  turn_complete: "idle",
+  turn_completed: "idle"
+});
+var summaryCache = /* @__PURE__ */ new Map();
+function resolveCodexHome(options = {}) {
+  return options.codexHome || codexHome();
+}
+async function listLocalThreads(options = {}) {
+  const codexHome2 = resolveCodexHome(options);
+  const archiveScope2 = normalizeArchiveScope(options);
+  const roots = rootsForArchiveScope(codexHome2, archiveScope2);
+  const sessionIndex = await readSessionIndex(codexHome2);
+  const files = [];
+  for (const root of roots) {
+    files.push(...await collectJsonlFiles(root));
+  }
+  const withStats = (await Promise.all(files.map(async (file) => {
+    try {
+      const stat = await fs7.stat(file);
+      return { file, mtimeMs: stat.mtimeMs, size: stat.size };
+    } catch {
+      return null;
+    }
+  }))).filter(Boolean);
+  withStats.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const limit2 = clampInt(options.limit ?? 20, 1, 2e3);
+  const searchTerm = options.searchTerm?.toLowerCase() || null;
+  const cwdFilter2 = normalizeCwdFilter(options.cwd);
+  const results = [];
+  for (const entry of withStats) {
+    const summary = await readLocalThreadSummary(entry.file, entry, sessionIndex);
+    if (!summary) {
+      continue;
+    }
+    if (cwdFilter2 && !cwdFilter2.has(summary.cwd)) {
+      continue;
+    }
+    if (searchTerm && !threadMatches(summary, searchTerm)) {
+      continue;
+    }
+    results.push(summary);
+    if (results.length >= limit2) {
+      break;
+    }
+  }
   return {
-    ok: true,
-    path: logPath,
-    data,
-    scannedReceipts: receipts.length,
-    filters
+    data: results,
+    source: "local-jsonl",
+    archiveScope: archiveScope2,
+    codexHome: codexHome2,
+    scannedFiles: withStats.length
   };
 }
-function targetAddressFilter(options) {
-  for (const value of [options.target, options.targetThreadId, options.targetSessionId]) {
-    const parsed = parseAddress(typeof value === "string" ? value.trim() : value);
-    if (parsed) return addressResolver.canonical(parsed.address) ?? parsed.address;
+async function listLocalThreadIds(options = {}) {
+  const codexHome2 = resolveCodexHome(options);
+  const out2 = [];
+  for (const root of [path10.join(codexHome2, "sessions"), path10.join(codexHome2, "archived_sessions")]) {
+    for (const file of await collectJsonlFiles(root)) {
+      const id = threadIdFromFilename(path10.basename(file));
+      if (id) {
+        out2.push({ id, path: file });
+      }
+    }
+  }
+  return out2;
+}
+async function readLocalThread(threadId, options = {}) {
+  const codexHome2 = resolveCodexHome(options);
+  const located = await findLocalThreadFile(threadId, { codexHome: codexHome2 });
+  if (!located) {
+    throw new AgentLinkError("not_found", `Thread ${threadId} was not found under ${codexHome2}`, { details: { id: threadId, candidates: [] } });
+  }
+  const sessionIndex = await readSessionIndex(codexHome2);
+  const summary = await readLocalThreadSummary(located.file, located.stat, sessionIndex);
+  if (!summary) {
+    throw new Error(`Thread ${threadId} transcript is unreadable: ${located.file}`);
+  }
+  const thread = { ...summary, lookup: located.lookup };
+  if (!options.includeTurns) {
+    return { thread, source: "local-jsonl" };
+  }
+  return {
+    thread: {
+      ...thread,
+      recentItems: await readRecentTranscriptItems(located.file, options.recentItems ?? 20)
+    },
+    source: "local-jsonl"
+  };
+}
+async function findLocalThreadFile(threadId, options = {}) {
+  const codexHome2 = resolveCodexHome(options);
+  const id = typeof threadId === "string" ? threadId.trim() : "";
+  if (!id || id.includes("/") || id.includes("\\") || id.includes("..")) {
+    return null;
+  }
+  const roots = options.roots ?? [path10.join(codexHome2, "sessions"), path10.join(codexHome2, "archived_sessions")];
+  const suffix = `-${id}.jsonl`;
+  for (const root of roots) {
+    const file = await findNewestFirst(root, (name) => name.endsWith(suffix) || name === `${id}.jsonl`, async (candidate) => {
+      const meta2 = await readSessionMeta(candidate);
+      return meta2?.id === id;
+    });
+    if (file) {
+      return { file, root, lookup: "filename", stat: await statInfo(file) };
+    }
+  }
+  for (const root of roots) {
+    for (const file of await collectJsonlFiles(root)) {
+      const meta2 = await readSessionMeta(file);
+      if (meta2?.id === id) {
+        return { file, root, lookup: "scan", stat: await statInfo(file) };
+      }
+    }
   }
   return null;
 }
-function targetMatchesAddress(target, address) {
-  if (!target) return false;
-  if (addressResolver.targetAddress(target) === address) return true;
-  const aliases = new Set(addressResolver.aliases(address));
-  return [target.address, target.sessionId, target.threadId].some((id) => typeof id === "string" && aliases.has(id));
-}
-function withTargetAddress(target) {
-  const { address: _stored, ...rest } = target;
-  return { address: addressResolver.targetAddress(target), ...rest };
-}
-function receiptSummary(receipt) {
+async function archiveLocalThread(threadId, options = {}) {
+  const codexHome2 = resolveCodexHome(options);
+  const located = await findLocalThread(threadId, { codexHome: codexHome2 });
+  const activeRoot = path10.join(codexHome2, "sessions");
+  const archivedRoot = path10.join(codexHome2, "archived_sessions");
+  const before = located.thread.archiveState ?? inferArchiveState(located.path);
+  if (before.scope === "archived") {
+    return {
+      ok: true,
+      threadId,
+      alreadyArchived: true,
+      from: located.path,
+      to: located.path,
+      thread: located.thread,
+      archiveStateBefore: before,
+      archiveStateAfter: before,
+      codexHome: codexHome2
+    };
+  }
+  const relative = path10.relative(activeRoot, located.path);
+  if (relative.startsWith("..") || path10.isAbsolute(relative)) {
+    throw new AgentLinkError("permission_denied", `Thread ${threadId} is not under ${activeRoot}; refusing to archive ${located.path}`, { details: { reason: "outside active sessions root" } });
+  }
+  const destination = path10.join(archivedRoot, relative);
+  await fs7.mkdir(path10.dirname(destination), { recursive: true });
+  await moveFileWithoutOverwrite(located.path, destination, threadId);
+  const afterThread = {
+    ...located.thread,
+    path: destination,
+    archiveState: inferArchiveState(destination)
+  };
   return {
-    id: receipt.id,
-    createdAt: receipt.createdAt,
-    action: receipt.action,
-    host: receipt.host ?? null,
-    purpose: receipt.purpose ?? null,
-    cleanupRecommendation: receipt.cleanupRecommendation ?? "unspecified",
-    tags: Array.isArray(receipt.tags) ? receipt.tags : [],
-    origin: receipt.origin ?? null,
-    target: receipt.target ? withTargetAddress(receipt.target) : null,
-    messagePreview: receipt.messagePreview ?? null,
-    finalResponse: receipt.finalResponse ?? null,
-    delivery: receipt.delivery ?? null,
-    evidence: receipt.evidence ?? null,
-    replyConfirmation: receipt.replyConfirmation ?? null,
-    // Resolution and status receipts (design R7.12, R7.17) only.
-    ...receipt.resolution ? { resolution: receipt.resolution } : {},
-    // Role and override fields (PR B9), present only on receipts that carry them.
-    ...receipt.launchedBy !== void 0 ? { launchedBy: receipt.launchedBy } : {},
-    ...receipt.via !== void 0 ? { via: receipt.via } : {},
-    ...receipt.roleProcedure !== void 0 ? { roleProcedure: receipt.roleProcedure } : {},
-    ...receipt.roleProcedureWarning !== void 0 ? { roleProcedureWarning: receipt.roleProcedureWarning } : {},
-    ...receipt.override !== void 0 ? { override: receipt.override } : {}
+    ok: true,
+    threadId,
+    alreadyArchived: false,
+    from: located.path,
+    to: destination,
+    thread: afterThread,
+    archiveStateBefore: before,
+    archiveStateAfter: afterThread.archiveState,
+    codexHome: codexHome2
   };
 }
-function summarizeEvidence(evidence) {
-  if (!evidence) {
-    return null;
+async function moveFileWithoutOverwrite(source, destination, threadId) {
+  let placeholder;
+  try {
+    placeholder = await fs7.open(destination, "wx");
+  } catch (error2) {
+    if (error2.code === "EEXIST") {
+      throw new AgentLinkError("state_io_error", `Archive destination already exists for thread ${threadId}: ${destination}`, { details: { errno: "EEXIST" } });
+    }
+    throw error2;
   }
-  return evidence;
+  await placeholder.close();
+  try {
+    await moveFileAcrossDevices(source, destination);
+  } catch (error2) {
+    await fs7.rm(destination, { force: true }).catch(() => {
+    });
+    throw error2;
+  }
 }
-function summarizeReplyConfirmation(replyConfirmation) {
-  if (!replyConfirmation) {
-    return null;
-  }
-  return {
-    waited: replyConfirmation.waited ?? null,
-    ok: replyConfirmation.ok ?? null,
-    timedOut: replyConfirmation.timedOut ?? null,
-    turnStatus: replyConfirmation.turnStatus ?? null,
-    finalResponse: cleanText2(replyConfirmation.finalResponse, MAX_TEXT2),
-    finalResponseItem: replyConfirmation.finalResponseItem ?? null,
-    error: cleanText2(replyConfirmation.error, MAX_TEXT2),
-    unsupported: replyConfirmation.unsupported ?? null,
-    hint: cleanText2(replyConfirmation.hint, MAX_TEXT2)
-  };
-}
-function receiptMatches(receipt, filters) {
-  if (filters.targetAddress) {
-    if (!targetMatchesAddress(receipt.target, filters.targetAddress)) return false;
-  } else if (filters.targetThreadId && receipt.target?.threadId !== filters.targetThreadId) {
-    return false;
-  }
-  if (filters.originThreadId && receipt.origin?.threadId !== filters.originThreadId) {
-    return false;
-  }
-  if (filters.action && receipt.action !== filters.action) {
-    return false;
-  }
-  if (filters.targetKind && receipt.target?.kind !== filters.targetKind) {
-    return false;
-  }
-  if (filters.host && receipt.host !== filters.host) {
-    return false;
-  }
-  if (!filters.targetAddress && filters.targetSessionId && receipt.target?.sessionId !== filters.targetSessionId) {
-    return false;
-  }
-  if (filters.searchTerm && !receiptSearchText(receipt).includes(filters.searchTerm)) {
-    return false;
-  }
-  return true;
-}
-function receiptSearchText(receipt) {
-  return normalizeSearch2([
-    receipt.id,
-    receipt.action,
-    receipt.purpose,
-    receipt.cleanupRecommendation,
-    receipt.messagePreview,
-    receipt.finalResponse,
-    receipt.evidence?.primaryStatus,
-    receipt.evidence?.interpretation,
-    receipt.evidence?.loadedThreadGuard?.status,
-    receipt.evidence?.loadedThreadGuard?.source,
-    receipt.evidence?.loadedThreadGuard?.note,
-    receipt.replyConfirmation?.finalResponse,
-    receipt.replyConfirmation?.error,
-    receipt.replyConfirmation?.hint,
-    receipt.origin?.source,
-    receipt.origin?.threadId,
-    receipt.origin?.turnId,
-    receipt.origin?.toolCallId,
-    receipt.origin?.note,
-    receipt.origin?.runtime?.requestId,
-    receipt.origin?.runtime?.sessionId,
-    receipt.origin?.runtime?.source,
-    receipt.target?.threadId,
-    receipt.target?.turnId,
-    receipt.target?.name,
-    receipt.target?.cwd,
-    ...receipt.tags ?? []
-  ].filter(Boolean).join("\n"));
-}
-function summarizeAppServer(appServer = {}) {
-  return {
-    kind: appServer.kind ?? null,
-    managed: appServer.managed ?? null,
-    connected: appServer.connected ?? null,
-    codexHome: appServer.codexHome ?? null,
-    platformOs: appServer.platformOs ?? null
-  };
-}
-function normalizeCleanupRecommendation(value) {
-  const text2 = cleanText2(value, 80);
-  return text2 || "unspecified";
-}
-function firstOriginValue(candidates) {
-  for (const [source, value] of candidates) {
-    if (value) {
-      return { source, value };
+async function moveFileAcrossDevices(source, destination) {
+  try {
+    await fs7.rename(source, destination);
+    return;
+  } catch (error2) {
+    if (error2.code !== "EXDEV") {
+      throw error2;
     }
   }
-  return { source: null, value: null };
-}
-function summarizeOriginSource(sources) {
-  const present2 = new Set(Object.values(sources).filter(Boolean));
-  if (present2.size === 0) {
-    return "not_supplied";
+  const sourceStat = await fs7.stat(source);
+  const staging = `${destination}.exdev-tmp-${process.pid}`;
+  try {
+    await fs7.copyFile(source, staging);
+    await fs7.utimes(staging, sourceStat.atime, sourceStat.mtime);
+    await fs7.rename(staging, destination);
+  } catch (error2) {
+    await fs7.rm(staging, { force: true });
+    throw error2;
   }
-  if (present2.size === 1) {
-    return [...present2][0];
-  }
-  return "mixed";
+  await fs7.unlink(source);
 }
-function cleanTags(tags) {
-  if (!Array.isArray(tags)) {
+async function findLocalThread(threadId, options = {}) {
+  const codexHome2 = resolveCodexHome(options);
+  const found = await readLocalThread(threadId, { codexHome: codexHome2 });
+  return {
+    thread: found.thread,
+    path: found.thread.path,
+    codexHome: codexHome2
+  };
+}
+async function findNewestFirst(root, nameMatches, confirm) {
+  let entries;
+  try {
+    entries = await fs7.readdir(root, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  entries.sort((a, b) => a.name < b.name ? 1 : a.name > b.name ? -1 : 0);
+  for (const entry of entries) {
+    if (entry.isFile() && entry.name.endsWith(".jsonl") && nameMatches(entry.name)) {
+      const full = path10.join(root, entry.name);
+      if (await confirm(full)) {
+        return full;
+      }
+    }
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      const found = await findNewestFirst(path10.join(root, entry.name), nameMatches, confirm);
+      if (found) {
+        return found;
+      }
+    }
+  }
+  return null;
+}
+async function statInfo(file) {
+  try {
+    const stat = await fs7.stat(file);
+    return { file, mtimeMs: stat.mtimeMs, size: stat.size };
+  } catch {
+    return { file };
+  }
+}
+var THREAD_ID_IN_NAME = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i;
+function threadIdFromFilename(name) {
+  return THREAD_ID_IN_NAME.exec(name)?.[1] ?? null;
+}
+async function collectJsonlFiles(root) {
+  let entries;
+  try {
+    entries = await fs7.readdir(root, { withFileTypes: true });
+  } catch {
     return [];
   }
-  return tags.map((tag) => cleanText2(tag, 80)).filter(Boolean).slice(0, 20);
-}
-function cleanText2(value, max) {
-  if (typeof value !== "string") {
-    return null;
+  const out2 = [];
+  for (const entry of entries) {
+    const fullPath = path10.join(root, entry.name);
+    if (entry.isDirectory()) {
+      out2.push(...await collectJsonlFiles(fullPath));
+    } else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
+      out2.push(fullPath);
+    }
   }
-  const text2 = value.trim();
-  if (!text2) {
-    return null;
-  }
-  if (text2.length <= max) {
-    return text2;
-  }
-  return `${text2.slice(0, max - 3)}...`;
+  return out2;
 }
-function normalizeSearch2(value) {
-  return String(value ?? "").toLowerCase().replace(/\s+/g, " ").trim();
-}
-function isPlainObject4(value) {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-function isNormalizedReceiptInput(value) {
-  return isPlainObject4(value) && "originSource" in value && isPlainObject4(value.originSources) && isPlainObject4(value.runtimeCallerContext);
-}
-
-// src/tools/health.js
-import fs8 from "node:fs";
-
-// src/shared/legacy-state.js
-import fs7 from "node:fs";
-import path11 from "node:path";
-var LEGACY_STILL_WRITTEN_WARNING = "A legacy Agent Link state file changed after the migration to ~/.agent-link: an older plugin copy is still running. Upgrade the plugin in every harness and restart its sessions.";
-function statOrNull(file) {
+async function readSessionIndex(codexHome2) {
+  const indexPath = path10.join(codexHome2, "session_index.jsonl");
+  let raw;
   try {
-    return fs7.statSync(file);
+    raw = await fs7.readFile(indexPath, "utf8");
+  } catch {
+    return /* @__PURE__ */ new Map();
+  }
+  const index = /* @__PURE__ */ new Map();
+  for (const record2 of parseJsonlLines(raw)) {
+    if (record2.id && record2.thread_name) {
+      index.set(record2.id, {
+        name: record2.thread_name,
+        updatedAt: record2.updated_at ?? null
+      });
+    }
+  }
+  return index;
+}
+async function readRange(handle, start, length) {
+  const buffer = Buffer.alloc(length);
+  let offset = 0;
+  while (offset < length) {
+    const { bytesRead } = await handle.read(buffer, offset, length - offset, start + offset);
+    if (bytesRead === 0) {
+      break;
+    }
+    offset += bytesRead;
+  }
+  return offset === length ? buffer : buffer.subarray(0, offset);
+}
+function completeLines(buffer, { atStart, atEnd }) {
+  const lines = [];
+  let begin = 0;
+  if (!atStart) {
+    const first = buffer.indexOf(10);
+    if (first < 0) {
+      return lines;
+    }
+    begin = first + 1;
+  }
+  while (begin < buffer.length) {
+    const next = buffer.indexOf(10, begin);
+    if (next < 0) {
+      if (atEnd) {
+        lines.push(buffer.toString("utf8", begin));
+      }
+      break;
+    }
+    lines.push(buffer.toString("utf8", begin, next));
+    begin = next + 1;
+  }
+  return lines;
+}
+function parseLine(line) {
+  if (!line) {
+    return null;
+  }
+  try {
+    return JSON.parse(line);
   } catch {
     return null;
   }
 }
-function newestRecordMtimeMs(dir) {
-  let names = [];
+async function readSessionMeta(file) {
+  let handle;
   try {
-    names = fs7.readdirSync(dir);
+    handle = await fs7.open(file, "r");
+    const { size } = await handle.stat();
+    let window = Math.min(HEAD_WINDOW_BYTES, size);
+    while (window > 0) {
+      const buffer = await readRange(handle, 0, window);
+      const newline = buffer.indexOf(10);
+      if (newline >= 0 || window >= size) {
+        const record2 = parseLine(buffer.toString("utf8", 0, newline >= 0 ? newline : buffer.length));
+        return record2?.type === "session_meta" ? record2.payload ?? null : null;
+      }
+      if (window >= MAX_HEAD_BYTES) {
+        return null;
+      }
+      window = Math.min(window * 4, MAX_HEAD_BYTES, size);
+    }
+    return null;
   } catch {
     return null;
+  } finally {
+    await handle?.close();
   }
-  let newest = null;
-  for (const name of names) {
-    if (!name.endsWith(".json")) continue;
-    const stat = statOrNull(path11.join(dir, name));
-    if (stat?.isFile() && (newest === null || stat.mtimeMs > newest)) newest = stat.mtimeMs;
-  }
-  return newest;
 }
-function readMigration(options) {
-  const file = migrationRecordPath(options);
-  try {
-    const record2 = JSON.parse(fs7.readFileSync(file, "utf8"));
-    return {
-      path: file,
-      at: typeof record2?.at === "string" ? record2.at : null,
-      version: typeof record2?.version === "string" ? record2.version : null,
-      from: Array.isArray(record2?.from) ? record2.from.filter((p) => typeof p === "string") : []
-    };
-  } catch {
+async function readHeadRecords(handle, size) {
+  let window = Math.min(HEAD_WINDOW_BYTES, size);
+  while (true) {
+    const buffer = await readRange(handle, 0, window);
+    const lines = completeLines(buffer, { atStart: true, atEnd: window >= size });
+    const records = lines.map(parseLine).filter(Boolean);
+    const hasMeta = records.some((record2) => record2.type === "session_meta");
+    const hasUser = records.some((record2) => userTextFromRecord(record2) !== null);
+    if (hasMeta && hasUser || window >= size || window >= MAX_HEAD_BYTES) {
+      const coveredBytes = window >= size ? size : buffer.lastIndexOf(10) + 1;
+      return { records, coveredBytes };
+    }
+    window = Math.min(window * 4, MAX_HEAD_BYTES, size);
+  }
+}
+async function readTailRecords(handle, size, skipBefore) {
+  let window = Math.min(TAIL_WINDOW_BYTES, size - skipBefore);
+  while (window > 0) {
+    const start = size - window;
+    const buffer = await readRange(handle, start, window);
+    const lines = completeLines(buffer, { atStart: start <= skipBefore, atEnd: true });
+    const records = lines.map(parseLine).filter(Boolean);
+    const hasLifecycle = records.some((record2) => lifecycleEventType(record2));
+    if (hasLifecycle || start <= skipBefore || window >= MAX_TAIL_BYTES) {
+      return records;
+    }
+    window = Math.min(window * 4, MAX_TAIL_BYTES, size - skipBefore);
+  }
+  return [];
+}
+function cachedSummary(file, size, mtimeMs) {
+  const cached2 = summaryCache.get(file);
+  if (!cached2 || cached2.size !== size || cached2.mtimeMs !== mtimeMs) {
     return null;
   }
+  summaryCache.delete(file);
+  summaryCache.set(file, cached2);
+  return cached2;
 }
-function legacyStateReport(options = {}) {
-  const migration = readMigration(options);
-  const migratedAt = migration?.at ? Date.parse(migration.at) : NaN;
-  const candidates = [
-    ...legacyMailboxPaths(options).map((p) => (
-      /** @type {[LegacyFile["kind"], string]} */
-      ["mailbox", p]
-    )),
-    ...legacyReceiptPaths(options).map((p) => (
-      /** @type {[LegacyFile["kind"], string]} */
-      ["receipts", p]
-    )),
-    ...legacyManagedAppServerDirs(options).map((p) => (
-      /** @type {[LegacyFile["kind"], string]} */
-      ["managedAppServers", p]
-    ))
-  ];
-  const files = [];
-  for (const [kind, file] of candidates) {
-    const stat = statOrNull(file);
-    if (!stat) continue;
-    const mtimeMs = kind === "managedAppServers" ? newestRecordMtimeMs(file) : stat.mtimeMs;
-    files.push({
-      kind,
-      path: file,
-      modifiedAt: mtimeMs === null ? null : new Date(mtimeMs).toISOString(),
-      writtenAfterMigration: Number.isFinite(migratedAt) && mtimeMs !== null ? mtimeMs > migratedAt : null
+async function readLocalThreadSummary(file, fileInfo = {}, sessionIndex = /* @__PURE__ */ new Map()) {
+  if (Number.isFinite(fileInfo.size) && Number.isFinite(fileInfo.mtimeMs)) {
+    const hit = cachedSummary(file, fileInfo.size, fileInfo.mtimeMs);
+    if (hit) {
+      return finalizeSummary(hit.parsed, file, fileInfo, sessionIndex);
+    }
+  }
+  let handle;
+  try {
+    handle = await fs7.open(file, "r");
+    const stat = await handle.stat();
+    const cacheKey = file;
+    const cached2 = cachedSummary(file, stat.size, stat.mtimeMs);
+    if (cached2) {
+      return finalizeSummary(cached2.parsed, file, { size: stat.size, mtimeMs: stat.mtimeMs }, sessionIndex);
+    }
+    const head = await readHeadRecords(handle, stat.size);
+    const tail = head.coveredBytes >= stat.size ? [] : await readTailRecords(handle, stat.size, head.coveredBytes);
+    const parsed = summarizeRecords([...head.records, ...tail]);
+    summaryCache.set(cacheKey, { size: stat.size, mtimeMs: stat.mtimeMs, parsed });
+    if (summaryCache.size > SUMMARY_CACHE_LIMIT) {
+      summaryCache.delete(summaryCache.keys().next().value);
+    }
+    return finalizeSummary(parsed, file, { size: stat.size, mtimeMs: stat.mtimeMs }, sessionIndex);
+  } catch {
+    return null;
+  } finally {
+    await handle?.close().catch(() => {
     });
   }
-  const stillWritten = files.some((file) => file.writtenAfterMigration === true);
+}
+function summarizeRecords(records) {
+  let meta2 = null;
+  let firstUserMessage = null;
+  let lastEventType = null;
+  let lastLifecycleEvent = null;
+  let lastTimestamp = null;
+  let lastAgentMessage = null;
+  let threadName = null;
+  for (const record2 of records) {
+    lastTimestamp = record2.timestamp ?? lastTimestamp;
+    if (record2.type === "session_meta") {
+      meta2 ??= record2.payload;
+      continue;
+    }
+    const userText = userTextFromRecord(record2);
+    if (userText !== null && firstUserMessage === null) {
+      firstUserMessage = userText;
+    }
+    const agentText = agentTextFromRecord(record2);
+    if (agentText !== null) {
+      lastAgentMessage = agentText;
+    }
+    if (record2.type === "event_msg" && record2.payload?.type) {
+      lastEventType = record2.payload.type;
+      const lifecycle = lifecycleEventType(record2);
+      if (lifecycle) {
+        lastLifecycleEvent = lifecycle;
+      }
+      if (record2.payload.type === "thread_name_updated" && record2.payload.thread_name) {
+        threadName = record2.payload.thread_name;
+      }
+    }
+  }
+  return { meta: meta2, firstUserMessage, lastEventType, lastLifecycleEvent, lastTimestamp, lastAgentMessage, threadName };
+}
+function finalizeSummary(parsed, file, fileInfo, sessionIndex) {
+  const { meta: meta2 } = parsed;
+  if (!meta2?.id) {
+    return null;
+  }
+  const indexed = sessionIndex.get(meta2.id) ?? null;
+  const updatedAt = Math.floor(Math.max(
+    parseDateSeconds(parsed.lastTimestamp) ?? 0,
+    parseDateSeconds(indexed?.updatedAt) ?? 0,
+    (fileInfo.mtimeMs ?? Date.now()) / 1e3
+  ));
+  const createdSeconds = parseDateSeconds(meta2.timestamp);
   return {
-    files,
-    migration,
-    stillWritten,
-    warning: stillWritten ? LEGACY_STILL_WRITTEN_WARNING : null
+    id: meta2.id,
+    name: parsed.threadName ?? indexed?.name ?? null,
+    preview: truncate(parsed.firstUserMessage || "", MAX_PREVIEW_CHARS),
+    cwd: meta2.cwd ?? null,
+    createdAt: createdSeconds === null ? null : Math.floor(createdSeconds),
+    updatedAt,
+    status: localStatus(parsed.lastLifecycleEvent, parsed.lastEventType),
+    path: file,
+    archiveState: inferArchiveState(file),
+    source: meta2.source ?? null,
+    originator: meta2.originator ?? null,
+    cliVersion: meta2.cli_version ?? null,
+    modelProvider: meta2.model_provider ?? null,
+    agentNickname: null,
+    agentRole: null,
+    localOnly: true,
+    lastEventType: parsed.lastEventType,
+    lastAgentMessage: truncate(parsed.lastAgentMessage || "", MAX_PREVIEW_CHARS),
+    size: fileInfo.size ?? null
   };
+}
+async function readRecentTranscriptItems(file, limit2) {
+  const wanted = clampInt(limit2, 1, 100);
+  let handle;
+  try {
+    handle = await fs7.open(file, "r");
+    const { size } = await handle.stat();
+    let end = size;
+    let carry = Buffer.alloc(0);
+    let bytesRead = 0;
+    const newestFirst2 = [];
+    while (end > 0 && newestFirst2.length < wanted + 1 && bytesRead < MAX_RECENT_ITEMS_BYTES) {
+      const length = Math.min(TAIL_WINDOW_BYTES, end);
+      const start = end - length;
+      const chunk = Buffer.concat([await readRange(handle, start, length), carry]);
+      bytesRead += length;
+      const lines = completeLines(chunk, { atStart: start === 0, atEnd: true });
+      const firstNewline = chunk.indexOf(10);
+      carry = start === 0 || firstNewline < 0 ? start === 0 ? Buffer.alloc(0) : chunk : chunk.subarray(0, firstNewline);
+      for (let index = lines.length - 1; index >= 0; index -= 1) {
+        const item = summarizeRecord(parseLine(lines[index]));
+        if (item) {
+          newestFirst2.push(item);
+        }
+      }
+      end = start;
+    }
+    return dedupeAdjacent(newestFirst2.reverse()).slice(-wanted);
+  } finally {
+    await handle?.close().catch(() => {
+    });
+  }
+}
+function dedupeAdjacent(items) {
+  const out2 = [];
+  for (const item of items) {
+    const previous = out2.at(-1);
+    if (previous && previous.text !== void 0 && previous.type === item.type && previous.text === item.text) {
+      continue;
+    }
+    out2.push(item);
+  }
+  return out2;
+}
+function summarizeRecord(record2) {
+  if (!record2) {
+    return null;
+  }
+  const userText = userTextFromRecord(record2);
+  if (userText !== null) {
+    return { timestamp: record2.timestamp, type: "userMessage", text: truncate(userText, MAX_PREVIEW_CHARS) };
+  }
+  const agentText = agentTextFromRecord(record2);
+  if (agentText !== null) {
+    return { timestamp: record2.timestamp, type: "agentMessage", text: truncate(agentText, MAX_PREVIEW_CHARS) };
+  }
+  if (record2.type === "event_msg") {
+    const type = record2.payload?.type;
+    if (type === "item_completed" && record2.payload.item?.type) {
+      return { timestamp: record2.timestamp, type: lowerFirst(record2.payload.item.type) };
+    }
+    if (type && LOCAL_LIFECYCLE_EVENTS[type]) {
+      return { timestamp: record2.timestamp, type };
+    }
+    if (type?.includes("exec") || type?.includes("tool")) {
+      return { timestamp: record2.timestamp, type };
+    }
+  }
+  if (record2.type === "response_item" && record2.payload?.type === "message") {
+    return {
+      timestamp: record2.timestamp,
+      type: `${record2.payload.role}Message`,
+      text: truncate(contentText(record2.payload.content), MAX_PREVIEW_CHARS)
+    };
+  }
+  return null;
+}
+function userTextFromRecord(record2) {
+  if (record2?.type === "event_msg") {
+    if (record2.payload?.type === "user_message") {
+      return String(record2.payload.message ?? "");
+    }
+    if (record2.payload?.type === "item_completed" && record2.payload.item?.type === "UserMessage") {
+      return contentText(record2.payload.item.content);
+    }
+  }
+  if (record2?.type === "response_item" && record2.payload?.type === "message" && record2.payload.role === "user") {
+    return contentText(record2.payload.content);
+  }
+  return null;
+}
+function agentTextFromRecord(record2) {
+  if (record2?.type === "event_msg") {
+    if (record2.payload?.type === "agent_message") {
+      return String(record2.payload.message ?? "");
+    }
+    if (record2.payload?.type === "item_completed" && record2.payload.item?.type === "AgentMessage") {
+      return contentText(record2.payload.item.content);
+    }
+  }
+  if (record2?.type === "response_item" && record2.payload?.type === "message" && record2.payload.role === "assistant") {
+    return contentText(record2.payload.content);
+  }
+  return null;
+}
+function lifecycleEventType(record2) {
+  const type = record2?.type === "event_msg" ? record2.payload?.type : null;
+  return type && Object.prototype.hasOwnProperty.call(LOCAL_LIFECYCLE_EVENTS, type) ? type : null;
+}
+function localStatus(lastLifecycleEvent, lastEventType = lastLifecycleEvent) {
+  const mapped = lastLifecycleEvent ? LOCAL_LIFECYCLE_EVENTS[lastLifecycleEvent] : null;
+  return {
+    type: mapped ?? "unknown",
+    source: "local-jsonl",
+    lastLifecycleEvent: lastLifecycleEvent ?? null,
+    lastEventType: lastEventType ?? null
+  };
+}
+function contentText(content) {
+  if (!Array.isArray(content)) {
+    return "";
+  }
+  return content.map((item) => item?.text ?? "").filter(Boolean).join("\n");
+}
+function lowerFirst(value) {
+  const text2 = String(value);
+  return text2.charAt(0).toLowerCase() + text2.slice(1);
+}
+function parseDateSeconds(value) {
+  if (!value) {
+    return null;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed / 1e3 : null;
+}
+function threadMatches(thread, searchTerm) {
+  return scoreThreadMatch(thread, searchTerm).score > 0;
+}
+function rootsForArchiveScope(codexHome2, archiveScope2) {
+  if (archiveScope2 === "archived") {
+    return [path10.join(codexHome2, "archived_sessions")];
+  }
+  if (archiveScope2 === "all") {
+    return [
+      path10.join(codexHome2, "sessions"),
+      path10.join(codexHome2, "archived_sessions")
+    ];
+  }
+  return [path10.join(codexHome2, "sessions")];
+}
+function normalizeCwdFilter(cwd) {
+  if (!cwd) {
+    return null;
+  }
+  if (Array.isArray(cwd)) {
+    return new Set(cwd);
+  }
+  return /* @__PURE__ */ new Set([cwd]);
+}
+
+// src/codex/thread-summary.js
+function summarizeThread(thread, options = {}) {
+  const summary = {
+    id: thread.id,
+    address: codexAddress(thread.id),
+    name: thread.name ?? null,
+    preview: truncate(thread.preview ?? "", 700),
+    status: thread.status,
+    createdAt: toIso(thread.createdAt),
+    updatedAt: toIso(thread.updatedAt),
+    cwd: thread.cwd ?? null,
+    path: thread.path ?? null,
+    archiveState: thread.archiveState ?? inferArchiveState(thread),
+    source: thread.source ?? null,
+    modelProvider: thread.modelProvider ?? null,
+    cliVersion: thread.cliVersion ?? null,
+    forkedFromId: thread.forkedFromId ?? null,
+    agentNickname: thread.agentNickname ?? null,
+    agentRole: thread.agentRole ?? null
+  };
+  if (thread.localOnly) {
+    summary.localOnly = true;
+    summary.originator = thread.originator ?? null;
+    summary.lastEventType = thread.lastEventType ?? null;
+    summary.lastAgentMessage = thread.lastAgentMessage ?? null;
+  }
+  if (options.includeTurns) {
+    const limit2 = clampInt(options.recentItems ?? LIMITS.recentItems.def, LIMITS.recentItems.min, LIMITS.recentItems.max);
+    if (thread.recentItems) {
+      summary.recentItems = limit2 === 0 ? [] : thread.recentItems.slice(-limit2);
+    } else {
+      const window = recentItemWindow(thread.turns ?? [], limit2);
+      summary.recentItems = window.items;
+      summary.turns = window.turns;
+    }
+  }
+  return summary;
+}
+function recentItemWindow(turns, limit2) {
+  const items = [];
+  const windowTurns = [];
+  for (let index = turns.length - 1; index >= 0 && items.length < limit2; index -= 1) {
+    const turn = turns[index];
+    const turnItems = (turn.items ?? []).map(summarizeItem);
+    const kept = turnItems.slice(Math.max(0, turnItems.length - (limit2 - items.length)));
+    items.unshift(...kept.map((item) => ({ ...item, turnId: turn.id ?? null })));
+    windowTurns.unshift({
+      ...summarizeTurn({ ...turn, items: [] }),
+      items: kept,
+      ...kept.length < turnItems.length ? { itemsOmitted: turnItems.length - kept.length } : {}
+    });
+  }
+  return { items, turns: windowTurns };
+}
+function summarizeTurn(turn) {
+  return {
+    id: turn.id,
+    status: turn.status,
+    startedAt: toIso(turn.startedAt),
+    completedAt: toIso(turn.completedAt),
+    durationMs: turn.durationMs ?? null,
+    error: turn.error ?? null,
+    items: (turn.items ?? []).map(summarizeItem)
+  };
+}
+var ITEM_ID_PATTERN = /^[A-Za-z0-9_.:@/+-]{1,128}$/;
+function safeId(value) {
+  return typeof value === "string" && ITEM_ID_PATTERN.test(value) ? value : null;
+}
+function safeIdList(value) {
+  return Array.isArray(value) ? value.map(safeId).filter(Boolean).slice(0, 50) : [];
+}
+function summarizeItem(item) {
+  const type = safeId(item?.type) ?? "unknown";
+  const id = safeId(item?.id);
+  switch (type) {
+    case "userMessage":
+      return { type, id, text: summarizeUserContent(item.content) };
+    case "agentMessage":
+      return { type, id, text: truncate(item.text ?? "", 1e3), phase: safeId(item.phase) };
+    case "reasoning":
+      return { type, id, summary: (Array.isArray(item.summary) ? item.summary : []).map((text2) => truncate(String(text2), 500)) };
+    case "commandExecution":
+      return {
+        type,
+        id,
+        command: truncate(item.command ?? "", 500),
+        status: safeId(item.status),
+        exitCode: Number.isInteger(item.exitCode) ? item.exitCode : null,
+        durationMs: Number.isFinite(item.durationMs) ? item.durationMs : null
+      };
+    case "mcpToolCall":
+      return {
+        type,
+        id,
+        server: safeId(item.server),
+        tool: safeId(item.tool),
+        status: safeId(item.status),
+        durationMs: Number.isFinite(item.durationMs) ? item.durationMs : null
+      };
+    case "collabAgentToolCall":
+      return {
+        type,
+        id,
+        tool: safeId(item.tool),
+        status: safeId(item.status),
+        receiverThreadIds: safeIdList(item.receiverThreadIds),
+        agentsStates: item.agentsStates && typeof item.agentsStates === "object" ? item.agentsStates : {}
+      };
+    default:
+      return { type, id };
+  }
+}
+function summarizeUserContent(content) {
+  return (content ?? []).map((entry) => {
+    if (entry.type === "text") {
+      return truncate(entry.text ?? "", 1e3);
+    }
+    if (entry.type === "localImage") {
+      return `[localImage] ${entry.path}`;
+    }
+    if (entry.type === "image") {
+      return `[image] ${entry.url}`;
+    }
+    if (entry.type === "mention" || entry.type === "skill") {
+      return `[${entry.type}] ${entry.name}`;
+    }
+    return `[${entry.type}]`;
+  }).join("\n");
 }
 
 // src/shared/envelope.js
@@ -23723,10 +24208,10 @@ function isRuntimeIdentitySource(source) {
   return typeof source === "string" && RUNTIME_SOURCES.has(source);
 }
 var ANTICIPATIONS = /* @__PURE__ */ new Set(["reply", "action", "fyi"]);
-var DEFAULT_ADDRESS_RESOLVER2 = (storedId, harness) => canonicalAddress(storedId, harness);
-var addressResolver2 = DEFAULT_ADDRESS_RESOLVER2;
+var DEFAULT_ADDRESS_RESOLVER = (storedId, harness) => canonicalAddress(storedId, harness);
+var addressResolver = DEFAULT_ADDRESS_RESOLVER;
 function setEnvelopeAddressResolver(resolver) {
-  addressResolver2 = resolver ?? DEFAULT_ADDRESS_RESOLVER2;
+  addressResolver = resolver ?? DEFAULT_ADDRESS_RESOLVER;
 }
 function envelopeAddress(id, harness) {
   if (typeof id !== "string") return INVALID_ID;
@@ -23740,13 +24225,13 @@ function envelopeAddress(id, harness) {
 function safeResolve(id, kind) {
   let address;
   try {
-    address = addressResolver2(
+    address = addressResolver(
       id,
       /** @type {string} */
       kind
     );
   } catch {
-    address = DEFAULT_ADDRESS_RESOLVER2(
+    address = DEFAULT_ADDRESS_RESOLVER(
       id,
       /** @type {string} */
       kind
@@ -23828,6 +24313,9 @@ function isoTime(value) {
   ).toISOString() : "";
 }
 function replyLine({ id, from, fromHarness, fromVerified, anticipation, replyBy, reply }) {
+  if (reply === "fork") {
+    return FORK_TASK_REPLY;
+  }
   if (reply !== "direct") {
     const by = replyBy ? ` by ${replyBy}` : "";
     if (anticipation === "reply") {
@@ -23867,6 +24355,8 @@ function renderPeerEnvelope(message = {}) {
   ];
   const overrides = OVERRIDE_FIELDS.filter((field) => typeof message.overrides?.[field] === "string" && message.overrides[field].trim()).map((field) => `${field}="${escapeEnvelopeAttr(message.overrides?.[field])}"`);
   if (overrides.length) lines.push(`<overrides ${overrides.join(" ")}/>`);
+  const forkElement = renderForkElement(message.fork);
+  if (forkElement) lines.push(forkElement);
   const procedureElement = renderProcedureElement(message.procedure);
   if (procedureElement) lines.push(procedureElement);
   lines.push("<body>", escapeEnvelopeBody(message.body), "</body>");
@@ -23934,7 +24424,8 @@ function peerMessageFromMailbox(row = {}) {
     inReplyTo: row.reply_to_message_id ?? null,
     body: row.body,
     reply: "mailbox",
-    ...roleFieldsOf(row)
+    ...roleFieldsOf(row),
+    ...forkFieldsOf(row)
   };
 }
 function mailboxKind(kind) {
@@ -24006,6 +24497,1470 @@ function roleFieldsOf(row) {
   } catch {
     return {};
   }
+}
+var FORK_TASK_REPLY = "Your final response is the result of this fork. Agent Link sends it to the original thread as a reconcile message, so no tool call is needed to reply.";
+var FORK_STATUSES = Object.freeze(["completed", "failed", "interrupted"]);
+function renderForkElement(fork) {
+  const f = (
+    /** @type {{thread?: unknown, model?: unknown, effort?: unknown, status?: unknown} | null | undefined} */
+    fork
+  );
+  if (!f || typeof f !== "object") return "";
+  const thread = envelopeAddress(typeof f.thread === "string" ? f.thread : null, "codex");
+  if (!thread.startsWith("codex:")) return "";
+  const status = FORK_STATUSES.includes(
+    /** @type {string} */
+    f.status
+  ) ? (
+    /** @type {string} */
+    f.status
+  ) : null;
+  if (!status) return "";
+  const attrs = [["thread", thread]];
+  if (typeof f.model === "string" && f.model.trim()) attrs.push(["model", f.model]);
+  if (typeof f.effort === "string" && f.effort.trim()) attrs.push(["effort", f.effort]);
+  attrs.push(["status", status]);
+  return `<fork ${attrs.map(([k, v]) => `${k}="${escapeEnvelopeAttr(v)}"`).join(" ")}/>`;
+}
+function forkFieldsOf(row) {
+  if (typeof row.metadata_json !== "string" || !row.metadata_json.includes('"fork"')) return {};
+  try {
+    const fork = JSON.parse(row.metadata_json)?.fork;
+    if (!fork || typeof fork !== "object" || typeof fork.thread !== "string") return {};
+    return { fork: { thread: fork.thread, model: fork.model ?? null, effort: fork.effort ?? null, status: fork.status } };
+  } catch {
+    return {};
+  }
+}
+
+// src/codex/thread-actions.js
+function copyOptionalString(source, target, key) {
+  const value = optionalString(source[key]).trim();
+  if (value) {
+    target[key] = value;
+  }
+}
+function launchWarnings(args) {
+  if (args.ephemeral !== true) {
+    return [];
+  }
+  return [
+    {
+      code: "ephemeral-thread-limited-history",
+      severity: "warning",
+      message: "This thread was created as ephemeral. Some app-server read paths, including includeTurns-based reply confirmation, may be unavailable; use ephemeral=false for WF tests that need waitForReply evidence."
+    }
+  ];
+}
+function archiveReceiptEvidence({ loadedCheck, archive, action }) {
+  const checked = loadedCheck.checked === true;
+  const loaded = loadedCheck.loaded === true;
+  const status = checked ? loaded ? "loaded_thread_detected" : "loaded_thread_guard_passed" : "loaded_thread_guard_unchecked";
+  return {
+    primaryStatus: action,
+    loadedThreadGuard: {
+      status,
+      checked,
+      loaded: loadedCheck.loaded ?? null,
+      source: loadedCheck.source ?? null,
+      loadedThreadIdsCount: Array.isArray(loadedCheck.loadedThreadIds) ? loadedCheck.loadedThreadIds.length : null,
+      note: loadedCheck.note ?? null,
+      error: loadedCheck.error ?? null
+    },
+    archiveMove: {
+      source: archive.source ?? "local-jsonl",
+      alreadyArchived: archive.alreadyArchived,
+      from: archive.from,
+      to: archive.to,
+      before: archive.archiveStateBefore,
+      after: archive.archiveStateAfter,
+      appServerResponse: archive.response ?? null
+    },
+    interpretation: "For archive receipts, loadedThreadGuard is the primary active-safety evidence. target.status may come from local JSONL and can be unknown even when the app-server loaded-thread guard passed."
+  };
+}
+function launcherAddress(address) {
+  return typeof address === "string" && /^(claude|codex):/.test(address) ? address : null;
+}
+function makeThreadActions({ appServer, messaging, desktop }) {
+  const { buildPeerTurnInput, recordActionReceipt, callerAddress: callerAddress2 } = messaging;
+  const { openCodexDesktopThread } = desktop;
+  async function launchThreadTool(args, toolContext = {}) {
+    const result = await launchThread(args, toolContext);
+    return { ...result, gui: { opened: result.gui?.attempted === true && result.gui?.ok === true, ...result.gui } };
+  }
+  async function archiveThreadTool(args, toolContext = {}) {
+    const result = await archiveThread(args, toolContext);
+    return { status: result.action === "already_archived" ? "already_archived" : "archived", ...result };
+  }
+  async function launchThread(args, toolContext = {}) {
+    assertPeerBodyWithinLimit(optionalString(args.message).trim());
+    const startParams = {};
+    copyOptionalString(args, startParams, "cwd");
+    copyOptionalString(args, startParams, "model");
+    copyOptionalString(args, startParams, "modelProvider");
+    copyOptionalString(args, startParams, "serviceTier");
+    if (typeof args.ephemeral === "boolean") {
+      startParams.ephemeral = args.ephemeral;
+    }
+    const response = await appServer.request("thread/start", startParams);
+    const threadId = requiredString(response.thread?.id, "thread.id");
+    const message = optionalString(args.message).trim();
+    const requestedName = optionalString(args.name).trim();
+    const shouldPersistBlankThread = !message && args.ephemeral !== true;
+    const threadName = requestedName || (shouldPersistBlankThread ? "New thread" : "");
+    let turn = null;
+    let nameUpdate = null;
+    if (threadName) {
+      await appServer.request("thread/name/set", { threadId, name: threadName });
+      nameUpdate = {
+        name: threadName,
+        reason: requestedName ? "name was supplied by caller" : "blank non-ephemeral thread was named so Codex can persist and later reopen it"
+      };
+    }
+    let peerMessage = null;
+    if (message) {
+      const turnParams = { threadId };
+      copyOptionalString(args, turnParams, "cwd");
+      copyOptionalString(args, turnParams, "model");
+      copyOptionalString(args, turnParams, "effort");
+      const overrides = {};
+      for (const field of ["cwd", "model", "effort", "modelProvider", "serviceTier"]) {
+        copyOptionalString(args, overrides, field);
+      }
+      const peer = buildPeerTurnInput({ toolContext, threadId, message, overrides });
+      peerMessage = peer.summary;
+      turnParams.input = peer.input;
+      const turnResponse = await appServer.request("turn/start", turnParams);
+      turn = summarizeTurn(turnResponse.turn);
+    }
+    const shouldOpenGui = args.openInGui === true;
+    const gui = shouldOpenGui ? await openCodexDesktopThread({ threadId, ephemeral: args.ephemeral === true }) : {
+      attempted: false,
+      threadId,
+      deepLink: codexThreadDeepLink(threadId),
+      reason: "openInGui was false; thread was created through app-server without routing or focusing Codex Desktop.",
+      behavior: "Deep link is returned as data only; no GUI process was contacted.",
+      focusPolicy: "No keyboard, mouse, menu, window automation, or LaunchServices route was used."
+    };
+    const deepLink = codexThreadDeepLink(threadId);
+    const appServerSummary = appServer.getConnectionSummary();
+    const action = message ? nameUpdate ? "started_thread+named_thread+started_turn" : "started_thread+started_turn" : nameUpdate ? "started_thread+named_thread" : "started_thread";
+    const result = {
+      ok: true,
+      source: "app-server",
+      action,
+      thread: {
+        ...summarizeThread(response.thread),
+        name: nameUpdate?.name ?? response.thread?.name ?? null
+      },
+      nameUpdate,
+      turn,
+      peerMessage,
+      warnings: launchWarnings(args),
+      gui,
+      appServer: appServerSummary
+    };
+    result.receipt = await recordActionReceipt({
+      action: "launch_thread",
+      receipt: args.receipt,
+      target: {
+        threadId,
+        turnId: turn?.id ?? null,
+        name: result.thread.name,
+        cwd: result.thread.cwd,
+        archiveState: result.thread.archiveState,
+        status: result.thread.status,
+        deepLink
+      },
+      message,
+      finalResponse: null,
+      delivery: {
+        state: "accepted_by_app_server",
+        action,
+        turnId: turn?.id ?? null
+      },
+      replyConfirmation: null,
+      runtimeCallerContext: toolContext.callerContext,
+      appServer: appServerSummary,
+      // R9.9: the launcher, from runtime identity only; external is never one.
+      extra: { launchedBy: launcherAddress(callerAddress2?.(toolContext)) }
+    });
+    return result;
+  }
+  async function archiveThread(args, toolContext = {}) {
+    const threadId = optionalString(args.threadId).trim() || optionalString(toolContext.callerContext?.threadId).trim();
+    if (!threadId) {
+      throw new AgentLinkError("invalid_arguments", "threadId is required when caller thread context is unavailable.", {
+        details: { errors: [{ path: "threadId", rule: "required", expected: "string (no caller thread context)" }] }
+      });
+    }
+    const reason = optionalString(args.reason).trim();
+    const loadedCheck = await checkLoadedForArchive(threadId, {
+      useLocalFallback: args.useLocalFallback
+    });
+    if (loadedCheck.checked) {
+      try {
+        const archive2 = await archiveThreadViaAppServer(threadId);
+        const action2 = archive2.alreadyArchived ? "already_archived" : "app_server_archive";
+        return await buildArchiveThreadResult({
+          source: "app-server",
+          action: action2,
+          threadId,
+          reason,
+          loadedCheck,
+          archive: archive2,
+          args,
+          toolContext
+        });
+      } catch (error2) {
+        if (loadedCheck.loaded && args.forceLoaded !== true) {
+          error2.details = {
+            ...error2.details ?? {},
+            loadedCheck,
+            stateSemantics: loadedStateSemantics(),
+            hint: "Native app-server archive failed while the thread was loaded; refusing local fallback without forceLoaded=true."
+          };
+          throw error2;
+        }
+      }
+    }
+    if (loadedCheck.loaded && args.forceLoaded !== true) {
+      throw new AgentLinkError("active_turn_conflict", `Thread ${threadId} is currently loaded; refusing to archive without forceLoaded=true.`, {
+        details: { status: "loaded", activeTurnId: null, loadedCheck },
+        hint: "Ask the active thread to finish or switch away before archiving, or set forceLoaded=true only when you intentionally accept that risk."
+      });
+    }
+    const archive = await archiveLocalThread(threadId);
+    const action = archive.alreadyArchived ? "already_archived" : "local_archive_moved";
+    return await buildArchiveThreadResult({
+      source: "local-jsonl",
+      action,
+      threadId,
+      reason,
+      loadedCheck,
+      archive,
+      args,
+      toolContext
+    });
+  }
+  async function archiveThreadViaAppServer(threadId) {
+    const before = await readArchiveSnapshot(threadId);
+    const response = await appServer.request("thread/archive", { threadId });
+    const after = await readArchiveSnapshot(threadId);
+    return {
+      ok: true,
+      source: "app-server",
+      response,
+      threadId,
+      alreadyArchived: before?.archiveState?.scope === "archived",
+      from: before?.path ?? null,
+      to: after?.path ?? null,
+      thread: after ?? before ?? { id: threadId, status: { type: "unknown" } },
+      archiveStateBefore: before?.archiveState ?? null,
+      archiveStateAfter: after?.archiveState ?? null,
+      codexHome: appServer.getConnectionSummary().codexHome ?? null
+    };
+  }
+  async function readArchiveSnapshot(threadId) {
+    let fromAppServer = null;
+    try {
+      const read = await appServer.request("thread/read", { threadId, includeTurns: false });
+      fromAppServer = summarizeThread(read.thread);
+    } catch {
+      fromAppServer = null;
+    }
+    if (fromAppServer?.path) {
+      return fromAppServer;
+    }
+    if (fromAppServer) {
+      const located = await findLocalThreadFile(threadId).catch(() => null);
+      return located ? { ...fromAppServer, path: located.file, archiveState: inferArchiveState(located.file) } : fromAppServer;
+    }
+    try {
+      const local = await readLocalThread(threadId);
+      return summarizeThread(local.thread);
+    } catch {
+      return null;
+    }
+  }
+  async function buildArchiveThreadResult({ source, action, threadId, reason, loadedCheck, archive, args, toolContext }) {
+    const appServerSummary = appServer.getConnectionSummary();
+    const result = {
+      ok: true,
+      source,
+      action,
+      threadId,
+      reason: reason || null,
+      loadedCheck,
+      archive,
+      stateSemantics: loadedStateSemantics(),
+      appServer: appServerSummary
+    };
+    result.receipt = await recordActionReceipt({
+      action: "archive_thread",
+      receipt: args.receipt,
+      target: {
+        threadId,
+        turnId: null,
+        name: archive.thread.name,
+        cwd: archive.thread.cwd,
+        archiveState: archive.archiveStateAfter,
+        status: archive.thread.status,
+        deepLink: codexThreadDeepLink(threadId)
+      },
+      message: reason || null,
+      finalResponse: null,
+      delivery: {
+        state: action,
+        action: "archive_thread",
+        from: archive.from,
+        to: archive.to,
+        loadedCheck
+      },
+      evidence: archiveReceiptEvidence({ loadedCheck, archive, action }),
+      replyConfirmation: null,
+      runtimeCallerContext: toolContext.callerContext,
+      appServer: appServerSummary
+    });
+    return result;
+  }
+  async function checkLoadedForArchive(threadId, args = {}) {
+    try {
+      const response = await appServer.request("thread/loaded/list", { limit: 1e3 });
+      const loadedThreadIds = extractLoadedThreadIds(response);
+      return {
+        ok: true,
+        source: "app-server",
+        checked: true,
+        loaded: loadedThreadIds.includes(threadId),
+        loadedThreadIds,
+        appServer: appServer.getConnectionSummary()
+      };
+    } catch (error2) {
+      if (args.useLocalFallback === false) {
+        throw error2;
+      }
+      return {
+        ok: false,
+        source: "app-server",
+        checked: false,
+        loaded: null,
+        error: error2.message,
+        fallback: "local-jsonl",
+        appServer: appServer.getConnectionSummary(),
+        note: "App-server loaded-state check was unavailable; proceeding because useLocalFallback was not false."
+      };
+    }
+  }
+  return { launchThread, launchThreadTool, archiveThread, archiveThreadTool };
+}
+
+// src/codex/fork-jobs.js
+var FORK_OUTCOMES = Object.freeze(["completed", "failed", "interrupted"]);
+var EVENT_TYPES = /* @__PURE__ */ new Set(["created", "forked", "compacted", "turn-started", ...FORK_OUTCOMES, "reconciled", "archived", "aborted"]);
+function foldForkJobs(events) {
+  const jobs = /* @__PURE__ */ new Map();
+  for (const event of events) {
+    if (!event || typeof event.jobId !== "string" || !EVENT_TYPES.has(event.type)) continue;
+    let job = jobs.get(event.jobId);
+    if (!job) {
+      job = { id: event.jobId, createdAt: null, created: null, forked: null, compacted: null, turnStarted: null, outcome: null, reconciled: null, archived: null, aborted: null };
+      jobs.set(event.jobId, job);
+    }
+    const slot = slotOf(event.type);
+    if (job[slot] === null) {
+      job[slot] = event;
+      if (slot === "created") job.createdAt = Number.isFinite(event.at) ? event.at : null;
+    }
+  }
+  return [...jobs.values()];
+}
+function slotOf(type) {
+  if (type === "turn-started") return "turnStarted";
+  if (FORK_OUTCOMES.includes(type)) return "outcome";
+  return (
+    /** @type {any} */
+    type
+  );
+}
+function forkJobStatus(job) {
+  if (job.aborted) return "aborted";
+  return job.outcome?.type ?? "running";
+}
+function createForkJobStore({ path: path19 = void 0, now = () => Date.now() } = {}) {
+  const file = () => path19 ?? forkJobsPath();
+  return {
+    path: file,
+    /**
+     * @param {string} type
+     * @param {string} jobId
+     * @param {Record<string, any>} [fields]
+     */
+    append(type, jobId, fields = {}) {
+      const event = { type, jobId, at: now(), ...fields };
+      appendJsonlSync(file(), event);
+      return event;
+    },
+    /** @returns {ForkJob[]} */
+    list() {
+      return foldForkJobs(readJsonlSync(file()));
+    },
+    /** @param {string} jobId */
+    get(jobId) {
+      return this.list().find((job) => job.id === jobId) ?? null;
+    }
+  };
+}
+
+// src/codex/token-usage.js
+var TOKEN_USAGE_GRACE_MS = 5e3;
+var MAX_TURNS_PER_THREAD = 20;
+var MAX_THREADS = 500;
+var BREAKDOWN_FIELDS = (
+  /** @type {const} */
+  ["inputTokens", "cachedInputTokens", "cacheWriteInputTokens", "outputTokens", "reasoningOutputTokens", "totalTokens"]
+);
+var num = (value) => Number.isFinite(value) ? (
+  /** @type {number} */
+  value
+) : null;
+function turnUsage(acc, turnId) {
+  if (!acc || acc.counted === 0) return null;
+  const out2 = {};
+  for (const field of BREAKDOWN_FIELDS) out2[field] = Object.prototype.hasOwnProperty.call(acc.sum, field) ? acc.sum[field] : null;
+  return (
+    /** @type {TurnTokenUsage} */
+    { ...out2, modelContextWindow: acc.modelContextWindow, modelRequests: acc.counted, turnId }
+  );
+}
+function tokenUsageUnavailableWarning({ threadId, turnId = null, purpose, reason = "no_notification" }) {
+  const notWaited = reason === "not_waited";
+  return {
+    code: "token_usage_unavailable",
+    severity: "warning",
+    message: notWaited ? `Token usage for ${purpose} was not recorded, because the call did not wait for the turn to end.` : `No thread/tokenUsage/updated notification for ${purpose} was seen by ${TOKEN_USAGE_GRACE_MS / 1e3} s after the turn ended, so its token usage is recorded as null.`,
+    details: { threadId, turnId, purpose, reason },
+    ...notWaited ? { hint: "Pass waitForReply:true to record the turn's token usage in the receipt." } : {}
+  };
+}
+function settingsMismatchWarning({ threadId, requested, applied }) {
+  if (!applied) return null;
+  const mismatches = [];
+  for (const [setting, value] of Object.entries(requested)) {
+    if (typeof value !== "string" || !value) continue;
+    const actual = appliedValue(applied, setting);
+    if (actual === void 0 || actual === null) continue;
+    if (String(actual) !== value) mismatches.push({ setting, requested: value, applied: actual });
+  }
+  if (!mismatches.length) return null;
+  return {
+    code: "settings_mismatch",
+    severity: "warning",
+    message: `The app-server reports different settings than requested for ${threadId}: ${mismatches.map((m) => `${m.setting} ${String(m.applied)} (requested ${m.requested})`).join(", ")}.`,
+    details: { threadId, mismatches }
+  };
+}
+function appliedValue(applied, setting) {
+  if (setting === "effort") return applied.effort ?? applied.reasoningEffort;
+  return applied[setting];
+}
+function createTokenUsageTracker({ appServer = null, setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
+  const threads = /* @__PURE__ */ new Map();
+  const waiters = /* @__PURE__ */ new Set();
+  let sequence = 0;
+  function entry(threadId) {
+    let found = threads.get(threadId);
+    if (!found) {
+      found = { turns: /* @__PURE__ */ new Map(), latestTurnId: null, lastTotal: null, settings: null, settingsMark: 0, completed: [] };
+      threads.set(threadId, found);
+      if (threads.size > MAX_THREADS) threads.delete(
+        /** @type {string} */
+        threads.keys().next().value
+      );
+    }
+    return found;
+  }
+  function notify(threadId, kind, value) {
+    for (const waiter of [...waiters]) {
+      if (waiter.threadId === threadId && waiter.test(kind, value)) waiter.resolve(value);
+    }
+  }
+  function handle(notification) {
+    const params = notification?.params;
+    const threadId = typeof params?.threadId === "string" ? params.threadId : null;
+    if (!threadId) return;
+    if (notification.method === "thread/tokenUsage/updated") {
+      const usage = params.tokenUsage;
+      const last = usage?.last;
+      const turnId = typeof params.turnId === "string" ? params.turnId : null;
+      if (!last || typeof last !== "object" || !turnId) return;
+      const record2 = entry(threadId);
+      let acc = record2.turns.get(turnId);
+      if (!acc) {
+        acc = { counted: 0, notifications: 0, sum: {}, rawLast: null, modelContextWindow: null };
+        record2.turns.set(turnId, acc);
+        if (record2.turns.size > MAX_TURNS_PER_THREAD) record2.turns.delete(
+          /** @type {string} */
+          record2.turns.keys().next().value
+        );
+      }
+      acc.notifications += 1;
+      acc.rawLast = { ...last };
+      acc.modelContextWindow = num(usage.modelContextWindow) ?? acc.modelContextWindow;
+      record2.latestTurnId = turnId;
+      const total = num(usage.total?.totalTokens);
+      const counts = record2.lastTotal === null || total === null || total !== record2.lastTotal;
+      if (total !== null) record2.lastTotal = total;
+      if (counts) {
+        acc.counted += 1;
+        for (const field of BREAKDOWN_FIELDS) {
+          const value = num(last[field]);
+          if (value !== null) acc.sum[field] = (acc.sum[field] ?? 0) + value;
+        }
+        notify(threadId, "usage", turnId);
+      }
+    } else if (notification.method === "thread/settings/updated") {
+      const { threadId: _id, ...rest } = params;
+      const settings = rest.threadSettings && typeof rest.threadSettings === "object" ? rest.threadSettings : rest.settings && typeof rest.settings === "object" ? rest.settings : rest;
+      const record2 = entry(threadId);
+      record2.settings = { ...settings };
+      record2.settingsMark = ++sequence;
+    } else if (notification.method === "turn/completed") {
+      const turn = params.turn;
+      if (!turn || typeof turn.id !== "string") return;
+      const completed = { turnId: turn.id, status: typeof turn.status === "string" ? turn.status : null, items: Array.isArray(turn.items) ? turn.items : [], error: turn.error ?? null };
+      const record2 = entry(threadId);
+      record2.completed.push(completed);
+      if (record2.completed.length > MAX_TURNS_PER_THREAD) record2.completed.shift();
+      notify(threadId, "completed", completed);
+    }
+  }
+  function waitFor(threadId, test, timeoutMs2) {
+    return new Promise((resolve) => {
+      const waiter = {
+        threadId,
+        test,
+        resolve: (value) => {
+          clearTimer(timer);
+          waiters.delete(waiter);
+          resolve(value);
+        }
+      };
+      const timer = setTimer(() => waiter.resolve(null), timeoutMs2);
+      timer?.unref?.();
+      waiters.add(waiter);
+    });
+  }
+  const unsubscribe = typeof appServer?.onNotification === "function" ? appServer.onNotification(handle) : null;
+  return {
+    latest(threadId) {
+      const record2 = threads.get(threadId);
+      if (!record2) return null;
+      for (const [turnId, acc] of [...record2.turns].reverse()) {
+        const usage = turnUsage(acc, turnId);
+        if (usage) return usage;
+      }
+      return null;
+    },
+    forTurn: (threadId, turnId) => turnUsage(threads.get(threadId)?.turns.get(turnId), turnId),
+    // A compaction reports only `last.totalTokens` (spike).
+    compactionUsage(threadId, turnId) {
+      const raw = threads.get(threadId)?.turns.get(turnId)?.rawLast;
+      return raw ? { totalTokens: num(raw.totalTokens) } : null;
+    },
+    completedTurns: (threadId) => [...threads.get(threadId)?.completed ?? []],
+    awaitTurnCompleted(threadId, predicate, { timeoutMs: timeoutMs2 = TOKEN_USAGE_GRACE_MS } = {}) {
+      const done = (threads.get(threadId)?.completed ?? []).find(predicate);
+      if (done) return Promise.resolve(done);
+      return waitFor(threadId, (kind, value) => kind === "completed" && predicate(value), timeoutMs2);
+    },
+    settings: (threadId) => threads.get(threadId)?.settings ?? null,
+    settingsSince(threadId, mark) {
+      const record2 = threads.get(threadId);
+      return record2 && record2.settingsMark > mark ? record2.settings : null;
+    },
+    mark: () => sequence,
+    handle,
+    /**
+     * The turn's usage. Usage notifications arrive before turn/completed, so
+     * this normally answers at once; otherwise it waits at most `graceMs`.
+     */
+    awaitTurnUsage(threadId, turnId, { graceMs = TOKEN_USAGE_GRACE_MS } = {}) {
+      const known = turnUsage(threads.get(threadId)?.turns.get(turnId), turnId);
+      if (known || !(graceMs > 0)) return Promise.resolve(known);
+      return waitFor(threadId, (kind, value) => kind === "usage" && value === turnId, graceMs).then(() => turnUsage(threads.get(threadId)?.turns.get(turnId), turnId));
+    },
+    close() {
+      unsubscribe?.();
+      for (const waiter of [...waiters]) waiter.resolve(null);
+    }
+  };
+}
+function usageFromReceipt(receipt) {
+  const candidates = [receipt?.tokenUsage?.task, receipt?.tokenUsage?.delivery, receipt?.tokenUsage?.next, receipt?.override?.tokenUsage?.next];
+  return candidates.find((usage) => usage && typeof usage === "object" && Number.isFinite(usage.inputTokens)) ?? null;
+}
+async function lastRecordedUsage({ threadId, tracker = null, listReceipts: listReceipts2 = null }) {
+  const seen = tracker?.latest(threadId) ?? null;
+  if (seen) return seen;
+  if (!listReceipts2) return null;
+  try {
+    const { data = [] } = await listReceipts2({ targetThreadId: threadId, limit: 50 });
+    for (const receipt of data) {
+      const usage = usageFromReceipt(receipt);
+      if (usage) return usage;
+    }
+  } catch {
+  }
+  return null;
+}
+function expectedCostFrom(usage) {
+  return usage && Number.isFinite(usage.inputTokens) ? { uncachedInputTokens: (
+    /** @type {number} */
+    usage.inputTokens
+  ), basis: "last-turn-input" } : { uncachedInputTokens: null, basis: "unknown" };
+}
+
+// src/delivery/override-policy.js
+import fs9 from "node:fs";
+import path12 from "node:path";
+
+// src/registry/roles.js
+import crypto3 from "node:crypto";
+import fs8 from "node:fs";
+import path11 from "node:path";
+var ROLE_NAME_PATTERN = /^[a-z0-9-]{1,40}$/;
+var ROLE_ADDRESS_PATTERN = /^role:([a-z0-9-]{1,40})$/;
+var ROLE_TABLE_VERSION = 1;
+var ENFORCEMENT_MODES = Object.freeze(["off", "warn", "enforce"]);
+var DEFAULT_ENFORCEMENT = "off";
+var POLICY_SETTINGS = Object.freeze(["model", "effort", "cwd"]);
+var MAX_PROCEDURE_BYTES = 64 * 1024;
+var MAX_POLICY_SENDERS = 50;
+var LOCK_STALE_MS = 3e4;
+var LOCK_TIMEOUT_MS = 250;
+var LOCK_RETRY_MS = 5;
+var BREAKER_STALE_MS = 5e3;
+var STATE_FILE = "role-state.json";
+var STATE_VERSION = 1;
+function emptyRoleTable() {
+  return { version: ROLE_TABLE_VERSION, enforcement: null, roles: {}, overridePolicy: {} };
+}
+function parseRoleAddress(value) {
+  if (typeof value !== "string") return null;
+  const match = ROLE_ADDRESS_PATTERN.exec(value.trim());
+  return match ? match[1] : null;
+}
+function looksLikeRoleAddress(value) {
+  return typeof value === "string" && value.trim().toLowerCase().startsWith("role:");
+}
+function requireRoleName(value, argument = "role") {
+  const raw = typeof value === "string" ? value.trim() : "";
+  const name = raw.startsWith("role:") ? raw.slice("role:".length) : raw;
+  if (!ROLE_NAME_PATTERN.test(name)) {
+    throw new AgentLinkError("invalid_arguments", `${argument} must be a role name of 1 to 40 lowercase letters, digits, or hyphens (optionally written role:<name>).`, {
+      details: { errors: [{ path: argument, rule: "pattern", expected: "[a-z0-9-]{1,40}" }] }
+    });
+  }
+  return name;
+}
+function isPolicySender(value) {
+  return value === "*" || parseRoleAddress(value) !== null || isAddress(value);
+}
+function isPolicyTarget(value) {
+  return parseRoleAddress(value) !== null || isAddress(value);
+}
+function isPlainObject3(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function isoOrNull(value) {
+  return typeof value === "string" && Number.isFinite(Date.parse(value)) ? new Date(Date.parse(value)).toISOString() : null;
+}
+function validateRoleTable(raw) {
+  const problems = [];
+  const table = emptyRoleTable();
+  if (!isPlainObject3(raw)) {
+    problems.push({ path: "", rule: "type", message: "roles.json must hold a JSON object." });
+    return { table, problems };
+  }
+  if (raw.version !== ROLE_TABLE_VERSION) {
+    problems.push({ path: "version", rule: "version", message: `roles.json version is ${JSON.stringify(raw.version ?? null)}; expected ${ROLE_TABLE_VERSION}. Entries were read as version ${ROLE_TABLE_VERSION}, and Agent Link will not write the file until its version is ${ROLE_TABLE_VERSION}.` });
+  }
+  if (raw.enforcement !== void 0 && raw.enforcement !== null) {
+    if (ENFORCEMENT_MODES.includes(raw.enforcement)) table.enforcement = raw.enforcement;
+    else problems.push({ path: "enforcement", rule: "enum", message: `enforcement must be one of ${ENFORCEMENT_MODES.join(", ")}; ignored.` });
+  }
+  if (raw.roles !== void 0 && !isPlainObject3(raw.roles)) {
+    problems.push({ path: "roles", rule: "type", message: "roles must be an object; ignored." });
+  }
+  for (const [name, entry] of Object.entries(isPlainObject3(raw.roles) ? raw.roles : {})) {
+    if (!ROLE_NAME_PATTERN.test(name)) {
+      problems.push({ path: `roles.${name.slice(0, 60)}`, rule: "pattern", message: "Role names are 1 to 40 lowercase letters, digits, or hyphens; entry ignored." });
+      continue;
+    }
+    if (!isPlainObject3(entry)) {
+      problems.push({ path: `roles.${name}`, rule: "type", message: "A role entry must be an object; ignored." });
+      continue;
+    }
+    let address = null;
+    if (typeof entry.address === "string" && entry.address) {
+      if (isAddress(entry.address)) address = entry.address;
+      else problems.push({ path: `roles.${name}.address`, rule: "format", message: "address must be claude:<id> or codex:<id>; the role has no holder." });
+    } else if (Array.isArray(entry.address)) {
+      const valid = [...new Set(entry.address.filter(isAddress))];
+      if (valid.length !== entry.address.length) {
+        problems.push({ path: `roles.${name}.address`, rule: "format", message: "Invalid or duplicate addresses in the list were ignored." });
+      }
+      address = valid.length === 0 ? null : valid.length === 1 ? valid[0] : valid;
+    } else if (entry.address !== void 0 && entry.address !== null) {
+      problems.push({ path: `roles.${name}.address`, rule: "type", message: "address must be a string; the role has no holder." });
+    }
+    const projects = {};
+    if (entry.projects !== void 0 && entry.projects !== null) {
+      if (name !== "orchestrator") {
+        problems.push({ path: `roles.${name}.projects`, rule: "scope", message: "Only the orchestrator role is scoped by project root; projects ignored." });
+      } else if (!isPlainObject3(entry.projects)) {
+        problems.push({ path: `roles.${name}.projects`, rule: "type", message: "projects must map absolute project roots to addresses; ignored." });
+      } else {
+        for (const [root, holder] of Object.entries(entry.projects)) {
+          if (!path11.isAbsolute(root) || !isAddress(holder)) {
+            problems.push({ path: `roles.${name}.projects`, rule: "format", message: "projects keys are absolute project roots and values claude:<id> or codex:<id> addresses; invalid entries were ignored." });
+            continue;
+          }
+          projects[path11.resolve(root)] = holder;
+        }
+      }
+    }
+    table.roles[name] = { address, assignedAt: isoOrNull(entry.assignedAt), ...Object.keys(projects).length ? { projects } : {} };
+  }
+  if (raw.overridePolicy !== void 0 && !isPlainObject3(raw.overridePolicy)) {
+    problems.push({ path: "overridePolicy", rule: "type", message: "overridePolicy must be an object; ignored (nothing is allowed)." });
+  }
+  for (const [target, entry] of Object.entries(isPlainObject3(raw.overridePolicy) ? raw.overridePolicy : {})) {
+    if (!isPolicyTarget(target)) {
+      problems.push({ path: `overridePolicy.${target.slice(0, 80)}`, rule: "format", message: "Policy targets are role:<name> or a session address; entry ignored." });
+      continue;
+    }
+    if (!isPlainObject3(entry)) {
+      problems.push({ path: `overridePolicy.${target}`, rule: "type", message: "A policy entry must be an object; ignored." });
+      continue;
+    }
+    const clean = {};
+    for (const [setting, senders] of Object.entries(entry)) {
+      if (!POLICY_SETTINGS.includes(setting)) {
+        problems.push({ path: `overridePolicy.${target}.${setting.slice(0, 40)}`, rule: "enum", message: `Policy settings are ${POLICY_SETTINGS.join(", ")}; ignored.` });
+        continue;
+      }
+      if (!Array.isArray(senders)) {
+        problems.push({ path: `overridePolicy.${target}.${setting}`, rule: "type", message: "A policy setting must list senders; ignored." });
+        continue;
+      }
+      const valid = [...new Set(senders.filter(isPolicySender))].slice(0, MAX_POLICY_SENDERS);
+      if (valid.length !== senders.length) {
+        problems.push({ path: `overridePolicy.${target}.${setting}`, rule: "format", message: 'Senders are "*", role:<name>, or a session address; invalid or duplicate entries were ignored.' });
+      }
+      clean[
+        /** @type {"model" | "effort" | "cwd"} */
+        setting
+      ] = valid;
+    }
+    table.overridePolicy[target] = clean;
+  }
+  return { table, problems };
+}
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+function processAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error2) {
+    return (
+      /** @type {NodeJS.ErrnoException} */
+      error2.code === "EPERM"
+    );
+  }
+}
+function lockSnapshot(lockPath) {
+  try {
+    const stat = fs8.statSync(lockPath);
+    return { raw: fs8.readFileSync(lockPath, "utf8"), ino: stat.ino, mtimeMs: stat.mtimeMs };
+  } catch {
+    return null;
+  }
+}
+function ownerPid(raw) {
+  try {
+    return Number(JSON.parse(raw)?.pid);
+  } catch {
+    return NaN;
+  }
+}
+function breakStaleLock(lockPath, observed, token, now) {
+  const breaker = `${lockPath}.break`;
+  try {
+    fs8.writeFileSync(breaker, JSON.stringify({ pid: process.pid, token }), { flag: "wx", mode: FILE_MODE });
+  } catch (error2) {
+    if (
+      /** @type {NodeJS.ErrnoException} */
+      error2.code !== "EEXIST"
+    ) return false;
+    const stale = lockSnapshot(breaker);
+    if (stale && now() - stale.mtimeMs > BREAKER_STALE_MS && !processAlive(ownerPid(stale.raw))) {
+      fs8.rmSync(breaker, { force: true });
+    }
+    return false;
+  }
+  try {
+    const current = lockSnapshot(lockPath);
+    if (!current || current.raw !== observed.raw || current.ino !== observed.ino || current.mtimeMs !== observed.mtimeMs) return false;
+    fs8.rmSync(lockPath, { force: true });
+    return true;
+  } finally {
+    fs8.rmSync(breaker, { force: true });
+  }
+}
+function withFileLockSync(lockPath, fn, { timeoutMs: timeoutMs2 = LOCK_TIMEOUT_MS, staleMs = LOCK_STALE_MS, now = () => Date.now() } = {}) {
+  const deadline = now() + timeoutMs2;
+  const token = `${process.pid}:${crypto3.randomUUID()}`;
+  for (; ; ) {
+    try {
+      fs8.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, token, at: new Date(now()).toISOString() }), { flag: "wx", mode: FILE_MODE });
+      break;
+    } catch (error2) {
+      if (
+        /** @type {NodeJS.ErrnoException} */
+        error2.code !== "EEXIST"
+      ) {
+        throw stateIoError(lockPath, error2, "Could not create the role table lock.");
+      }
+    }
+    const observed = lockSnapshot(lockPath);
+    if (observed && now() - observed.mtimeMs > staleMs && !processAlive(ownerPid(observed.raw))) {
+      if (breakStaleLock(lockPath, observed, token, now)) continue;
+    }
+    if (now() >= deadline) {
+      throw new AgentLinkError("state_io_error", "The role table is busy (another Agent Link server holds its lock).", {
+        details: { path: path11.basename(lockPath), errno: "ETIMEDOUT" },
+        hint: `Retry the call. If this persists, check that no Agent Link process is stuck, then remove ${path11.basename(lockPath)} from the state directory.`
+      });
+    }
+    sleepSync(LOCK_RETRY_MS);
+  }
+  try {
+    return fn();
+  } finally {
+    try {
+      const current = JSON.parse(fs8.readFileSync(lockPath, "utf8"));
+      if (current?.token === token) fs8.rmSync(lockPath, { force: true });
+    } catch {
+    }
+  }
+}
+function writeFileAtomicSync(filePath, text2) {
+  fs8.mkdirSync(path11.dirname(filePath), { recursive: true, mode: DIR_MODE });
+  const temp = `${filePath}.${process.pid}.${crypto3.randomBytes(6).toString("hex")}.tmp`;
+  try {
+    const fd = fs8.openSync(temp, "wx", FILE_MODE);
+    try {
+      fs8.writeFileSync(fd, text2, "utf8");
+      fs8.fsyncSync(fd);
+    } finally {
+      fs8.closeSync(fd);
+    }
+    fs8.renameSync(temp, filePath);
+  } catch (error2) {
+    fs8.rmSync(temp, { force: true });
+    throw stateIoError(filePath, error2, "Could not write the role table.");
+  }
+  tightenMode(filePath, FILE_MODE);
+}
+function stateIoError(filePath, error2, message) {
+  const errno = (
+    /** @type {NodeJS.ErrnoException} */
+    error2?.code ?? null
+  );
+  return new AgentLinkError("state_io_error", `${message} (${errno ?? "error"})`, {
+    details: { path: path11.basename(filePath), errno },
+    cause: error2
+  });
+}
+function readProcedureFileSafe(dir, file) {
+  try {
+    if (!fs8.lstatSync(dir).isDirectory()) return { error: "the roles directory is not a directory" };
+  } catch {
+    return null;
+  }
+  let stat;
+  try {
+    stat = fs8.lstatSync(file);
+  } catch {
+    return null;
+  }
+  if (!stat.isFile()) return { error: "the procedure file is not a regular file (symlinks, FIFOs, and devices are refused)" };
+  let fd;
+  try {
+    fd = fs8.openSync(file, fs8.constants.O_RDONLY | fs8.constants.O_NOFOLLOW | fs8.constants.O_NONBLOCK);
+  } catch (error2) {
+    return { error: `the procedure file could not be opened (${/** @type {NodeJS.ErrnoException} */
+    error2.code ?? "error"})` };
+  }
+  try {
+    if (!fs8.fstatSync(fd).isFile()) return { error: "the procedure file is not a regular file" };
+    const buffer = Buffer.alloc(MAX_PROCEDURE_BYTES + 1);
+    let length = 0;
+    for (; ; ) {
+      const read = fs8.readSync(fd, buffer, length, buffer.length - length, null);
+      if (read === 0) break;
+      length += read;
+      if (length > MAX_PROCEDURE_BYTES) {
+        return { error: `the procedure file is larger than ${MAX_PROCEDURE_BYTES} bytes (64 KiB)` };
+      }
+    }
+    const text2 = buffer.subarray(0, length).toString("utf8");
+    return { text: text2, sha256: sha256(text2) };
+  } catch (error2) {
+    return { error: `the procedure file could not be read (${/** @type {NodeJS.ErrnoException} */
+    error2.code ?? "error"})` };
+  } finally {
+    fs8.closeSync(fd);
+  }
+}
+function sha256(text2) {
+  return crypto3.createHash("sha256").update(text2, "utf8").digest("hex");
+}
+function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () => Date.now(), lockTimeoutMs = LOCK_TIMEOUT_MS } = {}) {
+  const pathOptions = { env: env2, ...homedir3 ? { homedir: homedir3 } : {} };
+  const tablePath = () => rolesPath(pathOptions);
+  const proceduresDir = () => roleProceduresDir(pathOptions);
+  const statePath = () => path11.join(stateDir(pathOptions), STATE_FILE);
+  const iso2 = () => new Date(now()).toISOString();
+  const lockOptions = { now, timeoutMs: lockTimeoutMs };
+  function procedureFile(name) {
+    return path11.join(proceduresDir(), `${name}.md`);
+  }
+  function readProcedure(name) {
+    return readProcedureFileSafe(proceduresDir(), procedureFile(name));
+  }
+  function read() {
+    const file = tablePath();
+    const base = { path: file, exists: true, writable: false, raw: null };
+    let text2;
+    try {
+      text2 = fs8.readFileSync(file, "utf8");
+    } catch (error2) {
+      if (
+        /** @type {NodeJS.ErrnoException} */
+        error2.code === "ENOENT"
+      ) {
+        return { ...base, table: emptyRoleTable(), problems: [], error: null, exists: false, writable: true };
+      }
+      return { ...base, table: emptyRoleTable(), problems: [], error: `roles.json could not be read (${/** @type {NodeJS.ErrnoException} */
+      error2.code ?? "error"}).` };
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(text2);
+    } catch {
+      return { ...base, table: emptyRoleTable(), problems: [], error: "roles.json is not valid JSON; roles and the override policy are unavailable until it is fixed." };
+    }
+    const { table, problems } = validateRoleTable(parsed);
+    const writable = isPlainObject3(parsed) && parsed.version === ROLE_TABLE_VERSION;
+    return { ...base, table, problems, error: null, writable, raw: isPlainObject3(parsed) ? parsed : null };
+  }
+  function assertUsable(result) {
+    if (result.error) {
+      throw new AgentLinkError("state_io_error", result.error, {
+        details: { path: "roles.json", errno: null },
+        hint: "Fix or remove roles.json in the Agent Link state directory; agent_link_health shows its path."
+      });
+    }
+  }
+  function update(mutate) {
+    ensureStateDir(pathOptions);
+    return withFileLockSync(`${tablePath()}.lock`, () => {
+      const current = read();
+      assertUsable(current);
+      if (!current.writable) {
+        throw new AgentLinkError("state_io_error", "roles.json has an unsupported version; Agent Link will not rewrite it.", {
+          details: { path: "roles.json", errno: null, version: current.raw?.version ?? null },
+          hint: `Set "version": ${ROLE_TABLE_VERSION} in roles.json after checking its contents, or move the file aside.`
+        });
+      }
+      const raw = current.raw ?? { version: ROLE_TABLE_VERSION };
+      if (!isPlainObject3(raw.roles)) raw.roles = {};
+      if (!isPlainObject3(raw.overridePolicy)) raw.overridePolicy = {};
+      const result = mutate(raw, current.table);
+      writeFileAtomicSync(tablePath(), `${JSON.stringify(raw, null, 2)}
+`);
+      return result;
+    }, lockOptions);
+  }
+  function readState() {
+    try {
+      const parsed = JSON.parse(fs8.readFileSync(statePath(), "utf8"));
+      if (isPlainObject3(parsed)) {
+        return {
+          version: STATE_VERSION,
+          procedures: isPlainObject3(parsed.procedures) ? parsed.procedures : {},
+          deliveries: isPlainObject3(parsed.deliveries) ? parsed.deliveries : {}
+        };
+      }
+    } catch {
+    }
+    return { version: STATE_VERSION, procedures: {}, deliveries: {} };
+  }
+  function updateState(mutate) {
+    ensureStateDir(pathOptions);
+    return withFileLockSync(`${statePath()}.lock`, () => {
+      const state = readState();
+      const result = mutate(state);
+      writeFileAtomicSync(statePath(), `${JSON.stringify(state, null, 2)}
+`);
+      return result;
+    }, lockOptions);
+  }
+  function procedureRecord(state, name) {
+    const p = state.procedures[name];
+    return isPlainObject3(p) && Number.isInteger(p.version) && p.version >= 1 && typeof p.sha256 === "string" ? { version: p.version, sha256: p.sha256, updatedAt: isoOrNull(p.updatedAt) ?? (/* @__PURE__ */ new Date(0)).toISOString() } : null;
+  }
+  function syncProcedure(name) {
+    const file = readProcedure(name);
+    if (!file || "error" in file) return;
+    if (procedureRecord(readState(), name)?.sha256 === file.sha256) return;
+    updateState((state) => {
+      const again = readProcedure(name);
+      if (!again || "error" in again) return;
+      const record2 = procedureRecord(state, name);
+      if (record2?.sha256 === again.sha256) return;
+      state.procedures[name] = { version: (record2?.version ?? 0) + 1, sha256: again.sha256, updatedAt: iso2() };
+    });
+  }
+  function procedureView(name, { includeText = false, state = readState() } = {}) {
+    const record2 = procedureRecord(state, name);
+    const file = readProcedure(name);
+    if (!record2 && !file) return null;
+    const usable = file && !("error" in file) ? file : null;
+    const present2 = Boolean(usable && record2 && usable.sha256 === record2.sha256);
+    return {
+      name,
+      version: record2?.version ?? null,
+      sha256: record2?.sha256 ?? null,
+      updatedAt: record2?.updatedAt ?? null,
+      present: present2,
+      pending: Boolean(usable && usable.sha256 !== record2?.sha256),
+      ...file && "error" in file ? { problem: file.error } : {},
+      ...includeText && present2 && usable ? { text: usable.text } : {}
+    };
+  }
+  function view(name, role, { includeProcedureText = false, state } = {}) {
+    return {
+      role: name,
+      roleAddress: `role:${name}`,
+      address: role.address,
+      assignedAt: role.assignedAt,
+      ...role.projects ? { projects: { ...role.projects } } : {},
+      procedure: procedureView(name, { includeText: includeProcedureText, ...state ? { state } : {} })
+    };
+  }
+  function list() {
+    const result = read();
+    const state = readState();
+    return {
+      roles: Object.keys(result.table.roles).sort().map((name) => view(name, result.table.roles[name], { state })),
+      problems: result.problems,
+      error: result.error,
+      path: result.path,
+      exists: result.exists,
+      table: result.table
+    };
+  }
+  function get(name, options = {}) {
+    const result = read();
+    assertUsable(result);
+    const role = result.table.roles[name];
+    return role ? view(name, role, options) : null;
+  }
+  function set({ role: name, address, procedureText = null, projectRoot = null }) {
+    if (!ROLE_NAME_PATTERN.test(name)) throw new TypeError(`invalid role name ${name}`);
+    if (!isAddress(address)) throw new TypeError(`invalid holder address ${address}`);
+    if (projectRoot !== null && !path11.isAbsolute(projectRoot)) throw new TypeError(`projectRoot must be absolute: ${projectRoot}`);
+    if (projectRoot !== null && name !== "orchestrator") throw new TypeError("only the orchestrator role is scoped by project root");
+    const root = projectRoot === null ? null : path11.resolve(projectRoot);
+    let previous = null;
+    update((raw, table) => {
+      const entry = isPlainObject3(raw.roles[name]) ? raw.roles[name] : {};
+      if (root !== null) {
+        previous = table.roles[name]?.projects?.[root] ?? null;
+        entry.projects = isPlainObject3(entry.projects) ? entry.projects : {};
+        entry.projects[root] = address;
+        raw.roles[name] = entry;
+        return;
+      }
+      const before = table.roles[name]?.address ?? null;
+      previous = typeof before === "string" ? before : null;
+      if (entry.address !== address || !isoOrNull(entry.assignedAt)) entry.assignedAt = iso2();
+      entry.address = address;
+      raw.roles[name] = entry;
+    });
+    if (typeof procedureText === "string") {
+      fs8.mkdirSync(proceduresDir(), { recursive: true, mode: DIR_MODE });
+      tightenMode(proceduresDir(), DIR_MODE);
+      const existing = fs8.lstatSync(procedureFile(name), { throwIfNoEntry: false });
+      if (existing && !existing.isFile()) {
+        throw new AgentLinkError("state_io_error", `The procedure file for ${name} is not a regular file; Agent Link will not replace it.`, {
+          details: { path: `roles/${name}.md`, errno: null }
+        });
+      }
+      writeFileAtomicSync(procedureFile(name), procedureText);
+    }
+    syncProcedure(name);
+    const result = read();
+    return { previousAddress: previous, role: view(name, result.table.roles[name]) };
+  }
+  function clear(name, { projectRoot = null } = {}) {
+    let previous = null;
+    let existed = false;
+    const root = projectRoot === null ? null : path11.resolve(projectRoot);
+    update((raw, table) => {
+      if (!table.roles[name] || !isPlainObject3(raw.roles[name])) return;
+      existed = true;
+      if (root !== null) {
+        previous = table.roles[name].projects?.[root] ?? null;
+        if (isPlainObject3(raw.roles[name].projects)) {
+          for (const key of Object.keys(raw.roles[name].projects)) {
+            if (path11.isAbsolute(key) && path11.resolve(key) === root) delete raw.roles[name].projects[key];
+          }
+          if (Object.keys(raw.roles[name].projects).length === 0) delete raw.roles[name].projects;
+        }
+        return;
+      }
+      const before = table.roles[name].address;
+      previous = typeof before === "string" ? before : null;
+      delete raw.roles[name].address;
+      delete raw.roles[name].assignedAt;
+    });
+    const result = read();
+    const role = result.table.roles[name];
+    return { existed, previousAddress: previous, role: role ? view(name, role) : null };
+  }
+  function setPolicy(target, settings) {
+    let entry = null;
+    update((raw) => {
+      const next = isPlainObject3(raw.overridePolicy[target]) ? { ...raw.overridePolicy[target] } : {};
+      for (const setting of POLICY_SETTINGS) {
+        const senders = settings[
+          /** @type {"model" | "effort" | "cwd"} */
+          setting
+        ];
+        if (senders === void 0) continue;
+        next[setting] = [...new Set(senders)];
+      }
+      const empty = Object.values(next).every((senders) => !Array.isArray(senders) || senders.length === 0);
+      if (empty) delete raw.overridePolicy[target];
+      else raw.overridePolicy[target] = next;
+      entry = empty ? null : next;
+    });
+    return entry;
+  }
+  function rolesOf(address, table = read().table) {
+    return Object.entries(table.roles).filter(([, role]) => role.address === address || Array.isArray(role.address) && role.address.includes(address) || Object.values(role.projects ?? {}).includes(address)).map(([name]) => name).sort();
+  }
+  function holdings(address, table = read().table) {
+    const roles = Object.entries(table.roles).filter(([, role]) => role.address === address || Array.isArray(role.address) && role.address.includes(address)).map(([name]) => name).sort();
+    const projectRoots = Object.values(table.roles).flatMap((role) => Object.entries(role.projects ?? {}).filter(([, holder]) => holder === address).map(([root]) => root)).sort();
+    return { roles, projectRoots };
+  }
+  function resolve(roleAddress, { includeProcedureText = true, sync = true } = {}) {
+    const name = parseRoleAddress(roleAddress);
+    if (!name) {
+      throw new AgentLinkError("invalid_arguments", `${JSON.stringify(String(roleAddress).slice(0, 60))} is not a role address; use role:<name> with 1 to 40 lowercase letters, digits, or hyphens.`, {
+        details: { errors: [{ path: "role", rule: "pattern", expected: "role:[a-z0-9-]{1,40}" }] }
+      });
+    }
+    const result = read();
+    assertUsable(result);
+    const role = result.table.roles[name];
+    if (!role || !role.address) {
+      throw new AgentLinkError("not_found", `No session holds role ${name}.`, {
+        details: { role: name, query: `role:${name}`, candidates: [] },
+        hint: "Ask the user to assign it (set_agent_role), or call list_agent_roles."
+      });
+    }
+    if (Array.isArray(role.address)) {
+      throw new AgentLinkError("ambiguous", `Role ${name} lists ${role.address.length} holders in roles.json.`, {
+        details: { role: name, query: `role:${name}`, candidates: role.address.map((address) => ({ address })) },
+        hint: "A role has one holder. Ask the user to fix roles.json or reassign the role with set_agent_role."
+      });
+    }
+    if (sync) syncProcedure(name);
+    const procedure = procedureView(name, { includeText: includeProcedureText });
+    return {
+      role: name,
+      via: `role:${name}`,
+      address: role.address,
+      procedure: procedure && procedure.present && procedure.version !== null && procedure.sha256 !== null ? { name, version: procedure.version, sha256: procedure.sha256, ...procedure.text !== void 0 ? { text: procedure.text } : {} } : null,
+      // Why a procedure file exists but is not delivered (symlink, FIFO,
+      // over 64 KiB), so the send can say so.
+      procedureProblem: procedure?.problem ?? null
+    };
+  }
+  function claimProcedureDelivery({ role, sha256: hash, address }) {
+    return updateState((state) => {
+      const seen = isPlainObject3(state.deliveries[role]) ? state.deliveries[role] : {};
+      if (seen[address] === hash) return false;
+      state.deliveries[role] = { ...seen, [address]: hash };
+      return true;
+    });
+  }
+  function releaseProcedureDelivery({ role, sha256: hash, address }) {
+    try {
+      updateState((state) => {
+        if (state.deliveries[role]?.[address] === hash) delete state.deliveries[role][address];
+      });
+    } catch {
+    }
+  }
+  function enforcement(tableRead = read()) {
+    const ignored = [];
+    const fromEnv = env("AGENT_LINK_ROLE_ENFORCEMENT", env2).value?.trim().toLowerCase();
+    if (fromEnv) {
+      if (ENFORCEMENT_MODES.includes(fromEnv)) return { mode: fromEnv, source: "AGENT_LINK_ROLE_ENFORCEMENT", ignored };
+      ignored.push({ source: "AGENT_LINK_ROLE_ENFORCEMENT", reason: `not one of ${ENFORCEMENT_MODES.join(", ")}` });
+    }
+    if (tableRead.error) ignored.push({ source: "roles.json", reason: "unreadable; enforcement falls back to the default (fails open)" });
+    if (tableRead.table.enforcement) return { mode: tableRead.table.enforcement, source: "roles.json", ignored };
+    return { mode: DEFAULT_ENFORCEMENT, source: "default", ignored };
+  }
+  return {
+    read,
+    list,
+    get,
+    set,
+    clear,
+    setPolicy,
+    rolesOf,
+    holdings,
+    resolve,
+    claimProcedureDelivery,
+    releaseProcedureDelivery,
+    enforcement,
+    paths: { table: tablePath, procedures: proceduresDir, procedureFile, state: statePath }
+  };
+}
+function procedureProblemWarning(role) {
+  if (!role?.procedureProblem) return null;
+  return {
+    code: "role_procedure_unavailable",
+    message: `The procedure for role ${role.role} was not sent: ${role.procedureProblem}. Ask the user to fix roles/${role.role}.md.`,
+    details: { role: role.role, problem: role.procedureProblem }
+  };
+}
+
+// src/delivery/override-policy.js
+var OVERRIDE_FIELDS2 = Object.freeze({
+  cwd: "cwd",
+  model: "model",
+  modelProvider: "model",
+  serviceTier: "model",
+  effort: "effort"
+});
+var FIELD_ORDER = (
+  /** @type {const} */
+  ["cwd", "model", "modelProvider", "serviceTier", "effort"]
+);
+var DENIAL_REASONS = Object.freeze({
+  model: "model_switch_requires_fork_or_opt_in",
+  effort: "effort_not_permitted",
+  cwd: "cwd_change_not_permitted"
+});
+var SWITCH_KINDS = Object.freeze({
+  model: "model-switch",
+  effort: "effort-change",
+  cwd: "cwd-change"
+});
+var CWD_EXPECTED_COST = Object.freeze({ uncachedInputTokens: 0, basis: "cache-neutral" });
+var ALLOW_TARGET_OVERRIDE_GRANTS_UNTIL = "0.7.0";
+var ALLOW_TARGET_OVERRIDE_REMOVAL = "0.8.0";
+function policyAllows(policy, setting, { senderAddress, senderRoles, targetAddress, targetRoles }) {
+  if (!isAddress(senderAddress)) return null;
+  const keys = [targetAddress, ...targetRoles.map((role) => `role:${role}`)];
+  for (const key of keys) {
+    const senders = policy?.[key]?.[setting];
+    if (!Array.isArray(senders)) continue;
+    for (const sender of senders) {
+      if (sender === "*" && senderAddress !== EXTERNAL_ADDRESS) return { key, sender };
+      if (sender === senderAddress) return { key, sender };
+      const role = parseRoleAddress(sender);
+      if (role && senderRoles.includes(role)) return { key, sender };
+    }
+  }
+  return null;
+}
+function resolveRealPath(target) {
+  let current = path12.resolve(target);
+  const rest = [];
+  for (; ; ) {
+    try {
+      return path12.join(fs9.realpathSync(current), ...rest.reverse());
+    } catch {
+      const parent = path12.dirname(current);
+      if (parent === current) return path12.resolve(target);
+      rest.push(path12.basename(current));
+      current = parent;
+    }
+  }
+}
+function workspaceRoot(cwd) {
+  const start = resolveRealPath(cwd);
+  let dir = start;
+  for (; ; ) {
+    if (fs9.existsSync(path12.join(dir, ".git"))) return dir;
+    const parent = path12.dirname(dir);
+    if (parent === dir) return start;
+    dir = parent;
+  }
+}
+function isWithinWorkspace(candidate, root) {
+  const relative = path12.relative(root, resolveRealPath(candidate));
+  return relative === "" || !relative.startsWith("..") && !path12.isAbsolute(relative);
+}
+function sameDirectory(a, b) {
+  return resolveRealPath(a) === resolveRealPath(b);
+}
+var text = (value) => typeof value === "string" ? value.trim() : "";
+function ownValue(thread, field) {
+  if (field === "effort") return text(thread?.reasoningEffort ?? thread?.effort);
+  return text(thread?.[field]);
+}
+function decideTargetOverrides({ thread, args, steering = false, parties, policy, launcher = null, expectedCost = { uncachedInputTokens: null, basis: "unknown" } }) {
+  const forward = {};
+  const switches = [];
+  const warnings = [];
+  const conflicts = [];
+  let workspace = null;
+  const flagged = args.allowTargetOverride === true;
+  if (flagged) {
+    warnings.push({
+      code: "deprecated_argument",
+      message: `allowTargetOverride is deprecated and stops granting overrides in ${ALLOW_TARGET_OVERRIDE_GRANTS_UNTIL} (it is rejected from ${ALLOW_TARGET_OVERRIDE_REMOVAL}). Instead: launch a new thread (later: fork it) for a different model, ask the thread's launcher to change effort, or ask the user for an override policy (set_agent_override_policy).`,
+      replacement: "a new thread or fork for model; the launcher for effort; set_agent_override_policy otherwise"
+    });
+  }
+  for (const field of FIELD_ORDER) {
+    const requested = text(args[field]);
+    if (!requested) continue;
+    if (field === "cwd" && !path12.isAbsolute(requested)) {
+      throw new AgentLinkError("invalid_arguments", "cwd must be an absolute path.", {
+        details: { errors: [{ path: "cwd", rule: "absolute", expected: "an absolute directory path" }] }
+      });
+    }
+    const setting = (
+      /** @type {"model" | "effort" | "cwd"} */
+      OVERRIDE_FIELDS2[field]
+    );
+    const own = ownValue(thread, field);
+    if (own && (field === "cwd" ? sameDirectory(own, requested) : own === requested)) {
+      forward[field] = requested;
+      continue;
+    }
+    if (steering) {
+      warnings.push(own ? { code: "target-override-ignored-steer", severity: "warning", field, requested, threadValue: own, message: `Steering an active turn does not change ${field}; the requested value was ignored.` } : unverifiedWarning(field, requested));
+      continue;
+    }
+    if (field === "cwd") {
+      workspace = own ? workspaceRoot(own) : null;
+      if (own && workspace && !isWithinWorkspace(requested, workspace)) {
+        conflicts.push({ field, requested, threadValue: own, reason: "cwd_outside_workspace" });
+        continue;
+      }
+    }
+    let grantedBy = null;
+    let match = null;
+    if (setting === "effort" && isAddress(launcher) && launcher === parties.senderAddress) {
+      grantedBy = "launcher";
+    } else {
+      match = policyAllows(policy, setting, parties);
+      if (match) grantedBy = "policy";
+      else if (flagged) grantedBy = "allowTargetOverride";
+    }
+    if (field === "cwd" && grantedBy && !own) {
+      conflicts.push({ field, requested, threadValue: null, reason: "cwd_outside_workspace" });
+      continue;
+    }
+    if (!grantedBy) {
+      if (!own) {
+        warnings.push(unverifiedWarning(field, requested));
+        continue;
+      }
+      conflicts.push({ field, requested, threadValue: own, reason: DENIAL_REASONS[setting] });
+      continue;
+    }
+    forward[field] = requested;
+    switches.push({
+      field,
+      setting,
+      kind: SWITCH_KINDS[setting],
+      previous: own || null,
+      current: requested,
+      grantedBy,
+      policy: match,
+      // B7 spike (R9.12): an effort change loses the conversation cache like
+      // a model switch, so it reports the same expected cost (R9.3 fallback);
+      // a cwd change is cache-neutral.
+      expectedCost: setting === "cwd" ? CWD_EXPECTED_COST : expectedCost
+    });
+  }
+  if (conflicts.length > 0) {
+    const first = conflicts.find((conflict) => conflict.reason === "cwd_outside_workspace") ?? conflicts[0];
+    return {
+      forward,
+      switches,
+      warnings,
+      denied: {
+        reason: first.reason,
+        conflicts: conflicts.map(({ field, requested, threadValue }) => ({ field, requested, threadValue })),
+        ...first.reason === "cwd_outside_workspace" ? { workspace } : {}
+      }
+    };
+  }
+  return { forward, switches, warnings, denied: null };
+}
+function unverifiedWarning(field, requested) {
+  return {
+    code: "target-override-unverified",
+    severity: "warning",
+    field,
+    requested,
+    message: `The app-server does not report this thread's ${field}, so the requested value was not applied. Changing it needs the thread's launcher (effort) or the target's override policy.`
+  };
+}
+var DENIAL_HINTS = Object.freeze({
+  model_switch_requires_fork_or_opt_in: "An existing thread keeps its model. Launch a new thread with the model you want, or ask the user to allow you in the target's override policy (set_agent_override_policy). A model switch persists and the next turn re-reads the whole thread uncached.",
+  effort_not_permitted: "Only the thread's launcher may change its effort, unless the target's override policy allows you (set_agent_override_policy, by the user).",
+  cwd_change_not_permitted: "Changing an existing thread's cwd needs the target's override policy (set_agent_override_policy, by the user). Omit cwd to run in the thread's own directory.",
+  cwd_outside_workspace: "A thread's cwd can only move inside its workspace (the git top level of its current cwd, or that cwd outside a repository), after symlinks are resolved."
+});
+function overrideDeniedError(denied, threadId) {
+  const fields = denied.conflicts.map((conflict) => conflict.field).join(", ");
+  return new AgentLinkError("permission_denied", `Refusing to change ${fields} of existing thread ${threadId} (${denied.reason}).`, {
+    details: { reason: denied.reason, conflicts: denied.conflicts, ...denied.workspace !== void 0 ? { workspace: denied.workspace } : {} },
+    hint: DENIAL_HINTS[
+      /** @type {keyof typeof DENIAL_HINTS} */
+      denied.reason
+    ] ?? "Omit cwd/model/effort to run the turn with the thread's own settings."
+  });
+}
+function assertNoClaudeOverrides(args, address) {
+  const given = FIELD_ORDER.filter((field) => text(args[field]));
+  if (given.length === 0) return;
+  throw new AgentLinkError("unsupported", `Claude sessions accept no turn overrides (${given.join(", ")}); ${address} is a Claude session.`, {
+    details: { capability: "turn_overrides", fields: given, address },
+    hint: "Omit cwd, model, effort, modelProvider, and serviceTier when messaging a Claude session."
+  });
 }
 
 // src/delivery/message-status.js
@@ -24161,6 +26116,1305 @@ function explicitReplies(mb, messageId, from, to) {
   const fromSet = new Set(from);
   const toSet = new Set(to);
   return mb.inspect({ replyToMessageId: messageId, limit: Number.MAX_SAFE_INTEGER }).filter((m) => fromSet.has(m.from_session_id) && toSet.has(m.to_session_id)).sort((a, b) => a.sent_at - b.sent_at);
+}
+
+// src/shared/receipt-index.js
+import { randomUUID } from "node:crypto";
+import { promises as fs10 } from "node:fs";
+import path13 from "node:path";
+
+// src/shared/caller-context.js
+var MAX_TEXT = 300;
+var MAX_META_KEYS = 50;
+var NAMESPACES = [null, "openai/codex", "codex", "claudecode"];
+var FIELD_SPECS = {
+  threadId: [
+    ["callerThreadId"],
+    ["caller", "thread", "id"],
+    ["threadId"],
+    ["thread_id"],
+    ["codexThreadId"],
+    ["thread", "id"],
+    ["originThreadId"]
+  ],
+  turnId: [
+    ["callerTurnId"],
+    ["caller", "turn", "id"],
+    ["turnId"],
+    ["turn_id"],
+    ["codexTurnId"],
+    ["turn", "id"],
+    ["originTurnId"]
+  ],
+  toolCallId: [
+    ["callerToolCallId"],
+    ["caller", "toolCall", "id"],
+    ["toolCallId"],
+    ["tool_call_id"],
+    ["claudecode/toolUseId"],
+    ["toolUseId"],
+    ["tool_use_id"],
+    ["originToolCallId"]
+  ]
+};
+function callerContextContract() {
+  return {
+    purpose: "Automatically attach caller thread/turn/tool-call provenance to Agent Link receipts when Codex supplies it in MCP runtime metadata.",
+    precedence: [
+      "receipt.originThreadId / originTurnId / originToolCallId",
+      "MCP tools/call runtime metadata from request.params._meta or handler extra._meta",
+      "CODEX_THREAD_ID / CODEX_TURN_ID process environment",
+      "not_supplied"
+    ],
+    runtimeMetadataShape: {
+      accepted: [
+        "threadId (priority order): " + FIELD_SPECS.threadId.map((spec) => spec.join(".")).join(", "),
+        "turnId (priority order): " + FIELD_SPECS.turnId.map((spec) => spec.join(".")).join(", "),
+        "toolCallId (priority order): " + FIELD_SPECS.toolCallId.map((spec) => spec.join(".")).join(", "),
+        "each key is exact (case-sensitive) and read at the top of _meta or inside one of: " + NAMESPACES.filter(Boolean).join(", ")
+      ],
+      sources: [
+        "request.params._meta",
+        "handler extra._meta"
+      ]
+    }
+  };
+}
+function extractRuntimeCallerContext(request = {}, extra = {}) {
+  const requestMeta = request?.params?._meta;
+  const extraMeta = extra?._meta;
+  const metas = [
+    [requestMeta, "request.params._meta"],
+    [extraMeta, "handler.extra._meta"]
+  ];
+  const threadId = findField(metas, FIELD_SPECS.threadId);
+  const turnId = findField(metas, FIELD_SPECS.turnId);
+  const toolCallId = findField(metas, FIELD_SPECS.toolCallId);
+  return {
+    available: Boolean(threadId || turnId || toolCallId),
+    threadId: threadId?.value ?? null,
+    turnId: turnId?.value ?? null,
+    toolCallId: toolCallId?.value ?? null,
+    source: threadId?.source ?? turnId?.source ?? toolCallId?.source ?? "not_supplied",
+    sources: {
+      threadId: summarizeMatch(threadId),
+      turnId: summarizeMatch(turnId),
+      toolCallId: summarizeMatch(toolCallId)
+    },
+    requestId: cleanText(extra?.requestId, MAX_TEXT),
+    sessionId: cleanText(extra?.sessionId, MAX_TEXT),
+    metaKeys: {
+      requestParams: topLevelKeys(requestMeta),
+      extra: topLevelKeys(extraMeta)
+    }
+  };
+}
+function summarizeRuntimeCallerContext(context) {
+  const ctx = context ?? {};
+  return {
+    available: Boolean(ctx.available),
+    threadId: cleanText(ctx.threadId, MAX_TEXT),
+    turnId: cleanText(ctx.turnId, MAX_TEXT),
+    toolCallId: cleanText(ctx.toolCallId, MAX_TEXT),
+    source: ctx.source ?? "not_supplied",
+    sources: ctx.sources ?? {},
+    requestId: cleanText(ctx.requestId, MAX_TEXT),
+    sessionId: cleanText(ctx.sessionId, MAX_TEXT),
+    metaKeys: {
+      requestParams: Array.isArray(ctx.metaKeys?.requestParams) ? ctx.metaKeys.requestParams.slice(0, MAX_META_KEYS) : [],
+      extra: Array.isArray(ctx.metaKeys?.extra) ? ctx.metaKeys.extra.slice(0, MAX_META_KEYS) : []
+    }
+  };
+}
+function findField(metas, specs) {
+  for (const [meta2, source] of metas) {
+    if (!isPlainObject4(meta2)) continue;
+    for (const spec of specs) {
+      for (const namespace of NAMESPACES) {
+        const container = namespace === null ? meta2 : meta2[namespace];
+        if (!isPlainObject4(container)) continue;
+        const value = cleanText(readPath(container, spec), MAX_TEXT);
+        if (value) {
+          return {
+            value,
+            source,
+            path: [...namespace === null ? [] : [namespace], ...spec].join(".")
+          };
+        }
+      }
+    }
+  }
+  return null;
+}
+function readPath(container, spec) {
+  let node = container;
+  for (const key of spec) {
+    if (!isPlainObject4(node) || !Object.prototype.hasOwnProperty.call(node, key)) return null;
+    node = node[key];
+  }
+  return typeof node === "string" || typeof node === "number" ? node : null;
+}
+function isPlainObject4(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+function summarizeMatch(match) {
+  if (!match) {
+    return null;
+  }
+  return {
+    source: match.source,
+    path: match.path
+  };
+}
+function topLevelKeys(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return [];
+  }
+  return Object.keys(value).slice(0, MAX_META_KEYS);
+}
+function cleanText(value, max) {
+  if (value === null || value === void 0) {
+    return null;
+  }
+  const text2 = String(value).trim();
+  if (!text2) {
+    return null;
+  }
+  if (text2.length <= max) {
+    return text2;
+  }
+  return `${text2.slice(0, max - 3)}...`;
+}
+
+// src/shared/receipt-index.js
+var DEFAULT_ADDRESS_RESOLVER2 = {
+  targetAddress(target) {
+    if (!target || typeof target !== "object") return null;
+    if (typeof target.address === "string" && target.address) return parseAddress(target.address) ? target.address : null;
+    if (typeof target.threadId === "string" && target.threadId && target.kind !== "claude") return codexAddress(target.threadId);
+    if (typeof target.sessionId === "string" && target.sessionId) {
+      const address = canonicalAddress(target.sessionId, target.kind === "codex" ? "codex" : "claude");
+      return address.includes(":") ? address : null;
+    }
+    return null;
+  },
+  canonical: (address) => parseAddress(address) ? address : null,
+  aliases: (address) => [address]
+};
+var addressResolver2 = DEFAULT_ADDRESS_RESOLVER2;
+function setReceiptAddressResolver(resolver) {
+  addressResolver2 = resolver ?? DEFAULT_ADDRESS_RESOLVER2;
+}
+var RECEIPT_VERSION = 1;
+var DEFAULT_LIMIT = 20;
+var MAX_LIMIT = 500;
+var MAX_TEXT2 = 700;
+function receiptWritePath(options = {}) {
+  return options.path || receiptLogPath();
+}
+function receiptReadPaths(options = {}) {
+  const writePath = receiptWritePath(options);
+  if (options.path) return [writePath];
+  return [...legacyReceiptPaths(), writePath];
+}
+function receiptIndexSummary(options = {}) {
+  let paths;
+  try {
+    paths = { path: receiptWritePath(options), readPaths: receiptReadPaths(options) };
+  } catch (error2) {
+    paths = { path: null, readPaths: [], error: error2.message };
+  }
+  return {
+    ...paths,
+    format: "jsonl",
+    version: RECEIPT_VERSION,
+    note: "Agent Link writes local action receipts for launch, message, and archive operations so later agents can query provenance by target or origin thread. Origin fields come from caller-supplied receipt data, MCP runtime caller context, or environment fallback. Reads also merge the legacy log listed in readPaths; writes go only to path."
+  };
+}
+function normalizeReceiptInput(value = {}, options = {}) {
+  if (isNormalizedReceiptInput(value)) {
+    return value;
+  }
+  const input = isPlainObject5(value) ? value : {};
+  const runtimeCallerContext = summarizeRuntimeCallerContext(options.runtimeCallerContext);
+  const callerOriginThreadId = cleanText2(input.originThreadId, 160);
+  const callerOriginTurnId = cleanText2(input.originTurnId, 160);
+  const callerOriginToolCallId = cleanText2(input.originToolCallId, 160);
+  const runtimeOriginThreadId = cleanText2(runtimeCallerContext.threadId, 160);
+  const runtimeOriginTurnId = cleanText2(runtimeCallerContext.turnId, 160);
+  const runtimeOriginToolCallId = cleanText2(runtimeCallerContext.toolCallId, 160);
+  const canInferOrigin = envFlag("AGENT_LINK_INFER_RECEIPT_ORIGIN", true);
+  const inferredOriginThreadId = canInferOrigin ? cleanText2(env("CODEX_THREAD_ID").value, 160) : null;
+  const inferredOriginTurnId = canInferOrigin ? cleanText2(env("CODEX_TURN_ID").value, 160) : null;
+  const originThread = firstOriginValue([
+    ["caller_supplied", callerOriginThreadId],
+    ["runtime_context", runtimeOriginThreadId],
+    ["environment", inferredOriginThreadId]
+  ]);
+  const originTurn = firstOriginValue([
+    ["caller_supplied", callerOriginTurnId],
+    ["runtime_context", runtimeOriginTurnId],
+    ["environment", inferredOriginTurnId]
+  ]);
+  const originToolCall = firstOriginValue([
+    ["caller_supplied", callerOriginToolCallId],
+    ["runtime_context", runtimeOriginToolCallId]
+  ]);
+  const originSources = {
+    threadId: originThread.source,
+    turnId: originTurn.source,
+    toolCallId: originToolCall.source
+  };
+  return {
+    record: input.record !== false,
+    purpose: cleanText2(input.purpose, 160),
+    originThreadId: originThread.value,
+    originTurnId: originTurn.value,
+    originToolCallId: originToolCall.value,
+    originSource: summarizeOriginSource(originSources),
+    originSources,
+    runtimeCallerContext,
+    cleanupRecommendation: normalizeCleanupRecommendation(input.cleanupRecommendation),
+    note: cleanText2(input.note, MAX_TEXT2),
+    tags: cleanTags(input.tags)
+  };
+}
+function buildReceipt({
+  action,
+  receipt,
+  target,
+  message,
+  finalResponse,
+  delivery,
+  replyConfirmation,
+  evidence,
+  runtimeCallerContext,
+  appServer,
+  host,
+  resolution = null
+}) {
+  const input = normalizeReceiptInput(receipt, { runtimeCallerContext });
+  const createdAt = (/* @__PURE__ */ new Date()).toISOString();
+  return {
+    version: RECEIPT_VERSION,
+    id: `agent-link-receipt-${createdAt.replace(/[:.]/g, "-")}-${randomUUID()}`,
+    createdAt,
+    action,
+    host: cleanText2(host, 40),
+    purpose: input.purpose,
+    cleanupRecommendation: input.cleanupRecommendation,
+    tags: input.tags,
+    origin: {
+      threadId: input.originThreadId,
+      turnId: input.originTurnId,
+      toolCallId: input.originToolCallId,
+      note: input.note,
+      source: input.originSource,
+      sources: input.originSources,
+      runtime: input.runtimeCallerContext
+    },
+    target: {
+      // The canonical address (design doc section 1.3); the legacy id
+      // fields below stay.
+      address: cleanText2(target?.address, 200) ?? addressResolver2.targetAddress(target),
+      threadId: cleanText2(target?.threadId, 160),
+      turnId: cleanText2(target?.turnId, 160),
+      name: cleanText2(target?.name, 200),
+      cwd: cleanText2(target?.cwd, 1e3),
+      archiveState: target?.archiveState ?? null,
+      status: target?.status ?? null,
+      deepLink: cleanText2(target?.deepLink, 300),
+      sessionId: cleanText2(target?.sessionId, 160),
+      loaded: typeof target?.loaded === "boolean" ? target.loaded : null,
+      kind: cleanText2(target?.kind, 40)
+    },
+    messagePreview: cleanText2(message, MAX_TEXT2),
+    finalResponse: cleanText2(finalResponse, MAX_TEXT2),
+    delivery: delivery ?? null,
+    evidence: summarizeEvidence(evidence),
+    replyConfirmation: summarizeReplyConfirmation(replyConfirmation),
+    appServer: summarizeAppServer(appServer),
+    // Design R7.12 / R7.17: a resolution, or an observed transition to
+    // unresolved or expired. Omitted from every other receipt.
+    ...resolution ? { resolution: summarizeResolution(resolution) } : {}
+  };
+}
+function summarizeResolution(resolution) {
+  return {
+    kind: resolution.kind === "status" ? "status" : "resolution",
+    messageId: cleanText2(resolution.messageId, 80),
+    resolution: cleanText2(resolution.resolution, 20),
+    status: cleanText2(resolution.status, 20),
+    by: cleanText2(resolution.by, 200),
+    at: cleanText2(resolution.at, 40),
+    late: resolution.late === true
+  };
+}
+async function tightenFileMode(target, mode) {
+  try {
+    const stat = await fs10.stat(target);
+    const uid = typeof process.getuid === "function" ? process.getuid() : null;
+    if (uid !== null && stat.uid !== uid) return;
+    if ((stat.mode & 511 & ~mode) !== 0) await fs10.chmod(target, mode);
+  } catch {
+  }
+}
+async function appendReceipt(receipt, options = {}) {
+  const logPath = receiptWritePath(options);
+  if (path13.resolve(path13.dirname(logPath)) === path13.resolve(stateDir())) ensureStateDir();
+  await appendJsonl(logPath, receipt);
+  await tightenFileMode(logPath, 384);
+  return {
+    ok: true,
+    id: receipt.id,
+    path: logPath,
+    receipt: receiptSummary(receipt)
+  };
+}
+async function safeAppendReceipt(receipt, options = {}) {
+  try {
+    return await appendReceipt(receipt, options);
+  } catch (error2) {
+    return {
+      ok: false,
+      id: receipt.id,
+      path: safeWritePath(options),
+      error: error2.message,
+      receipt: receiptSummary(receipt)
+    };
+  }
+}
+function safeWritePath(options) {
+  try {
+    return receiptWritePath(options);
+  } catch {
+    return null;
+  }
+}
+async function readReceiptFile(file) {
+  try {
+    return parseJsonlLines(await fs10.readFile(file, "utf8"));
+  } catch (error2) {
+    if (error2.code === "ENOENT") return [];
+    throw error2;
+  }
+}
+async function listReceipts(options = {}) {
+  const logPath = receiptWritePath(options);
+  const readPaths = receiptReadPaths(options);
+  const limit2 = clampInt(options.limit ?? DEFAULT_LIMIT, 1, MAX_LIMIT);
+  const filters = {
+    targetThreadId: cleanText2(options.targetThreadId, 160),
+    originThreadId: cleanText2(options.originThreadId, 160),
+    action: cleanText2(options.action, 80),
+    targetKind: cleanText2(options.targetKind, 40),
+    host: cleanText2(options.host, 40),
+    targetSessionId: cleanText2(options.targetSessionId, 160),
+    kind: cleanText2(options.kind, 40),
+    targetAddress: targetAddressFilter(options),
+    searchTerm: normalizeSearch2(options.searchTerm)
+  };
+  const seen = /* @__PURE__ */ new Set();
+  const receipts = [];
+  for (const file of readPaths) {
+    for (const receipt of await readReceiptFile(file)) {
+      const id = typeof receipt?.id === "string" ? receipt.id : null;
+      if (id && seen.has(id)) continue;
+      if (id) seen.add(id);
+      receipts.push(receipt);
+    }
+  }
+  const data = receipts.filter((receipt) => receiptMatches(receipt, filters)).sort((a, b) => Date.parse(b.createdAt ?? 0) - Date.parse(a.createdAt ?? 0)).slice(0, limit2).map(receiptSummary);
+  return {
+    ok: true,
+    path: logPath,
+    data,
+    scannedReceipts: receipts.length,
+    filters
+  };
+}
+function targetAddressFilter(options) {
+  for (const value of [options.target, options.targetThreadId, options.targetSessionId]) {
+    const parsed = parseAddress(typeof value === "string" ? value.trim() : value);
+    if (parsed) return addressResolver2.canonical(parsed.address) ?? parsed.address;
+  }
+  return null;
+}
+function targetMatchesAddress(target, address) {
+  if (!target) return false;
+  if (addressResolver2.targetAddress(target) === address) return true;
+  const aliases = new Set(addressResolver2.aliases(address));
+  return [target.address, target.sessionId, target.threadId].some((id) => typeof id === "string" && aliases.has(id));
+}
+function withTargetAddress(target) {
+  const { address: _stored, ...rest } = target;
+  return { address: addressResolver2.targetAddress(target), ...rest };
+}
+function receiptSummary(receipt) {
+  return {
+    id: receipt.id,
+    createdAt: receipt.createdAt,
+    action: receipt.action,
+    host: receipt.host ?? null,
+    purpose: receipt.purpose ?? null,
+    cleanupRecommendation: receipt.cleanupRecommendation ?? "unspecified",
+    tags: Array.isArray(receipt.tags) ? receipt.tags : [],
+    origin: receipt.origin ?? null,
+    target: receipt.target ? withTargetAddress(receipt.target) : null,
+    messagePreview: receipt.messagePreview ?? null,
+    finalResponse: receipt.finalResponse ?? null,
+    delivery: receipt.delivery ?? null,
+    evidence: receipt.evidence ?? null,
+    replyConfirmation: receipt.replyConfirmation ?? null,
+    // Resolution and status receipts (design R7.12, R7.17) only.
+    ...receipt.resolution ? { resolution: receipt.resolution } : {},
+    // Role and override fields (PR B9), present only on receipts that carry them.
+    ...receipt.launchedBy !== void 0 ? { launchedBy: receipt.launchedBy } : {},
+    ...receipt.via !== void 0 ? { via: receipt.via } : {},
+    ...receipt.roleProcedure !== void 0 ? { roleProcedure: receipt.roleProcedure } : {},
+    ...receipt.roleProcedureWarning !== void 0 ? { roleProcedureWarning: receipt.roleProcedureWarning } : {},
+    ...receipt.override !== void 0 ? { override: receipt.override } : {},
+    // Section 9 receipts (B7b): the kind, and the fork/reconcile links.
+    ...receiptKind(receipt) ? { kind: receiptKind(receipt) } : {},
+    ...Object.fromEntries(SECTION9_FIELDS.filter((field) => receipt[field] !== void 0).map((field) => [field, receipt[field]]))
+  };
+}
+function summarizeEvidence(evidence) {
+  if (!evidence) {
+    return null;
+  }
+  return evidence;
+}
+function summarizeReplyConfirmation(replyConfirmation) {
+  if (!replyConfirmation) {
+    return null;
+  }
+  return {
+    waited: replyConfirmation.waited ?? null,
+    ok: replyConfirmation.ok ?? null,
+    timedOut: replyConfirmation.timedOut ?? null,
+    turnStatus: replyConfirmation.turnStatus ?? null,
+    finalResponse: cleanText2(replyConfirmation.finalResponse, MAX_TEXT2),
+    finalResponseItem: replyConfirmation.finalResponseItem ?? null,
+    error: cleanText2(replyConfirmation.error, MAX_TEXT2),
+    unsupported: replyConfirmation.unsupported ?? null,
+    hint: cleanText2(replyConfirmation.hint, MAX_TEXT2)
+  };
+}
+function receiptMatches(receipt, filters) {
+  if (filters.targetAddress) {
+    if (!targetMatchesAddress(receipt.target, filters.targetAddress)) return false;
+  } else if (filters.targetThreadId && receipt.target?.threadId !== filters.targetThreadId) {
+    return false;
+  }
+  if (filters.originThreadId && receipt.origin?.threadId !== filters.originThreadId) {
+    return false;
+  }
+  if (filters.action && receipt.action !== filters.action) {
+    return false;
+  }
+  if (filters.kind && receiptKind(receipt) !== filters.kind) {
+    return false;
+  }
+  if (filters.targetKind && receipt.target?.kind !== filters.targetKind) {
+    return false;
+  }
+  if (filters.host && receipt.host !== filters.host) {
+    return false;
+  }
+  if (!filters.targetAddress && filters.targetSessionId && receipt.target?.sessionId !== filters.targetSessionId) {
+    return false;
+  }
+  if (filters.searchTerm && !receiptSearchText(receipt).includes(filters.searchTerm)) {
+    return false;
+  }
+  return true;
+}
+function receiptKind(receipt) {
+  return typeof receipt.kind === "string" ? receipt.kind : typeof receipt.override?.kind === "string" ? receipt.override.kind : null;
+}
+var SECTION9_FIELDS = ["forkJobId", "original", "fork", "forkedFromId", "lastTurnId", "model", "effort", "cwd", "compacted", "by", "status", "messageId", "from", "to", "archived", "deliveredVia", "tokenUsage"];
+function receiptSearchText(receipt) {
+  return normalizeSearch2([
+    receipt.id,
+    receipt.action,
+    receipt.purpose,
+    receipt.cleanupRecommendation,
+    receipt.messagePreview,
+    receipt.finalResponse,
+    receipt.evidence?.primaryStatus,
+    receipt.evidence?.interpretation,
+    receipt.evidence?.loadedThreadGuard?.status,
+    receipt.evidence?.loadedThreadGuard?.source,
+    receipt.evidence?.loadedThreadGuard?.note,
+    receipt.replyConfirmation?.finalResponse,
+    receipt.replyConfirmation?.error,
+    receipt.replyConfirmation?.hint,
+    receipt.origin?.source,
+    receipt.origin?.threadId,
+    receipt.origin?.turnId,
+    receipt.origin?.toolCallId,
+    receipt.origin?.note,
+    receipt.origin?.runtime?.requestId,
+    receipt.origin?.runtime?.sessionId,
+    receipt.origin?.runtime?.source,
+    receipt.target?.threadId,
+    receipt.target?.turnId,
+    receipt.target?.name,
+    receipt.target?.cwd,
+    ...receipt.tags ?? []
+  ].filter(Boolean).join("\n"));
+}
+function summarizeAppServer(appServer = {}) {
+  return {
+    kind: appServer.kind ?? null,
+    managed: appServer.managed ?? null,
+    connected: appServer.connected ?? null,
+    codexHome: appServer.codexHome ?? null,
+    platformOs: appServer.platformOs ?? null
+  };
+}
+function normalizeCleanupRecommendation(value) {
+  const text2 = cleanText2(value, 80);
+  return text2 || "unspecified";
+}
+function firstOriginValue(candidates) {
+  for (const [source, value] of candidates) {
+    if (value) {
+      return { source, value };
+    }
+  }
+  return { source: null, value: null };
+}
+function summarizeOriginSource(sources) {
+  const present2 = new Set(Object.values(sources).filter(Boolean));
+  if (present2.size === 0) {
+    return "not_supplied";
+  }
+  if (present2.size === 1) {
+    return [...present2][0];
+  }
+  return "mixed";
+}
+function cleanTags(tags) {
+  if (!Array.isArray(tags)) {
+    return [];
+  }
+  return tags.map((tag) => cleanText2(tag, 80)).filter(Boolean).slice(0, 20);
+}
+function cleanText2(value, max) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const text2 = value.trim();
+  if (!text2) {
+    return null;
+  }
+  if (text2.length <= max) {
+    return text2;
+  }
+  return `${text2.slice(0, max - 3)}...`;
+}
+function normalizeSearch2(value) {
+  return String(value ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+function isPlainObject5(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+function isNormalizedReceiptInput(value) {
+  return isPlainObject5(value) && "originSource" in value && isPlainObject5(value.originSources) && isPlainObject5(value.runtimeCallerContext);
+}
+
+// src/codex/fork.js
+var FORK_THREAD_SOURCE = "agent-link-fork";
+var FORK_TURN_TRIGGER = "agent-link-fork";
+var COMPACT_FORK_AUTO_FRACTION = 0.5;
+var COMPACT_FORK_MODES = Object.freeze(["auto", "always", "never"]);
+var DEFAULT_POLL_INTERVAL_MS = 1e3;
+var WATCH_MAX_CONSECUTIVE_ERRORS = 30;
+var COMPACTION_WAIT_MS = 10 * 6e4;
+var STALE_RECONCILE_MS = 6e4;
+var MAX_RECONCILE_CLAIMS = 5;
+async function queuedDelivery(_record) {
+  return { delivery: "queued" };
+}
+function decideForkCompaction({ mode = "auto", usage = null, sameModel = true, fraction = COMPACT_FORK_AUTO_FRACTION }) {
+  const inputTokens = Number.isFinite(usage?.inputTokens) ? (
+    /** @type {number} */
+    usage?.inputTokens
+  ) : null;
+  const modelContextWindow = Number.isFinite(usage?.modelContextWindow) ? (
+    /** @type {number} */
+    usage?.modelContextWindow
+  ) : null;
+  const base = { mode, threshold: fraction, inputTokens, modelContextWindow, windowBasis: sameModel ? "same-model" : "original-model" };
+  if (mode === "never") return { ...base, compact: false, reason: "never" };
+  if (mode === "always") return { ...base, compact: true, reason: "always" };
+  if (inputTokens === null || modelContextWindow === null || modelContextWindow <= 0) {
+    return { ...base, compact: false, reason: "usage_unknown" };
+  }
+  const over = inputTokens > fraction * modelContextWindow;
+  return { ...base, compact: over, reason: over ? "over_threshold" : "under_threshold" };
+}
+function reconcileBody({ status, text: text2 = null, error: error2 = null, forkAddress }) {
+  const body = status === "completed" ? typeof text2 === "string" && text2.trim() ? text2 : `The fork's task completed without a final response. Read it with get_codex_thread threadId="${forkAddress}".` : `The fork's task ${status}${error2 ? `: ${error2}` : "."} The fork ${forkAddress} is kept for inspection (get_codex_thread).`;
+  if (Buffer.byteLength(body, "utf8") <= MAX_PEER_BODY_BYTES) return body;
+  const note = `
+[Agent Link: the fork's response was cut at 64 KiB. Read the rest with get_codex_thread threadId="${forkAddress}".]`;
+  const room = MAX_PEER_BODY_BYTES - Buffer.byteLength(note, "utf8");
+  const cut = new TextDecoder("utf-8").decode(Buffer.from(body, "utf8").subarray(0, room)).replace(/�+$/, "");
+  return cut + note;
+}
+function finalResponseText(items) {
+  const messages = (items ?? []).filter((item) => ["agentMessage", "assistantMessage"].includes(item?.type) && typeof item.text === "string" && item.text.trim());
+  return (messages.find((item) => item.phase === "final_answer") ?? messages.at(-1))?.text ?? null;
+}
+function alreadyArchived(error2) {
+  return /no rollout found for thread id/i.test(error2 instanceof Error ? error2.message : String(error2));
+}
+function sleep3(ms) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.();
+  });
+}
+function messageOf(error2) {
+  return error2 instanceof Error ? error2.message : String(error2);
+}
+function makeForkJobs({
+  appServer,
+  host,
+  resolveCurrentSession = () => null,
+  queries,
+  messaging,
+  tokenUsage = null,
+  deliver = queuedDelivery,
+  store = createForkJobStore(),
+  openMailbox: openMailbox2 = () => openMailbox(),
+  listReceipts: listReceipts2 = listReceipts,
+  now = () => Date.now(),
+  wait = sleep3,
+  pollIntervalMs: pollIntervalMs2 = DEFAULT_POLL_INTERVAL_MS,
+  tokenUsageGraceMs = void 0
+}) {
+  const active = /* @__PURE__ */ new Map();
+  async function forkThread(args, toolContext = {}) {
+    const originalId = await resolveOriginal(args);
+    const message = requiredString(args.message, "message").trim();
+    if (!message) {
+      throw new AgentLinkError("invalid_arguments", "message must not be empty.", {
+        details: { errors: [{ path: "message", rule: "required", expected: "non-empty string" }] }
+      });
+    }
+    assertPeerBodyWithinLimit(message);
+    const compactFork = args.compactFork ?? "auto";
+    const reconcileArgs = args.reconcile ?? {};
+    const labels = resolveLabels({ anticipation: reconcileArgs.anticipation ?? "fyi", replyBy: reconcileArgs.replyBy, now: now() });
+    const archiveFork = args.archiveFork !== false;
+    const requested = {
+      model: optionalString(args.model).trim() || null,
+      modelProvider: optionalString(args.modelProvider).trim() || null,
+      serviceTier: optionalString(args.serviceTier).trim() || null,
+      effort: optionalString(args.effort).trim() || null,
+      cwd: optionalString(args.cwd).trim() || null
+    };
+    let read;
+    try {
+      read = await appServer.request("thread/read", { threadId: originalId, includeTurns: true });
+    } catch (error2) {
+      throw await queries.enrichThreadLookupError(error2, originalId);
+    }
+    const original = read.thread ?? {};
+    if (inferArchiveState(original).scope === "archived") {
+      throw new AgentLinkError("archived", `Thread ${originalId} is archived; fork_codex_thread forks active threads only.`, {
+        details: { threadId: originalId, address: codexAddress(originalId) }
+      });
+    }
+    const completed = (original.turns ?? []).filter((turn) => turn?.status === "completed" && typeof turn.id === "string");
+    const lastTurnId = optionalString(args.lastTurnId).trim() || completed.at(-1)?.id || null;
+    if (!lastTurnId || !completed.some((turn) => turn.id === lastTurnId)) {
+      throw new AgentLinkError("invalid_arguments", args.lastTurnId ? `lastTurnId ${lastTurnId} is not a completed turn of ${originalId}.` : `Thread ${originalId} has no completed turn to fork through.`, {
+        details: { errors: [{ path: "lastTurnId", rule: "completed_turn", expected: "the id of a completed turn of the original" }] },
+        hint: "A fork takes completed turns only. Wait for the original's turn to finish, or pass an earlier completed turn."
+      });
+    }
+    if (requested.cwd) assertForkCwd(requested.cwd, original.cwd, originalId);
+    const by = hostIdentity({ host, callerContext: toolContext.callerContext ?? null, currentSession: resolveCurrentSession }).address;
+    const caller = resolveCallerIdentity({ host, runtimeCallerContext: toolContext.callerContext ?? null, currentSession: resolveCurrentSession });
+    const originalAddress = (
+      /** @type {string} */
+      codexAddress(originalId)
+    );
+    const jobId = newPeerMessageId(now());
+    store.append("created", jobId, {
+      original: originalAddress,
+      by,
+      launchedBy: launcherAddress(by),
+      from: { id: caller.id, kind: caller.kind, source: caller.source },
+      lastTurnId,
+      request: { ...requested, compactFork, archiveFork, reconcile: { anticipation: labels.anticipation, replyBy: labels.replyBy } },
+      receipt: args.receipt ?? null
+    });
+    const warnings = [];
+    const forkParams = { threadId: originalId, lastTurnId, threadSource: FORK_THREAD_SOURCE, excludeTurns: true, ephemeral: false };
+    for (
+      const field of
+      /** @type {const} */
+      ["model", "modelProvider", "serviceTier", "cwd"]
+    ) {
+      if (requested[field]) forkParams[field] = requested[field];
+    }
+    let forkResponse;
+    try {
+      forkResponse = await appServer.request("thread/fork", forkParams);
+    } catch (error2) {
+      store.append("aborted", jobId, { error: messageOf(error2) });
+      throw error2;
+    }
+    const forkThreadId = forkResponse?.thread?.id;
+    if (typeof forkThreadId !== "string" || !forkThreadId) {
+      store.append("aborted", jobId, { error: "thread/fork returned no thread id" });
+      throw new AgentLinkError("upstream_error", "thread/fork returned no thread id.", { details: { method: "thread/fork" } });
+    }
+    const fork = {
+      threadId: forkThreadId,
+      address: (
+        /** @type {string} */
+        codexAddress(forkThreadId)
+      ),
+      forkedFromId: forkResponse.thread.forkedFromId ?? originalId,
+      model: forkResponse.model ?? forkResponse.thread.model ?? requested.model ?? null,
+      effort: requested.effort ?? forkResponse.reasoningEffort ?? null,
+      cwd: forkResponse.cwd ?? forkResponse.thread.cwd ?? requested.cwd ?? null
+    };
+    store.append("forked", jobId, { fork });
+    const forkMismatch = settingsMismatchWarning({
+      threadId: forkThreadId,
+      requested: { model: requested.model, cwd: requested.cwd },
+      applied: { model: forkResponse.model, cwd: forkResponse.cwd }
+    });
+    if (forkMismatch) warnings.push(forkMismatch);
+    const originalUsage = await lastRecordedUsage({ threadId: originalId, tracker: tokenUsage, listReceipts: listReceipts2 });
+    const compaction = decideForkCompaction({
+      mode: compactFork,
+      usage: originalUsage,
+      sameModel: !requested.model || requested.model === original.model
+    });
+    let compactionUsage = null;
+    let compacted = false;
+    if (compaction.compact) {
+      const seen = new Set((tokenUsage?.completedTurns(forkThreadId) ?? []).map((turn) => turn.turnId));
+      try {
+        await appServer.request("thread/compact/start", { threadId: forkThreadId });
+        const turn = await waitForCompaction(forkThreadId, seen);
+        compacted = true;
+        compactionUsage = turn && tokenUsage ? tokenUsage.compactionUsage(forkThreadId, turn.turnId) : null;
+        if (!compactionUsage && tokenUsage) warnings.push(tokenUsageUnavailableWarning({ threadId: forkThreadId, purpose: "the fork's compaction" }));
+      } catch (error2) {
+        warnings.push({ code: "fork_compaction_failed", severity: "warning", message: `Compacting the fork failed (${messageOf(error2)}); the task runs on the uncompacted fork.` });
+      }
+      store.append("compacted", jobId, { compacted, tokenUsage: compactionUsage });
+    }
+    const envelope = renderPeerEnvelope({
+      id: jobId,
+      from: caller.id,
+      fromHarness: caller.kind,
+      fromVerified: isRuntimeIdentitySource(caller.source),
+      to: forkThreadId,
+      toHarness: "codex",
+      sentAt: now(),
+      anticipation: "action",
+      body: message,
+      overrides: { cwd: requested.cwd, model: requested.model, modelProvider: requested.modelProvider, serviceTier: requested.serviceTier, effort: requested.effort },
+      reply: "fork"
+    });
+    const startParams = { threadId: forkThreadId, input: asUserTextInput(envelope), turnTrigger: FORK_TURN_TRIGGER, clientUserMessageId: jobId };
+    if (requested.effort) startParams.effort = requested.effort;
+    const runtime = { promise: (
+      /** @type {Promise<any> | null} */
+      null
+    ), waiting: args.waitForResult === true, settingsMark: tokenUsage?.mark() ?? 0 };
+    active.set(jobId, runtime);
+    let turnId = null;
+    try {
+      const started = await appServer.request("turn/start", startParams);
+      turnId = started?.turn?.id ?? started?.turnId ?? null;
+      store.append("turn-started", jobId, { turnId });
+    } catch (error2) {
+      store.append("failed", jobId, { turnId: null, error: `turn/start failed: ${messageOf(error2)}` });
+    }
+    runtime.promise = runJob(jobId, { warnings });
+    runtime.promise.catch((error2) => getLogger().warn("fork.job_failed", { jobId, message: messageOf(error2) }));
+    let finished = null;
+    if (runtime.waiting) {
+      const timeoutMs2 = Math.min(Math.max(Number(args.timeoutMs ?? LIMITS.timeoutMs.def), LIMITS.timeoutMs.min), LIMITS.timeoutMs.max);
+      finished = await Promise.race([runtime.promise.catch(() => null), sleep3(timeoutMs2).then(() => null)]);
+      runtime.waiting = false;
+      if (finished) active.delete(jobId);
+    }
+    const job = store.get(jobId);
+    const result = {
+      forkJobId: jobId,
+      status: finished?.status ?? (job ? forkJobStatus(job) : "running"),
+      original: { address: originalAddress, threadId: originalId },
+      fork,
+      lastTurnId,
+      turn: { id: turnId },
+      compaction: { ...compaction, compacted, tokenUsage: compactionUsage },
+      ...finished ? {
+        reconcile: finished.reconcile,
+        ...finished.output ? { output: finished.output } : {},
+        tokenUsage: { ...compaction.compact ? { compaction: compactionUsage } : {}, task: finished.taskUsage },
+        archived: finished.archived,
+        receipt: finished.receipt,
+        reconcileReceipt: finished.reconcileReceipt
+      } : {},
+      warnings: [...warnings, ...finished?.warnings ?? []]
+    };
+    return result;
+  }
+  async function resolveOriginal(args) {
+    const raw = optionalString(args.threadId).trim();
+    if (raw) {
+      const parsed = parseAddress(raw);
+      if (parsed?.harness === "claude" || raw.startsWith("claude:")) {
+        throw new AgentLinkError("unsupported", `${raw} is a Claude session; only Codex threads can be forked.`, {
+          details: { capability: "fork", address: raw },
+          hint: "Claude sessions have no fork. Message the session instead, or launch a Codex thread for the task."
+        });
+      }
+      if (raw.startsWith("role:")) {
+        throw new AgentLinkError("invalid_arguments", "fork_codex_thread takes a codex: address, a thread id, or a query; not a role.", {
+          details: { errors: [{ path: "threadId", rule: "format", expected: "codex:<id> or a thread id" }] }
+        });
+      }
+      return parsed ? parsed.id : raw;
+    }
+    const query = optionalString(args.query).trim();
+    if (!query) {
+      throw new AgentLinkError("invalid_arguments", "Pass threadId (the original thread) or query.", {
+        details: { errors: [{ path: "threadId", rule: "required", expected: "threadId or query" }] }
+      });
+    }
+    const resolved = await queries.resolveThread({ query, archiveScope: "active" });
+    if (!resolved.best) {
+      throw new AgentLinkError("not_found", `No Codex thread matches "${query}".`, { details: { query } });
+    }
+    if (resolved.selection?.ambiguous) {
+      throw new AgentLinkError("ambiguous", `Several Codex threads match "${query}" equally well.`, {
+        details: { query, candidates: resolved.selection.tiedCandidateIds ?? [] },
+        hint: "Pass threadId with the thread you mean."
+      });
+    }
+    return resolved.best.id;
+  }
+  function assertForkCwd(cwd, originalCwd, originalId) {
+    if (!cwd.startsWith("/")) {
+      throw new AgentLinkError("invalid_arguments", "cwd must be an absolute path.", {
+        details: { errors: [{ path: "cwd", rule: "absolute", expected: "an absolute directory path" }] }
+      });
+    }
+    const own = typeof originalCwd === "string" && originalCwd ? originalCwd : null;
+    const workspace = own ? workspaceRoot(own) : null;
+    if (!workspace || !isWithinWorkspace(cwd, workspace)) {
+      throw new AgentLinkError("permission_denied", `Refusing a fork cwd outside the workspace of ${originalId} (cwd_outside_workspace).`, {
+        details: { reason: "cwd_outside_workspace", conflicts: [{ field: "cwd", requested: cwd, threadValue: own }], workspace },
+        hint: "A fork's cwd must stay inside the original's workspace (the git top level of its cwd, or that cwd outside a repository), after symlinks are resolved."
+      });
+    }
+  }
+  async function waitForCompaction(threadId, seen) {
+    const deadline = now() + COMPACTION_WAIT_MS;
+    let sawActive = false;
+    while (now() < deadline) {
+      const done = tokenUsage?.completedTurns(threadId).find((turn) => !seen.has(turn.turnId));
+      if (done) return done;
+      const read = await appServer.request("thread/read", { threadId, includeTurns: false });
+      const active2 = read?.thread?.status?.type === "active";
+      if (!tokenUsage && sawActive && !active2) return null;
+      sawActive = sawActive || active2;
+      await wait(pollIntervalMs2);
+    }
+    throw new Error("compaction did not finish in time");
+  }
+  async function observeTurn(forkThreadId, turnId) {
+    const notified = tokenUsage?.completedTurns(forkThreadId).find((t) => t.turnId === turnId) ?? null;
+    let turn = notified ? { id: turnId, status: notified.status, items: notified.items, error: notified.error } : null;
+    if (!turn || !finalResponseText(turn.items) && turn.status === "completed") {
+      const read = await appServer.request("thread/read", { threadId: forkThreadId, includeTurns: true });
+      turn = (read?.thread?.turns ?? []).find((t) => t?.id === turnId) ?? turn;
+    }
+    if (!turn || !["completed", "failed", "interrupted"].includes(turn.status)) return null;
+    const error2 = typeof turn.error?.message === "string" ? turn.error.message : typeof turn.error === "string" ? turn.error : null;
+    return { status: (
+      /** @type {"completed" | "failed" | "interrupted"} */
+      turn.status
+    ), text: finalResponseText(turn.items), error: error2 };
+  }
+  async function runJob(jobId, { warnings = [] } = {}) {
+    try {
+      let errors = 0;
+      for (; ; ) {
+        const job = store.get(jobId);
+        if (!job) return null;
+        if (job.reconciled) return null;
+        if (job.outcome) return await finishJob(job, { status: (
+          /** @type {any} */
+          job.outcome.type
+        ), text: null, error: job.outcome.error ?? null }, warnings);
+        const forkThreadId = job.forked?.fork?.threadId;
+        const turnId = job.turnStarted?.turnId;
+        if (!forkThreadId || !turnId) return null;
+        try {
+          const observed = await observeTurn(forkThreadId, turnId);
+          errors = 0;
+          if (observed) return await finishJob(job, observed, warnings);
+        } catch (error2) {
+          errors += 1;
+          if (errors >= WATCH_MAX_CONSECUTIVE_ERRORS) {
+            getLogger().warn("fork.watch_stopped", { jobId, message: messageOf(error2) });
+            return null;
+          }
+        }
+        await wait(pollIntervalMs2);
+      }
+    } finally {
+      const runtime = active.get(jobId);
+      if (runtime && !runtime.waiting) active.delete(jobId);
+    }
+  }
+  async function finishJob(job, observed, startWarnings = []) {
+    const forkInfo = job.forked?.fork ?? {};
+    const turnId = job.turnStarted?.turnId ?? null;
+    if (!job.outcome) store.append(observed.status, job.id, { turnId, ...observed.error ? { error: observed.error } : {} });
+    let outcome = observed;
+    if (observed.status === "completed" && observed.text === null && forkInfo.threadId && turnId) {
+      outcome = await observeTurn(forkInfo.threadId, turnId).catch(() => null) ?? observed;
+    }
+    const warnings = [...startWarnings];
+    let taskUsage = null;
+    if (tokenUsage && forkInfo.threadId && turnId) {
+      taskUsage = await tokenUsage.awaitTurnUsage(forkInfo.threadId, turnId, tokenUsageGraceMs === void 0 ? {} : { graceMs: tokenUsageGraceMs });
+      if (!taskUsage) warnings.push(tokenUsageUnavailableWarning({ threadId: forkInfo.threadId, turnId, purpose: "the fork's task" }));
+      const mismatch = settingsMismatchWarning({
+        threadId: forkInfo.threadId,
+        requested: { model: job.created?.request?.model, effort: job.created?.request?.effort, cwd: job.created?.request?.cwd },
+        applied: tokenUsage.settingsSince(forkInfo.threadId, active.get(job.id)?.settingsMark ?? 0)
+      });
+      if (mismatch) warnings.push(mismatch);
+    }
+    const reconciled = await reconcile(job, { ...outcome, taskUsage });
+    return { ...reconciled, status: outcome.status, taskUsage, warnings: [...warnings, ...reconciled.warnings ?? []] };
+  }
+  async function reconcile(job, outcome) {
+    const created = job.created ?? /** @type {any} */
+    {};
+    const forkInfo = job.forked?.fork ?? {};
+    const originalAddress = created.original;
+    const originalId = parseAddress(originalAddress)?.id ?? null;
+    if (!originalId || !forkInfo.threadId) return { reconcile: null, warnings: [] };
+    const mb = openMailbox2();
+    try {
+      const existing = findReconcileMessage(mb, originalId, job.id);
+      if (existing) return { reconcile: { messageId: existing.id, delivery: "already-reconciled" }, warnings: [] };
+      if (!claimReconcile(mb, job.id)) return { reconcile: { messageId: null, delivery: "claimed-elsewhere" }, warnings: [] };
+      const again = findReconcileMessage(mb, originalId, job.id);
+      if (again) return { reconcile: { messageId: again.id, delivery: "already-reconciled" }, warnings: [] };
+      const runtime = active.get(job.id);
+      const viaToolResult = runtime?.waiting === true && created.by === originalAddress;
+      const labels = created.request?.reconcile ?? {};
+      const body = reconcileBody({ status: outcome.status, text: outcome.text, error: outcome.error, forkAddress: forkInfo.address });
+      const messageId = mb.insertMessage({
+        fromSessionId: created.from?.id ?? EXTERNAL_ADDRESS,
+        fromSessionKind: created.from?.kind ?? "external",
+        toSessionId: originalId,
+        toSessionKind: "codex",
+        body,
+        metadata: {
+          sender: { source: created.from?.source ?? null },
+          fork: { jobId: job.id, thread: forkInfo.address, original: originalAddress, model: forkInfo.model ?? null, effort: forkInfo.effort ?? null, status: outcome.status },
+          ...viaToolResult ? { deliveredVia: "tool-result" } : {}
+        },
+        anticipation: labels.anticipation ?? "fyi",
+        replyBy: labels.replyBy ?? null
+      });
+      const row = mb.getMessage({ messageId });
+      const peer = row ? peerMessageFromMailbox(row) : null;
+      const warnings = [];
+      let delivery;
+      if (viaToolResult) {
+        mb.markDelivered({ messageId, to: originalAddress });
+        delivery = { delivery: "delivered", deliveredVia: "tool-result" };
+      } else {
+        try {
+          delivery = await deliver({ kind: "fork-reconcile", messageId, forkJobId: job.id, to: originalAddress, threadId: originalId, row, envelope: peer ? renderPeerEnvelope(peer) : null });
+        } catch (error2) {
+          delivery = { delivery: "queued" };
+          warnings.push({ code: "reconcile_push_failed", severity: "warning", message: `The reconcile message is queued; pushing it failed: ${messageOf(error2)}` });
+        }
+        if (Array.isArray(delivery?.warnings)) warnings.push(...delivery.warnings);
+      }
+      store.append("reconciled", job.id, { messageId, delivery: delivery.delivery, deliveredVia: delivery.deliveredVia ?? null });
+      let archived = false;
+      if (outcome.status === "completed" && created.request?.archiveFork !== false) {
+        try {
+          await appServer.request("thread/archive", { threadId: forkInfo.threadId });
+          archived = true;
+          store.append("archived", job.id, {});
+        } catch (error2) {
+          if (alreadyArchived(error2)) {
+            archived = true;
+            store.append("archived", job.id, { already: true });
+          } else warnings.push({ code: "fork_archive_failed", severity: "warning", message: `The fork ${forkInfo.address} was not archived: ${messageOf(error2)}` });
+        }
+      }
+      const links = { forkJobId: job.id, original: originalAddress, fork: forkInfo.address };
+      const receipt = await messaging.recordActionReceipt({
+        action: "fork_thread",
+        receipt: created.receipt ?? null,
+        target: { threadId: forkInfo.threadId, address: forkInfo.address, turnId: job.turnStarted?.turnId ?? null, cwd: forkInfo.cwd ?? null },
+        message: null,
+        appServer: appServer.getConnectionSummary(),
+        extra: {
+          kind: "fork",
+          ...links,
+          forkedFromId: forkInfo.forkedFromId ?? originalId,
+          lastTurnId: created.lastTurnId ?? null,
+          model: forkInfo.model ?? null,
+          effort: forkInfo.effort ?? null,
+          cwd: forkInfo.cwd ?? null,
+          compacted: job.compacted?.compacted === true,
+          by: created.by ?? null,
+          // R9.9: the caller launched the fork.
+          launchedBy: created.launchedBy ?? null,
+          status: outcome.status,
+          tokenUsage: { ...job.compacted ? { compaction: job.compacted.tokenUsage ?? null } : {}, task: outcome.taskUsage ?? null }
+        }
+      });
+      const reconcileReceipt = await messaging.recordActionReceipt({
+        action: "reconcile_fork",
+        receipt: created.receipt ?? null,
+        target: { threadId: originalId, address: originalAddress },
+        message: null,
+        delivery: { state: delivery.delivery, deliveredVia: delivery.deliveredVia ?? null, messageId },
+        appServer: appServer.getConnectionSummary(),
+        extra: {
+          kind: "reconcile",
+          ...links,
+          messageId,
+          from: peer ? peerMessageResult(peer, { includeEnvelope: false }).from : null,
+          to: originalAddress,
+          status: outcome.status,
+          archived,
+          deliveredVia: delivery.deliveredVia ?? null,
+          tokenUsage: { delivery: delivery.tokenUsage ?? null }
+        }
+      });
+      return {
+        reconcile: { messageId, delivery: delivery.delivery, ...delivery.deliveredVia ? { deliveredVia: delivery.deliveredVia } : {}, anticipation: labels.anticipation ?? "fyi" },
+        ...viaToolResult && peer ? { output: peerMessageResult(peer) } : {},
+        archived,
+        receipt,
+        reconcileReceipt,
+        warnings
+      };
+    } finally {
+      mb.close?.();
+    }
+  }
+  function findReconcileMessage(mb, originalId, jobId) {
+    const rows = mb.inspect({ toSessionId: originalId, limit: Number.MAX_SAFE_INTEGER });
+    return rows.find((row) => {
+      if (typeof row.metadata_json !== "string" || !row.metadata_json.includes(jobId)) return false;
+      try {
+        return JSON.parse(row.metadata_json)?.fork?.jobId === jobId;
+      } catch {
+        return false;
+      }
+    }) ?? null;
+  }
+  function claimReconcile(mb, jobId) {
+    for (let n = 1; n <= MAX_RECONCILE_CLAIMS; n += 1) {
+      const key = n === 1 ? `fork-reconcile-${jobId}` : `fork-reconcile-${jobId}.${n}`;
+      if (mb.claim(key, String(now()))) return true;
+      const takenAt = Number(mb.claimContent(key)) || mb.claimTakenAt(key) || 0;
+      if (now() - takenAt < STALE_RECONCILE_MS) return false;
+    }
+    return false;
+  }
+  async function sweep() {
+    const summary = { checked: 0, reconciled: 0, running: 0, errors: 0 };
+    let jobs;
+    try {
+      jobs = store.list();
+    } catch {
+      return summary;
+    }
+    for (const job of jobs) {
+      if (job.reconciled || job.aborted || !job.forked || active.has(job.id)) continue;
+      summary.checked += 1;
+      try {
+        if (job.outcome) {
+          const done = await finishJob(job, { status: (
+            /** @type {any} */
+            job.outcome.type
+          ), text: null, error: job.outcome.error ?? null });
+          if (done.reconcile?.messageId && done.reconcile.delivery !== "already-reconciled") summary.reconciled += 1;
+          continue;
+        }
+        const turnId = job.turnStarted?.turnId;
+        if (!turnId) continue;
+        const observed = await observeTurn(job.forked.fork.threadId, turnId);
+        if (observed) {
+          const done = await finishJob(job, observed);
+          if (done.reconcile?.messageId && done.reconcile.delivery !== "already-reconciled") summary.reconciled += 1;
+        } else {
+          summary.running += 1;
+          const runtime = { promise: (
+            /** @type {Promise<any> | null} */
+            null
+          ), waiting: false, settingsMark: tokenUsage?.mark() ?? 0 };
+          active.set(job.id, runtime);
+          runtime.promise = runJob(job.id);
+          runtime.promise.catch((error2) => getLogger().warn("fork.job_failed", { jobId: job.id, message: messageOf(error2) }));
+        }
+      } catch (error2) {
+        summary.errors += 1;
+        getLogger().warn("fork.sweep_failed", { jobId: job.id, message: messageOf(error2) });
+      }
+    }
+    return summary;
+  }
+  function settled() {
+    return Promise.all([...active.values()].map((runtime) => runtime.promise?.catch(() => null)));
+  }
+  return { forkThread, sweep, settled, reconcile, decideForkCompaction };
+}
+
+// src/codex/override-costs.js
+var OVERRIDE_COSTS = Object.freeze({
+  measured: (
+    /** @type {boolean} */
+    true
+  ),
+  codexVersion: (
+    /** @type {string | null} */
+    "0.159.2"
+  ),
+  measuredAt: "2026-10-07",
+  // Not cache-neutral: the R9.3 fallback applies (expectedCost on effort changes).
+  effortChange: { cachedShare: [0.434, 0], cacheNeutral: false },
+  // Only the static prefix shared across threads hits; about +4.4k input.
+  modelSwitch: { cachedShare: [0.256, 0.256], cacheNeutral: false },
+  // Cache-neutral; about +158 input tokens of environment context.
+  cwdChange: { cachedShare: [0.988, 0.988], cacheNeutral: true },
+  // A fork does not reuse the original's cache, on any model.
+  forkSameModel: { cachedShare: [0, 0.33], cacheNeutral: false },
+  forkOtherModel: { cachedShare: [0.202, 0.202], cacheNeutral: false },
+  compactForkAutoFraction: COMPACT_FORK_AUTO_FRACTION
+});
+function overrideCostsHealth(installedVersion, costs = (
+  /** @type {Record<string, any>} */
+  OVERRIDE_COSTS
+)) {
+  const installed = versionNumber(installedVersion);
+  const measuredOn = versionNumber(costs.codexVersion);
+  const differs = costs.measured === true && measuredOn !== null && installed !== null && measuredOn !== installed;
+  return {
+    ...costs,
+    installedVersion: installed,
+    warning: differs ? {
+      code: "override_costs_version_mismatch",
+      severity: "warning",
+      message: `Override costs were measured on Codex ${measuredOn}, but Codex ${installed} is installed; the expected costs may be out of date.`
+    } : null
+  };
+}
+function versionNumber(value) {
+  if (typeof value !== "string") return null;
+  const match = value.match(/\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?/);
+  return match ? match[0] : null;
+}
+
+// src/tools/health.js
+import fs12 from "node:fs";
+
+// src/shared/legacy-state.js
+import fs11 from "node:fs";
+import path14 from "node:path";
+var LEGACY_STILL_WRITTEN_WARNING = "A legacy Agent Link state file changed after the migration to ~/.agent-link: an older plugin copy is still running. Upgrade the plugin in every harness and restart its sessions.";
+function statOrNull(file) {
+  try {
+    return fs11.statSync(file);
+  } catch {
+    return null;
+  }
+}
+function newestRecordMtimeMs(dir) {
+  let names = [];
+  try {
+    names = fs11.readdirSync(dir);
+  } catch {
+    return null;
+  }
+  let newest = null;
+  for (const name of names) {
+    if (!name.endsWith(".json")) continue;
+    const stat = statOrNull(path14.join(dir, name));
+    if (stat?.isFile() && (newest === null || stat.mtimeMs > newest)) newest = stat.mtimeMs;
+  }
+  return newest;
+}
+function readMigration(options) {
+  const file = migrationRecordPath(options);
+  try {
+    const record2 = JSON.parse(fs11.readFileSync(file, "utf8"));
+    return {
+      path: file,
+      at: typeof record2?.at === "string" ? record2.at : null,
+      version: typeof record2?.version === "string" ? record2.version : null,
+      from: Array.isArray(record2?.from) ? record2.from.filter((p) => typeof p === "string") : []
+    };
+  } catch {
+    return null;
+  }
+}
+function legacyStateReport(options = {}) {
+  const migration = readMigration(options);
+  const migratedAt = migration?.at ? Date.parse(migration.at) : NaN;
+  const candidates = [
+    ...legacyMailboxPaths(options).map((p) => (
+      /** @type {[LegacyFile["kind"], string]} */
+      ["mailbox", p]
+    )),
+    ...legacyReceiptPaths(options).map((p) => (
+      /** @type {[LegacyFile["kind"], string]} */
+      ["receipts", p]
+    )),
+    ...legacyManagedAppServerDirs(options).map((p) => (
+      /** @type {[LegacyFile["kind"], string]} */
+      ["managedAppServers", p]
+    ))
+  ];
+  const files = [];
+  for (const [kind, file] of candidates) {
+    const stat = statOrNull(file);
+    if (!stat) continue;
+    const mtimeMs = kind === "managedAppServers" ? newestRecordMtimeMs(file) : stat.mtimeMs;
+    files.push({
+      kind,
+      path: file,
+      modifiedAt: mtimeMs === null ? null : new Date(mtimeMs).toISOString(),
+      writtenAfterMigration: Number.isFinite(migratedAt) && mtimeMs !== null ? mtimeMs > migratedAt : null
+    });
+  }
+  const stillWritten = files.some((file) => file.writtenAfterMigration === true);
+  return {
+    files,
+    migration,
+    stillWritten,
+    warning: stillWritten ? LEGACY_STILL_WRITTEN_WARNING : null
+  };
 }
 
 // src/delivery/role-handover.js
@@ -24349,7 +27603,8 @@ var healthTool = {
     legacyState: out("object", "{files: [{kind, path, modifiedAt, writtenAfterMigration}], migration, stillWritten, warning}: pre-0.5 state files still present."),
     reminders: out("object", "{limit, intervalMs, codexTurns, warnings}: re-surfacing of open reply/action messages (AGENT_LINK_REMINDER_LIMIT, AGENT_LINK_REMINDER_INTERVAL_MS, AGENT_LINK_CODEX_REMINDERS). warnings lists settings that were ignored."),
     recentEvents: out("array", "Recent log events (most recent last). Stack traces and process output are redacted."),
-    codex: out("object", "Codex install: {available, path, source, version, versionProbed, searched, reason, usedForManagedAppServer}."),
+    codex: out("object", "Codex install: {available, path, source, version, versionProbed, searched, reason, usedForManagedAppServer, overrideCosts}. overrideCosts: {measured, codexVersion, measuredAt, effortChange, modelSwitch, cwdChange, forkSameModel, forkOtherModel (each {cachedShare: [rep1, rep2], cacheNeutral}), compactForkAutoFraction, installedVersion, warning}: the measured prompt-cache effect of overrides and forks (B7 spike, R9.12) and the Codex version it was measured on; warning when the installed version differs."),
+    forkJobs: out("object", "{checked, reconciled, running, errors}: fork_codex_thread jobs this call finished or resumed watching (their task ended while no server watched them)."),
     appServer: commonOut.appServer,
     loadedThreadProbe: outAny("Result of a one-thread thread/loaded/list probe."),
     hint: out(["string", "null"], "Next step when Codex is unavailable."),
@@ -24391,12 +27646,12 @@ function redactValue(value, depth) {
 }
 function exists(file) {
   try {
-    return fs8.existsSync(file);
+    return fs12.existsSync(file);
   } catch {
     return false;
   }
 }
-function messageOf(error2) {
+function messageOf2(error2) {
   return error2 instanceof Error ? error2.message : String(error2);
 }
 function remindersReport(source) {
@@ -24414,13 +27669,13 @@ function healthExtras({ codex = {}, source = process.env } = {}) {
     const dir = stateDir({ env: source });
     state = { path: dir, source: isConfigured("AGENT_LINK_STATE_DIR", { env: source }) ? "AGENT_LINK_STATE_DIR" : "default", exists: exists(dir) };
   } catch (error2) {
-    state = { path: null, source: "AGENT_LINK_STATE_DIR", exists: false, error: messageOf(error2) };
+    state = { path: null, source: "AGENT_LINK_STATE_DIR", exists: false, error: messageOf2(error2) };
   }
   let legacyState;
   try {
     legacyState = { ...legacyStateReport({ env: source }) };
   } catch (error2) {
-    legacyState = { files: [], migration: null, stillWritten: false, warning: null, error: messageOf(error2) };
+    legacyState = { files: [], migration: null, stillWritten: false, warning: null, error: messageOf2(error2) };
   }
   const claudeDir = claudeConfigDir2({ env: source });
   const projects = claudeProjectsRoot({ env: source });
@@ -24478,12 +27733,17 @@ function configuredEndpointSummary() {
     socket: env("AGENT_LINK_CODEX_SOCK").source
   };
 }
-function makeHealth({ appServer, hostInfo, resolveCurrentSession, channelState, roles = null, roleAdmin = false }) {
+function makeHealth({ appServer, hostInfo, resolveCurrentSession, channelState, roles = null, roleAdmin = false, forkSweep = null }) {
   async function health(args, toolContext = {}) {
     const report = await healthReport(args, toolContext);
     const caller = hostIdentity({ host: hostInfo.host, callerContext: toolContext.callerContext ?? null, currentSession: resolveCurrentSession });
+    const overrideCosts = overrideCostsHealth(report.codex?.version ?? null);
+    const forkJobs = forkSweep && args.startAppServer !== false ? await forkSweep().catch((error2) => ({ error: error2 instanceof Error ? error2.message : String(error2) })) : null;
     return {
       ...report,
+      codex: { ...report.codex, overrideCosts },
+      ...forkJobs ? { forkJobs } : {},
+      ...overrideCosts.warning ? { warnings: [overrideCosts.warning] } : {},
       address: caller.address,
       addressSource: caller.source,
       ...healthExtras({ codex: report.codex }),
@@ -24613,8 +27873,8 @@ function rolesHealth(roles, roleAdmin) {
 }
 
 // src/claude/channel-bridge.js
-import fs9 from "node:fs";
-import path12 from "node:path";
+import fs13 from "node:fs";
+import path15 from "node:path";
 
 // src/claude/active-waits.js
 var waits = /* @__PURE__ */ new Map();
@@ -24661,7 +27921,7 @@ function onActiveWaitEnded(listener) {
 }
 
 // src/claude/channel-bridge.js
-var DEFAULT_POLL_INTERVAL_MS = 1e3;
+var DEFAULT_POLL_INTERVAL_MS2 = 1e3;
 var DEFAULT_MAX_POLL_INTERVAL_MS = 3e4;
 var WAKE_DEBOUNCE_MS = 50;
 function renderChannelMessage(message) {
@@ -24683,7 +27943,7 @@ function makeAgentLinkChannelBridge({
   mailboxOpener,
   mailboxPath: mailboxPath2,
   notify,
-  pollIntervalMs: pollIntervalMs2 = DEFAULT_POLL_INTERVAL_MS,
+  pollIntervalMs: pollIntervalMs2 = DEFAULT_POLL_INTERVAL_MS2,
   maxPollIntervalMs = DEFAULT_MAX_POLL_INTERVAL_MS,
   watch = true
 } = {}) {
@@ -24716,7 +27976,7 @@ function makeAgentLinkChannelBridge({
     const parts = [];
     for (const file of signaturePaths) {
       try {
-        const st = fs9.statSync(file);
+        const st = fs13.statSync(file);
         parts.push(`${st.ino}:${st.size}:${st.mtimeMs}`);
       } catch (error2) {
         if (error2?.code !== "ENOENT") return null;
@@ -24810,11 +28070,11 @@ function makeAgentLinkChannelBridge({
       targets.get(dir).add(name);
     };
     for (const file of signaturePaths) {
-      const dir = path12.dirname(file);
-      if (fs9.existsSync(dir)) {
-        add(dir, path12.basename(file));
-      } else if (fs9.existsSync(path12.dirname(dir))) {
-        add(path12.dirname(dir), path12.basename(dir));
+      const dir = path15.dirname(file);
+      if (fs13.existsSync(dir)) {
+        add(dir, path15.basename(file));
+      } else if (fs13.existsSync(path15.dirname(dir))) {
+        add(path15.dirname(dir), path15.basename(dir));
       }
     }
     return targets;
@@ -24828,11 +28088,11 @@ function makeAgentLinkChannelBridge({
     closeWatchers();
     for (const [dir, names] of watchTargets()) {
       try {
-        const w = fs9.watch(dir, { persistent: false }, (_event, filename) => {
+        const w = fs13.watch(dir, { persistent: false }, (_event, filename) => {
           if (stopped) return;
           const name = filename ? String(filename) : null;
           if (name && !names.has(name)) return;
-          if (name && fs9.existsSync(path12.join(dir, name)) && fs9.statSync(path12.join(dir, name)).isDirectory()) {
+          if (name && fs13.existsSync(path15.join(dir, name)) && fs13.statSync(path15.join(dir, name)).isDirectory()) {
             startWatcher();
           }
           wake();
@@ -25136,7 +28396,7 @@ var messageThreadOut = {
   appServer: commonOut.appServer,
   via: out("string", "role:<name> when the target was addressed by role; the message went to the role's current holder."),
   roleProcedure: out(["object", "null"], "With a role target: {name, version, textIncluded} of the role's procedure, or null when the role has none. textIncluded is true on the first delivery of that version to the holder."),
-  switches: out("array", "In-place changes applied to the thread, one per setting: {setting, previous, current, grantedBy: launcher|policy|allowTargetOverride, policy?, persists: true, expectedCost: {uncachedInputTokens, basis} | null}. A change persists; Agent Link never sends a revert."),
+  switches: out("array", "In-place changes applied to the thread, one per setting: {setting, previous, current, grantedBy: launcher|policy|allowTargetOverride, policy?, persists: true, expectedCost: {uncachedInputTokens, basis}}. expectedCost is the last turn's input tokens (basis last-turn-input, or null with basis unknown) for a model or effort change, which re-reads the thread uncached, and 0 (basis cache-neutral) for a cwd change. A change persists; Agent Link never sends a revert."),
   switchReceipts: out("array", "Receipt write results for the model-switch, effort-change, and cwd-change receipts, one per entry in switches.")
 };
 var codexActionTools = [
@@ -25221,6 +28481,61 @@ var codexActionTools = [
 ];
 function codexActionEntries(handlers) {
   return codexActionTools.map((definition) => ({ definition, handler: handlers[definition.name] }));
+}
+
+// src/tools/fork.js
+var forkCodexThreadTool = {
+  name: "fork_codex_thread",
+  description: "Run a task on a fork of an existing Codex thread, then send the fork's final response back to the original thread as a new Agent Link message (a reconcile message with a <fork> element). Use it to run another model, effort, or cwd on a thread's context: an existing thread keeps its model and warm prompt cache, because the cache is per model and a switch re-reads the whole thread uncached. The fork takes the original's completed turns only; the original gets no turn with model, effort, or cwd and is never compacted. Exactly one reconcile message is sent for every outcome (completed, failed, interrupted), even if this server restarts; a completed fork is archived. Claude sessions cannot be forked (unsupported).",
+  inputSchema: {
+    type: "object",
+    required: ["message"],
+    properties: {
+      threadId: str("The original: a codex:<id> address or Codex thread id."),
+      query: str("Fuzzy search for the original when threadId is omitted; ambiguous matches fail."),
+      message: str("The task for the fork (at most 64 KiB), wrapped in the peer-message envelope."),
+      model: str("Model for the fork. Any caller may choose it."),
+      modelProvider: str("Model provider for the fork."),
+      serviceTier: str("Service tier for the fork."),
+      effort: enumOf(EFFORT_VALUES, "Reasoning effort for the fork's task turn."),
+      cwd: str("Absolute working directory for the fork. It must stay inside the original's workspace (git top level of its cwd, symlinks resolved); otherwise permission_denied (cwd_outside_workspace)."),
+      lastTurnId: str("Fork through this completed turn of the original. Defaults to the latest completed turn."),
+      compactFork: enumOf(COMPACT_FORK_MODES, "Compact the fork before the task: auto (default) when the original's last turn used more than a set fraction of the context window, always, or never. Compaction is itself a full read on the fork."),
+      reconcile: {
+        type: "object",
+        description: "Labels of the reconcile message the original receives.",
+        properties: {
+          anticipation: enumOf(["fyi", "action", "reply"], "fyi (default): for information; action: the original should act on the result and mark it done; reply: the original should answer you."),
+          replyBy: str("Optional deadline for action or reply, ISO 8601 with a time zone, at least 30 s ahead.")
+        },
+        additionalProperties: false
+      },
+      archiveFork: bool("Archive the fork after a completed reconcile. Defaults to true. A failed or interrupted fork is always kept."),
+      waitForResult: bool("Wait for the reconcile, up to timeoutMs. On timeout status is running and the job continues. When you fork your own thread and wait, the fork's output comes back here (output) instead of as a pushed message."),
+      timeoutMs: timeoutMs("Maximum wait when waitForResult is true, in milliseconds."),
+      receipt: receiptInput
+    },
+    additionalProperties: false
+  },
+  output: {
+    forkJobId: out("string", "The fork job id; it is also the task turn's clientUserMessageId."),
+    status: enumOf(["running", "completed", "failed", "interrupted", "aborted"], "The task turn's outcome, or running."),
+    original: out("object", "{address, threadId} of the original thread."),
+    fork: out("object", "{threadId, address, forkedFromId, model, effort, cwd} of the fork."),
+    lastTurnId: out("string", "The original's turn the fork was taken through."),
+    turn: out("object", "{id} of the fork's task turn, or {id: null} if it could not start."),
+    compaction: out("object", "{mode, compact, compacted, reason, threshold, inputTokens, modelContextWindow, windowBasis, tokenUsage}: the R9.11 decision."),
+    reconcile: out(["object", "null"], "When finished: {messageId, delivery: queued|delivered, deliveredVia?, anticipation} of the reconcile message in the original's mailbox."),
+    output: out("object", "Only when you forked your own thread and waited: the fork's output as a peer message (envelope plus header fields)."),
+    tokenUsage: out("object", "When finished: {compaction?, task}: the `last` token breakdown plus modelContextWindow of each turn, or null when no notification arrived (token_usage_unavailable)."),
+    archived: out("boolean", "Whether the fork was archived."),
+    receipt: commonOut.receipt,
+    reconcileReceipt: out("object", "The reconcile receipt write result.")
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false }
+};
+function forkEntries(handler2) {
+  return [{ definition: forkCodexThreadTool, handler: handler2 }];
 }
 
 // src/tools/orchestration.js
@@ -25422,7 +28737,7 @@ function orchestrationEntries(handlers) {
 // src/tools/receipts.js
 var listReceiptsTool = {
   name: "list_agent_link_receipts",
-  description: "List local Agent Link launch/message/archive/Claude-session/reply receipts, newest first, by target address, target thread, target session, origin thread, action, host, target kind, or search query.",
+  description: "List local Agent Link launch/message/archive/fork/Claude-session/reply receipts, newest first, by target address, target thread, target session, origin thread, action, receipt kind, host, target kind, or search query.",
   inputSchema: {
     type: "object",
     properties: {
@@ -25430,6 +28745,7 @@ var listReceiptsTool = {
       targetThreadId: str("Only receipts whose target.threadId matches this thread. A codex:<id> address is matched as target."),
       originThreadId: str("Only receipts whose origin.threadId matches this thread."),
       action: enumOf(RECEIPT_ACTIONS, "Only receipts for this action."),
+      kind: enumOf(RECEIPT_KINDS, "Only section 9 receipts of this kind: fork and reconcile (fork_codex_thread), model-switch, effort-change, cwd-change. They link original and fork both ways (original, fork, forkJobId) and record token usage."),
       targetKind: enumOf(["claude", "codex"], "Only receipts whose target.kind matches."),
       host: enumOf(["claude", "codex"], "Only receipts written by this host. Useful for auditing which side initiated a cross-host action."),
       targetSessionId: str("Only receipts for this Claude target session id (e.g. local_<uuid>). A claude:<id> address is matched as target."),
@@ -25453,6 +28769,7 @@ async function listAgentLinkReceipts(args) {
     targetThreadId: args.targetThreadId,
     originThreadId: args.originThreadId,
     action: args.action,
+    kind: args.kind,
     targetKind: args.targetKind,
     host: args.host,
     targetSessionId: args.targetSessionId,
@@ -25872,640 +29189,6 @@ async function sweepClaims(mb, { now = Date.now(), settings = reminderSettings()
   return result;
 }
 
-// src/registry/roles.js
-import crypto3 from "node:crypto";
-import fs10 from "node:fs";
-import path13 from "node:path";
-var ROLE_NAME_PATTERN = /^[a-z0-9-]{1,40}$/;
-var ROLE_ADDRESS_PATTERN = /^role:([a-z0-9-]{1,40})$/;
-var ROLE_TABLE_VERSION = 1;
-var ENFORCEMENT_MODES = Object.freeze(["off", "warn", "enforce"]);
-var DEFAULT_ENFORCEMENT = "off";
-var POLICY_SETTINGS = Object.freeze(["model", "effort", "cwd"]);
-var MAX_PROCEDURE_BYTES = 64 * 1024;
-var MAX_POLICY_SENDERS = 50;
-var LOCK_STALE_MS = 3e4;
-var LOCK_TIMEOUT_MS = 250;
-var LOCK_RETRY_MS = 5;
-var BREAKER_STALE_MS = 5e3;
-var STATE_FILE = "role-state.json";
-var STATE_VERSION = 1;
-function emptyRoleTable() {
-  return { version: ROLE_TABLE_VERSION, enforcement: null, roles: {}, overridePolicy: {} };
-}
-function parseRoleAddress(value) {
-  if (typeof value !== "string") return null;
-  const match = ROLE_ADDRESS_PATTERN.exec(value.trim());
-  return match ? match[1] : null;
-}
-function looksLikeRoleAddress(value) {
-  return typeof value === "string" && value.trim().toLowerCase().startsWith("role:");
-}
-function requireRoleName(value, argument = "role") {
-  const raw = typeof value === "string" ? value.trim() : "";
-  const name = raw.startsWith("role:") ? raw.slice("role:".length) : raw;
-  if (!ROLE_NAME_PATTERN.test(name)) {
-    throw new AgentLinkError("invalid_arguments", `${argument} must be a role name of 1 to 40 lowercase letters, digits, or hyphens (optionally written role:<name>).`, {
-      details: { errors: [{ path: argument, rule: "pattern", expected: "[a-z0-9-]{1,40}" }] }
-    });
-  }
-  return name;
-}
-function isPolicySender(value) {
-  return value === "*" || parseRoleAddress(value) !== null || isAddress(value);
-}
-function isPolicyTarget(value) {
-  return parseRoleAddress(value) !== null || isAddress(value);
-}
-function isPlainObject5(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-function isoOrNull(value) {
-  return typeof value === "string" && Number.isFinite(Date.parse(value)) ? new Date(Date.parse(value)).toISOString() : null;
-}
-function validateRoleTable(raw) {
-  const problems = [];
-  const table = emptyRoleTable();
-  if (!isPlainObject5(raw)) {
-    problems.push({ path: "", rule: "type", message: "roles.json must hold a JSON object." });
-    return { table, problems };
-  }
-  if (raw.version !== ROLE_TABLE_VERSION) {
-    problems.push({ path: "version", rule: "version", message: `roles.json version is ${JSON.stringify(raw.version ?? null)}; expected ${ROLE_TABLE_VERSION}. Entries were read as version ${ROLE_TABLE_VERSION}, and Agent Link will not write the file until its version is ${ROLE_TABLE_VERSION}.` });
-  }
-  if (raw.enforcement !== void 0 && raw.enforcement !== null) {
-    if (ENFORCEMENT_MODES.includes(raw.enforcement)) table.enforcement = raw.enforcement;
-    else problems.push({ path: "enforcement", rule: "enum", message: `enforcement must be one of ${ENFORCEMENT_MODES.join(", ")}; ignored.` });
-  }
-  if (raw.roles !== void 0 && !isPlainObject5(raw.roles)) {
-    problems.push({ path: "roles", rule: "type", message: "roles must be an object; ignored." });
-  }
-  for (const [name, entry] of Object.entries(isPlainObject5(raw.roles) ? raw.roles : {})) {
-    if (!ROLE_NAME_PATTERN.test(name)) {
-      problems.push({ path: `roles.${name.slice(0, 60)}`, rule: "pattern", message: "Role names are 1 to 40 lowercase letters, digits, or hyphens; entry ignored." });
-      continue;
-    }
-    if (!isPlainObject5(entry)) {
-      problems.push({ path: `roles.${name}`, rule: "type", message: "A role entry must be an object; ignored." });
-      continue;
-    }
-    let address = null;
-    if (typeof entry.address === "string" && entry.address) {
-      if (isAddress(entry.address)) address = entry.address;
-      else problems.push({ path: `roles.${name}.address`, rule: "format", message: "address must be claude:<id> or codex:<id>; the role has no holder." });
-    } else if (Array.isArray(entry.address)) {
-      const valid = [...new Set(entry.address.filter(isAddress))];
-      if (valid.length !== entry.address.length) {
-        problems.push({ path: `roles.${name}.address`, rule: "format", message: "Invalid or duplicate addresses in the list were ignored." });
-      }
-      address = valid.length === 0 ? null : valid.length === 1 ? valid[0] : valid;
-    } else if (entry.address !== void 0 && entry.address !== null) {
-      problems.push({ path: `roles.${name}.address`, rule: "type", message: "address must be a string; the role has no holder." });
-    }
-    const projects = {};
-    if (entry.projects !== void 0 && entry.projects !== null) {
-      if (name !== "orchestrator") {
-        problems.push({ path: `roles.${name}.projects`, rule: "scope", message: "Only the orchestrator role is scoped by project root; projects ignored." });
-      } else if (!isPlainObject5(entry.projects)) {
-        problems.push({ path: `roles.${name}.projects`, rule: "type", message: "projects must map absolute project roots to addresses; ignored." });
-      } else {
-        for (const [root, holder] of Object.entries(entry.projects)) {
-          if (!path13.isAbsolute(root) || !isAddress(holder)) {
-            problems.push({ path: `roles.${name}.projects`, rule: "format", message: "projects keys are absolute project roots and values claude:<id> or codex:<id> addresses; invalid entries were ignored." });
-            continue;
-          }
-          projects[path13.resolve(root)] = holder;
-        }
-      }
-    }
-    table.roles[name] = { address, assignedAt: isoOrNull(entry.assignedAt), ...Object.keys(projects).length ? { projects } : {} };
-  }
-  if (raw.overridePolicy !== void 0 && !isPlainObject5(raw.overridePolicy)) {
-    problems.push({ path: "overridePolicy", rule: "type", message: "overridePolicy must be an object; ignored (nothing is allowed)." });
-  }
-  for (const [target, entry] of Object.entries(isPlainObject5(raw.overridePolicy) ? raw.overridePolicy : {})) {
-    if (!isPolicyTarget(target)) {
-      problems.push({ path: `overridePolicy.${target.slice(0, 80)}`, rule: "format", message: "Policy targets are role:<name> or a session address; entry ignored." });
-      continue;
-    }
-    if (!isPlainObject5(entry)) {
-      problems.push({ path: `overridePolicy.${target}`, rule: "type", message: "A policy entry must be an object; ignored." });
-      continue;
-    }
-    const clean = {};
-    for (const [setting, senders] of Object.entries(entry)) {
-      if (!POLICY_SETTINGS.includes(setting)) {
-        problems.push({ path: `overridePolicy.${target}.${setting.slice(0, 40)}`, rule: "enum", message: `Policy settings are ${POLICY_SETTINGS.join(", ")}; ignored.` });
-        continue;
-      }
-      if (!Array.isArray(senders)) {
-        problems.push({ path: `overridePolicy.${target}.${setting}`, rule: "type", message: "A policy setting must list senders; ignored." });
-        continue;
-      }
-      const valid = [...new Set(senders.filter(isPolicySender))].slice(0, MAX_POLICY_SENDERS);
-      if (valid.length !== senders.length) {
-        problems.push({ path: `overridePolicy.${target}.${setting}`, rule: "format", message: 'Senders are "*", role:<name>, or a session address; invalid or duplicate entries were ignored.' });
-      }
-      clean[
-        /** @type {"model" | "effort" | "cwd"} */
-        setting
-      ] = valid;
-    }
-    table.overridePolicy[target] = clean;
-  }
-  return { table, problems };
-}
-function sleepSync(ms) {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-function processAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error2) {
-    return (
-      /** @type {NodeJS.ErrnoException} */
-      error2.code === "EPERM"
-    );
-  }
-}
-function lockSnapshot(lockPath) {
-  try {
-    const stat = fs10.statSync(lockPath);
-    return { raw: fs10.readFileSync(lockPath, "utf8"), ino: stat.ino, mtimeMs: stat.mtimeMs };
-  } catch {
-    return null;
-  }
-}
-function ownerPid(raw) {
-  try {
-    return Number(JSON.parse(raw)?.pid);
-  } catch {
-    return NaN;
-  }
-}
-function breakStaleLock(lockPath, observed, token, now) {
-  const breaker = `${lockPath}.break`;
-  try {
-    fs10.writeFileSync(breaker, JSON.stringify({ pid: process.pid, token }), { flag: "wx", mode: FILE_MODE });
-  } catch (error2) {
-    if (
-      /** @type {NodeJS.ErrnoException} */
-      error2.code !== "EEXIST"
-    ) return false;
-    const stale = lockSnapshot(breaker);
-    if (stale && now() - stale.mtimeMs > BREAKER_STALE_MS && !processAlive(ownerPid(stale.raw))) {
-      fs10.rmSync(breaker, { force: true });
-    }
-    return false;
-  }
-  try {
-    const current = lockSnapshot(lockPath);
-    if (!current || current.raw !== observed.raw || current.ino !== observed.ino || current.mtimeMs !== observed.mtimeMs) return false;
-    fs10.rmSync(lockPath, { force: true });
-    return true;
-  } finally {
-    fs10.rmSync(breaker, { force: true });
-  }
-}
-function withFileLockSync(lockPath, fn, { timeoutMs: timeoutMs2 = LOCK_TIMEOUT_MS, staleMs = LOCK_STALE_MS, now = () => Date.now() } = {}) {
-  const deadline = now() + timeoutMs2;
-  const token = `${process.pid}:${crypto3.randomUUID()}`;
-  for (; ; ) {
-    try {
-      fs10.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, token, at: new Date(now()).toISOString() }), { flag: "wx", mode: FILE_MODE });
-      break;
-    } catch (error2) {
-      if (
-        /** @type {NodeJS.ErrnoException} */
-        error2.code !== "EEXIST"
-      ) {
-        throw stateIoError(lockPath, error2, "Could not create the role table lock.");
-      }
-    }
-    const observed = lockSnapshot(lockPath);
-    if (observed && now() - observed.mtimeMs > staleMs && !processAlive(ownerPid(observed.raw))) {
-      if (breakStaleLock(lockPath, observed, token, now)) continue;
-    }
-    if (now() >= deadline) {
-      throw new AgentLinkError("state_io_error", "The role table is busy (another Agent Link server holds its lock).", {
-        details: { path: path13.basename(lockPath), errno: "ETIMEDOUT" },
-        hint: `Retry the call. If this persists, check that no Agent Link process is stuck, then remove ${path13.basename(lockPath)} from the state directory.`
-      });
-    }
-    sleepSync(LOCK_RETRY_MS);
-  }
-  try {
-    return fn();
-  } finally {
-    try {
-      const current = JSON.parse(fs10.readFileSync(lockPath, "utf8"));
-      if (current?.token === token) fs10.rmSync(lockPath, { force: true });
-    } catch {
-    }
-  }
-}
-function writeFileAtomicSync(filePath, text2) {
-  fs10.mkdirSync(path13.dirname(filePath), { recursive: true, mode: DIR_MODE });
-  const temp = `${filePath}.${process.pid}.${crypto3.randomBytes(6).toString("hex")}.tmp`;
-  try {
-    const fd = fs10.openSync(temp, "wx", FILE_MODE);
-    try {
-      fs10.writeFileSync(fd, text2, "utf8");
-      fs10.fsyncSync(fd);
-    } finally {
-      fs10.closeSync(fd);
-    }
-    fs10.renameSync(temp, filePath);
-  } catch (error2) {
-    fs10.rmSync(temp, { force: true });
-    throw stateIoError(filePath, error2, "Could not write the role table.");
-  }
-  tightenMode(filePath, FILE_MODE);
-}
-function stateIoError(filePath, error2, message) {
-  const errno = (
-    /** @type {NodeJS.ErrnoException} */
-    error2?.code ?? null
-  );
-  return new AgentLinkError("state_io_error", `${message} (${errno ?? "error"})`, {
-    details: { path: path13.basename(filePath), errno },
-    cause: error2
-  });
-}
-function readProcedureFileSafe(dir, file) {
-  try {
-    if (!fs10.lstatSync(dir).isDirectory()) return { error: "the roles directory is not a directory" };
-  } catch {
-    return null;
-  }
-  let stat;
-  try {
-    stat = fs10.lstatSync(file);
-  } catch {
-    return null;
-  }
-  if (!stat.isFile()) return { error: "the procedure file is not a regular file (symlinks, FIFOs, and devices are refused)" };
-  let fd;
-  try {
-    fd = fs10.openSync(file, fs10.constants.O_RDONLY | fs10.constants.O_NOFOLLOW | fs10.constants.O_NONBLOCK);
-  } catch (error2) {
-    return { error: `the procedure file could not be opened (${/** @type {NodeJS.ErrnoException} */
-    error2.code ?? "error"})` };
-  }
-  try {
-    if (!fs10.fstatSync(fd).isFile()) return { error: "the procedure file is not a regular file" };
-    const buffer = Buffer.alloc(MAX_PROCEDURE_BYTES + 1);
-    let length = 0;
-    for (; ; ) {
-      const read = fs10.readSync(fd, buffer, length, buffer.length - length, null);
-      if (read === 0) break;
-      length += read;
-      if (length > MAX_PROCEDURE_BYTES) {
-        return { error: `the procedure file is larger than ${MAX_PROCEDURE_BYTES} bytes (64 KiB)` };
-      }
-    }
-    const text2 = buffer.subarray(0, length).toString("utf8");
-    return { text: text2, sha256: sha256(text2) };
-  } catch (error2) {
-    return { error: `the procedure file could not be read (${/** @type {NodeJS.ErrnoException} */
-    error2.code ?? "error"})` };
-  } finally {
-    fs10.closeSync(fd);
-  }
-}
-function sha256(text2) {
-  return crypto3.createHash("sha256").update(text2, "utf8").digest("hex");
-}
-function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () => Date.now(), lockTimeoutMs = LOCK_TIMEOUT_MS } = {}) {
-  const pathOptions = { env: env2, ...homedir3 ? { homedir: homedir3 } : {} };
-  const tablePath = () => rolesPath(pathOptions);
-  const proceduresDir = () => roleProceduresDir(pathOptions);
-  const statePath = () => path13.join(stateDir(pathOptions), STATE_FILE);
-  const iso2 = () => new Date(now()).toISOString();
-  const lockOptions = { now, timeoutMs: lockTimeoutMs };
-  function procedureFile(name) {
-    return path13.join(proceduresDir(), `${name}.md`);
-  }
-  function readProcedure(name) {
-    return readProcedureFileSafe(proceduresDir(), procedureFile(name));
-  }
-  function read() {
-    const file = tablePath();
-    const base = { path: file, exists: true, writable: false, raw: null };
-    let text2;
-    try {
-      text2 = fs10.readFileSync(file, "utf8");
-    } catch (error2) {
-      if (
-        /** @type {NodeJS.ErrnoException} */
-        error2.code === "ENOENT"
-      ) {
-        return { ...base, table: emptyRoleTable(), problems: [], error: null, exists: false, writable: true };
-      }
-      return { ...base, table: emptyRoleTable(), problems: [], error: `roles.json could not be read (${/** @type {NodeJS.ErrnoException} */
-      error2.code ?? "error"}).` };
-    }
-    let parsed;
-    try {
-      parsed = JSON.parse(text2);
-    } catch {
-      return { ...base, table: emptyRoleTable(), problems: [], error: "roles.json is not valid JSON; roles and the override policy are unavailable until it is fixed." };
-    }
-    const { table, problems } = validateRoleTable(parsed);
-    const writable = isPlainObject5(parsed) && parsed.version === ROLE_TABLE_VERSION;
-    return { ...base, table, problems, error: null, writable, raw: isPlainObject5(parsed) ? parsed : null };
-  }
-  function assertUsable(result) {
-    if (result.error) {
-      throw new AgentLinkError("state_io_error", result.error, {
-        details: { path: "roles.json", errno: null },
-        hint: "Fix or remove roles.json in the Agent Link state directory; agent_link_health shows its path."
-      });
-    }
-  }
-  function update(mutate) {
-    ensureStateDir(pathOptions);
-    return withFileLockSync(`${tablePath()}.lock`, () => {
-      const current = read();
-      assertUsable(current);
-      if (!current.writable) {
-        throw new AgentLinkError("state_io_error", "roles.json has an unsupported version; Agent Link will not rewrite it.", {
-          details: { path: "roles.json", errno: null, version: current.raw?.version ?? null },
-          hint: `Set "version": ${ROLE_TABLE_VERSION} in roles.json after checking its contents, or move the file aside.`
-        });
-      }
-      const raw = current.raw ?? { version: ROLE_TABLE_VERSION };
-      if (!isPlainObject5(raw.roles)) raw.roles = {};
-      if (!isPlainObject5(raw.overridePolicy)) raw.overridePolicy = {};
-      const result = mutate(raw, current.table);
-      writeFileAtomicSync(tablePath(), `${JSON.stringify(raw, null, 2)}
-`);
-      return result;
-    }, lockOptions);
-  }
-  function readState() {
-    try {
-      const parsed = JSON.parse(fs10.readFileSync(statePath(), "utf8"));
-      if (isPlainObject5(parsed)) {
-        return {
-          version: STATE_VERSION,
-          procedures: isPlainObject5(parsed.procedures) ? parsed.procedures : {},
-          deliveries: isPlainObject5(parsed.deliveries) ? parsed.deliveries : {}
-        };
-      }
-    } catch {
-    }
-    return { version: STATE_VERSION, procedures: {}, deliveries: {} };
-  }
-  function updateState(mutate) {
-    ensureStateDir(pathOptions);
-    return withFileLockSync(`${statePath()}.lock`, () => {
-      const state = readState();
-      const result = mutate(state);
-      writeFileAtomicSync(statePath(), `${JSON.stringify(state, null, 2)}
-`);
-      return result;
-    }, lockOptions);
-  }
-  function procedureRecord(state, name) {
-    const p = state.procedures[name];
-    return isPlainObject5(p) && Number.isInteger(p.version) && p.version >= 1 && typeof p.sha256 === "string" ? { version: p.version, sha256: p.sha256, updatedAt: isoOrNull(p.updatedAt) ?? (/* @__PURE__ */ new Date(0)).toISOString() } : null;
-  }
-  function syncProcedure(name) {
-    const file = readProcedure(name);
-    if (!file || "error" in file) return;
-    if (procedureRecord(readState(), name)?.sha256 === file.sha256) return;
-    updateState((state) => {
-      const again = readProcedure(name);
-      if (!again || "error" in again) return;
-      const record2 = procedureRecord(state, name);
-      if (record2?.sha256 === again.sha256) return;
-      state.procedures[name] = { version: (record2?.version ?? 0) + 1, sha256: again.sha256, updatedAt: iso2() };
-    });
-  }
-  function procedureView(name, { includeText = false, state = readState() } = {}) {
-    const record2 = procedureRecord(state, name);
-    const file = readProcedure(name);
-    if (!record2 && !file) return null;
-    const usable = file && !("error" in file) ? file : null;
-    const present2 = Boolean(usable && record2 && usable.sha256 === record2.sha256);
-    return {
-      name,
-      version: record2?.version ?? null,
-      sha256: record2?.sha256 ?? null,
-      updatedAt: record2?.updatedAt ?? null,
-      present: present2,
-      pending: Boolean(usable && usable.sha256 !== record2?.sha256),
-      ...file && "error" in file ? { problem: file.error } : {},
-      ...includeText && present2 && usable ? { text: usable.text } : {}
-    };
-  }
-  function view(name, role, { includeProcedureText = false, state } = {}) {
-    return {
-      role: name,
-      roleAddress: `role:${name}`,
-      address: role.address,
-      assignedAt: role.assignedAt,
-      ...role.projects ? { projects: { ...role.projects } } : {},
-      procedure: procedureView(name, { includeText: includeProcedureText, ...state ? { state } : {} })
-    };
-  }
-  function list() {
-    const result = read();
-    const state = readState();
-    return {
-      roles: Object.keys(result.table.roles).sort().map((name) => view(name, result.table.roles[name], { state })),
-      problems: result.problems,
-      error: result.error,
-      path: result.path,
-      exists: result.exists,
-      table: result.table
-    };
-  }
-  function get(name, options = {}) {
-    const result = read();
-    assertUsable(result);
-    const role = result.table.roles[name];
-    return role ? view(name, role, options) : null;
-  }
-  function set({ role: name, address, procedureText = null, projectRoot = null }) {
-    if (!ROLE_NAME_PATTERN.test(name)) throw new TypeError(`invalid role name ${name}`);
-    if (!isAddress(address)) throw new TypeError(`invalid holder address ${address}`);
-    if (projectRoot !== null && !path13.isAbsolute(projectRoot)) throw new TypeError(`projectRoot must be absolute: ${projectRoot}`);
-    if (projectRoot !== null && name !== "orchestrator") throw new TypeError("only the orchestrator role is scoped by project root");
-    const root = projectRoot === null ? null : path13.resolve(projectRoot);
-    let previous = null;
-    update((raw, table) => {
-      const entry = isPlainObject5(raw.roles[name]) ? raw.roles[name] : {};
-      if (root !== null) {
-        previous = table.roles[name]?.projects?.[root] ?? null;
-        entry.projects = isPlainObject5(entry.projects) ? entry.projects : {};
-        entry.projects[root] = address;
-        raw.roles[name] = entry;
-        return;
-      }
-      const before = table.roles[name]?.address ?? null;
-      previous = typeof before === "string" ? before : null;
-      if (entry.address !== address || !isoOrNull(entry.assignedAt)) entry.assignedAt = iso2();
-      entry.address = address;
-      raw.roles[name] = entry;
-    });
-    if (typeof procedureText === "string") {
-      fs10.mkdirSync(proceduresDir(), { recursive: true, mode: DIR_MODE });
-      tightenMode(proceduresDir(), DIR_MODE);
-      const existing = fs10.lstatSync(procedureFile(name), { throwIfNoEntry: false });
-      if (existing && !existing.isFile()) {
-        throw new AgentLinkError("state_io_error", `The procedure file for ${name} is not a regular file; Agent Link will not replace it.`, {
-          details: { path: `roles/${name}.md`, errno: null }
-        });
-      }
-      writeFileAtomicSync(procedureFile(name), procedureText);
-    }
-    syncProcedure(name);
-    const result = read();
-    return { previousAddress: previous, role: view(name, result.table.roles[name]) };
-  }
-  function clear(name, { projectRoot = null } = {}) {
-    let previous = null;
-    let existed = false;
-    const root = projectRoot === null ? null : path13.resolve(projectRoot);
-    update((raw, table) => {
-      if (!table.roles[name] || !isPlainObject5(raw.roles[name])) return;
-      existed = true;
-      if (root !== null) {
-        previous = table.roles[name].projects?.[root] ?? null;
-        if (isPlainObject5(raw.roles[name].projects)) {
-          for (const key of Object.keys(raw.roles[name].projects)) {
-            if (path13.isAbsolute(key) && path13.resolve(key) === root) delete raw.roles[name].projects[key];
-          }
-          if (Object.keys(raw.roles[name].projects).length === 0) delete raw.roles[name].projects;
-        }
-        return;
-      }
-      const before = table.roles[name].address;
-      previous = typeof before === "string" ? before : null;
-      delete raw.roles[name].address;
-      delete raw.roles[name].assignedAt;
-    });
-    const result = read();
-    const role = result.table.roles[name];
-    return { existed, previousAddress: previous, role: role ? view(name, role) : null };
-  }
-  function setPolicy(target, settings) {
-    let entry = null;
-    update((raw) => {
-      const next = isPlainObject5(raw.overridePolicy[target]) ? { ...raw.overridePolicy[target] } : {};
-      for (const setting of POLICY_SETTINGS) {
-        const senders = settings[
-          /** @type {"model" | "effort" | "cwd"} */
-          setting
-        ];
-        if (senders === void 0) continue;
-        next[setting] = [...new Set(senders)];
-      }
-      const empty = Object.values(next).every((senders) => !Array.isArray(senders) || senders.length === 0);
-      if (empty) delete raw.overridePolicy[target];
-      else raw.overridePolicy[target] = next;
-      entry = empty ? null : next;
-    });
-    return entry;
-  }
-  function rolesOf(address, table = read().table) {
-    return Object.entries(table.roles).filter(([, role]) => role.address === address || Array.isArray(role.address) && role.address.includes(address) || Object.values(role.projects ?? {}).includes(address)).map(([name]) => name).sort();
-  }
-  function holdings(address, table = read().table) {
-    const roles = Object.entries(table.roles).filter(([, role]) => role.address === address || Array.isArray(role.address) && role.address.includes(address)).map(([name]) => name).sort();
-    const projectRoots = Object.values(table.roles).flatMap((role) => Object.entries(role.projects ?? {}).filter(([, holder]) => holder === address).map(([root]) => root)).sort();
-    return { roles, projectRoots };
-  }
-  function resolve(roleAddress, { includeProcedureText = true, sync = true } = {}) {
-    const name = parseRoleAddress(roleAddress);
-    if (!name) {
-      throw new AgentLinkError("invalid_arguments", `${JSON.stringify(String(roleAddress).slice(0, 60))} is not a role address; use role:<name> with 1 to 40 lowercase letters, digits, or hyphens.`, {
-        details: { errors: [{ path: "role", rule: "pattern", expected: "role:[a-z0-9-]{1,40}" }] }
-      });
-    }
-    const result = read();
-    assertUsable(result);
-    const role = result.table.roles[name];
-    if (!role || !role.address) {
-      throw new AgentLinkError("not_found", `No session holds role ${name}.`, {
-        details: { role: name, query: `role:${name}`, candidates: [] },
-        hint: "Ask the user to assign it (set_agent_role), or call list_agent_roles."
-      });
-    }
-    if (Array.isArray(role.address)) {
-      throw new AgentLinkError("ambiguous", `Role ${name} lists ${role.address.length} holders in roles.json.`, {
-        details: { role: name, query: `role:${name}`, candidates: role.address.map((address) => ({ address })) },
-        hint: "A role has one holder. Ask the user to fix roles.json or reassign the role with set_agent_role."
-      });
-    }
-    if (sync) syncProcedure(name);
-    const procedure = procedureView(name, { includeText: includeProcedureText });
-    return {
-      role: name,
-      via: `role:${name}`,
-      address: role.address,
-      procedure: procedure && procedure.present && procedure.version !== null && procedure.sha256 !== null ? { name, version: procedure.version, sha256: procedure.sha256, ...procedure.text !== void 0 ? { text: procedure.text } : {} } : null,
-      // Why a procedure file exists but is not delivered (symlink, FIFO,
-      // over 64 KiB), so the send can say so.
-      procedureProblem: procedure?.problem ?? null
-    };
-  }
-  function claimProcedureDelivery({ role, sha256: hash, address }) {
-    return updateState((state) => {
-      const seen = isPlainObject5(state.deliveries[role]) ? state.deliveries[role] : {};
-      if (seen[address] === hash) return false;
-      state.deliveries[role] = { ...seen, [address]: hash };
-      return true;
-    });
-  }
-  function releaseProcedureDelivery({ role, sha256: hash, address }) {
-    try {
-      updateState((state) => {
-        if (state.deliveries[role]?.[address] === hash) delete state.deliveries[role][address];
-      });
-    } catch {
-    }
-  }
-  function enforcement(tableRead = read()) {
-    const ignored = [];
-    const fromEnv = env("AGENT_LINK_ROLE_ENFORCEMENT", env2).value?.trim().toLowerCase();
-    if (fromEnv) {
-      if (ENFORCEMENT_MODES.includes(fromEnv)) return { mode: fromEnv, source: "AGENT_LINK_ROLE_ENFORCEMENT", ignored };
-      ignored.push({ source: "AGENT_LINK_ROLE_ENFORCEMENT", reason: `not one of ${ENFORCEMENT_MODES.join(", ")}` });
-    }
-    if (tableRead.error) ignored.push({ source: "roles.json", reason: "unreadable; enforcement falls back to the default (fails open)" });
-    if (tableRead.table.enforcement) return { mode: tableRead.table.enforcement, source: "roles.json", ignored };
-    return { mode: DEFAULT_ENFORCEMENT, source: "default", ignored };
-  }
-  return {
-    read,
-    list,
-    get,
-    set,
-    clear,
-    setPolicy,
-    rolesOf,
-    holdings,
-    resolve,
-    claimProcedureDelivery,
-    releaseProcedureDelivery,
-    enforcement,
-    paths: { table: tablePath, procedures: proceduresDir, procedureFile, state: statePath }
-  };
-}
-function procedureProblemWarning(role) {
-  if (!role?.procedureProblem) return null;
-  return {
-    code: "role_procedure_unavailable",
-    message: `The procedure for role ${role.role} was not sent: ${role.procedureProblem}. Ask the user to fix roles/${role.role}.md.`,
-    details: { role: role.role, problem: role.procedureProblem }
-  };
-}
-
 // src/delivery/role-policy.js
 var DIRECT_COORDINATION_TAG = "direct-coordination";
 function checkRoleAddressing({ mode, senderAddress, targetAddress, via = null, isReply = false, rolesOf, holdingsOf = null }) {
@@ -26559,7 +29242,7 @@ function checkRoleAddressing({ mode, senderAddress, targetAddress, via = null, i
 
 // src/tools/claude-send.js
 var DEFAULT_WAIT_TIMEOUT_MS = LIMITS.timeoutMs.def;
-var DEFAULT_POLL_INTERVAL_MS2 = 250;
+var DEFAULT_POLL_INTERVAL_MS3 = 250;
 var claudeSendTool = {
   name: "message_claude_session",
   description: "Deliver a message to a Claude Desktop or Claude Code session by exact sessionId or by fuzzy query (title, cwd, partial id). Pass exactly one of sessionId or query. The message is queued in the local Agent Link JSONL mailbox. Claude Code sessions can receive through Channels when enabled; Desktop sessions receive through the UserPromptSubmit hook and read_agent_link_inbox visible tool result. Returns {messageId, delivery, target, resolution, receipt}. An unmatched target is a not_found error and a query matching several sessions is an ambiguous error (details.candidates). delivery is 'queued-online' when the target session is currently loaded as a `claude --resume` process, otherwise 'queued-offline'. Label the message with anticipation: 'reply' (a reply is expected), 'action' (do it and mark it done), or 'fyi' (default; no reply needed), plus an optional replyBy deadline. The recipient resolves a 'reply' or 'action' message explicitly with reply_agent_link_message; it is reminded between its turns until then, up to a cap. Set waitForReply=true (implies anticipation 'reply') to block until the target resolves this message or timeoutMs elapses; the result is in `wait` ({outcome: 'reply' | 'declined' | 'done' | 'unresolved' | 'expired' | 'timeout', messageStatus, waitedMs, target, reply?}). Only an explicit reply is returned. get_agent_link_message_status reports the status later.",
@@ -26945,7 +29628,7 @@ async function pollForResolution(mb, { messageId, fromIds, toIds, timeoutMs: tim
       return { received: false, outcome: "timeout", messageStatus: messageStatusOf(mb, messageId, now(), settings), reply: null };
     }
     const remaining = deadline - now();
-    await sleep2(Math.min(DEFAULT_POLL_INTERVAL_MS2, Math.max(remaining, 10)));
+    await sleep4(Math.min(DEFAULT_POLL_INTERVAL_MS3, Math.max(remaining, 10)));
   }
 }
 function messageStatusOf(mb, messageId, at, settings) {
@@ -26956,7 +29639,7 @@ function consumeReply(mb, message) {
   if (!message.delivered_at) mb.markDelivered({ messageId: message.id });
   if (!message.acknowledged_at) mb.markAcknowledged({ messageId: message.id });
 }
-function sleep2(ms) {
+function sleep4(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 function claudeSendEntries(deps) {
@@ -26974,7 +29657,7 @@ function callerAddress(caller) {
 
 // src/tools/claude-wait.js
 var DEFAULT_TIMEOUT_MS = LIMITS.timeoutMs.def;
-var DEFAULT_POLL_INTERVAL_MS3 = 250;
+var DEFAULT_POLL_INTERVAL_MS4 = 250;
 var DEFAULT_LIVENESS_INTERVAL_MS = 2e3;
 var claudeWaitTool = {
   name: "wait_for_claude_session",
@@ -27007,7 +29690,7 @@ function makeWaitHandler({
   resolveCurrentSession = null,
   isSessionLoaded,
   livenessIntervalMs = DEFAULT_LIVENESS_INTERVAL_MS,
-  pollIntervalMs: pollIntervalMs2 = DEFAULT_POLL_INTERVAL_MS3,
+  pollIntervalMs: pollIntervalMs2 = DEFAULT_POLL_INTERVAL_MS4,
   now = () => Date.now(),
   reminderSettings: settingsFn = () => reminderSettings(),
   appendReceipt: appendReceipt2 = void 0
@@ -27126,7 +29809,7 @@ function makeWaitHandler({
             };
           }
           const remaining = deadline - now();
-          await sleep3(Math.min(pollIntervalMs2, Math.max(remaining, 10)));
+          await sleep5(Math.min(pollIntervalMs2, Math.max(remaining, 10)));
         }
       } finally {
         releaseWait();
@@ -27134,7 +29817,7 @@ function makeWaitHandler({
     }
   };
 }
-function sleep3(ms) {
+function sleep5(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 function claudeWaitEntries(deps) {
@@ -27970,7 +30653,7 @@ function agentEntries(deps) {
 }
 
 // src/tools/roles.js
-import path14 from "node:path";
+import path16 from "node:path";
 var READ_ONLY4 = { readOnlyHint: true };
 var ADMIN_WRITE = { readOnlyHint: false, destructiveHint: true };
 var ADMIN_NOTE = "Requires AGENT_LINK_ROLE_ADMIN=1 in this Agent Link server's environment, set by the user; otherwise permission_denied (reason role_admin_disabled). A tool caller cannot enable it.";
@@ -28235,12 +30918,12 @@ function optionalProjectRoot(value, role) {
     });
   }
   const root = typeof value === "string" ? value.trim() : "";
-  if (!root || !path14.isAbsolute(root)) {
+  if (!root || !path16.isAbsolute(root)) {
     throw new AgentLinkError("invalid_arguments", "projectRoot must be an absolute path.", {
       details: { errors: [{ path: "projectRoot", rule: "format", expected: "an absolute path" }] }
     });
   }
-  return path14.resolve(root);
+  return path16.resolve(root);
 }
 function roleEntries(deps) {
   const handlers = makeRoleHandlers(deps);
@@ -28254,7 +30937,7 @@ function roleEntries(deps) {
 }
 
 // src/registry/claude.js
-import fs11 from "node:fs";
+import fs14 from "node:fs";
 function isoFromMs(ms) {
   return typeof ms === "number" && Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString() : null;
 }
@@ -28282,7 +30965,7 @@ function toClaudeAgent(session) {
 }
 function exists2(dir) {
   try {
-    return fs11.existsSync(dir);
+    return fs14.existsSync(dir);
   } catch {
     return false;
   }
@@ -28359,809 +31042,8 @@ function makeClaudeProvider({
 }
 
 // src/registry/codex.js
-import fs13 from "node:fs";
-import path16 from "node:path";
-
-// src/codex/session-index.js
-import { promises as fs12 } from "node:fs";
-import path15 from "node:path";
-var MAX_PREVIEW_CHARS = 500;
-var HEAD_WINDOW_BYTES = 64 * 1024;
-var MAX_HEAD_BYTES = 4 * 1024 * 1024;
-var TAIL_WINDOW_BYTES = 256 * 1024;
-var MAX_TAIL_BYTES = 4 * 1024 * 1024;
-var MAX_RECENT_ITEMS_BYTES = 32 * 1024 * 1024;
-var SUMMARY_CACHE_LIMIT = 5e3;
-var LOCAL_LIFECYCLE_EVENTS = Object.freeze({
-  task_started: "possiblyActive",
-  turn_started: "possiblyActive",
-  task_complete: "idle",
-  turn_aborted: "idle",
-  // Older transcript spellings.
-  task_completed: "idle",
-  turn_complete: "idle",
-  turn_completed: "idle"
-});
-var summaryCache = /* @__PURE__ */ new Map();
-function resolveCodexHome(options = {}) {
-  return options.codexHome || codexHome();
-}
-async function listLocalThreads(options = {}) {
-  const codexHome2 = resolveCodexHome(options);
-  const archiveScope2 = normalizeArchiveScope(options);
-  const roots = rootsForArchiveScope(codexHome2, archiveScope2);
-  const sessionIndex = await readSessionIndex(codexHome2);
-  const files = [];
-  for (const root of roots) {
-    files.push(...await collectJsonlFiles(root));
-  }
-  const withStats = (await Promise.all(files.map(async (file) => {
-    try {
-      const stat = await fs12.stat(file);
-      return { file, mtimeMs: stat.mtimeMs, size: stat.size };
-    } catch {
-      return null;
-    }
-  }))).filter(Boolean);
-  withStats.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  const limit2 = clampInt(options.limit ?? 20, 1, 2e3);
-  const searchTerm = options.searchTerm?.toLowerCase() || null;
-  const cwdFilter2 = normalizeCwdFilter(options.cwd);
-  const results = [];
-  for (const entry of withStats) {
-    const summary = await readLocalThreadSummary(entry.file, entry, sessionIndex);
-    if (!summary) {
-      continue;
-    }
-    if (cwdFilter2 && !cwdFilter2.has(summary.cwd)) {
-      continue;
-    }
-    if (searchTerm && !threadMatches(summary, searchTerm)) {
-      continue;
-    }
-    results.push(summary);
-    if (results.length >= limit2) {
-      break;
-    }
-  }
-  return {
-    data: results,
-    source: "local-jsonl",
-    archiveScope: archiveScope2,
-    codexHome: codexHome2,
-    scannedFiles: withStats.length
-  };
-}
-async function listLocalThreadIds(options = {}) {
-  const codexHome2 = resolveCodexHome(options);
-  const out2 = [];
-  for (const root of [path15.join(codexHome2, "sessions"), path15.join(codexHome2, "archived_sessions")]) {
-    for (const file of await collectJsonlFiles(root)) {
-      const id = threadIdFromFilename(path15.basename(file));
-      if (id) {
-        out2.push({ id, path: file });
-      }
-    }
-  }
-  return out2;
-}
-async function readLocalThread(threadId, options = {}) {
-  const codexHome2 = resolveCodexHome(options);
-  const located = await findLocalThreadFile(threadId, { codexHome: codexHome2 });
-  if (!located) {
-    throw new AgentLinkError("not_found", `Thread ${threadId} was not found under ${codexHome2}`, { details: { id: threadId, candidates: [] } });
-  }
-  const sessionIndex = await readSessionIndex(codexHome2);
-  const summary = await readLocalThreadSummary(located.file, located.stat, sessionIndex);
-  if (!summary) {
-    throw new Error(`Thread ${threadId} transcript is unreadable: ${located.file}`);
-  }
-  const thread = { ...summary, lookup: located.lookup };
-  if (!options.includeTurns) {
-    return { thread, source: "local-jsonl" };
-  }
-  return {
-    thread: {
-      ...thread,
-      recentItems: await readRecentTranscriptItems(located.file, options.recentItems ?? 20)
-    },
-    source: "local-jsonl"
-  };
-}
-async function findLocalThreadFile(threadId, options = {}) {
-  const codexHome2 = resolveCodexHome(options);
-  const id = typeof threadId === "string" ? threadId.trim() : "";
-  if (!id || id.includes("/") || id.includes("\\") || id.includes("..")) {
-    return null;
-  }
-  const roots = options.roots ?? [path15.join(codexHome2, "sessions"), path15.join(codexHome2, "archived_sessions")];
-  const suffix = `-${id}.jsonl`;
-  for (const root of roots) {
-    const file = await findNewestFirst(root, (name) => name.endsWith(suffix) || name === `${id}.jsonl`, async (candidate) => {
-      const meta2 = await readSessionMeta(candidate);
-      return meta2?.id === id;
-    });
-    if (file) {
-      return { file, root, lookup: "filename", stat: await statInfo(file) };
-    }
-  }
-  for (const root of roots) {
-    for (const file of await collectJsonlFiles(root)) {
-      const meta2 = await readSessionMeta(file);
-      if (meta2?.id === id) {
-        return { file, root, lookup: "scan", stat: await statInfo(file) };
-      }
-    }
-  }
-  return null;
-}
-async function archiveLocalThread(threadId, options = {}) {
-  const codexHome2 = resolveCodexHome(options);
-  const located = await findLocalThread(threadId, { codexHome: codexHome2 });
-  const activeRoot = path15.join(codexHome2, "sessions");
-  const archivedRoot = path15.join(codexHome2, "archived_sessions");
-  const before = located.thread.archiveState ?? inferArchiveState(located.path);
-  if (before.scope === "archived") {
-    return {
-      ok: true,
-      threadId,
-      alreadyArchived: true,
-      from: located.path,
-      to: located.path,
-      thread: located.thread,
-      archiveStateBefore: before,
-      archiveStateAfter: before,
-      codexHome: codexHome2
-    };
-  }
-  const relative = path15.relative(activeRoot, located.path);
-  if (relative.startsWith("..") || path15.isAbsolute(relative)) {
-    throw new AgentLinkError("permission_denied", `Thread ${threadId} is not under ${activeRoot}; refusing to archive ${located.path}`, { details: { reason: "outside active sessions root" } });
-  }
-  const destination = path15.join(archivedRoot, relative);
-  await fs12.mkdir(path15.dirname(destination), { recursive: true });
-  await moveFileWithoutOverwrite(located.path, destination, threadId);
-  const afterThread = {
-    ...located.thread,
-    path: destination,
-    archiveState: inferArchiveState(destination)
-  };
-  return {
-    ok: true,
-    threadId,
-    alreadyArchived: false,
-    from: located.path,
-    to: destination,
-    thread: afterThread,
-    archiveStateBefore: before,
-    archiveStateAfter: afterThread.archiveState,
-    codexHome: codexHome2
-  };
-}
-async function moveFileWithoutOverwrite(source, destination, threadId) {
-  let placeholder;
-  try {
-    placeholder = await fs12.open(destination, "wx");
-  } catch (error2) {
-    if (error2.code === "EEXIST") {
-      throw new AgentLinkError("state_io_error", `Archive destination already exists for thread ${threadId}: ${destination}`, { details: { errno: "EEXIST" } });
-    }
-    throw error2;
-  }
-  await placeholder.close();
-  try {
-    await moveFileAcrossDevices(source, destination);
-  } catch (error2) {
-    await fs12.rm(destination, { force: true }).catch(() => {
-    });
-    throw error2;
-  }
-}
-async function moveFileAcrossDevices(source, destination) {
-  try {
-    await fs12.rename(source, destination);
-    return;
-  } catch (error2) {
-    if (error2.code !== "EXDEV") {
-      throw error2;
-    }
-  }
-  const sourceStat = await fs12.stat(source);
-  const staging = `${destination}.exdev-tmp-${process.pid}`;
-  try {
-    await fs12.copyFile(source, staging);
-    await fs12.utimes(staging, sourceStat.atime, sourceStat.mtime);
-    await fs12.rename(staging, destination);
-  } catch (error2) {
-    await fs12.rm(staging, { force: true });
-    throw error2;
-  }
-  await fs12.unlink(source);
-}
-async function findLocalThread(threadId, options = {}) {
-  const codexHome2 = resolveCodexHome(options);
-  const found = await readLocalThread(threadId, { codexHome: codexHome2 });
-  return {
-    thread: found.thread,
-    path: found.thread.path,
-    codexHome: codexHome2
-  };
-}
-async function findNewestFirst(root, nameMatches, confirm) {
-  let entries;
-  try {
-    entries = await fs12.readdir(root, { withFileTypes: true });
-  } catch {
-    return null;
-  }
-  entries.sort((a, b) => a.name < b.name ? 1 : a.name > b.name ? -1 : 0);
-  for (const entry of entries) {
-    if (entry.isFile() && entry.name.endsWith(".jsonl") && nameMatches(entry.name)) {
-      const full = path15.join(root, entry.name);
-      if (await confirm(full)) {
-        return full;
-      }
-    }
-  }
-  for (const entry of entries) {
-    if (entry.isDirectory()) {
-      const found = await findNewestFirst(path15.join(root, entry.name), nameMatches, confirm);
-      if (found) {
-        return found;
-      }
-    }
-  }
-  return null;
-}
-async function statInfo(file) {
-  try {
-    const stat = await fs12.stat(file);
-    return { file, mtimeMs: stat.mtimeMs, size: stat.size };
-  } catch {
-    return { file };
-  }
-}
-var THREAD_ID_IN_NAME = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i;
-function threadIdFromFilename(name) {
-  return THREAD_ID_IN_NAME.exec(name)?.[1] ?? null;
-}
-async function collectJsonlFiles(root) {
-  let entries;
-  try {
-    entries = await fs12.readdir(root, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  const out2 = [];
-  for (const entry of entries) {
-    const fullPath = path15.join(root, entry.name);
-    if (entry.isDirectory()) {
-      out2.push(...await collectJsonlFiles(fullPath));
-    } else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
-      out2.push(fullPath);
-    }
-  }
-  return out2;
-}
-async function readSessionIndex(codexHome2) {
-  const indexPath = path15.join(codexHome2, "session_index.jsonl");
-  let raw;
-  try {
-    raw = await fs12.readFile(indexPath, "utf8");
-  } catch {
-    return /* @__PURE__ */ new Map();
-  }
-  const index = /* @__PURE__ */ new Map();
-  for (const record2 of parseJsonlLines(raw)) {
-    if (record2.id && record2.thread_name) {
-      index.set(record2.id, {
-        name: record2.thread_name,
-        updatedAt: record2.updated_at ?? null
-      });
-    }
-  }
-  return index;
-}
-async function readRange(handle, start, length) {
-  const buffer = Buffer.alloc(length);
-  let offset = 0;
-  while (offset < length) {
-    const { bytesRead } = await handle.read(buffer, offset, length - offset, start + offset);
-    if (bytesRead === 0) {
-      break;
-    }
-    offset += bytesRead;
-  }
-  return offset === length ? buffer : buffer.subarray(0, offset);
-}
-function completeLines(buffer, { atStart, atEnd }) {
-  const lines = [];
-  let begin = 0;
-  if (!atStart) {
-    const first = buffer.indexOf(10);
-    if (first < 0) {
-      return lines;
-    }
-    begin = first + 1;
-  }
-  while (begin < buffer.length) {
-    const next = buffer.indexOf(10, begin);
-    if (next < 0) {
-      if (atEnd) {
-        lines.push(buffer.toString("utf8", begin));
-      }
-      break;
-    }
-    lines.push(buffer.toString("utf8", begin, next));
-    begin = next + 1;
-  }
-  return lines;
-}
-function parseLine(line) {
-  if (!line) {
-    return null;
-  }
-  try {
-    return JSON.parse(line);
-  } catch {
-    return null;
-  }
-}
-async function readSessionMeta(file) {
-  let handle;
-  try {
-    handle = await fs12.open(file, "r");
-    const { size } = await handle.stat();
-    let window = Math.min(HEAD_WINDOW_BYTES, size);
-    while (window > 0) {
-      const buffer = await readRange(handle, 0, window);
-      const newline = buffer.indexOf(10);
-      if (newline >= 0 || window >= size) {
-        const record2 = parseLine(buffer.toString("utf8", 0, newline >= 0 ? newline : buffer.length));
-        return record2?.type === "session_meta" ? record2.payload ?? null : null;
-      }
-      if (window >= MAX_HEAD_BYTES) {
-        return null;
-      }
-      window = Math.min(window * 4, MAX_HEAD_BYTES, size);
-    }
-    return null;
-  } catch {
-    return null;
-  } finally {
-    await handle?.close();
-  }
-}
-async function readHeadRecords(handle, size) {
-  let window = Math.min(HEAD_WINDOW_BYTES, size);
-  while (true) {
-    const buffer = await readRange(handle, 0, window);
-    const lines = completeLines(buffer, { atStart: true, atEnd: window >= size });
-    const records = lines.map(parseLine).filter(Boolean);
-    const hasMeta = records.some((record2) => record2.type === "session_meta");
-    const hasUser = records.some((record2) => userTextFromRecord(record2) !== null);
-    if (hasMeta && hasUser || window >= size || window >= MAX_HEAD_BYTES) {
-      const coveredBytes = window >= size ? size : buffer.lastIndexOf(10) + 1;
-      return { records, coveredBytes };
-    }
-    window = Math.min(window * 4, MAX_HEAD_BYTES, size);
-  }
-}
-async function readTailRecords(handle, size, skipBefore) {
-  let window = Math.min(TAIL_WINDOW_BYTES, size - skipBefore);
-  while (window > 0) {
-    const start = size - window;
-    const buffer = await readRange(handle, start, window);
-    const lines = completeLines(buffer, { atStart: start <= skipBefore, atEnd: true });
-    const records = lines.map(parseLine).filter(Boolean);
-    const hasLifecycle = records.some((record2) => lifecycleEventType(record2));
-    if (hasLifecycle || start <= skipBefore || window >= MAX_TAIL_BYTES) {
-      return records;
-    }
-    window = Math.min(window * 4, MAX_TAIL_BYTES, size - skipBefore);
-  }
-  return [];
-}
-function cachedSummary(file, size, mtimeMs) {
-  const cached2 = summaryCache.get(file);
-  if (!cached2 || cached2.size !== size || cached2.mtimeMs !== mtimeMs) {
-    return null;
-  }
-  summaryCache.delete(file);
-  summaryCache.set(file, cached2);
-  return cached2;
-}
-async function readLocalThreadSummary(file, fileInfo = {}, sessionIndex = /* @__PURE__ */ new Map()) {
-  if (Number.isFinite(fileInfo.size) && Number.isFinite(fileInfo.mtimeMs)) {
-    const hit = cachedSummary(file, fileInfo.size, fileInfo.mtimeMs);
-    if (hit) {
-      return finalizeSummary(hit.parsed, file, fileInfo, sessionIndex);
-    }
-  }
-  let handle;
-  try {
-    handle = await fs12.open(file, "r");
-    const stat = await handle.stat();
-    const cacheKey = file;
-    const cached2 = cachedSummary(file, stat.size, stat.mtimeMs);
-    if (cached2) {
-      return finalizeSummary(cached2.parsed, file, { size: stat.size, mtimeMs: stat.mtimeMs }, sessionIndex);
-    }
-    const head = await readHeadRecords(handle, stat.size);
-    const tail = head.coveredBytes >= stat.size ? [] : await readTailRecords(handle, stat.size, head.coveredBytes);
-    const parsed = summarizeRecords([...head.records, ...tail]);
-    summaryCache.set(cacheKey, { size: stat.size, mtimeMs: stat.mtimeMs, parsed });
-    if (summaryCache.size > SUMMARY_CACHE_LIMIT) {
-      summaryCache.delete(summaryCache.keys().next().value);
-    }
-    return finalizeSummary(parsed, file, { size: stat.size, mtimeMs: stat.mtimeMs }, sessionIndex);
-  } catch {
-    return null;
-  } finally {
-    await handle?.close().catch(() => {
-    });
-  }
-}
-function summarizeRecords(records) {
-  let meta2 = null;
-  let firstUserMessage = null;
-  let lastEventType = null;
-  let lastLifecycleEvent = null;
-  let lastTimestamp = null;
-  let lastAgentMessage = null;
-  let threadName = null;
-  for (const record2 of records) {
-    lastTimestamp = record2.timestamp ?? lastTimestamp;
-    if (record2.type === "session_meta") {
-      meta2 ??= record2.payload;
-      continue;
-    }
-    const userText = userTextFromRecord(record2);
-    if (userText !== null && firstUserMessage === null) {
-      firstUserMessage = userText;
-    }
-    const agentText = agentTextFromRecord(record2);
-    if (agentText !== null) {
-      lastAgentMessage = agentText;
-    }
-    if (record2.type === "event_msg" && record2.payload?.type) {
-      lastEventType = record2.payload.type;
-      const lifecycle = lifecycleEventType(record2);
-      if (lifecycle) {
-        lastLifecycleEvent = lifecycle;
-      }
-      if (record2.payload.type === "thread_name_updated" && record2.payload.thread_name) {
-        threadName = record2.payload.thread_name;
-      }
-    }
-  }
-  return { meta: meta2, firstUserMessage, lastEventType, lastLifecycleEvent, lastTimestamp, lastAgentMessage, threadName };
-}
-function finalizeSummary(parsed, file, fileInfo, sessionIndex) {
-  const { meta: meta2 } = parsed;
-  if (!meta2?.id) {
-    return null;
-  }
-  const indexed = sessionIndex.get(meta2.id) ?? null;
-  const updatedAt = Math.floor(Math.max(
-    parseDateSeconds(parsed.lastTimestamp) ?? 0,
-    parseDateSeconds(indexed?.updatedAt) ?? 0,
-    (fileInfo.mtimeMs ?? Date.now()) / 1e3
-  ));
-  const createdSeconds = parseDateSeconds(meta2.timestamp);
-  return {
-    id: meta2.id,
-    name: parsed.threadName ?? indexed?.name ?? null,
-    preview: truncate(parsed.firstUserMessage || "", MAX_PREVIEW_CHARS),
-    cwd: meta2.cwd ?? null,
-    createdAt: createdSeconds === null ? null : Math.floor(createdSeconds),
-    updatedAt,
-    status: localStatus(parsed.lastLifecycleEvent, parsed.lastEventType),
-    path: file,
-    archiveState: inferArchiveState(file),
-    source: meta2.source ?? null,
-    originator: meta2.originator ?? null,
-    cliVersion: meta2.cli_version ?? null,
-    modelProvider: meta2.model_provider ?? null,
-    agentNickname: null,
-    agentRole: null,
-    localOnly: true,
-    lastEventType: parsed.lastEventType,
-    lastAgentMessage: truncate(parsed.lastAgentMessage || "", MAX_PREVIEW_CHARS),
-    size: fileInfo.size ?? null
-  };
-}
-async function readRecentTranscriptItems(file, limit2) {
-  const wanted = clampInt(limit2, 1, 100);
-  let handle;
-  try {
-    handle = await fs12.open(file, "r");
-    const { size } = await handle.stat();
-    let end = size;
-    let carry = Buffer.alloc(0);
-    let bytesRead = 0;
-    const newestFirst2 = [];
-    while (end > 0 && newestFirst2.length < wanted + 1 && bytesRead < MAX_RECENT_ITEMS_BYTES) {
-      const length = Math.min(TAIL_WINDOW_BYTES, end);
-      const start = end - length;
-      const chunk = Buffer.concat([await readRange(handle, start, length), carry]);
-      bytesRead += length;
-      const lines = completeLines(chunk, { atStart: start === 0, atEnd: true });
-      const firstNewline = chunk.indexOf(10);
-      carry = start === 0 || firstNewline < 0 ? start === 0 ? Buffer.alloc(0) : chunk : chunk.subarray(0, firstNewline);
-      for (let index = lines.length - 1; index >= 0; index -= 1) {
-        const item = summarizeRecord(parseLine(lines[index]));
-        if (item) {
-          newestFirst2.push(item);
-        }
-      }
-      end = start;
-    }
-    return dedupeAdjacent(newestFirst2.reverse()).slice(-wanted);
-  } finally {
-    await handle?.close().catch(() => {
-    });
-  }
-}
-function dedupeAdjacent(items) {
-  const out2 = [];
-  for (const item of items) {
-    const previous = out2.at(-1);
-    if (previous && previous.text !== void 0 && previous.type === item.type && previous.text === item.text) {
-      continue;
-    }
-    out2.push(item);
-  }
-  return out2;
-}
-function summarizeRecord(record2) {
-  if (!record2) {
-    return null;
-  }
-  const userText = userTextFromRecord(record2);
-  if (userText !== null) {
-    return { timestamp: record2.timestamp, type: "userMessage", text: truncate(userText, MAX_PREVIEW_CHARS) };
-  }
-  const agentText = agentTextFromRecord(record2);
-  if (agentText !== null) {
-    return { timestamp: record2.timestamp, type: "agentMessage", text: truncate(agentText, MAX_PREVIEW_CHARS) };
-  }
-  if (record2.type === "event_msg") {
-    const type = record2.payload?.type;
-    if (type === "item_completed" && record2.payload.item?.type) {
-      return { timestamp: record2.timestamp, type: lowerFirst(record2.payload.item.type) };
-    }
-    if (type && LOCAL_LIFECYCLE_EVENTS[type]) {
-      return { timestamp: record2.timestamp, type };
-    }
-    if (type?.includes("exec") || type?.includes("tool")) {
-      return { timestamp: record2.timestamp, type };
-    }
-  }
-  if (record2.type === "response_item" && record2.payload?.type === "message") {
-    return {
-      timestamp: record2.timestamp,
-      type: `${record2.payload.role}Message`,
-      text: truncate(contentText(record2.payload.content), MAX_PREVIEW_CHARS)
-    };
-  }
-  return null;
-}
-function userTextFromRecord(record2) {
-  if (record2?.type === "event_msg") {
-    if (record2.payload?.type === "user_message") {
-      return String(record2.payload.message ?? "");
-    }
-    if (record2.payload?.type === "item_completed" && record2.payload.item?.type === "UserMessage") {
-      return contentText(record2.payload.item.content);
-    }
-  }
-  if (record2?.type === "response_item" && record2.payload?.type === "message" && record2.payload.role === "user") {
-    return contentText(record2.payload.content);
-  }
-  return null;
-}
-function agentTextFromRecord(record2) {
-  if (record2?.type === "event_msg") {
-    if (record2.payload?.type === "agent_message") {
-      return String(record2.payload.message ?? "");
-    }
-    if (record2.payload?.type === "item_completed" && record2.payload.item?.type === "AgentMessage") {
-      return contentText(record2.payload.item.content);
-    }
-  }
-  if (record2?.type === "response_item" && record2.payload?.type === "message" && record2.payload.role === "assistant") {
-    return contentText(record2.payload.content);
-  }
-  return null;
-}
-function lifecycleEventType(record2) {
-  const type = record2?.type === "event_msg" ? record2.payload?.type : null;
-  return type && Object.prototype.hasOwnProperty.call(LOCAL_LIFECYCLE_EVENTS, type) ? type : null;
-}
-function localStatus(lastLifecycleEvent, lastEventType = lastLifecycleEvent) {
-  const mapped = lastLifecycleEvent ? LOCAL_LIFECYCLE_EVENTS[lastLifecycleEvent] : null;
-  return {
-    type: mapped ?? "unknown",
-    source: "local-jsonl",
-    lastLifecycleEvent: lastLifecycleEvent ?? null,
-    lastEventType: lastEventType ?? null
-  };
-}
-function contentText(content) {
-  if (!Array.isArray(content)) {
-    return "";
-  }
-  return content.map((item) => item?.text ?? "").filter(Boolean).join("\n");
-}
-function lowerFirst(value) {
-  const text2 = String(value);
-  return text2.charAt(0).toLowerCase() + text2.slice(1);
-}
-function parseDateSeconds(value) {
-  if (!value) {
-    return null;
-  }
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed / 1e3 : null;
-}
-function threadMatches(thread, searchTerm) {
-  return scoreThreadMatch(thread, searchTerm).score > 0;
-}
-function rootsForArchiveScope(codexHome2, archiveScope2) {
-  if (archiveScope2 === "archived") {
-    return [path15.join(codexHome2, "archived_sessions")];
-  }
-  if (archiveScope2 === "all") {
-    return [
-      path15.join(codexHome2, "sessions"),
-      path15.join(codexHome2, "archived_sessions")
-    ];
-  }
-  return [path15.join(codexHome2, "sessions")];
-}
-function normalizeCwdFilter(cwd) {
-  if (!cwd) {
-    return null;
-  }
-  if (Array.isArray(cwd)) {
-    return new Set(cwd);
-  }
-  return /* @__PURE__ */ new Set([cwd]);
-}
-
-// src/codex/thread-summary.js
-function summarizeThread(thread, options = {}) {
-  const summary = {
-    id: thread.id,
-    address: codexAddress(thread.id),
-    name: thread.name ?? null,
-    preview: truncate(thread.preview ?? "", 700),
-    status: thread.status,
-    createdAt: toIso(thread.createdAt),
-    updatedAt: toIso(thread.updatedAt),
-    cwd: thread.cwd ?? null,
-    path: thread.path ?? null,
-    archiveState: thread.archiveState ?? inferArchiveState(thread),
-    source: thread.source ?? null,
-    modelProvider: thread.modelProvider ?? null,
-    cliVersion: thread.cliVersion ?? null,
-    forkedFromId: thread.forkedFromId ?? null,
-    agentNickname: thread.agentNickname ?? null,
-    agentRole: thread.agentRole ?? null
-  };
-  if (thread.localOnly) {
-    summary.localOnly = true;
-    summary.originator = thread.originator ?? null;
-    summary.lastEventType = thread.lastEventType ?? null;
-    summary.lastAgentMessage = thread.lastAgentMessage ?? null;
-  }
-  if (options.includeTurns) {
-    const limit2 = clampInt(options.recentItems ?? LIMITS.recentItems.def, LIMITS.recentItems.min, LIMITS.recentItems.max);
-    if (thread.recentItems) {
-      summary.recentItems = limit2 === 0 ? [] : thread.recentItems.slice(-limit2);
-    } else {
-      const window = recentItemWindow(thread.turns ?? [], limit2);
-      summary.recentItems = window.items;
-      summary.turns = window.turns;
-    }
-  }
-  return summary;
-}
-function recentItemWindow(turns, limit2) {
-  const items = [];
-  const windowTurns = [];
-  for (let index = turns.length - 1; index >= 0 && items.length < limit2; index -= 1) {
-    const turn = turns[index];
-    const turnItems = (turn.items ?? []).map(summarizeItem);
-    const kept = turnItems.slice(Math.max(0, turnItems.length - (limit2 - items.length)));
-    items.unshift(...kept.map((item) => ({ ...item, turnId: turn.id ?? null })));
-    windowTurns.unshift({
-      ...summarizeTurn({ ...turn, items: [] }),
-      items: kept,
-      ...kept.length < turnItems.length ? { itemsOmitted: turnItems.length - kept.length } : {}
-    });
-  }
-  return { items, turns: windowTurns };
-}
-function summarizeTurn(turn) {
-  return {
-    id: turn.id,
-    status: turn.status,
-    startedAt: toIso(turn.startedAt),
-    completedAt: toIso(turn.completedAt),
-    durationMs: turn.durationMs ?? null,
-    error: turn.error ?? null,
-    items: (turn.items ?? []).map(summarizeItem)
-  };
-}
-var ITEM_ID_PATTERN = /^[A-Za-z0-9_.:@/+-]{1,128}$/;
-function safeId(value) {
-  return typeof value === "string" && ITEM_ID_PATTERN.test(value) ? value : null;
-}
-function safeIdList(value) {
-  return Array.isArray(value) ? value.map(safeId).filter(Boolean).slice(0, 50) : [];
-}
-function summarizeItem(item) {
-  const type = safeId(item?.type) ?? "unknown";
-  const id = safeId(item?.id);
-  switch (type) {
-    case "userMessage":
-      return { type, id, text: summarizeUserContent(item.content) };
-    case "agentMessage":
-      return { type, id, text: truncate(item.text ?? "", 1e3), phase: safeId(item.phase) };
-    case "reasoning":
-      return { type, id, summary: (Array.isArray(item.summary) ? item.summary : []).map((text2) => truncate(String(text2), 500)) };
-    case "commandExecution":
-      return {
-        type,
-        id,
-        command: truncate(item.command ?? "", 500),
-        status: safeId(item.status),
-        exitCode: Number.isInteger(item.exitCode) ? item.exitCode : null,
-        durationMs: Number.isFinite(item.durationMs) ? item.durationMs : null
-      };
-    case "mcpToolCall":
-      return {
-        type,
-        id,
-        server: safeId(item.server),
-        tool: safeId(item.tool),
-        status: safeId(item.status),
-        durationMs: Number.isFinite(item.durationMs) ? item.durationMs : null
-      };
-    case "collabAgentToolCall":
-      return {
-        type,
-        id,
-        tool: safeId(item.tool),
-        status: safeId(item.status),
-        receiverThreadIds: safeIdList(item.receiverThreadIds),
-        agentsStates: item.agentsStates && typeof item.agentsStates === "object" ? item.agentsStates : {}
-      };
-    default:
-      return { type, id };
-  }
-}
-function summarizeUserContent(content) {
-  return (content ?? []).map((entry) => {
-    if (entry.type === "text") {
-      return truncate(entry.text ?? "", 1e3);
-    }
-    if (entry.type === "localImage") {
-      return `[localImage] ${entry.path}`;
-    }
-    if (entry.type === "image") {
-      return `[image] ${entry.url}`;
-    }
-    if (entry.type === "mention" || entry.type === "skill") {
-      return `[${entry.type}] ${entry.name}`;
-    }
-    return `[${entry.type}]`;
-  }).join("\n");
-}
-
-// src/registry/codex.js
+import fs15 from "node:fs";
+import path17 from "node:path";
 var SURFACE_BY_SOURCE = Object.freeze({ vscode: "app", cli: "cli", exec: "cli" });
 var LOADED_STATUS = /* @__PURE__ */ new Set(["idle", "active", "systemError"]);
 function codexSurfaces(source) {
@@ -29205,7 +31087,7 @@ function codexInstallState() {
   }
   const hasSessions = Boolean(home) && ["sessions", "archived_sessions"].some((dir) => {
     try {
-      return fs13.existsSync(path16.join(
+      return fs15.existsSync(path17.join(
         /** @type {string} */
         home,
         dir
@@ -29279,849 +31161,6 @@ function makeCodexProvider({ appServer, listThreads, readLocal = readLocalThread
     /** @type {"codex"} */
     "codex"
   ), list: listSessions, get };
-}
-
-// src/shared/process.js
-import { spawn as spawn2 } from "node:child_process";
-function spawnAndWait(command, args, { spawnImpl = spawn2 } = {}) {
-  return new Promise((resolve) => {
-    const child = spawnImpl(command, args, {
-      stdio: "ignore"
-    });
-    child.on("error", (error2) => {
-      resolve({ error: error2 });
-    });
-    child.on("exit", (code, signal) => {
-      resolve({ code, signal });
-    });
-  });
-}
-function shellQuoteForDisplay(value) {
-  if (/^[A-Za-z0-9_/:.=+-]+$/.test(value)) {
-    return value;
-  }
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-function sleep4(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// src/codex/desktop-routing.js
-function codexThreadDeepLink(threadId) {
-  return `codex://threads/${encodeURIComponent(threadId)}`;
-}
-function makeDesktopRouting({
-  appServer,
-  platform = () => process.platform,
-  dryRun = () => envFlag("AGENT_LINK_GUI_OPEN_DRY_RUN", false),
-  run = spawnAndWait
-}) {
-  function guiRoutingWarnings({ ephemeral }) {
-    const warnings = [];
-    if (ephemeral) {
-      warnings.push("The thread was created as ephemeral; Codex Desktop may not be able to reload it from persisted session history.");
-    }
-    const appServerSummary = appServer.getConnectionSummary();
-    if (appServerSummary.managed) {
-      warnings.push("Agent Link is connected to a managed app-server, not the Codex Desktop stdio app-server. The deep link targets the persisted thread id, but runtime-loaded state is not shared.");
-    }
-    return warnings;
-  }
-  async function openCodexDesktopThread({ threadId, ephemeral }) {
-    if (platform() !== "darwin") {
-      return {
-        attempted: false,
-        reason: "Codex Desktop thread routing is currently implemented for macOS only",
-        deepLink: codexThreadDeepLink(threadId),
-        threadId
-      };
-    }
-    const deepLink = codexThreadDeepLink(threadId);
-    const command = "open";
-    const args = ["-g", deepLink];
-    const commandDisplay = `${command} ${args.map(shellQuoteForDisplay).join(" ")}`;
-    if (dryRun()) {
-      return {
-        attempted: true,
-        ok: true,
-        dryRun: true,
-        command: commandDisplay,
-        deepLink,
-        threadId,
-        behavior: "Dry run only; no GUI process was contacted.",
-        focusPolicy: "No keyboard, mouse, menu, or window automation is used. The real path uses LaunchServices with -g, but Codex Desktop may still focus itself while handling valid deep links.",
-        warnings: guiRoutingWarnings({ ephemeral })
-      };
-    }
-    const outcome = await run(command, args);
-    if (outcome.error) {
-      return {
-        attempted: true,
-        ok: false,
-        command: commandDisplay,
-        deepLink,
-        error: outcome.error.message,
-        threadId,
-        warnings: guiRoutingWarnings({ ephemeral })
-      };
-    }
-    return {
-      attempted: true,
-      ok: outcome.code === 0,
-      command: commandDisplay,
-      deepLink,
-      exitCode: outcome.code,
-      signal: outcome.signal,
-      threadId,
-      behavior: "Routed Codex Desktop to the created thread via the official codex://threads/<id> deep link. No keyboard, mouse, menu, or window automation was used.",
-      focusPolicy: "LaunchServices was invoked with -g. Codex Desktop currently focuses its primary window while handling valid deep links, so callers should keep openInGui false when they need a strictly quiet launch.",
-      warnings: guiRoutingWarnings({ ephemeral })
-    };
-  }
-  return { openCodexDesktopThread, guiRoutingWarnings };
-}
-
-// src/codex/loaded-threads.js
-var LOADED_LOOKUP_MAX_PAGES = 50;
-function extractLoadedThreadIds(response = {}) {
-  const values = Array.isArray(response.data) ? response.data : Array.isArray(response.threadIds) ? response.threadIds : [];
-  return values.map((entry) => typeof entry === "string" ? entry : entry?.id ?? entry?.threadId ?? entry?.localThreadId).filter(Boolean);
-}
-function normalizeLoadedThreadEntries(response = {}, loadedThreadIds = []) {
-  const values = Array.isArray(response.data) ? response.data : Array.isArray(response.threadIds) ? response.threadIds : loadedThreadIds;
-  return values.map((entry) => {
-    if (typeof entry === "string") {
-      return { id: entry };
-    }
-    if (entry && typeof entry === "object") {
-      const id = entry.id ?? entry.threadId ?? entry.localThreadId ?? null;
-      return {
-        ...entry,
-        id
-      };
-    }
-    return null;
-  }).filter((entry) => typeof entry?.id === "string" && entry.id.trim().length > 0);
-}
-function buildSubagentRegistryEntry(thread, sidebarMembership) {
-  const spawn3 = extractThreadSpawnSource(thread.source) ?? {};
-  return {
-    id: thread.id,
-    parentThreadId: spawn3.parentThreadId ?? null,
-    depth: spawn3.depth ?? null,
-    agentPath: spawn3.agentPath ?? null,
-    agentNickname: thread.agentNickname ?? spawn3.agentNickname ?? null,
-    agentRole: thread.agentRole ?? spawn3.agentRole ?? null,
-    status: thread.status ?? null,
-    cwd: thread.cwd ?? null,
-    path: thread.path ?? null,
-    archiveState: thread.archiveState ?? inferArchiveState(thread),
-    updatedAt: thread.updatedAt ?? null,
-    sidebarMembership: sidebarMembership ?? "unknown",
-    source: thread.source ?? null
-  };
-}
-function extractThreadSpawnSource(source) {
-  if (!source || typeof source !== "object") {
-    return null;
-  }
-  const subagent = source.subAgent ?? source.subagent ?? null;
-  if (!subagent || typeof subagent !== "object") {
-    return null;
-  }
-  const spawn3 = subagent.threadSpawn ?? subagent.thread_spawn ?? null;
-  if (!spawn3 || typeof spawn3 !== "object") {
-    return null;
-  }
-  return {
-    parentThreadId: spawn3.parentThreadId ?? spawn3.parent_thread_id ?? null,
-    depth: spawn3.depth ?? null,
-    agentPath: spawn3.agentPath ?? spawn3.agent_path ?? null,
-    agentNickname: spawn3.agentNickname ?? spawn3.agent_nickname ?? null,
-    agentRole: spawn3.agentRole ?? spawn3.agent_role ?? null
-  };
-}
-function groupSubagentsByParentThreadId(subagents) {
-  const grouped = {};
-  for (const subagent of subagents) {
-    const parentThreadId = subagent.parentThreadId ?? "unknown";
-    grouped[parentThreadId] ??= [];
-    grouped[parentThreadId].push(subagent);
-  }
-  return grouped;
-}
-function makeLoadedThreads({ appServer, collectAppServerThreadSummaries }) {
-  async function readLoadedPage(args) {
-    const limit2 = clampInt(args.limit ?? LIMITS.list.def, LIMITS.list.min, LIMITS.list.max);
-    if (!args.threadId) {
-      const response = await appServer.request("thread/loaded/list", { limit: limit2, cursor: args.cursor ?? null });
-      return { response, lookup: null };
-    }
-    let cursor = args.cursor ?? null;
-    let pagesScanned = 0;
-    while (pagesScanned < LOADED_LOOKUP_MAX_PAGES) {
-      const page = await appServer.request("thread/loaded/list", { limit: LIMITS.list.max, cursor });
-      pagesScanned += 1;
-      const match = normalizeLoadedThreadEntries(page, extractLoadedThreadIds(page)).find((entry) => entry.id === args.threadId);
-      if (match) {
-        return { response: { data: [match], nextCursor: null }, lookup: { threadId: args.threadId, loaded: true, pagesScanned, complete: true } };
-      }
-      cursor = page.nextCursor ?? null;
-      if (!cursor) break;
-    }
-    return {
-      response: { data: [], nextCursor: null },
-      lookup: { threadId: args.threadId, loaded: cursor ? null : false, pagesScanned, complete: !cursor }
-    };
-  }
-  async function listLoadedThreads(args) {
-    const { response, lookup } = await readLoadedPage(args);
-    const loadedThreadIds = extractLoadedThreadIds(response);
-    const sidebarProbe = await readSidebarStateForMembership();
-    const sidebarState = sidebarProbe.sidebarState;
-    const loadedThreads = normalizeLoadedThreadEntries(response, loadedThreadIds).map((thread) => ({
-      ...thread,
-      sidebarMembership: classifySidebarMembership(thread.id, sidebarState)
-    }));
-    const sidebarMembershipByThreadId = Object.fromEntries(
-      loadedThreads.map((thread) => [thread.id, thread.sidebarMembership])
-    );
-    const subagentRegistry = await buildLoadedSubagentRegistry({
-      loadedThreads,
-      sidebarMembershipByThreadId
-    });
-    return {
-      ok: true,
-      source: "app-server",
-      appServer: appServer.getConnectionSummary(),
-      stateSemantics: loadedStateSemantics(),
-      // Named keys only: app-server response fields are not passed through.
-      data: response.data ?? null,
-      nextCursor: response.nextCursor ?? null,
-      hasMore: Boolean(response.nextCursor),
-      ...lookup ? { lookup } : {},
-      sidebarState,
-      sidebarStateError: sidebarProbe.error,
-      sidebarMembershipSemantics: sidebarMembershipSemantics(),
-      threadIds: Array.isArray(response.threadIds) ? response.threadIds : loadedThreadIds,
-      loadedThreads,
-      sidebarMembershipByThreadId,
-      subagentRegistry
-    };
-  }
-  async function buildLoadedSubagentRegistry({ loadedThreads, sidebarMembershipByThreadId }) {
-    const loadedThreadIds = new Set(
-      loadedThreads.map((thread) => optionalString(thread.id).trim()).filter(Boolean)
-    );
-    const empty = {
-      source: "app-server-thread-list",
-      loadedSubagents: [],
-      byParentThreadId: {},
-      loadedSubagentCount: 0,
-      error: null,
-      note: "Thread-spawn subagents are tracked separately from renderer sidebar membership so background workers remain queryable even when the sidebar omits them."
-    };
-    if (loadedThreadIds.size === 0) {
-      return empty;
-    }
-    try {
-      const response = await collectAppServerThreadSummaries({
-        archiveScope: "all",
-        limit: 1e3,
-        searchTerm: "",
-        cwd: null,
-        sourceKinds: ["subAgentThreadSpawn"]
-      });
-      const loadedSubagents = response.data.filter((thread) => loadedThreadIds.has(thread.id)).map((thread) => buildSubagentRegistryEntry(thread, sidebarMembershipByThreadId[thread.id]));
-      return {
-        ...empty,
-        loadedSubagents,
-        byParentThreadId: groupSubagentsByParentThreadId(loadedSubagents),
-        loadedSubagentCount: loadedSubagents.length
-      };
-    } catch (error2) {
-      return {
-        ...empty,
-        source: "app-server-thread-list-error",
-        error: {
-          message: error2.message,
-          details: error2.details ?? null
-        },
-        note: "Loaded thread IDs were available, but Agent Link could not read subagent source metadata from thread/list."
-      };
-    }
-  }
-  async function getSidebarState(_args = {}) {
-    let response;
-    try {
-      response = await appServer.request("desktop/sidebar/state/read", {});
-    } catch (error2) {
-      if (error2 instanceof AppServerError && typeof error2.code === "number") {
-        throw new AgentLinkError("unsupported", "This Codex app-server does not support desktop/sidebar/state/read.", {
-          details: { capability: "desktop/sidebar/state/read", rpcCode: error2.code, rpcMessage: error2.message },
-          hint: "Sidebar state needs a Codex Desktop app-server with renderer authority. Agent Link does not infer GUI membership."
-        });
-      }
-      throw error2;
-    }
-    const sidebarState = normalizeSidebarStateResponse(response);
-    if (sidebarState.supported === false) {
-      throw new AgentLinkError("unsupported", "The Codex app-server reports sidebar state as unsupported.", {
-        details: { capability: "desktop/sidebar/state/read", reason: sidebarState.unsupported?.reason ?? null, authority: sidebarState.authority ?? null },
-        hint: "Sidebar state needs a Codex Desktop app-server with renderer authority. Agent Link does not infer GUI membership."
-      });
-    }
-    return {
-      ok: true,
-      source: "app-server",
-      appServer: appServer.getConnectionSummary(),
-      sidebarState,
-      sidebarMembershipSemantics: sidebarMembershipSemantics()
-    };
-  }
-  async function readSidebarStateForMembership() {
-    try {
-      const response = await appServer.request("desktop/sidebar/state/read", {});
-      return {
-        sidebarState: normalizeSidebarStateResponse(response),
-        error: null
-      };
-    } catch (error2) {
-      return {
-        sidebarState: normalizeSidebarStateResponse(null),
-        error: {
-          message: error2.message,
-          details: error2.details ?? null,
-          note: "Sidebar state read failed; loaded thread sidebarMembership is unknown because Agent Link does not infer GUI membership from runtime-loaded state."
-        }
-      };
-    }
-  }
-  return { readLoadedPage, listLoadedThreads, getSidebarState };
-}
-
-// src/codex/thread-actions.js
-function copyOptionalString(source, target, key) {
-  const value = optionalString(source[key]).trim();
-  if (value) {
-    target[key] = value;
-  }
-}
-function launchWarnings(args) {
-  if (args.ephemeral !== true) {
-    return [];
-  }
-  return [
-    {
-      code: "ephemeral-thread-limited-history",
-      severity: "warning",
-      message: "This thread was created as ephemeral. Some app-server read paths, including includeTurns-based reply confirmation, may be unavailable; use ephemeral=false for WF tests that need waitForReply evidence."
-    }
-  ];
-}
-function archiveReceiptEvidence({ loadedCheck, archive, action }) {
-  const checked = loadedCheck.checked === true;
-  const loaded = loadedCheck.loaded === true;
-  const status = checked ? loaded ? "loaded_thread_detected" : "loaded_thread_guard_passed" : "loaded_thread_guard_unchecked";
-  return {
-    primaryStatus: action,
-    loadedThreadGuard: {
-      status,
-      checked,
-      loaded: loadedCheck.loaded ?? null,
-      source: loadedCheck.source ?? null,
-      loadedThreadIdsCount: Array.isArray(loadedCheck.loadedThreadIds) ? loadedCheck.loadedThreadIds.length : null,
-      note: loadedCheck.note ?? null,
-      error: loadedCheck.error ?? null
-    },
-    archiveMove: {
-      source: archive.source ?? "local-jsonl",
-      alreadyArchived: archive.alreadyArchived,
-      from: archive.from,
-      to: archive.to,
-      before: archive.archiveStateBefore,
-      after: archive.archiveStateAfter,
-      appServerResponse: archive.response ?? null
-    },
-    interpretation: "For archive receipts, loadedThreadGuard is the primary active-safety evidence. target.status may come from local JSONL and can be unknown even when the app-server loaded-thread guard passed."
-  };
-}
-function launcherAddress(address) {
-  return typeof address === "string" && /^(claude|codex):/.test(address) ? address : null;
-}
-function makeThreadActions({ appServer, messaging, desktop }) {
-  const { buildPeerTurnInput, recordActionReceipt, callerAddress: callerAddress2 } = messaging;
-  const { openCodexDesktopThread } = desktop;
-  async function launchThreadTool(args, toolContext = {}) {
-    const result = await launchThread(args, toolContext);
-    return { ...result, gui: { opened: result.gui?.attempted === true && result.gui?.ok === true, ...result.gui } };
-  }
-  async function archiveThreadTool(args, toolContext = {}) {
-    const result = await archiveThread(args, toolContext);
-    return { status: result.action === "already_archived" ? "already_archived" : "archived", ...result };
-  }
-  async function launchThread(args, toolContext = {}) {
-    assertPeerBodyWithinLimit(optionalString(args.message).trim());
-    const startParams = {};
-    copyOptionalString(args, startParams, "cwd");
-    copyOptionalString(args, startParams, "model");
-    copyOptionalString(args, startParams, "modelProvider");
-    copyOptionalString(args, startParams, "serviceTier");
-    if (typeof args.ephemeral === "boolean") {
-      startParams.ephemeral = args.ephemeral;
-    }
-    const response = await appServer.request("thread/start", startParams);
-    const threadId = requiredString(response.thread?.id, "thread.id");
-    const message = optionalString(args.message).trim();
-    const requestedName = optionalString(args.name).trim();
-    const shouldPersistBlankThread = !message && args.ephemeral !== true;
-    const threadName = requestedName || (shouldPersistBlankThread ? "New thread" : "");
-    let turn = null;
-    let nameUpdate = null;
-    if (threadName) {
-      await appServer.request("thread/name/set", { threadId, name: threadName });
-      nameUpdate = {
-        name: threadName,
-        reason: requestedName ? "name was supplied by caller" : "blank non-ephemeral thread was named so Codex can persist and later reopen it"
-      };
-    }
-    let peerMessage = null;
-    if (message) {
-      const turnParams = { threadId };
-      copyOptionalString(args, turnParams, "cwd");
-      copyOptionalString(args, turnParams, "model");
-      copyOptionalString(args, turnParams, "effort");
-      const overrides = {};
-      for (const field of ["cwd", "model", "effort", "modelProvider", "serviceTier"]) {
-        copyOptionalString(args, overrides, field);
-      }
-      const peer = buildPeerTurnInput({ toolContext, threadId, message, overrides });
-      peerMessage = peer.summary;
-      turnParams.input = peer.input;
-      const turnResponse = await appServer.request("turn/start", turnParams);
-      turn = summarizeTurn(turnResponse.turn);
-    }
-    const shouldOpenGui = args.openInGui === true;
-    const gui = shouldOpenGui ? await openCodexDesktopThread({ threadId, ephemeral: args.ephemeral === true }) : {
-      attempted: false,
-      threadId,
-      deepLink: codexThreadDeepLink(threadId),
-      reason: "openInGui was false; thread was created through app-server without routing or focusing Codex Desktop.",
-      behavior: "Deep link is returned as data only; no GUI process was contacted.",
-      focusPolicy: "No keyboard, mouse, menu, window automation, or LaunchServices route was used."
-    };
-    const deepLink = codexThreadDeepLink(threadId);
-    const appServerSummary = appServer.getConnectionSummary();
-    const action = message ? nameUpdate ? "started_thread+named_thread+started_turn" : "started_thread+started_turn" : nameUpdate ? "started_thread+named_thread" : "started_thread";
-    const result = {
-      ok: true,
-      source: "app-server",
-      action,
-      thread: {
-        ...summarizeThread(response.thread),
-        name: nameUpdate?.name ?? response.thread?.name ?? null
-      },
-      nameUpdate,
-      turn,
-      peerMessage,
-      warnings: launchWarnings(args),
-      gui,
-      appServer: appServerSummary
-    };
-    result.receipt = await recordActionReceipt({
-      action: "launch_thread",
-      receipt: args.receipt,
-      target: {
-        threadId,
-        turnId: turn?.id ?? null,
-        name: result.thread.name,
-        cwd: result.thread.cwd,
-        archiveState: result.thread.archiveState,
-        status: result.thread.status,
-        deepLink
-      },
-      message,
-      finalResponse: null,
-      delivery: {
-        state: "accepted_by_app_server",
-        action,
-        turnId: turn?.id ?? null
-      },
-      replyConfirmation: null,
-      runtimeCallerContext: toolContext.callerContext,
-      appServer: appServerSummary,
-      // R9.9: the launcher, from runtime identity only; external is never one.
-      extra: { launchedBy: launcherAddress(callerAddress2?.(toolContext)) }
-    });
-    return result;
-  }
-  async function archiveThread(args, toolContext = {}) {
-    const threadId = optionalString(args.threadId).trim() || optionalString(toolContext.callerContext?.threadId).trim();
-    if (!threadId) {
-      throw new AgentLinkError("invalid_arguments", "threadId is required when caller thread context is unavailable.", {
-        details: { errors: [{ path: "threadId", rule: "required", expected: "string (no caller thread context)" }] }
-      });
-    }
-    const reason = optionalString(args.reason).trim();
-    const loadedCheck = await checkLoadedForArchive(threadId, {
-      useLocalFallback: args.useLocalFallback
-    });
-    if (loadedCheck.checked) {
-      try {
-        const archive2 = await archiveThreadViaAppServer(threadId);
-        const action2 = archive2.alreadyArchived ? "already_archived" : "app_server_archive";
-        return await buildArchiveThreadResult({
-          source: "app-server",
-          action: action2,
-          threadId,
-          reason,
-          loadedCheck,
-          archive: archive2,
-          args,
-          toolContext
-        });
-      } catch (error2) {
-        if (loadedCheck.loaded && args.forceLoaded !== true) {
-          error2.details = {
-            ...error2.details ?? {},
-            loadedCheck,
-            stateSemantics: loadedStateSemantics(),
-            hint: "Native app-server archive failed while the thread was loaded; refusing local fallback without forceLoaded=true."
-          };
-          throw error2;
-        }
-      }
-    }
-    if (loadedCheck.loaded && args.forceLoaded !== true) {
-      throw new AgentLinkError("active_turn_conflict", `Thread ${threadId} is currently loaded; refusing to archive without forceLoaded=true.`, {
-        details: { status: "loaded", activeTurnId: null, loadedCheck },
-        hint: "Ask the active thread to finish or switch away before archiving, or set forceLoaded=true only when you intentionally accept that risk."
-      });
-    }
-    const archive = await archiveLocalThread(threadId);
-    const action = archive.alreadyArchived ? "already_archived" : "local_archive_moved";
-    return await buildArchiveThreadResult({
-      source: "local-jsonl",
-      action,
-      threadId,
-      reason,
-      loadedCheck,
-      archive,
-      args,
-      toolContext
-    });
-  }
-  async function archiveThreadViaAppServer(threadId) {
-    const before = await readArchiveSnapshot(threadId);
-    const response = await appServer.request("thread/archive", { threadId });
-    const after = await readArchiveSnapshot(threadId);
-    return {
-      ok: true,
-      source: "app-server",
-      response,
-      threadId,
-      alreadyArchived: before?.archiveState?.scope === "archived",
-      from: before?.path ?? null,
-      to: after?.path ?? null,
-      thread: after ?? before ?? { id: threadId, status: { type: "unknown" } },
-      archiveStateBefore: before?.archiveState ?? null,
-      archiveStateAfter: after?.archiveState ?? null,
-      codexHome: appServer.getConnectionSummary().codexHome ?? null
-    };
-  }
-  async function readArchiveSnapshot(threadId) {
-    let fromAppServer = null;
-    try {
-      const read = await appServer.request("thread/read", { threadId, includeTurns: false });
-      fromAppServer = summarizeThread(read.thread);
-    } catch {
-      fromAppServer = null;
-    }
-    if (fromAppServer?.path) {
-      return fromAppServer;
-    }
-    if (fromAppServer) {
-      const located = await findLocalThreadFile(threadId).catch(() => null);
-      return located ? { ...fromAppServer, path: located.file, archiveState: inferArchiveState(located.file) } : fromAppServer;
-    }
-    try {
-      const local = await readLocalThread(threadId);
-      return summarizeThread(local.thread);
-    } catch {
-      return null;
-    }
-  }
-  async function buildArchiveThreadResult({ source, action, threadId, reason, loadedCheck, archive, args, toolContext }) {
-    const appServerSummary = appServer.getConnectionSummary();
-    const result = {
-      ok: true,
-      source,
-      action,
-      threadId,
-      reason: reason || null,
-      loadedCheck,
-      archive,
-      stateSemantics: loadedStateSemantics(),
-      appServer: appServerSummary
-    };
-    result.receipt = await recordActionReceipt({
-      action: "archive_thread",
-      receipt: args.receipt,
-      target: {
-        threadId,
-        turnId: null,
-        name: archive.thread.name,
-        cwd: archive.thread.cwd,
-        archiveState: archive.archiveStateAfter,
-        status: archive.thread.status,
-        deepLink: codexThreadDeepLink(threadId)
-      },
-      message: reason || null,
-      finalResponse: null,
-      delivery: {
-        state: action,
-        action: "archive_thread",
-        from: archive.from,
-        to: archive.to,
-        loadedCheck
-      },
-      evidence: archiveReceiptEvidence({ loadedCheck, archive, action }),
-      replyConfirmation: null,
-      runtimeCallerContext: toolContext.callerContext,
-      appServer: appServerSummary
-    });
-    return result;
-  }
-  async function checkLoadedForArchive(threadId, args = {}) {
-    try {
-      const response = await appServer.request("thread/loaded/list", { limit: 1e3 });
-      const loadedThreadIds = extractLoadedThreadIds(response);
-      return {
-        ok: true,
-        source: "app-server",
-        checked: true,
-        loaded: loadedThreadIds.includes(threadId),
-        loadedThreadIds,
-        appServer: appServer.getConnectionSummary()
-      };
-    } catch (error2) {
-      if (args.useLocalFallback === false) {
-        throw error2;
-      }
-      return {
-        ok: false,
-        source: "app-server",
-        checked: false,
-        loaded: null,
-        error: error2.message,
-        fallback: "local-jsonl",
-        appServer: appServer.getConnectionSummary(),
-        note: "App-server loaded-state check was unavailable; proceeding because useLocalFallback was not false."
-      };
-    }
-  }
-  return { launchThread, launchThreadTool, archiveThread, archiveThreadTool };
-}
-
-// src/delivery/override-policy.js
-import fs14 from "node:fs";
-import path17 from "node:path";
-var OVERRIDE_FIELDS2 = Object.freeze({
-  cwd: "cwd",
-  model: "model",
-  modelProvider: "model",
-  serviceTier: "model",
-  effort: "effort"
-});
-var FIELD_ORDER = (
-  /** @type {const} */
-  ["cwd", "model", "modelProvider", "serviceTier", "effort"]
-);
-var DENIAL_REASONS = Object.freeze({
-  model: "model_switch_requires_fork_or_opt_in",
-  effort: "effort_not_permitted",
-  cwd: "cwd_change_not_permitted"
-});
-var SWITCH_KINDS = Object.freeze({
-  model: "model-switch",
-  effort: "effort-change",
-  cwd: "cwd-change"
-});
-var ALLOW_TARGET_OVERRIDE_GRANTS_UNTIL = "0.7.0";
-var ALLOW_TARGET_OVERRIDE_REMOVAL = "0.8.0";
-function policyAllows(policy, setting, { senderAddress, senderRoles, targetAddress, targetRoles }) {
-  if (!isAddress(senderAddress)) return null;
-  const keys = [targetAddress, ...targetRoles.map((role) => `role:${role}`)];
-  for (const key of keys) {
-    const senders = policy?.[key]?.[setting];
-    if (!Array.isArray(senders)) continue;
-    for (const sender of senders) {
-      if (sender === "*" && senderAddress !== EXTERNAL_ADDRESS) return { key, sender };
-      if (sender === senderAddress) return { key, sender };
-      const role = parseRoleAddress(sender);
-      if (role && senderRoles.includes(role)) return { key, sender };
-    }
-  }
-  return null;
-}
-function resolveRealPath(target) {
-  let current = path17.resolve(target);
-  const rest = [];
-  for (; ; ) {
-    try {
-      return path17.join(fs14.realpathSync(current), ...rest.reverse());
-    } catch {
-      const parent = path17.dirname(current);
-      if (parent === current) return path17.resolve(target);
-      rest.push(path17.basename(current));
-      current = parent;
-    }
-  }
-}
-function workspaceRoot(cwd) {
-  const start = resolveRealPath(cwd);
-  let dir = start;
-  for (; ; ) {
-    if (fs14.existsSync(path17.join(dir, ".git"))) return dir;
-    const parent = path17.dirname(dir);
-    if (parent === dir) return start;
-    dir = parent;
-  }
-}
-function isWithinWorkspace(candidate, root) {
-  const relative = path17.relative(root, resolveRealPath(candidate));
-  return relative === "" || !relative.startsWith("..") && !path17.isAbsolute(relative);
-}
-function sameDirectory(a, b) {
-  return resolveRealPath(a) === resolveRealPath(b);
-}
-var text = (value) => typeof value === "string" ? value.trim() : "";
-function ownValue(thread, field) {
-  if (field === "effort") return text(thread?.reasoningEffort ?? thread?.effort);
-  return text(thread?.[field]);
-}
-function decideTargetOverrides({ thread, args, steering = false, parties, policy, launcher = null, expectedCost = { uncachedInputTokens: null, basis: "unknown" } }) {
-  const forward = {};
-  const switches = [];
-  const warnings = [];
-  const conflicts = [];
-  let workspace = null;
-  const flagged = args.allowTargetOverride === true;
-  if (flagged) {
-    warnings.push({
-      code: "deprecated_argument",
-      message: `allowTargetOverride is deprecated and stops granting overrides in ${ALLOW_TARGET_OVERRIDE_GRANTS_UNTIL} (it is rejected from ${ALLOW_TARGET_OVERRIDE_REMOVAL}). Instead: launch a new thread (later: fork it) for a different model, ask the thread's launcher to change effort, or ask the user for an override policy (set_agent_override_policy).`,
-      replacement: "a new thread or fork for model; the launcher for effort; set_agent_override_policy otherwise"
-    });
-  }
-  for (const field of FIELD_ORDER) {
-    const requested = text(args[field]);
-    if (!requested) continue;
-    if (field === "cwd" && !path17.isAbsolute(requested)) {
-      throw new AgentLinkError("invalid_arguments", "cwd must be an absolute path.", {
-        details: { errors: [{ path: "cwd", rule: "absolute", expected: "an absolute directory path" }] }
-      });
-    }
-    const setting = (
-      /** @type {"model" | "effort" | "cwd"} */
-      OVERRIDE_FIELDS2[field]
-    );
-    const own = ownValue(thread, field);
-    if (own && (field === "cwd" ? sameDirectory(own, requested) : own === requested)) {
-      forward[field] = requested;
-      continue;
-    }
-    if (steering) {
-      warnings.push(own ? { code: "target-override-ignored-steer", severity: "warning", field, requested, threadValue: own, message: `Steering an active turn does not change ${field}; the requested value was ignored.` } : unverifiedWarning(field, requested));
-      continue;
-    }
-    if (field === "cwd") {
-      workspace = own ? workspaceRoot(own) : null;
-      if (own && workspace && !isWithinWorkspace(requested, workspace)) {
-        conflicts.push({ field, requested, threadValue: own, reason: "cwd_outside_workspace" });
-        continue;
-      }
-    }
-    let grantedBy = null;
-    let match = null;
-    if (setting === "effort" && isAddress(launcher) && launcher === parties.senderAddress) {
-      grantedBy = "launcher";
-    } else {
-      match = policyAllows(policy, setting, parties);
-      if (match) grantedBy = "policy";
-      else if (flagged) grantedBy = "allowTargetOverride";
-    }
-    if (field === "cwd" && grantedBy && !own) {
-      conflicts.push({ field, requested, threadValue: null, reason: "cwd_outside_workspace" });
-      continue;
-    }
-    if (!grantedBy) {
-      if (!own) {
-        warnings.push(unverifiedWarning(field, requested));
-        continue;
-      }
-      conflicts.push({ field, requested, threadValue: own, reason: DENIAL_REASONS[setting] });
-      continue;
-    }
-    forward[field] = requested;
-    switches.push({
-      field,
-      setting,
-      kind: SWITCH_KINDS[setting],
-      previous: own || null,
-      current: requested,
-      grantedBy,
-      policy: match,
-      expectedCost: setting === "effort" ? null : expectedCost
-    });
-  }
-  if (conflicts.length > 0) {
-    const first = conflicts.find((conflict) => conflict.reason === "cwd_outside_workspace") ?? conflicts[0];
-    return {
-      forward,
-      switches,
-      warnings,
-      denied: {
-        reason: first.reason,
-        conflicts: conflicts.map(({ field, requested, threadValue }) => ({ field, requested, threadValue })),
-        ...first.reason === "cwd_outside_workspace" ? { workspace } : {}
-      }
-    };
-  }
-  return { forward, switches, warnings, denied: null };
-}
-function unverifiedWarning(field, requested) {
-  return {
-    code: "target-override-unverified",
-    severity: "warning",
-    field,
-    requested,
-    message: `The app-server does not report this thread's ${field}, so the requested value was not applied. Changing it needs the thread's launcher (effort) or the target's override policy.`
-  };
-}
-var DENIAL_HINTS = Object.freeze({
-  model_switch_requires_fork_or_opt_in: "An existing thread keeps its model. Launch a new thread with the model you want, or ask the user to allow you in the target's override policy (set_agent_override_policy). A model switch persists and the next turn re-reads the whole thread uncached.",
-  effort_not_permitted: "Only the thread's launcher may change its effort, unless the target's override policy allows you (set_agent_override_policy, by the user).",
-  cwd_change_not_permitted: "Changing an existing thread's cwd needs the target's override policy (set_agent_override_policy, by the user). Omit cwd to run in the thread's own directory.",
-  cwd_outside_workspace: "A thread's cwd can only move inside its workspace (the git top level of its current cwd, or that cwd outside a repository), after symlinks are resolved."
-});
-function overrideDeniedError(denied, threadId) {
-  const fields = denied.conflicts.map((conflict) => conflict.field).join(", ");
-  return new AgentLinkError("permission_denied", `Refusing to change ${fields} of existing thread ${threadId} (${denied.reason}).`, {
-    details: { reason: denied.reason, conflicts: denied.conflicts, ...denied.workspace !== void 0 ? { workspace: denied.workspace } : {} },
-    hint: DENIAL_HINTS[
-      /** @type {keyof typeof DENIAL_HINTS} */
-      denied.reason
-    ] ?? "Omit cwd/model/effort to run the turn with the thread's own settings."
-  });
-}
-function assertNoClaudeOverrides(args, address) {
-  const given = FIELD_ORDER.filter((field) => text(args[field]));
-  if (given.length === 0) return;
-  throw new AgentLinkError("unsupported", `Claude sessions accept no turn overrides (${given.join(", ")}); ${address} is a Claude session.`, {
-    details: { capability: "turn_overrides", fields: given, address },
-    hint: "Omit cwd, model, effort, modelProvider, and serviceTier when messaging a Claude session."
-  });
 }
 
 // src/codex/thread-messaging.js
@@ -30235,7 +31274,7 @@ function recentItemLine(item) {
   const text2 = typeof item.text === "string" ? item.text : Array.isArray(item.summary) ? item.summary.join(" / ") : typeof item.command === "string" ? `$ ${item.command}` : "";
   return text2 ? `[${item.type ?? "item"} ${item.id ?? ""}] ${text2}` : "";
 }
-function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries, roles = null, listReceipts: listReceipts2 = listReceipts }) {
+function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries, roles = null, listReceipts: listReceipts2 = listReceipts, tokenUsage = null }) {
   const { waitForThreadRead, enrichThreadLookupError: enrichThreadLookupError2, inferActiveTurnId } = queries;
   function callerAddress2(toolContext = {}) {
     return hostIdentity({ host, callerContext: toolContext.callerContext ?? null, currentSession: resolveCurrentSession }).address;
@@ -30244,6 +31283,7 @@ function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries, 
     let data = [];
     try {
       data = (await listReceipts2({ targetThreadId: threadId, action: "launch_thread", limit: 20 })).data ?? [];
+      if (!data.length) data = (await listReceipts2({ targetThreadId: threadId, action: "fork_thread", limit: 20 })).data ?? [];
     } catch {
       return null;
     }
@@ -30309,13 +31349,16 @@ function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries, 
     const addressing = checkRoleAddressing({ mode: enforcement.mode, senderAddress, targetAddress, via, isReply: false, rolesOf, holdingsOf });
     const willSteer = mode === "steer_active" || mode === "auto" && initialThread?.status?.type === "active";
     const launcher = !willSteer && optionalString(args.effort).trim() ? await launcherOf(threadId) : null;
+    const switchCandidate = !willSteer && ["model", "modelProvider", "serviceTier", "effort"].some((field) => optionalString(args[field]).trim());
+    const expectedCost = switchCandidate ? expectedCostFrom(await lastRecordedUsage({ threadId, tracker: tokenUsage, listReceipts: listReceipts2 })) : void 0;
     const decision = decideTargetOverrides({
       thread: initialThread,
       args,
       steering: willSteer,
       parties: { senderAddress, senderRoles: rolesOf(senderAddress), targetAddress, targetRoles: rolesOf(targetAddress) },
       policy: tableRead && !tableRead.error ? tableRead.table.overridePolicy : {},
-      launcher
+      launcher,
+      ...expectedCost ? { expectedCost } : {}
     });
     if (decision.denied) throw overrideDeniedError(decision.denied, threadId);
     const overrides = decision.forward;
@@ -30472,6 +31515,7 @@ function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries, 
     if (overrides.effort) {
       startParams.effort = overrides.effort;
     }
+    const settingsMark = tokenUsage?.mark() ?? 0;
     const response = await appServer.request("turn/start", startParams).catch(releaseOnFailure);
     const summarizedTurn = summarizeTurn(response.turn);
     const wait = args.waitForReply ? await tryWaitForReply({
@@ -30530,6 +31574,7 @@ function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries, 
       tags: receiptTags
     });
     if (decision.switches.length) {
+      const next = await firstTurnUsage({ threadId, turnId: summarizedTurn.id, wait, warnings, overrides, settingsMark });
       result.switchReceipts = [];
       for (const change of decision.switches) {
         result.switchReceipts.push(await recordActionReceipt({
@@ -30540,6 +31585,7 @@ function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries, 
           runtimeCallerContext: toolContext.callerContext,
           appServer: appServerSummary,
           extra: {
+            kind: change.kind,
             override: {
               kind: change.kind,
               address: targetAddress,
@@ -30550,13 +31596,24 @@ function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries, 
               grantedBy: change.grantedBy,
               policy: change.policy,
               expectedCost: change.expectedCost,
-              tokenUsage: { next: null }
+              tokenUsage: { next }
             }
           }
         }));
       }
     }
     return result;
+  }
+  async function firstTurnUsage({ threadId, turnId, wait, warnings, overrides, settingsMark }) {
+    if (!tokenUsage) return null;
+    const ended = wait?.ok === true && wait.timedOut === false;
+    const usage = ended ? await tokenUsage.awaitTurnUsage(threadId, turnId) : null;
+    if (!usage) {
+      warnings.push(tokenUsageUnavailableWarning({ threadId, turnId, purpose: "the first turn on the new setting", reason: ended ? "no_notification" : "not_waited" }));
+    }
+    const mismatch = settingsMismatchWarning({ threadId, requested: { model: overrides.model, effort: overrides.effort, cwd: overrides.cwd }, applied: tokenUsage.settingsSince(threadId, settingsMark) });
+    if (mismatch) warnings.push(mismatch);
+    return usage;
   }
   function switchResult(change) {
     return {
@@ -30765,7 +31822,7 @@ async function withOptionalReceipts(payload, args, threadId) {
     })
   };
 }
-function makeThreadQueries({ appServer, now = () => Date.now(), wait = sleep4 }) {
+function makeThreadQueries({ appServer, now = () => Date.now(), wait = sleep2 }) {
   async function listThreadsTool(args) {
     const { query, ...rest } = args;
     return await listThreads({ ...rest, searchTerm: query });
@@ -31095,7 +32152,7 @@ function makeThreadQueries({ appServer, now = () => Date.now(), wait = sleep4 })
 }
 
 // src/codex/project-orchestrator.js
-import { promises as fs15 } from "node:fs";
+import { promises as fs16 } from "node:fs";
 import path18 from "node:path";
 var PROJECT_ORCHESTRATOR_BINDING_PATH = path18.join(".codex", "project-orchestrator.json");
 var DEFAULT_POLICY_VERSION = "v0";
@@ -31332,7 +32389,7 @@ async function readProjectOrchestratorBinding(projectRoot) {
   const bindingPath = path18.join(requiredString(projectRoot, "projectRoot"), PROJECT_ORCHESTRATOR_BINDING_PATH);
   let raw;
   try {
-    raw = await fs15.readFile(bindingPath, "utf8");
+    raw = await fs16.readFile(bindingPath, "utf8");
   } catch (error2) {
     if (error2.code === "ENOENT") {
       return null;
@@ -32152,14 +33209,25 @@ function createAgentLinkServer({ config: config2 = loadConfig(), appServer, setF
     collectAppServerThreadSummaries: queries.collectAppServerThreadSummaries
   });
   const desktop = makeDesktopRouting({ appServer: codexAppServer });
+  const tokenUsage = createTokenUsageTracker({ appServer: codexAppServer });
   const messaging = makeThreadMessaging({
     appServer: codexAppServer,
     host: hostInfo.host,
     resolveCurrentSession: currentClaudeSession,
     queries,
-    roles
+    roles,
+    tokenUsage
   });
   const actions = makeThreadActions({ appServer: codexAppServer, messaging, desktop });
+  const forks = makeForkJobs({
+    appServer: codexAppServer,
+    host: hostInfo.host,
+    resolveCurrentSession: currentClaudeSession,
+    queries,
+    messaging,
+    tokenUsage,
+    deliver: queuedDelivery
+  });
   const sessionRegistry = createSessionRegistry({
     claude: makeClaudeProvider(),
     codex: makeCodexProvider({ appServer: codexAppServer, listThreads: queries.listThreads })
@@ -32170,7 +33238,8 @@ function createAgentLinkServer({ config: config2 = loadConfig(), appServer, setF
     resolveCurrentSession: currentClaudeSession,
     channelState: () => ({ enabled: channelEnabled, error: channelError }),
     roles,
-    roleAdmin: config2.roleAdmin
+    roleAdmin: config2.roleAdmin,
+    forkSweep: forks.sweep
   });
   function projectOrchestratorDeps(args = {}) {
     return {
@@ -32236,6 +33305,7 @@ function createAgentLinkServer({ config: config2 = loadConfig(), appServer, setF
       archive_codex_thread: actions.archiveThreadTool,
       message_codex_thread: messaging.messageThreadTool
     }),
+    ...forkEntries(forks.forkThread),
     ...receiptEntries(),
     ...orchestrationEntries({
       resolve_project_orchestrator: resolveProjectOrchestratorTool,
@@ -32278,9 +33348,10 @@ function createAgentLinkServer({ config: config2 = loadConfig(), appServer, setF
     lifecycle.setChannelBridge(channel.bridge);
     if (config2.codexReminders) startCodexReminders({ appServer: codexAppServer, roles });
     startClaimSweeper({ host: hostInfo.host });
+    startForkSweep(forks);
     lifecycle.installSignalHandlers();
   }
-  return { server, appServer: codexAppServer, registry: registry2, lifecycle, config: config2, start };
+  return { server, appServer: codexAppServer, registry: registry2, lifecycle, config: config2, start, forks, tokenUsage };
 }
 var CLAIM_SWEEP_INTERVAL_MS = 36e5;
 function startClaimSweeper({ host }) {
@@ -32303,6 +33374,18 @@ function startClaimSweeper({ host }) {
   const first = setTimeout(run, 5e3);
   first.unref?.();
   const timer = setInterval(run, CLAIM_SWEEP_INTERVAL_MS);
+  timer.unref?.();
+}
+function startForkSweep(forks) {
+  const timer = setTimeout(async () => {
+    try {
+      if (!existsSync2(forkJobsPath())) return;
+      const result = await forks.sweep();
+      if (result.checked) getLogger().info("forks.swept", result);
+    } catch (error2) {
+      getLogger().warn("forks.sweep_failed", { message: error2 instanceof Error ? error2.message : String(error2) });
+    }
+  }, 5e3);
   timer.unref?.();
 }
 function startCodexReminders({ appServer, roles = null }) {

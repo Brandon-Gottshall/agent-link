@@ -386,9 +386,10 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
     // turn/steer ignores cwd/model/effort, so a mismatch there is only a warning.
     const willSteer = mode === "steer_active" || (mode === "auto" && initialThread?.status?.type === "active");
     const launcher = !willSteer && optionalString(args.effort).trim() ? await launcherOf(threadId) : null;
-    // R9.4: an in-place model or cwd switch reports the last turn's input
-    // tokens as its expected cost, when a receipt or notification recorded them.
-    const switchCandidate = !willSteer && ["model", "modelProvider", "serviceTier", "cwd"].some((field) => optionalString(args[field]).trim());
+    // R9.3/R9.4: an in-place model or effort switch reports the last turn's
+    // input tokens as its expected cost, when a receipt or notification
+    // recorded them (a cwd change is cache-neutral, B7 spike).
+    const switchCandidate = !willSteer && ["model", "modelProvider", "serviceTier", "effort"].some((field) => optionalString(args[field]).trim());
     const expectedCost = switchCandidate
       ? expectedCostFrom(await lastRecordedUsage({ threadId, tracker: tokenUsage, listReceipts }))
       : undefined;
@@ -577,6 +578,8 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
       startParams.effort = overrides.effort;
     }
 
+    // thread/settings/updated follows only a turn/start that changes settings.
+    const settingsMark = tokenUsage?.mark() ?? 0;
     const response = await appServer.request("turn/start", startParams).catch(releaseOnFailure);
     const summarizedTurn = summarizeTurn(response.turn);
     const wait = args.waitForReply
@@ -641,7 +644,7 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
     // gets its own receipt, with the token usage of the first turn on the new
     // setting (known only when the call waited for that turn to end).
     if (decision.switches.length) {
-      const next = await firstTurnUsage({ threadId, turnId: summarizedTurn.id, wait, warnings, overrides });
+      const next = await firstTurnUsage({ threadId, turnId: summarizedTurn.id, wait, warnings, overrides, settingsMark });
       result.switchReceipts = [];
       for (const change of decision.switches) {
         result.switchReceipts.push(await recordActionReceipt({
@@ -674,20 +677,21 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
 
   /**
    * Token usage of the first turn on a new setting (R9.10), waiting at most
-   * 5 s after the turn ended; null with a token_usage_unavailable warning
-   * when the call did not wait for the turn or no notification came. Adds a
-   * settings_mismatch warning when thread/settings/updated reports other
-   * values than the ones sent.
-   * @param {{threadId: string, turnId: string, wait: ReplyWait | null, warnings: any[], overrides: Record<string, string>}} input
+   * 5 s after the turn ended (the notifications normally arrive before it
+   * ends); null with a token_usage_unavailable warning when the call did not
+   * wait for the turn or no notification came. Adds a settings_mismatch
+   * warning when a thread/settings/updated sent after this turn/start reports
+   * other values than the ones sent; no notification is not a mismatch.
+   * @param {{threadId: string, turnId: string, wait: ReplyWait | null, warnings: any[], overrides: Record<string, string>, settingsMark: number}} input
    */
-  async function firstTurnUsage({ threadId, turnId, wait, warnings, overrides }) {
+  async function firstTurnUsage({ threadId, turnId, wait, warnings, overrides, settingsMark }) {
     if (!tokenUsage) return null;
     const ended = wait?.ok === true && wait.timedOut === false;
     const usage = ended ? await tokenUsage.awaitTurnUsage(threadId, turnId) : null;
     if (!usage) {
       warnings.push(tokenUsageUnavailableWarning({ threadId, turnId, purpose: "the first turn on the new setting", reason: ended ? "no_notification" : "not_waited" }));
     }
-    const mismatch = settingsMismatchWarning({ threadId, requested: { model: overrides.model, effort: overrides.effort, cwd: overrides.cwd }, applied: tokenUsage.settings(threadId) });
+    const mismatch = settingsMismatchWarning({ threadId, requested: { model: overrides.model, effort: overrides.effort, cwd: overrides.cwd }, applied: tokenUsage.settingsSince(threadId, settingsMark) });
     if (mismatch) warnings.push(mismatch);
     return usage;
   }

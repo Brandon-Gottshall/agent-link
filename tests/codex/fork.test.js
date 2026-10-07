@@ -17,7 +17,13 @@ for (const name of Object.keys(process.env)) {
 process.env.HOME = tmp;
 process.env.CODEX_HOME = path.join(tmp, ".codex");
 process.env.AGENT_LINK_STATE_DIR = path.join(tmp, "state");
-test.after(() => rmSync(tmp, { recursive: true, force: true }));
+// Agent Link's own timers are unref'd (a server process stays alive anyway);
+// keep the test's event loop alive while they run.
+const keepAlive = setInterval(() => {}, 1000);
+test.after(() => {
+  clearInterval(keepAlive);
+  rmSync(tmp, { recursive: true, force: true });
+});
 
 const { AppServerError, CodexAppServerClient } = await import("../../src/codex/app-server-client.js");
 const { makeThreadQueries } = await import("../../src/codex/thread-queries.js");
@@ -42,13 +48,17 @@ const outside = path.join(tmp, "outside");
 mkdirSync(outside, { recursive: true });
 symlinkSync(outside, path.join(project, "escape"));
 
-const USAGE = (input, cached = 0) => ({
-  last: { inputTokens: input, cachedInputTokens: cached, cacheWriteInputTokens: 0, outputTokens: 50, reasoningOutputTokens: 10, totalTokens: input + 50 },
-  total: { inputTokens: input * 3, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 150, reasoningOutputTokens: 30, totalTokens: input * 3 + 150 },
-  modelContextWindow: 200_000
-});
-const RECORDED = (input, cached = 0, turnId = null) => ({
-  inputTokens: input, cachedInputTokens: cached, cacheWriteInputTokens: 0, outputTokens: 50, reasoningOutputTokens: 10, totalTokens: input + 50, modelContextWindow: 200_000, turnId
+// One model request's `last` breakdown (spike shape).
+const LAST = (input, cached = 0) => ({ inputTokens: input, cachedInputTokens: cached, cacheWriteInputTokens: 0, outputTokens: 50, reasoningOutputTokens: 10, totalTokens: input + 50 });
+// A standalone notification payload with a unique cumulative total.
+let totalSeq = 1_000_000;
+const USAGE = (input, cached = 0) => {
+  totalSeq += input + 50;
+  return { last: LAST(input, cached), total: { ...LAST(0), totalTokens: totalSeq }, modelContextWindow: 258_400 };
+};
+const RECORDED = (input, cached = 0, turnId = null, modelRequests = 1) => ({
+  inputTokens: input, cachedInputTokens: cached, cacheWriteInputTokens: 0, outputTokens: 50 * modelRequests, reasoningOutputTokens: 10 * modelRequests,
+  totalTokens: input + 50 * modelRequests, modelContextWindow: 258_400, modelRequests, turnId
 });
 
 /** A stateful fake Codex app-server. */
@@ -59,7 +69,7 @@ function fakeCodex() {
   const emit = (method, params) => {
     for (const listener of listeners) listener({ method, params });
   };
-  /** @type {{autoComplete?: Set<string>, settingsFor?: (threadId: string, params: any) => any, usageFor?: (threadId: string) => any}} */
+  /** @type {{autoComplete: Set<string>, settingsFor?: (threadId: string, params: any) => any, requestsFor?: (threadId: string) => any[], silentSettings?: boolean}} */
   const behavior = { autoComplete: new Set() };
   const fake = {
     requests,
@@ -75,14 +85,27 @@ function fakeCodex() {
       threads.set(thread.id, { status: { type: "idle" }, path: `/h/sessions/${thread.id}.jsonl`, turns: [], ...thread });
       return thread.id;
     },
-    complete(threadId, turnId, { status = "completed", text = "fork result", error = null, usage = USAGE(1200, 900) } = {}) {
+    // One thread/tokenUsage/updated per model request, with the thread's
+    // cumulative total (spike). `stale` repeats the previous request's `last`
+    // with the total unchanged, as an interrupted turn does.
+    usage(threadId, turnId, last, { stale = false } = {}) {
+      const thread = threads.get(threadId);
+      thread.total = thread.total ?? 0;
+      const reported = stale ? thread.lastReported ?? last : last;
+      if (!stale) thread.total += last.totalTokens;
+      thread.lastReported = reported;
+      emit("thread/tokenUsage/updated", { threadId, turnId, tokenUsage: { total: { ...LAST(0), totalTokens: thread.total }, last: reported, modelContextWindow: 258_400 } });
+    },
+    complete(threadId, turnId, { status = "completed", text = "fork result", error = null, requests = [LAST(1200, 900)], notify = true } = {}) {
       const thread = threads.get(threadId);
       const turn = thread.turns.find((t) => t.id === turnId);
       turn.status = status;
-      turn.items = text ? [{ type: "agentMessage", id: `${turnId}-a`, text }] : [];
+      turn.items = text ? [{ type: "agentMessage", id: `${turnId}-c`, text: "commentary", phase: "commentary" }, { type: "agentMessage", id: `${turnId}-a`, text, phase: "final_answer" }] : [];
       if (error) turn.error = { message: error };
+      for (const last of requests ?? []) fake.usage(threadId, turnId, last);
+      if (status === "interrupted") fake.usage(threadId, turnId, null, { stale: true });
       thread.status = { type: "idle" };
-      if (usage) emit("thread/tokenUsage/updated", { threadId, turnId, tokenUsage: usage });
+      if (notify) emit("turn/completed", { threadId, turn: structuredClone(turn) });
     },
     async request(method, params = {}) {
       requests.push({ method, params });
@@ -108,24 +131,36 @@ function fakeCodex() {
           return { thread: { id, forkedFromId: thread.id }, model: params.model ?? thread.model, modelProvider: "openai", serviceTier: null, reasoningEffort: thread.reasoningEffort, cwd: params.cwd ?? thread.cwd };
         }
         case "thread/compact/start": {
+          // Returns {} at once; the compaction runs as a turn (spike): its
+          // usage has only last.totalTokens and an unchanged total.
           thread.compacted = true;
-          emit("thread/tokenUsage/updated", { threadId: thread.id, turnId: `compact-${next++}`, tokenUsage: USAGE(5000) });
+          const turnId = `compact-${next++}`;
+          setTimeout(() => {
+            thread.turns.push({ id: turnId, status: "completed", items: [{ type: "contextCompaction", id: `${turnId}-x` }] });
+            emit("thread/tokenUsage/updated", { threadId: thread.id, turnId, tokenUsage: { total: { ...LAST(0), totalTokens: thread.total ?? 0 }, last: { totalTokens: 5693, inputTokens: 0, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0 }, modelContextWindow: 258_400 } });
+            emit("turn/completed", { threadId: thread.id, turn: { id: turnId, status: "completed", items: [{ type: "contextCompaction" }], error: null } });
+          }, 10);
           return {};
         }
         case "turn/start": {
           const id = `turn-${next++}`;
           thread.turns.push({ id, status: "inProgress", items: [] });
           thread.status = { type: "active" };
-          if (params.effort || params.model) {
-            const settings = behavior.settingsFor?.(thread.id, params) ?? { model: params.model ?? thread.model, effort: params.effort ?? thread.reasoningEffort, cwd: params.cwd ?? thread.cwd };
-            emit("thread/settings/updated", { threadId: thread.id, ...settings });
+          // thread/settings/updated only after a turn/start that changes settings (spike).
+          const changes = (params.effort && params.effort !== thread.reasoningEffort) || (params.model && params.model !== thread.model) || (params.cwd && params.cwd !== thread.cwd);
+          if (params.effort) thread.reasoningEffort = params.effort;
+          if (params.model) thread.model = params.model;
+          if (changes && !behavior.silentSettings) {
+            const threadSettings = behavior.settingsFor?.(thread.id, params) ?? { model: thread.model, effort: thread.reasoningEffort, cwd: thread.cwd, modelProvider: "openai" };
+            setTimeout(() => emit("thread/settings/updated", { threadId: thread.id, threadSettings }), 2);
           }
           if (behavior.autoComplete.has(thread.id)) {
-            fake.complete(thread.id, id, { text: "done", usage: behavior.usageFor ? behavior.usageFor(thread.id) : USAGE(700, 600) });
+            setTimeout(() => fake.complete(thread.id, id, { text: "done", requests: behavior.requestsFor ? behavior.requestsFor(thread.id) : [LAST(700, 600)] }), 5);
           }
           return { turn: { id, status: "inProgress", items: [] } };
         }
         case "thread/archive": {
+          if (thread.path.includes("/archived_sessions/")) throw new AppServerError(`no rollout found for thread id ${thread.id}`, { code: -32600 });
           thread.path = `/h/archived_sessions/${thread.id}.jsonl`;
           return {};
         }
@@ -189,6 +224,10 @@ function setup(options = {}) {
 }
 
 const asCaller = (threadId = CALLER) => ({ callerContext: { threadId } });
+/** Ends the thread's turn without a response, so the next message starts a turn instead of steering. */
+const idle = (fake, threadId) => {
+  fake.threads.get(threadId).status = { type: "idle" };
+};
 const forkRequestsOn = (fake, threadId) => fake.requests.filter((r) => r.params?.threadId === threadId);
 
 test("T-9.1 fork round trip: fork, task, exactly one reconcile to the original, fork archived, receipts linked", async () => {
@@ -225,7 +264,7 @@ test("T-9.1 fork round trip: fork, task, exactly one reconcile to the original, 
   assert.match(taskText, /<body>\nReview the plan with a fresh model\.\n<\/body>/);
   assert.ok(taskText.includes(`<reply>${FORK_TASK_REPLY}</reply>`));
 
-  fake.complete(forkId, result.turn.id, { text: "The plan is sound.", usage: USAGE(1200, 900) });
+  fake.complete(forkId, result.turn.id, { text: "The plan is sound.", requests: [LAST(1000, 800), LAST(1200, 900)] });
   await forks.settled();
 
   // Exactly one reconcile message, to the original, from the caller.
@@ -272,7 +311,8 @@ test("T-9.1 fork round trip: fork, task, exactly one reconcile to the original, 
   assert.equal(forkReceipt.launchedBy, `codex:${CALLER}`);
   assert.equal(forkReceipt.compacted, false);
   assert.equal(forkReceipt.purpose, "fork test");
-  assert.deepEqual(forkReceipt.tokenUsage, { task: RECORDED(1200, 900, result.turn.id) });
+  // Two model requests: the sum of their `last` breakdowns (spike).
+  assert.deepEqual(forkReceipt.tokenUsage, { task: RECORDED(2200, 1700, result.turn.id, 2) });
   const reconcileReceipts = (await listReceipts({ kind: "reconcile", targetThreadId: original })).data;
   assert.equal(reconcileReceipts.length, 1);
   const reconcileReceipt = reconcileReceipts[0];
@@ -340,7 +380,7 @@ test("waitForResult times out with status running; the job still reconciles once
 test("T-9.2 a failed fork turn reconciles with status failed and keeps the fork", async () => {
   const { fake, original, forks, rowsTo } = setup();
   const result = await forks.forkThread({ threadId: original, message: "try", compactFork: "never" }, asCaller());
-  fake.complete(result.fork.threadId, result.turn.id, { status: "failed", text: null, error: "model overloaded" });
+  fake.complete(result.fork.threadId, result.turn.id, { status: "failed", text: null, error: "model overloaded", requests: [] });
   await forks.settled();
   const rows = rowsTo(original);
   assert.equal(rows.length, 1);
@@ -422,6 +462,43 @@ test("T-9.8 self-fork with waitForResult: output in the tool result, reconcile r
   assert.equal(fake.requests.filter((r) => r.method === "turn/start" && r.params.threadId === original).length, 0);
 });
 
+test("an interrupted fork reconciles as interrupted, with its stale usage not counted, and keeps the fork", async () => {
+  const { fake, original, forks, rowsTo } = setup();
+  const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never" }, asCaller());
+  fake.complete(result.fork.threadId, result.turn.id, { status: "interrupted", text: null, requests: [] });
+  await forks.settled();
+  const rows = rowsTo(original);
+  assert.equal(rows.length, 1);
+  assert.ok(renderPeerEnvelope(peerMessageFromMailbox(rows[0])).includes('status="interrupted"/>'));
+  const receipt = (await listReceipts({ kind: "fork", targetThreadId: result.fork.threadId })).data[0];
+  assert.deepEqual(receipt.tokenUsage, { task: null });
+  assert.ok(!fake.requests.some((r) => r.method === "thread/archive"));
+});
+
+test("a fork whose task changes no setting gets no thread/settings/updated, and that is not a mismatch", async () => {
+  const { fake, original, forks } = setup();
+  setTimeout(() => {
+    const fork = [...fake.threads.values()].find((t) => t.forkedFromId === original);
+    fake.complete(fork.id, fork.turns.at(-1).id);
+  }, 20);
+  // effort equal to the inherited one: Codex sends no settings notification.
+  const result = await forks.forkThread({ threadId: original, message: "x", effort: "medium", compactFork: "never", waitForResult: true, timeoutMs: 5000 }, asCaller());
+  assert.equal(result.status, "completed");
+  assert.ok(!result.warnings.some((w) => w.code === "settings_mismatch"));
+});
+
+test("archiving a fork that is already archived (-32600 no rollout found) counts as archived", async () => {
+  const { fake, original, forks } = setup();
+  setTimeout(() => {
+    const fork = [...fake.threads.values()].find((t) => t.forkedFromId === original);
+    fork.path = `/h/archived_sessions/${fork.id}.jsonl`;
+    fake.complete(fork.id, fork.turns.at(-1).id);
+  }, 20);
+  const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never", waitForResult: true, timeoutMs: 5000 }, asCaller());
+  assert.equal(result.archived, true);
+  assert.ok(!result.warnings.some((w) => w.code === "fork_archive_failed"));
+});
+
 test("T-9.4 fork_codex_thread on a claude: address is unsupported and writes nothing", async () => {
   const { fake, forks, store } = setup();
   await assert.rejects(
@@ -460,7 +537,7 @@ test("validation: archived original, unknown or in-progress lastTurnId, missing 
 test("compaction decisions: never, always, auto over and under the threshold", async () => {
   assert.equal(decideForkCompaction({ mode: "never", usage: RECORDED(199_000) }).compact, false);
   assert.equal(decideForkCompaction({ mode: "always", usage: null }).compact, true);
-  const over = decideForkCompaction({ mode: "auto", usage: RECORDED(Math.ceil(COMPACT_FORK_AUTO_FRACTION * 200_000) + 1) });
+  const over = decideForkCompaction({ mode: "auto", usage: RECORDED(Math.ceil(COMPACT_FORK_AUTO_FRACTION * 258_400) + 1) });
   assert.deepEqual([over.compact, over.reason], [true, "over_threshold"]);
   const under = decideForkCompaction({ mode: "auto", usage: RECORDED(1000) });
   assert.deepEqual([under.compact, under.reason], [false, "under_threshold"]);
@@ -474,7 +551,8 @@ test("compaction decisions: never, always, auto over and under the threshold", a
     const compactions = fake.requests.filter((r) => r.method === "thread/compact/start").map((r) => r.params.threadId);
     assert.deepEqual(compactions, [result.fork.threadId]);
     assert.equal(result.compaction.compacted, true);
-    assert.equal(result.compaction.tokenUsage.inputTokens, 5000);
+    // A compaction reports only totalTokens (spike).
+    assert.deepEqual(result.compaction.tokenUsage, { totalTokens: 5693 });
     assert.equal(store.get(result.forkJobId).compacted.compacted, true);
     // Compaction happens before the task starts.
     const methods = fake.requests.map((r) => r.method);
@@ -502,7 +580,7 @@ test("T-9.7 fork task with no token usage notification: null plus token_usage_un
   const { fake, original, forks } = setup();
   setTimeout(() => {
     const fork = [...fake.threads.values()].find((t) => t.forkedFromId === original);
-    fake.complete(fork.id, fork.turns.at(-1).id, { usage: null });
+    fake.complete(fork.id, fork.turns.at(-1).id, { requests: [] });
   }, 20);
   const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never", waitForResult: true, timeoutMs: 5000 }, asCaller());
   assert.equal(result.tokenUsage.task, null);
@@ -536,7 +614,7 @@ test("T-9.7 switch receipts: tokenUsage.next equals the first turn's last breakd
   const thread = fake.addThread({ id: uuid(next++), model: "gpt-a", reasoningEffort: "medium", cwd: project });
   await recordLaunch(thread, `codex:${CALLER}`);
   fake.behavior.autoComplete.add(thread);
-  fake.behavior.usageFor = () => USAGE(4321, 4000);
+  fake.behavior.requestsFor = () => [LAST(4321, 4000)];
   const result = await messaging.messageThread({ threadId: thread, message: "harder", effort: "high", waitForReply: true, timeoutMs: 5000 }, asCaller());
   assert.equal(result.switches[0].grantedBy, "launcher");
   const stored = result.switchReceipts[0].receipt;
@@ -558,7 +636,7 @@ test("T-9.7 switch receipts without a notification or without waiting: null plus
   const thread = fake.addThread({ id: uuid(next++), model: "gpt-a", reasoningEffort: "medium", cwd: project });
   await recordLaunch(thread, `codex:${CALLER}`);
   fake.behavior.autoComplete.add(thread);
-  fake.behavior.usageFor = () => null;
+  fake.behavior.requestsFor = () => [];
   const waited = await messaging.messageThread({ threadId: thread, message: "a", effort: "high", waitForReply: true, timeoutMs: 5000 }, asCaller());
   assert.equal(waited.switchReceipts[0].receipt.override.tokenUsage.next, null);
   assert.equal(waited.warnings.find((w) => w.code === "token_usage_unavailable").details.reason, "no_notification");
@@ -573,6 +651,7 @@ test("expectedCost comes from the last recorded usage (R9.4)", async () => {
   const unknown = await messaging.messageThread({ threadId: thread, message: "a", model: "gpt-b", allowTargetOverride: true }, asCaller());
   assert.deepEqual(unknown.switches[0].expectedCost, { uncachedInputTokens: null, basis: "unknown" });
   tracker.handle({ method: "thread/tokenUsage/updated", params: { threadId: thread, turnId: "x", tokenUsage: USAGE(98_765) } });
+  idle(fake, thread);
   const known = await messaging.messageThread({ threadId: thread, message: "b", model: "gpt-c", allowTargetOverride: true }, asCaller());
   assert.deepEqual(known.switches[0].expectedCost, { uncachedInputTokens: 98_765, basis: "last-turn-input" });
 });
@@ -583,11 +662,15 @@ test("T-9.5 launcher effort rule unchanged; the fork's caller is the fork's laun
   await recordLaunch(launched, `codex:${CALLER}`);
   const own = await messaging.messageThread({ threadId: launched, message: "a", effort: "high" }, asCaller());
   assert.equal(own.switches[0].grantedBy, "launcher");
+  // R9.3 fallback (spike: effort changes lose the cache): an expected cost is reported.
+  assert.deepEqual(own.switches[0].expectedCost, { uncachedInputTokens: null, basis: "unknown" });
+  idle(fake, launched);
   await assert.rejects(
     messaging.messageThread({ threadId: launched, message: "b", effort: "low" }, asCaller(OTHER)),
     (e) => e.errorCode === "permission_denied" && e.details.reason === "effort_not_permitted"
   );
   const flagged = await messaging.messageThread({ threadId: launched, message: "c", effort: "low", allowTargetOverride: true }, asCaller(OTHER));
+  idle(fake, launched);
   assert.equal(flagged.switches[0].grantedBy, "allowTargetOverride");
   assert.ok(flagged.warnings.some((w) => w.code === "deprecated_argument"));
   // Model on an existing thread without opt-in is still refused (R9.1).
@@ -645,19 +728,56 @@ test("reconcileBody caps an over-64 KiB response with a note naming the fork", (
   assert.match(body, new RegExp(`get_codex_thread threadId="codex:${uuid(9)}"`));
 });
 
-test("health overrideCosts: placeholders, and a warning only for measured costs on another version", () => {
-  const placeholder = overrideCostsHealth("codex-cli 0.160.0");
-  assert.equal(placeholder.measured, false);
-  assert.equal(placeholder.codexVersion, null);
-  assert.equal(placeholder.installedVersion, "0.160.0");
-  assert.equal(placeholder.warning, null);
+test("health overrideCosts: the spike's measurements, and a warning when the installed Codex differs", () => {
+  const report = overrideCostsHealth("codex-cli 0.160.0");
+  assert.equal(report.measured, true);
+  assert.equal(report.codexVersion, "0.159.2");
+  assert.equal(report.installedVersion, "0.160.0");
+  assert.equal(report.warning.code, "override_costs_version_mismatch");
+  assert.equal(report.effortChange.cacheNeutral, false);
+  assert.equal(report.cwdChange.cacheNeutral, true);
+  assert.equal(report.compactForkAutoFraction, 0.5);
+  assert.equal(overrideCostsHealth("codex-cli 0.159.2").warning, null);
+  assert.equal(overrideCostsHealth(null).warning, null);
+  assert.equal(overrideCostsHealth("codex-cli 0.160.0", { ...OVERRIDE_COSTS, measured: false }).warning, null);
   const measured = { ...OVERRIDE_COSTS, measured: true, codexVersion: "codex-cli 0.159.2" };
   assert.equal(overrideCostsHealth("codex-cli 0.160.0", measured).warning.code, "override_costs_version_mismatch");
   assert.equal(overrideCostsHealth("codex-cli 0.159.2", measured).warning, null);
   assert.equal(overrideCostsHealth(null, measured).warning, null);
 });
 
-test("the token usage tracker keeps the last breakdown plus modelContextWindow per turn", async () => {
+test("tracker: a turn's usage is the sum of `last` over its model requests; stale and compaction copies are not counted", () => {
+  const tracker = createTokenUsageTracker();
+  const send = (turnId, last, total) => tracker.handle({ method: "thread/tokenUsage/updated", params: { threadId: "s", turnId, tokenUsage: { last, total: { totalTokens: total }, modelContextWindow: 258_400 } } });
+  send("t1", LAST(100, 50), 150);
+  send("t1", LAST(300, 250), 500);
+  assert.deepEqual(tracker.forTurn("s", "t1"), RECORDED(400, 300, "t1", 2));
+  // Interrupted turn: one notification repeating the previous `last`, total unchanged.
+  send("t2", LAST(300, 250), 500);
+  assert.equal(tracker.forTurn("s", "t2"), null);
+  // Compaction: last.totalTokens only, total unchanged.
+  send("c1", { totalTokens: 5693, inputTokens: 0 }, 500);
+  assert.equal(tracker.forTurn("s", "c1"), null);
+  assert.deepEqual(tracker.compactionUsage("s", "c1"), { totalTokens: 5693 });
+  // latest() is the newest counted turn.
+  assert.equal(tracker.latest("s").turnId, "t1");
+});
+
+test("tracker: settings only count after the mark (no thread/settings/updated is not a mismatch); turn/completed is kept", async () => {
+  const tracker = createTokenUsageTracker();
+  tracker.handle({ method: "thread/settings/updated", params: { threadId: "s", threadSettings: { model: "m", effort: "low" } } });
+  const mark = tracker.mark();
+  assert.equal(tracker.settingsSince("s", mark), null);
+  assert.equal(settingsMismatchWarning({ threadId: "s", requested: { effort: "high" }, applied: tracker.settingsSince("s", mark) }), null);
+  tracker.handle({ method: "thread/settings/updated", params: { threadId: "s", threadSettings: { model: "m", effort: "high" } } });
+  assert.deepEqual(tracker.settingsSince("s", mark), { model: "m", effort: "high" });
+  const waiting = tracker.awaitTurnCompleted("s", (turn) => turn.turnId === "t9", { timeoutMs: 1000 });
+  tracker.handle({ method: "turn/completed", params: { threadId: "s", turn: { id: "t9", status: "interrupted", items: [], error: null } } });
+  assert.equal((await waiting).status, "interrupted");
+  assert.equal(tracker.completedTurns("s").length, 1);
+});
+
+test("the token usage tracker keeps the summed breakdown plus modelContextWindow per turn", async () => {
   const tracker = createTokenUsageTracker();
   tracker.handle({ method: "thread/tokenUsage/updated", params: { threadId: "a", turnId: "t", tokenUsage: USAGE(10, 5) } });
   assert.deepEqual(tracker.forTurn("a", "t"), RECORDED(10, 5, "t"));
@@ -665,7 +785,7 @@ test("the token usage tracker keeps the last breakdown plus modelContextWindow p
   tracker.handle({ method: "thread/tokenUsage/updated", params: { threadId: "a", turnId: "u", tokenUsage: USAGE(20) } });
   assert.equal((await pending).inputTokens, 20);
   assert.equal(await tracker.awaitTurnUsage("a", "never", { graceMs: 10 }), null);
-  tracker.handle({ method: "thread/settings/updated", params: { threadId: "a", model: "m", effort: "high" } });
+  tracker.handle({ method: "thread/settings/updated", params: { threadId: "a", threadSettings: { model: "m", effort: "high" } } });
   assert.deepEqual(tracker.settings("a"), { model: "m", effort: "high" });
   // The Codex client hands notifications to listeners, and a throwing
   // listener does not stop the others.

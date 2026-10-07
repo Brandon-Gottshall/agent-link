@@ -45,7 +45,7 @@ export const messageThreadOut = {
   appServer: commonOut.appServer,
   via: out("string", "role:<name> when the target was addressed by role; the message went to the role's current holder."),
   roleProcedure: out(["object", "null"], "With a role target: {name, version, textIncluded} of the role's procedure, or null when the role has none. textIncluded is true on the first delivery of that version to the holder."),
-  switches: out("array", "In-place changes applied to the thread, one per setting: {setting, previous, current, grantedBy: launcher|policy|allowTargetOverride, policy?, persists: true, expectedCost: {uncachedInputTokens, basis} | null}. A change persists; Agent Link never sends a revert."),
+  switches: out("array", "In-place changes applied to the thread, one per setting: {setting, previous, current, grantedBy: launcher|policy|allowTargetOverride, policy?, persists: true, expectedCost: {uncachedInputTokens, basis}}. expectedCost is the last turn's input tokens (basis last-turn-input, or null with basis unknown) for a model or effort change, which re-reads the thread uncached, and 0 (basis cache-neutral) for a cwd change. A change persists; Agent Link never sends a revert."),
   switchReceipts: out("array", "Receipt write results for the model-switch, effort-change, and cwd-change receipts, one per entry in switches.")
 };
 

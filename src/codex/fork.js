@@ -55,10 +55,12 @@ export const FORK_TURN_TRIGGER = "agent-link-fork";
 /**
  * compactFork "auto" compacts the fork before the task when the original's
  * last turn used more than this fraction of the model context window (R9.11).
- * TODO(spike): placeholder; the B7 spike (R9.12 item 5) measures the
- * break-even fraction and records it in the design doc.
+ * B7 spike (R9.12 item 5): 0.5, i.e. 129,200 tokens for the 258,400-token
+ * windows tested. Compaction keeps user messages verbatim (no saving for
+ * user-message context), cut assistant-heavy context by 45%, and costs about
+ * 8 s plus 5.7k-41k tokens.
  */
-export const COMPACT_FORK_AUTO_FRACTION = 0.6;
+export const COMPACT_FORK_AUTO_FRACTION = 0.5;
 
 export const COMPACT_FORK_MODES = Object.freeze(["auto", "always", "never"]);
 
@@ -142,6 +144,27 @@ export function reconcileBody({ status, text = null, error = null, forkAddress }
 }
 
 /**
+ * The task turn's own final response: the agentMessage with phase
+ * "final_answer" (spike), else its last agent message. Only this turn's
+ * items: a fork also holds the original's turns.
+ * @param {any[] | null | undefined} items
+ * @returns {string | null}
+ */
+export function finalResponseText(items) {
+  const messages = (items ?? []).filter((item) => ["agentMessage", "assistantMessage"].includes(item?.type) && typeof item.text === "string" && item.text.trim());
+  return (messages.find((item) => item.phase === "final_answer") ?? messages.at(-1))?.text ?? null;
+}
+
+/**
+ * Codex answers thread/archive on an archived thread with -32600 "no
+ * rollout found for thread id" (spike): already archived.
+ * @param {unknown} error
+ */
+function alreadyArchived(error) {
+  return /no rollout found for thread id/i.test(error instanceof Error ? error.message : String(error));
+}
+
+/**
  * @param {number} ms
  */
 function sleep(ms) {
@@ -193,7 +216,7 @@ export function makeForkJobs({
   /**
    * Jobs this process is watching or finishing. `waiting` is true while a
    * caller waits for the result in its tool call (R9.8 self-fork).
-   * @type {Map<string, {promise: Promise<any> | null, waiting: boolean}>}
+   * @type {Map<string, {promise: Promise<any> | null, waiting: boolean, settingsMark: number}>}
    */
   const active = new Map();
 
@@ -307,12 +330,14 @@ export function makeForkJobs({
     let compactionUsage = null;
     let compacted = false;
     if (compaction.compact) {
-      const before = tokenUsage?.latest(forkThreadId) ?? null;
+      const seen = new Set((tokenUsage?.completedTurns(forkThreadId) ?? []).map((turn) => turn.turnId));
       try {
+        // Returns {} at once; the compaction runs as a turn and ends with
+        // turn/completed (spike).
         await appServer.request("thread/compact/start", { threadId: forkThreadId });
-        await waitForIdle(forkThreadId);
+        const turn = await waitForCompaction(forkThreadId, seen);
         compacted = true;
-        compactionUsage = await awaitNewUsage(forkThreadId, before);
+        compactionUsage = turn && tokenUsage ? tokenUsage.compactionUsage(forkThreadId, turn.turnId) : null;
         if (!compactionUsage && tokenUsage) warnings.push(tokenUsageUnavailableWarning({ threadId: forkThreadId, purpose: "the fork's compaction" }));
       } catch (error) {
         warnings.push({ code: "fork_compaction_failed", severity: "warning", message: `Compacting the fork failed (${messageOf(error)}); the task runs on the uncompacted fork.` });
@@ -337,7 +362,9 @@ export function makeForkJobs({
     /** @type {Record<string, any>} */
     const startParams = { threadId: forkThreadId, input: asUserTextInput(envelope), turnTrigger: FORK_TURN_TRIGGER, clientUserMessageId: jobId };
     if (requested.effort) startParams.effort = requested.effort;
-    const runtime = { promise: /** @type {Promise<any> | null} */ (null), waiting: args.waitForResult === true };
+    // thread/settings/updated is sent only after a turn/start that changes
+    // settings; only one received after this mark is about the task's turn.
+    const runtime = { promise: /** @type {Promise<any> | null} */ (null), waiting: args.waitForResult === true, settingsMark: tokenUsage?.mark() ?? 0 };
     active.set(jobId, runtime);
     let turnId = null;
     try {
@@ -356,7 +383,8 @@ export function makeForkJobs({
     let finished = null;
     if (runtime.waiting) {
       const timeoutMs = Math.min(Math.max(Number(args.timeoutMs ?? LIMITS.timeoutMs.def), LIMITS.timeoutMs.min), LIMITS.timeoutMs.max);
-      finished = await Promise.race([runtime.promise.catch(() => null), wait(timeoutMs).then(() => null)]);
+      // A real timer: `wait` paces the watcher's polls, not the caller's deadline.
+      finished = await Promise.race([runtime.promise.catch(() => null), sleep(timeoutMs).then(() => null)]);
       runtime.waiting = false;
       if (finished) active.delete(jobId);
     }
@@ -448,32 +476,27 @@ export function makeForkJobs({
     }
   }
 
-  /** @param {string} threadId */
-  async function waitForIdle(threadId) {
+  /**
+   * Waits for the compaction turn to end: its turn/completed notification,
+   * or (without a tracker) the fork's status leaving active. Reads the fork
+   * while it waits, which also keeps the app-server connection in use.
+   * @param {string} threadId
+   * @param {Set<string>} seen  turn ids that completed before the compaction
+   * @returns {Promise<import("./token-usage.js").CompletedTurn | null>}
+   */
+  async function waitForCompaction(threadId, seen) {
     const deadline = now() + COMPACTION_WAIT_MS;
+    let sawActive = false;
     while (now() < deadline) {
+      const done = tokenUsage?.completedTurns(threadId).find((turn) => !seen.has(turn.turnId));
+      if (done) return done;
       const read = await appServer.request("thread/read", { threadId, includeTurns: false });
-      if (read?.thread?.status?.type !== "active") return;
+      const active = read?.thread?.status?.type === "active";
+      if (!tokenUsage && sawActive && !active) return null;
+      sawActive = sawActive || active;
       await wait(pollIntervalMs);
     }
     throw new Error("compaction did not finish in time");
-  }
-
-  /**
-   * Usage reported after `before`, waiting at most the grace period.
-   * @param {string} threadId
-   * @param {any} before
-   */
-  async function awaitNewUsage(threadId, before) {
-    if (!tokenUsage) return null;
-    const grace = tokenUsageGraceMs ?? 5_000;
-    const deadline = now() + grace;
-    for (;;) {
-      const latest = tokenUsage.latest(threadId);
-      if (latest && latest !== before) return latest;
-      if (now() >= deadline) return null;
-      await wait(Math.min(100, grace));
-    }
   }
 
   /**
@@ -482,13 +505,17 @@ export function makeForkJobs({
    * @param {string} turnId
    */
   async function observeTurn(forkThreadId, turnId) {
-    const read = await appServer.request("thread/read", { threadId: forkThreadId, includeTurns: true });
-    const turn = (read?.thread?.turns ?? []).find((/** @type {any} */ t) => t?.id === turnId);
+    // turn/completed carries the turn's status and items (spike); a read
+    // covers a turn that ended while this server was not connected.
+    const notified = tokenUsage?.completedTurns(forkThreadId).find((t) => t.turnId === turnId) ?? null;
+    let turn = notified ? { id: turnId, status: notified.status, items: notified.items, error: notified.error } : null;
+    if (!turn || !finalResponseText(turn.items) && turn.status === "completed") {
+      const read = await appServer.request("thread/read", { threadId: forkThreadId, includeTurns: true });
+      turn = (read?.thread?.turns ?? []).find((/** @type {any} */ t) => t?.id === turnId) ?? turn;
+    }
     if (!turn || !["completed", "failed", "interrupted"].includes(turn.status)) return null;
-    // Only the task turn's own text: a fork also holds the original's turns.
-    const text = [...(turn.items ?? [])].reverse().find((/** @type {any} */ item) => ["agentMessage", "assistantMessage"].includes(item?.type) && typeof item.text === "string" && item.text.trim())?.text ?? null;
     const error = typeof turn.error?.message === "string" ? turn.error.message : typeof turn.error === "string" ? turn.error : null;
-    return { status: /** @type {"completed" | "failed" | "interrupted"} */ (turn.status), text, error };
+    return { status: /** @type {"completed" | "failed" | "interrupted"} */ (turn.status), text: finalResponseText(turn.items), error };
   }
 
   /**
@@ -552,7 +579,7 @@ export function makeForkJobs({
       const mismatch = settingsMismatchWarning({
         threadId: forkInfo.threadId,
         requested: { model: job.created?.request?.model, effort: job.created?.request?.effort, cwd: job.created?.request?.cwd },
-        applied: tokenUsage.settings(forkInfo.threadId)
+        applied: tokenUsage.settingsSince(forkInfo.threadId, active.get(job.id)?.settingsMark ?? 0)
       });
       if (mismatch) warnings.push(mismatch);
     }
@@ -628,7 +655,10 @@ export function makeForkJobs({
           archived = true;
           store.append("archived", job.id, {});
         } catch (error) {
-          warnings.push({ code: "fork_archive_failed", severity: "warning", message: `The fork ${forkInfo.address} was not archived: ${messageOf(error)}` });
+          if (alreadyArchived(error)) {
+            archived = true;
+            store.append("archived", job.id, { already: true });
+          } else warnings.push({ code: "fork_archive_failed", severity: "warning", message: `The fork ${forkInfo.address} was not archived: ${messageOf(error)}` });
         }
       }
 
@@ -754,7 +784,7 @@ export function makeForkJobs({
           if (done.reconcile?.messageId && done.reconcile.delivery !== "already-reconciled") summary.reconciled += 1;
         } else {
           summary.running += 1;
-          const runtime = { promise: /** @type {Promise<any> | null} */ (null), waiting: false };
+          const runtime = { promise: /** @type {Promise<any> | null} */ (null), waiting: false, settingsMark: tokenUsage?.mark() ?? 0 };
           active.set(job.id, runtime);
           runtime.promise = runJob(job.id);
           runtime.promise.catch((error) => getLogger().warn("fork.job_failed", { jobId: job.id, message: messageOf(error) }));

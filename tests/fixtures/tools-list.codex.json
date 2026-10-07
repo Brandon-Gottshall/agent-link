@@ -133,7 +133,7 @@
         },
         "codex": {
           "type": "object",
-          "description": "Codex install: {available, path, source, version, versionProbed, searched, reason, usedForManagedAppServer, overrideCosts}. overrideCosts: {measured, codexVersion, effortChange, modelSwitch, cwdChange, forkSameModel, forkOtherModel, compactForkAutoFraction, installedVersion, warning}: the measured cache cost of overrides and forks (R9.12) and the Codex version they were measured on; warning when the installed version differs."
+          "description": "Codex install: {available, path, source, version, versionProbed, searched, reason, usedForManagedAppServer, overrideCosts}. overrideCosts: {measured, codexVersion, measuredAt, effortChange, modelSwitch, cwdChange, forkSameModel, forkOtherModel (each {cachedShare: [rep1, rep2], cacheNeutral}), compactForkAutoFraction, installedVersion, warning}: the measured prompt-cache effect of overrides and forks (B7 spike, R9.12) and the Codex version it was measured on; warning when the installed version differs."
         },
         "forkJobs": {
           "type": "object",
@@ -1936,7 +1936,7 @@
         },
         "switches": {
           "type": "array",
-          "description": "In-place changes applied to the thread, one per setting: {setting, previous, current, grantedBy: launcher|policy|allowTargetOverride, policy?, persists: true, expectedCost: {uncachedInputTokens, basis} | null}. A change persists; Agent Link never sends a revert."
+          "description": "In-place changes applied to the thread, one per setting: {setting, previous, current, grantedBy: launcher|policy|allowTargetOverride, policy?, persists: true, expectedCost: {uncachedInputTokens, basis}}. expectedCost is the last turn's input tokens (basis last-turn-input, or null with basis unknown) for a model or effort change, which re-reads the thread uncached, and 0 (basis cache-neutral) for a cwd change. A change persists; Agent Link never sends a revert."
         },
         "switchReceipts": {
           "type": "array",

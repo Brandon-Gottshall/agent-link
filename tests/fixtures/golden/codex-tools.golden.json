@@ -21,14 +21,45 @@
           "reason": "Configured Codex app-server binary does not exist: /nonexistent/golden/codex-app-server",
           "usedForManagedAppServer": false,
           "overrideCosts": {
-            "measured": false,
-            "codexVersion": null,
-            "effortChange": null,
-            "modelSwitch": null,
-            "cwdChange": null,
-            "forkSameModel": null,
-            "forkOtherModel": null,
-            "compactForkAutoFraction": 0.6,
+            "measured": true,
+            "codexVersion": "0.159.2",
+            "measuredAt": "2026-10-07",
+            "effortChange": {
+              "cachedShare": [
+                0.434,
+                0
+              ],
+              "cacheNeutral": false
+            },
+            "modelSwitch": {
+              "cachedShare": [
+                0.256,
+                0.256
+              ],
+              "cacheNeutral": false
+            },
+            "cwdChange": {
+              "cachedShare": [
+                0.988,
+                0.988
+              ],
+              "cacheNeutral": true
+            },
+            "forkSameModel": {
+              "cachedShare": [
+                0,
+                0.33
+              ],
+              "cacheNeutral": false
+            },
+            "forkOtherModel": {
+              "cachedShare": [
+                0.202,
+                0.202
+              ],
+              "cacheNeutral": false
+            },
+            "compactForkAutoFraction": 0.5,
             "installedVersion": null,
             "warning": null
           }
@@ -187,14 +218,45 @@
           "reason": "Configured Codex app-server binary does not exist: /nonexistent/golden/codex-app-server",
           "usedForManagedAppServer": false,
           "overrideCosts": {
-            "measured": false,
-            "codexVersion": null,
-            "effortChange": null,
-            "modelSwitch": null,
-            "cwdChange": null,
-            "forkSameModel": null,
-            "forkOtherModel": null,
-            "compactForkAutoFraction": 0.6,
+            "measured": true,
+            "codexVersion": "0.159.2",
+            "measuredAt": "2026-10-07",
+            "effortChange": {
+              "cachedShare": [
+                0.434,
+                0
+              ],
+              "cacheNeutral": false
+            },
+            "modelSwitch": {
+              "cachedShare": [
+                0.256,
+                0.256
+              ],
+              "cacheNeutral": false
+            },
+            "cwdChange": {
+              "cachedShare": [
+                0.988,
+                0.988
+              ],
+              "cacheNeutral": true
+            },
+            "forkSameModel": {
+              "cachedShare": [
+                0,
+                0.33
+              ],
+              "cacheNeutral": false
+            },
+            "forkOtherModel": {
+              "cachedShare": [
+                0.202,
+                0.202
+              ],
+              "cacheNeutral": false
+            },
+            "compactForkAutoFraction": 0.5,
             "installedVersion": null,
             "warning": null
           }
@@ -383,14 +445,45 @@
           "reason": "Configured Codex app-server binary does not exist: /nonexistent/golden/codex-app-server",
           "usedForManagedAppServer": false,
           "overrideCosts": {
-            "measured": false,
-            "codexVersion": null,
-            "effortChange": null,
-            "modelSwitch": null,
-            "cwdChange": null,
-            "forkSameModel": null,
-            "forkOtherModel": null,
-            "compactForkAutoFraction": 0.6,
+            "measured": true,
+            "codexVersion": "0.159.2",
+            "measuredAt": "2026-10-07",
+            "effortChange": {
+              "cachedShare": [
+                0.434,
+                0
+              ],
+              "cacheNeutral": false
+            },
+            "modelSwitch": {
+              "cachedShare": [
+                0.256,
+                0.256
+              ],
+              "cacheNeutral": false
+            },
+            "cwdChange": {
+              "cachedShare": [
+                0.988,
+                0.988
+              ],
+              "cacheNeutral": true
+            },
+            "forkSameModel": {
+              "cachedShare": [
+                0,
+                0.33
+              ],
+              "cacheNeutral": false
+            },
+            "forkOtherModel": {
+              "cachedShare": [
+                0.202,
+                0.202
+              ],
+              "cacheNeutral": false
+            },
+            "compactForkAutoFraction": 0.5,
             "installedVersion": null,
             "warning": null
           }
@@ -4474,8 +4567,8 @@
             "grantedBy": "allowTargetOverride",
             "persists": true,
             "expectedCost": {
-              "uncachedInputTokens": null,
-              "basis": "unknown"
+              "uncachedInputTokens": 0,
+              "basis": "cache-neutral"
             }
           }
         ],
@@ -10032,14 +10125,45 @@
           "reason": "Configured Codex app-server binary does not exist: /nonexistent/golden/codex-app-server",
           "usedForManagedAppServer": false,
           "overrideCosts": {
-            "measured": false,
-            "codexVersion": null,
-            "effortChange": null,
-            "modelSwitch": null,
-            "cwdChange": null,
-            "forkSameModel": null,
-            "forkOtherModel": null,
-            "compactForkAutoFraction": 0.6,
+            "measured": true,
+            "codexVersion": "0.159.2",
+            "measuredAt": "2026-10-07",
+            "effortChange": {
+              "cachedShare": [
+                0.434,
+                0
+              ],
+              "cacheNeutral": false
+            },
+            "modelSwitch": {
+              "cachedShare": [
+                0.256,
+                0.256
+              ],
+              "cacheNeutral": false
+            },
+            "cwdChange": {
+              "cachedShare": [
+                0.988,
+                0.988
+              ],
+              "cacheNeutral": true
+            },
+            "forkSameModel": {
+              "cachedShare": [
+                0,
+                0.33
+              ],
+              "cacheNeutral": false
+            },
+            "forkOtherModel": {
+              "cachedShare": [
+                0.202,
+                0.202
+              ],
+              "cacheNeutral": false
+            },
+            "compactForkAutoFraction": 0.5,
             "installedVersion": null,
             "warning": null
           }
@@ -12155,14 +12279,45 @@
           "reason": "Configured Codex app-server binary does not exist: /nonexistent/golden/codex-app-server",
           "usedForManagedAppServer": false,
           "overrideCosts": {
-            "measured": false,
-            "codexVersion": null,
-            "effortChange": null,
-            "modelSwitch": null,
-            "cwdChange": null,
-            "forkSameModel": null,
-            "forkOtherModel": null,
-            "compactForkAutoFraction": 0.6,
+            "measured": true,
+            "codexVersion": "0.159.2",
+            "measuredAt": "2026-10-07",
+            "effortChange": {
+              "cachedShare": [
+                0.434,
+                0
+              ],
+              "cacheNeutral": false
+            },
+            "modelSwitch": {
+              "cachedShare": [
+                0.256,
+                0.256
+              ],
+              "cacheNeutral": false
+            },
+            "cwdChange": {
+              "cachedShare": [
+                0.988,
+                0.988
+              ],
+              "cacheNeutral": true
+            },
+            "forkSameModel": {
+              "cachedShare": [
+                0,
+                0.33
+              ],
+              "cacheNeutral": false
+            },
+            "forkOtherModel": {
+              "cachedShare": [
+                0.202,
+                0.202
+              ],
+              "cacheNeutral": false
+            },
+            "compactForkAutoFraction": 0.5,
             "installedVersion": null,
             "warning": null
           }
