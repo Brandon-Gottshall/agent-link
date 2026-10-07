@@ -67,7 +67,7 @@ test("snapshot: replyTo, via, overrides, and a direct (Codex turn) reply line", 
     "<body>",
     "hi",
     "</body>",
-    `<reply>To reply, call message_claude_session with to="${TO}".</reply>`,
+    `<reply>To reply, call message_claude_session with sessionId="${TO}".</reply>`,
     "</agent-link-message>"
   ].join("\n"));
   const codex = renderPeerEnvelope({ id: ID, from: FROM, fromHarness: "codex", fromVerified: true, to: TO, sentAt: SENT_AT, body: "x", reply: "direct" });

@@ -175,7 +175,7 @@ function replyLine({ id, from, fromHarness, fromVerified, reply }) {
     return `To reply, call message_codex_thread with threadId="${from}".`;
   }
   if (fromVerified && fromHarness === "claude") {
-    return `To reply, call message_claude_session with to="${from}".`;
+    return `To reply, call message_claude_session with sessionId="${from}".`;
   }
   return "The sender has no verified address, so this message cannot be answered directly.";
 }
