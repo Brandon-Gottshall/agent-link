@@ -2,7 +2,7 @@
 // text becomes a turn sends exactly renderPeerEnvelope(message), checked
 // against a fake app-server through the real MCP server. Never launches Codex.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -148,9 +148,17 @@ try {
   assert.ok(!r.isError, JSON.stringify(r.payload));
   assertEnveloped(lastTurn("turn/steer", mark), peerOf(r.payload), { to: ACTIVE, body: BODY });
 
-  // Allowed overrides on a new turn are always shown.
+  // Overrides the target's policy allows (B9, R9.4) are always shown on the new turn.
+  mkdirSync(path.join(tmp, ".agent-link"), { recursive: true, mode: 0o700 });
+  writeFileSync(path.join(tmp, ".agent-link", "roles.json"), JSON.stringify({
+    version: 1,
+    roles: {},
+    overridePolicy: { [`codex:${TARGET}`]: { model: [`codex:${CALLER}`], effort: [`codex:${CALLER}`] } }
+  }), { mode: 0o600 });
   mark = received.length;
-  r = await call("message_codex_thread", { threadId: TARGET, message: BODY, model: "other-model", effort: "high", allowTargetOverride: true });
+  r = await call("message_codex_thread", { threadId: TARGET, message: BODY, model: "other-model", effort: "high" });
+  assert.ok(!r.isError, JSON.stringify(r.payload));
+  assert.deepEqual(r.payload.switches.map((change) => [change.setting, change.previous, change.current, change.grantedBy]), [["model", "gpt-known", "other-model", "policy"], ["effort", null, "high", "policy"]]);
   text = assertEnveloped(lastTurn("turn/start", mark), peerOf(r.payload), { to: TARGET, body: BODY, overrides: { model: "other-model", effort: "high" } });
   assert.match(text, /\n<overrides model="other-model" effort="high"\/>\n/);
 

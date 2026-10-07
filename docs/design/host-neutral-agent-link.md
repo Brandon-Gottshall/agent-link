@@ -644,6 +644,14 @@ B7 is split. **B7a** (branch `feat/reply-model`) is the part of section 7 that d
 - Codex reminder turns (R7.14) are built and tested against the stub app-server behind `AGENT_LINK_CODEX_REMINDERS` (default off): only an idle thread gets a turn; an active thread waits; a not-loaded thread is skipped until R1.12a is decided.
 - T-7.9 (role handover) waits for B9 roles.
 
+B9 (branch `feat/roles`, not yet merged) implements section 1.8, the B9 parts of section 9, and the B10 enforcement plumbing with `off` shipped. It differs from the plan above in these ways:
+
+- Override results list every applied change in `switches[]` (`{setting, previous, current, grantedBy, policy?, persists, expectedCost}`) instead of one `switch` object, because one call can change model, effort, and cwd together. `expectedCost.basis` is `"unknown"` until B7 records token usage.
+- `launchedBy` (R9.9) is recorded on `launch_codex_thread` receipts by B9, because the launcher-effort rule needs it before B7 lands; receipts written earlier count as launched by their origin thread when that thread id came from runtime identity. B7 should reuse the field.
+- The procedure text is attached when the message is sent (mailbox insert or Codex turn), once per version per holder address, tracked in `<state>/role-procedure-deliveries.json`; a failed Codex send releases the claim. "First delivery" therefore means first send.
+- Role addressing and the B10 check cover `message_codex_thread` and `message_claude_session` (and the orchestrator and handoff tools built on `message_codex_thread`, for overrides). `message_agent` does not exist until B7; `role:` on the orchestrator tools' thread arguments and R1.21 (the `orchestrator` role) are left to B10.
+- `modelProvider` and `serviceTier` are covered by the policy's `model` setting in the decision code, but `message_codex_thread` still does not accept them as arguments.
+
 ---
 
 ## 6. Compatibility and versions

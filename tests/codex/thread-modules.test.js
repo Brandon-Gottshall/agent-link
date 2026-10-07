@@ -21,7 +21,6 @@ import {
 import { archiveReceiptEvidence, launchWarnings, makeThreadActions } from "../../src/codex/thread-actions.js";
 import {
   buildReplyConfirmation,
-  checkTargetOverrides,
   envelopeReplyConfirmation,
   makeThreadMessaging,
   recentItemLine,
@@ -35,6 +34,7 @@ import {
   makeThreadQueries
 } from "../../src/codex/thread-queries.js";
 import { recentItemWindow, safeIdList, summarizeItem, summarizeThread, summarizeTurn } from "../../src/codex/thread-summary.js";
+import { decideTargetOverrides } from "../../src/delivery/override-policy.js";
 import { appServerErrorHint } from "../../src/server/health.js";
 import { makeCurrentClaudeSession } from "../../src/server/index.js";
 import { createLifecycle } from "../../src/server/lifecycle.js";
@@ -133,22 +133,28 @@ test("waitOutcome maps confirmations to the section 3.4 wait shape", () => {
   assert.equal(done.recentItemsEnvelope, null);
 });
 
-test("checkTargetOverrides: equal values forward, known differences conflict, unknown values warn", () => {
+test("decideTargetOverrides: equal values forward, known differences are denied, unknown values warn", () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), "agent-link-overrides-"));
   try {
     const thread = { cwd: realpathSync(dir), model: "m1", reasoningEffort: null };
+    const parties = { senderAddress: "codex:sender", senderRoles: [], targetAddress: "codex:target", targetRoles: [] };
+    const decide = (args, extra = {}) => decideTargetOverrides({ thread, args, parties, policy: {}, ...extra });
     // A non-canonical path to the same directory (macOS /var -> /private/var) is the same directory.
     assert.equal(sameDirectory(dir, realpathSync(dir)), true);
-    const same = checkTargetOverrides(thread, { cwd: dir, model: "m1" });
+    const same = decide({ cwd: dir, model: "m1" });
     assert.deepEqual(same.forward, { cwd: dir, model: "m1" });
-    assert.deepEqual(same.conflicts, []);
-    const conflict = checkTargetOverrides(thread, { model: "m2", effort: "high" });
-    assert.deepEqual(conflict.conflicts, [{ field: "model", requested: "m2", threadValue: "m1" }]);
+    assert.equal(same.denied, null);
+    const conflict = decide({ model: "m2", effort: "high" });
+    assert.equal(conflict.denied.reason, "model_switch_requires_fork_or_opt_in");
+    assert.deepEqual(conflict.denied.conflicts, [{ field: "model", requested: "m2", threadValue: "m1" }]);
     assert.deepEqual(conflict.warnings.map((warning) => warning.code), ["target-override-unverified"]);
-    const steering = checkTargetOverrides(thread, { model: "m2" }, { steering: true });
-    assert.deepEqual(steering.conflicts, []);
+    const steering = decide({ model: "m2" }, { steering: true });
+    assert.equal(steering.denied, null);
     assert.equal(steering.warnings[0].code, "target-override-ignored-steer");
-    assert.deepEqual(checkTargetOverrides(thread, { model: "m2", allowTargetOverride: true }).forward, { model: "m2" });
+    // allowTargetOverride grants nothing since 0.7.0 (R9.13).
+    const flagged = decide({ model: "m2", allowTargetOverride: true });
+    assert.equal(flagged.denied.reason, "model_switch_requires_fork_or_opt_in");
+    assert.equal(flagged.warnings[0].code, "ignored_argument");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

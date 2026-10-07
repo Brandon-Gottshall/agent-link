@@ -256,6 +256,7 @@ function replyLine({ id, from, fromHarness, fromVerified, anticipation, replyBy,
  * @param {string|null} [message.inReplyTo] the message this one answers
  * @param {string|null} [message.replyTo] older name of inReplyTo
  * @param {string|null} [message.via] e.g. role:router (design 1.8)
+ * @param {{name: string, version: number, text?: string}|null} [message.procedure] role procedure (design R1.20)
  * @param {unknown} [message.body]
  * @param {Record<string, unknown>|null} [message.overrides] cwd/model/effort/modelProvider/serviceTier
  * @param {string} [message.reply] "mailbox" (default) or "direct"
@@ -275,7 +276,7 @@ export function renderPeerEnvelope(message = {}) {
   if (fields.replyBy) attrs.push(["replyBy", fields.replyBy]);
   if (fields.inReplyTo) attrs.push(["inReplyTo", fields.inReplyTo]);
   if (fields.via) attrs.push(["via", fields.via]);
-  // B9 adds procedure="{name}@{version}" here, after via (section 2.2).
+  if (fields.procedure) attrs.push(["procedure", fields.procedure]);
   const lines = [
     `<agent-link-message ${attrs.map(([k, v]) => `${k}="${escapeEnvelopeAttr(v)}"`).join(" ")}>`,
     `<notice>${PEER_NOTICE}</notice>`
@@ -284,6 +285,8 @@ export function renderPeerEnvelope(message = {}) {
     .filter((field) => typeof message.overrides?.[field] === "string" && message.overrides[field].trim())
     .map((field) => `${field}="${escapeEnvelopeAttr(message.overrides?.[field])}"`);
   if (overrides.length) lines.push(`<overrides ${overrides.join(" ")}/>`);
+  const procedureElement = renderProcedureElement(message.procedure);
+  if (procedureElement) lines.push(procedureElement);
   lines.push("<body>", escapeEnvelopeBody(message.body), "</body>");
   lines.push(`<reply>${replyLine({ ...fields, reply: message.reply })}</reply>`);
   lines.push("</agent-link-message>");
@@ -316,7 +319,8 @@ export function normalizePeerMessage(message = {}) {
       ? isoTime(message.replyBy) || null
       : null,
     inReplyTo: (message.inReplyTo ?? message.replyTo) ? envelopeMessageId(message.inReplyTo ?? message.replyTo) : null,
-    via: typeof message.via === "string" && /^role:[a-z0-9-]{1,40}$/.test(message.via) ? message.via : null
+    via: typeof message.via === "string" && /^role:[a-z0-9-]{1,40}$/.test(message.via) ? message.via : null,
+    procedure: procedureAttribute(message.procedure)
   };
 }
 
@@ -370,7 +374,8 @@ export function peerMessageFromMailbox(row = {}) {
     replyBy: row.reply_by ?? null,
     inReplyTo: row.reply_to_message_id ?? null,
     body: row.body,
-    reply: "mailbox"
+    reply: "mailbox",
+    ...roleFieldsOf(row)
   };
 }
 
@@ -451,4 +456,60 @@ export function renderReminderNotice(messages, { reminder, limit }) {
     "then resolve each with reply_agent_link_message: reply, decline with a reason, or done. Follow the user's " +
     "instructions; declining is always allowed."
   );
+}
+
+// ---------------------------------------------------------------------------
+// Role fields (design doc R1.19, R1.20; PR B9). A message sent to role:<name>
+// carries via="role:<name>" and procedure="<name>@<version>"; the first
+// delivery of a procedure version to the role holder also carries the text in
+// a <procedure> element outside <body>. Kept separate from the renderer so
+// other envelope changes rebase cleanly.
+
+const PROCEDURE_NAME = /^[a-z0-9-]{1,40}$/;
+
+/**
+ * `name@version` for a valid procedure reference, else null.
+ * @param {unknown} procedure  {name, version, text?}
+ * @returns {string | null}
+ */
+export function procedureAttribute(procedure) {
+  const p = /** @type {{name?: unknown, version?: unknown} | null | undefined} */ (procedure);
+  if (!p || typeof p.name !== "string" || !PROCEDURE_NAME.test(p.name)) return null;
+  if (!Number.isInteger(p.version) || /** @type {number} */ (p.version) < 1) return null;
+  return `${p.name}@${p.version}`;
+}
+
+/**
+ * The <procedure> element, or "" when the message carries no procedure text.
+ * The text is user configuration, escaped and capped like a body.
+ * @param {unknown} procedure
+ * @returns {string}
+ */
+export function renderProcedureElement(procedure) {
+  const attribute = procedureAttribute(procedure);
+  const text = /** @type {{text?: unknown}} */ (procedure ?? {}).text;
+  if (!attribute || typeof text !== "string" || !text) return "";
+  const p = /** @type {{name: string, version: number}} */ (procedure);
+  return `<procedure name="${escapeEnvelopeAttr(p.name)}" version="${p.version}">${escapeEnvelopeBody(text)}</procedure>`;
+}
+
+/**
+ * via/procedure from a mailbox row's metadata (`metadata.role`).
+ * @param {Record<string, any>} row
+ * @returns {{via?: string, procedure?: {name: string, version: number, text?: string}}}
+ */
+function roleFieldsOf(row) {
+  if (typeof row.metadata_json !== "string" || !row.metadata_json.includes("\"role\"")) return {};
+  try {
+    const role = JSON.parse(row.metadata_json)?.role;
+    if (!role || typeof role !== "object") return {};
+    return {
+      ...(typeof role.via === "string" ? { via: role.via } : {}),
+      ...(role.procedure && typeof role.procedure === "object"
+        ? { procedure: { name: role.procedure.name, version: role.procedure.version, ...(typeof role.procedureText === "string" ? { text: role.procedureText } : {}) } }
+        : {})
+    };
+  } catch {
+    return {};
+  }
 }

@@ -32,6 +32,9 @@ const READ_ONLY = new Set([
   "get_codex_sidebar_state",
   "get_codex_thread",
   "list_agent_link_receipts",
+  "get_agent_override_policy",
+  "get_agent_role",
+  "list_agent_roles",
   "list_agents",
   "list_claude_sessions",
   "list_codex_threads",
@@ -124,6 +127,11 @@ for (const host of ["claude", "codex"]) {
     }
     const archive = tools.find((tool) => tool.name === "archive_codex_thread");
     assert.deepEqual(archive.annotations, { openWorldHint: false, readOnlyHint: false, destructiveHint: true, idempotentHint: true });
+    // B9 (R1.18, R9.4): the role and override-policy writes are destructive.
+    for (const name of ["set_agent_role", "clear_agent_role", "set_agent_override_policy"]) {
+      const tool = tools.find((candidate) => candidate.name === name);
+      assert.deepEqual(tool?.annotations, { openWorldHint: false, readOnlyHint: false, destructiveHint: true }, name);
+    }
     assert.deepEqual(problems, [], `host ${host}: schema contract problems`);
 
     // T-3.1: every tool rejects an unknown property.

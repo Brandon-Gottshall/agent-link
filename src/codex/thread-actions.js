@@ -52,7 +52,7 @@ import { AgentLinkError } from "../shared/errors.js";
 /**
  * @typedef {{
  *   appServer: AppServerLike,
- *   messaging: Pick<ThreadMessaging, "buildPeerTurnInput" | "recordActionReceipt">,
+ *   messaging: Pick<ThreadMessaging, "buildPeerTurnInput" | "recordActionReceipt"> & Partial<Pick<ThreadMessaging, "callerAddress">>,
  *   desktop: Pick<DesktopRouting, "openCodexDesktopThread">
  * }} ThreadActionDeps
  */
@@ -121,8 +121,16 @@ export function archiveReceiptEvidence({ loadedCheck, archive, action }) {
 /**
  * @param {ThreadActionDeps} deps
  */
+/**
+ * @param {string | null | undefined} address
+ * @returns {string | null}
+ */
+function launcherAddress(address) {
+  return typeof address === "string" && /^(claude|codex):/.test(address) ? address : null;
+}
+
 export function makeThreadActions({ appServer, messaging, desktop }) {
-  const { buildPeerTurnInput, recordActionReceipt } = messaging;
+  const { buildPeerTurnInput, recordActionReceipt, callerAddress } = messaging;
   const { openCodexDesktopThread } = desktop;
 
   /**
@@ -254,7 +262,9 @@ export function makeThreadActions({ appServer, messaging, desktop }) {
       },
       replyConfirmation: null,
       runtimeCallerContext: toolContext.callerContext,
-      appServer: appServerSummary
+      appServer: appServerSummary,
+      // R9.9: the launcher, from runtime identity only; external is never one.
+      extra: { launchedBy: launcherAddress(callerAddress?.(toolContext)) }
     });
     return result;
   }

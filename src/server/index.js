@@ -29,6 +29,8 @@ import { messageStatusEntries } from "../tools/message-status.js";
 import { deliverCodexReminders } from "../delivery/reminders.js";
 import { reminderSettings } from "../delivery/message-status.js";
 import { agentEntries } from "../tools/agents.js";
+import { roleEntries } from "../tools/roles.js";
+import { createRoleStore } from "../registry/roles.js";
 import { createSessionRegistry } from "../registry/index.js";
 import { makeClaudeProvider } from "../registry/claude.js";
 import { makeCodexProvider } from "../registry/codex.js";
@@ -137,6 +139,11 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
 
   const currentClaudeSession = makeCurrentClaudeSession({ host: hostInfo.host });
 
+  // The role table (section 1.8): role:<name> addresses, procedures, the
+  // override policy and the enforcement mode. Read on every use, so a hand
+  // edit or another server's write is seen without a restart.
+  const roles = createRoleStore();
+
   // Receipts are read with the session-index-aware address resolver, so a
   // target recorded under a sidecar id or a rotated Claude CLI id shows (and
   // matches) the session's current address (R1.6, R1.7).
@@ -181,7 +188,8 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
     appServer: codexAppServer,
     host: hostInfo.host,
     resolveCurrentSession: currentClaudeSession,
-    queries
+    queries,
+    roles
   });
   const actions = makeThreadActions({ appServer: codexAppServer, messaging, desktop });
   // The session registry (section 1.4): both providers on every host.
@@ -193,7 +201,9 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
     appServer: codexAppServer,
     hostInfo,
     resolveCurrentSession: currentClaudeSession,
-    channelState: () => ({ enabled: channelEnabled, error: channelError })
+    channelState: () => ({ enabled: channelEnabled, error: channelError }),
+    roles,
+    roleAdmin: config.roleAdmin
   });
 
   /** @param {Record<string, any>} [args] */
@@ -280,7 +290,7 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
       check_coordination_obligations: (args, ctx) => checkCoordinationObligations(args, dependencyHandoffDeps(args), ctx)
     }),
     ...mailboxInspectEntries({ ...claudeDeps, inspectAll: config.inspectAll }),
-    ...claudeSendEntries(claudeDeps),
+    ...claudeSendEntries({ ...claudeDeps, roles }),
     ...claudeWaitEntries(claudeDeps),
     ...readInboxEntries({ resolveCurrentSession: currentClaudeSession, host: hostInfo.host }),
     ...replyAgentLinkMessageEntries(claudeDeps),
@@ -288,7 +298,9 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
     // Every tool on every host (R1.16): the Claude listing tools are no
     // longer limited to the Claude host.
     ...claudeListingEntries(),
-    ...agentEntries({ registry: sessionRegistry, host: hostInfo.host, resolveCurrentSession: currentClaudeSession })
+    ...agentEntries({ registry: sessionRegistry, host: hostInfo.host, resolveCurrentSession: currentClaudeSession, roles }),
+    // Roles and the override policy (B9). Writes need AGENT_LINK_ROLE_ADMIN=1.
+    ...roleEntries({ roles, registry: sessionRegistry, admin: config.roleAdmin })
   ], { hintFor: appServerErrorHint });
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: registry.listTools() }));

@@ -13,7 +13,9 @@ import { assertPeerBodyWithinLimit } from "../shared/envelope.js";
 import { isAnticipating, isLateResolution, messageStatus, reminderSettings, resolveLabels } from "../delivery/message-status.js";
 import { checkMessageWait, recordStatusTransition } from "../delivery/message-wait.js";
 import { claimResolution } from "../delivery/resolution.js";
-import { claudeAddress } from "../shared/identity.js";
+import { claudeAddress, hostIdentity, parseAddress } from "../shared/identity.js";
+import { looksLikeRoleAddress } from "../registry/roles.js";
+import { checkRoleAddressing } from "../delivery/role-policy.js";
 import { mailboxRowResult } from "../registry/addresses.js";
 import { buildReceipt, normalizeReceiptInput, safeAppendReceipt } from "../shared/receipt-index.js";
 import { AgentLinkError } from "../shared/errors.js";
@@ -41,7 +43,7 @@ export const claudeSendTool = {
   inputSchema: {
     type: "object",
     properties: {
-      sessionId: str("Exact target session: sessionId (local_<uuid>), cliSessionId, or local_<cli>. Archived sessions are reachable by exact id."),
+      sessionId: str("Exact target session: sessionId (local_<uuid>), cliSessionId, local_<cli>, a claude:<id> address, or role:<name> (the Claude session currently holding the role). Archived sessions are reachable by exact id."),
       query: str("Fuzzy target lookup over title, cwd, and partial id. Archived sessions are skipped. Ambiguous matches fail with ambiguous."),
       to: {
         type: "string",
@@ -65,13 +67,15 @@ export const claudeSendTool = {
     messageId: out("string", "Id of the queued message."),
     delivery: out("string", "queued-channel, queued-online, queued-offline, or queued-mailbox."),
     target: out("object", "{address, sessionId, title, loaded, surface} of the target session."),
-    resolution: out("object", "How the target was found: {via: exact|fuzzy, query, matchReasons, candidates?}."),
+    resolution: out("object", "How the target was found: {via: exact|fuzzy|role:<name>, query, matchReasons, candidates?}."),
     receipt: commonOut.receipt,
     anticipation: enumOf(["reply", "action", "fyi"], "The message's anticipation label."),
     replyBy: out(["string", "null"], "The message's deadline (ISO 8601), or null."),
     messageStatus: out(["string", "null"], "pending for a reply/action message, null for fyi."),
     wait: out("object", "With waitForReply: {outcome: reply|declined|done|unresolved|expired|timeout, messageStatus, waitedMs, target: {sessionId, address}, reply?} (sections 3.4, 7.6). reply is the explicit reply, decline reason, or done note, enveloped."),
-    replyConfirmation: out("object", "Deprecated duplicate of wait in the 0.4 shape ({received, replyMessageId?, reply?, error?}); removed in 0.6.0.")
+    replyConfirmation: out("object", "Deprecated duplicate of wait in the 0.4 shape ({received, replyMessageId?, reply?, error?}); removed in 0.6.0."),
+    via: out("string", "role:<name> when the target was addressed by role; the message went to the role's current holder."),
+    roleProcedure: out(["object", "null"], "With a role target: {name, version, textIncluded} of the role's procedure, or null when the role has none.")
   },
   annotations: { readOnlyHint: false, destructiveHint: false }
 };
@@ -111,6 +115,7 @@ function targetArgument(args, warn) {
  * @property {(receipt: any) => Promise<any>} [appendReceipt]
  * @property {() => number} [now]                    clock (tests inject one)
  * @property {() => import("../delivery/message-status.js").ReminderSettings} [reminderSettings]
+ * @property {import("../registry/roles.js").RoleStore | null} [roles]   role table (role:<name> targets, enforcement)
  */
 
 /** @param {ClaudeSendDeps} [deps] */
@@ -122,7 +127,8 @@ export function makeClaudeSendHandler({
   resolveCurrentSession = null,
   appendReceipt = safeAppendReceipt,
   now = () => Date.now(),
-  reminderSettings: settingsFn = () => reminderSettings()
+  reminderSettings: settingsFn = () => reminderSettings(),
+  roles = null
 } = {}) {
   // Archived sessions are listed so an exact id can still address them;
   // fuzzy matching below skips them.
@@ -160,7 +166,25 @@ export function makeClaudeSendHandler({
         now: now()
       });
 
-      const { value: to, mode } = targetArgument(args, toolContext.warn);
+      const targetArg = targetArgument(args, toolContext.warn);
+      const { mode } = targetArg;
+      let to = targetArg.value;
+      // role:<name> resolves to the role's current holder at send time (R1.19).
+      let role = null;
+      if (looksLikeRoleAddress(to)) {
+        if (!roles) {
+          throw new AgentLinkError("unsupported", "Role addresses are not available on this server.", { details: { capability: "roles" } });
+        }
+        role = roles.resolve(to.trim());
+        const holder = parseAddress(role.address);
+        if (holder?.harness !== "claude") {
+          throw new AgentLinkError("invalid_arguments", `Role ${role.role} is held by ${role.address}, a Codex thread; message_claude_session only reaches Claude sessions.`, {
+            details: { errors: [{ path: "sessionId", rule: "harness", expected: "a role held by a claude: session" }], role: role.role, address: role.address },
+            hint: `Call message_codex_thread with threadId="role:${role.role}".`
+          });
+        }
+        to = holder.id;
+      }
       if (typeof body !== "string" || !body.length) {
         throw new AgentLinkError("invalid_arguments", "`message` must be a non-empty string.", {
           details: { errors: [{ path: "message", rule: "required", expected: "non-empty string" }] }
@@ -176,7 +200,7 @@ export function makeClaudeSendHandler({
       let resolution = null;
       // Exact ids (sidecar id, CLI id, or local_<cli>) also reach archived
       // sessions; fuzzy queries only consider active ones.
-      const exact = mode === "fuzzy" ? null : sessions.find((s) => claudeSessionMatches(s, to));
+      const exact = mode === "fuzzy" && !role ? null : sessions.find((s) => claudeSessionMatches(s, to));
       if (exact) {
         target = exact;
         resolution = {
@@ -184,8 +208,10 @@ export function makeClaudeSendHandler({
           query: to,
           matchReasons: ["sessionId-exact"]
         };
-      } else if (mode === "exact") {
-        throw new AgentLinkError("not_found", `No Claude session has id ${JSON.stringify(to).slice(0, 120)}.`, {
+      } else if (mode === "exact" || role) {
+        throw new AgentLinkError("not_found", role
+          ? `Role ${role.role} is held by ${role.address}, but no Claude session with that id was found.`
+          : `No Claude session has id ${JSON.stringify(to).slice(0, 120)}.`, {
           details: { query: to, candidates: [] },
           hint: "Pass query for a fuzzy lookup, or call list_claude_sessions."
         });
@@ -233,17 +259,51 @@ export function makeClaudeSendHandler({
           answered = original;
         }
 
-        messageId = mb.insertMessage({
-          fromSessionId: caller.id,
-          fromSessionKind: caller.kind,
-          toSessionId: canonicalClaudeSessionId(target),
-          toSessionKind: "claude",
-          body,
-          metadata: mailboxMetadata({ receipt, resolution, senderSource: caller.source }),
-          replyToMessageId: replyToMessageId ?? null,
-          anticipation: labels.anticipation,
-          replyBy: labels.replyBy
+        // Role addressing between persistent agents (R1.23): checked before
+        // the mailbox write, so `enforce` writes nothing.
+        const targetAddress = claudeAddress(target);
+        const senderAddress = hostIdentity({ host, callerContext: /** @type {any} */ (runtimeCallerContext), currentSession: resolveCurrentSession }).address;
+        const tableRead = roles ? roles.read() : null;
+        const enforcement = roles && tableRead ? roles.enforcement(tableRead) : { mode: "off" };
+        const addressing = checkRoleAddressing({
+          mode: enforcement.mode,
+          senderAddress,
+          targetAddress,
+          via: role?.via ?? null,
+          isReply: replyToMessageId !== undefined && replyToMessageId !== null,
+          rolesOf: (address) => (roles && tableRead && !tableRead.error ? roles.rolesOf(address, tableRead.table) : [])
         });
+        if (addressing.warning) toolContext.warn?.(addressing.warning);
+
+        // R1.20: the procedure text rides along with the first delivery of
+        // each version to the holder.
+        const procedure = role?.procedure ?? null;
+        const procedureClaim = procedure && targetAddress ? { role: procedure.name, version: procedure.version, address: targetAddress } : null;
+        const withText = procedureClaim && roles ? roles.claimProcedureDelivery(procedureClaim) : false;
+        const roleMetadata = role
+          ? {
+              via: role.via,
+              procedure: procedure ? { name: procedure.name, version: procedure.version } : null,
+              ...(withText && procedure ? { procedureText: procedure.text } : {})
+            }
+          : null;
+
+        try {
+          messageId = mb.insertMessage({
+            fromSessionId: caller.id,
+            fromSessionKind: caller.kind,
+            toSessionId: canonicalClaudeSessionId(target),
+            toSessionKind: "claude",
+            body,
+            metadata: { ...mailboxMetadata({ receipt, resolution, senderSource: caller.source }), ...(roleMetadata ? { role: roleMetadata } : {}) },
+            replyToMessageId: replyToMessageId ?? null,
+            anticipation: labels.anticipation,
+            replyBy: labels.replyBy
+          });
+        } catch (error) {
+          if (withText && procedureClaim && roles) roles.releaseProcedureDelivery(procedureClaim);
+          throw error;
+        }
         // An explicit reply sent back to the original sender resolves an
         // open reply/action message as replied (R7.5); fyi mail has no
         // status, and a resolved message stays as it was.
@@ -306,7 +366,12 @@ export function makeClaudeSendHandler({
             delivery,
             runtimeCallerContext
           });
-          receiptResult = { recorded: true, ...await appendReceipt(built) };
+          const stored = {
+            ...built,
+            ...(role ? { via: role.via, roleProcedure: procedure ? { name: procedure.name, version: procedure.version } : null } : {}),
+            ...(addressing.tag ? { tags: [...new Set([...(built.tags ?? []), addressing.tag])] } : {})
+          };
+          receiptResult = { recorded: true, ...await appendReceipt(stored) };
         }
 
         /** @type {Record<string, any>} */
@@ -314,10 +379,11 @@ export function makeClaudeSendHandler({
           messageId,
           delivery,
           target: targetSummary,
-          resolution,
+          resolution: role ? { ...resolution, via: role.via } : resolution,
           anticipation: labels.anticipation,
           replyBy: labels.replyBy === null ? null : new Date(labels.replyBy).toISOString(),
           messageStatus: labels.anticipation === "fyi" ? null : "pending",
+          ...(role ? { via: role.via, roleProcedure: procedure ? { name: procedure.name, version: procedure.version, textIncluded: withText } : null } : {}),
           receipt: receiptResult
         };
 

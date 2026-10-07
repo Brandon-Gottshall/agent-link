@@ -210,6 +210,24 @@ export function migrationRecordPath(options = {}) {
 }
 
 /**
+ * The role table (design doc R1.18): `<state>/roles.json`.
+ * @param {PathOptions} [options]
+ * @returns {string}
+ */
+export function rolesPath(options = {}) {
+  return path.join(stateDir(options), "roles.json");
+}
+
+/**
+ * Role procedure files (R1.20): `<state>/roles/<name>.md`.
+ * @param {PathOptions} [options]
+ * @returns {string}
+ */
+export function roleProceduresDir(options = {}) {
+  return path.join(stateDir(options), "roles");
+}
+
+/**
  * Where releases up to 0.4.x kept state. Read-only from 0.4.x on.
  * @param {PathOptions} [options]
  * @returns {LegacyPaths}

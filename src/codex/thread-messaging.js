@@ -28,10 +28,13 @@ import {
   peerMessageResult,
   renderPeerEnvelope
 } from "../shared/envelope.js";
-import { codexAddress } from "../shared/identity.js";
+import { codexAddress, hostIdentity, isAddress, parseAddress } from "../shared/identity.js";
 import { AgentLinkError } from "../shared/errors.js";
-import { buildReceipt, normalizeReceiptInput, safeAppendReceipt } from "../shared/receipt-index.js";
+import { buildReceipt, listReceipts as defaultListReceipts, normalizeReceiptInput, safeAppendReceipt } from "../shared/receipt-index.js";
 import { LIMITS } from "../server/schemas.js";
+import { looksLikeRoleAddress } from "../registry/roles.js";
+import { assertNoClaudeOverrides, decideTargetOverrides, overrideDeniedError } from "../delivery/override-policy.js";
+import { checkRoleAddressing } from "../delivery/role-policy.js";
 
 /** @typedef {import("./thread-queries.js").AppServerLike} AppServerLike */
 /** @typedef {import("./thread-queries.js").WaitReadArgs} WaitReadArgs */
@@ -67,7 +70,9 @@ import { LIMITS } from "../server/schemas.js";
  *   replyConfirmation?: Record<string, any> | null,
  *   evidence?: Record<string, any> | null,
  *   runtimeCallerContext?: any,
- *   appServer?: any
+ *   appServer?: any,
+ *   extra?: Record<string, any> | null,
+ *   tags?: string[]
  * }} ActionReceiptInput
  */
 
@@ -76,6 +81,8 @@ import { LIMITS } from "../server/schemas.js";
  *   appServer: AppServerLike,
  *   host: string,
  *   resolveCurrentSession: () => any,
+ *   roles?: import("../registry/roles.js").RoleStore | null,
+ *   listReceipts?: (options: Record<string, any>) => Promise<{data: any[]}>,
  *   queries: {
  *     waitForThreadRead: (args: WaitReadArgs) => Promise<WaitReadResult>,
  *     enrichThreadLookupError: (error: any, threadId: string) => Promise<any>,
@@ -238,64 +245,10 @@ export function recentItemLine(item) {
   return text ? `[${item.type ?? "item"} ${item.id ?? ""}] ${text}` : "";
 }
 
-// Decide which caller-supplied cwd/model/effort values reach the existing
-// thread. allowTargetOverride forwards everything. Otherwise a value equal to
-// the thread's own is forwarded; one that differs from a KNOWN thread value is
-// a conflict (only a warning when steering, since turn/steer ignores them);
-// one the app-server does not report (null) is not forwarded and is flagged
-// with a target-override-unverified warning.
-/**
- * @param {any} thread  the target thread as the app-server reports it
- * @param {Record<string, any>} args
- * @param {{steering?: boolean}} [options]
- * @returns {{forward: {cwd?: string, model?: string, effort?: string}, conflicts: Array<{field: string, requested: string, threadValue: string}>, warnings: any[]}}
- */
-export function checkTargetOverrides(thread, args, { steering = false } = {}) {
-  const forward = {};
-  const conflicts = [];
-  const warnings = [];
-  /** @type {Array<[string, string, string, (a: string, b: string) => boolean]>} */
-  const fields = [
-    ["cwd", optionalString(args.cwd).trim(), optionalString(thread?.cwd).trim(), sameDirectory],
-    ["model", optionalString(args.model).trim(), optionalString(thread?.model).trim(), (a, b) => a === b],
-    ["effort", optionalString(args.effort).trim(), optionalString(thread?.reasoningEffort ?? thread?.effort).trim(), (a, b) => a === b]
-  ];
-  for (const [field, requested, own, same] of fields) {
-    if (!requested) {
-      continue;
-    }
-    if (args.allowTargetOverride === true) {
-      forward[field] = requested;
-      continue;
-    }
-    if (!own) {
-      warnings.push({
-        code: "target-override-unverified",
-        severity: "warning",
-        field,
-        requested,
-        message: `The app-server does not report this thread's ${field}, so the requested value was not applied. Pass allowTargetOverride=true to apply it anyway.`
-      });
-      continue;
-    }
-    if (same(own, requested)) {
-      forward[field] = requested;
-      continue;
-    }
-    const conflict = { field, requested, threadValue: own };
-    if (steering) {
-      warnings.push({
-        code: "target-override-ignored-steer",
-        severity: "warning",
-        ...conflict,
-        message: `Steering an active turn does not change ${field}; the requested value was ignored.`
-      });
-    } else {
-      conflicts.push(conflict);
-    }
-  }
-  return { forward, conflicts, warnings };
-}
+// Which caller-supplied cwd/model/effort values reach an existing thread is
+// decided by src/delivery/override-policy.js (design doc section 9.2): equal
+// values are forwarded, the launcher may change effort, everything else needs
+// the target's override policy, and allowTargetOverride grants nothing.
 
 // Compare directories by real path when both exist (macOS /tmp is
 // /private/tmp), else lexically.
@@ -317,8 +270,62 @@ export function sameDirectory(a, b) {
 /**
  * @param {ThreadMessagingDeps} deps
  */
-export function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries }) {
+export function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries, roles = null, listReceipts = defaultListReceipts }) {
   const { waitForThreadRead, enrichThreadLookupError, inferActiveTurnId } = queries;
+
+  /**
+   * The caller's address from runtime identity only (R1.4).
+   * @param {ToolContext} [toolContext]
+   */
+  function callerAddress(toolContext = {}) {
+    return hostIdentity({ host, callerContext: toolContext.callerContext ?? null, currentSession: resolveCurrentSession }).address;
+  }
+
+  /**
+   * The session that launched a thread through Agent Link (R9.9): the
+   * launch receipt's launchedBy, or for receipts written before it existed,
+   * an origin thread taken from runtime identity. Null when unknown.
+   * @param {string} threadId
+   * @returns {Promise<string | null>}
+   */
+  async function launcherOf(threadId) {
+    let data = [];
+    try {
+      data = (await listReceipts({ targetThreadId: threadId, action: "launch_thread", limit: 20 })).data ?? [];
+    } catch {
+      return null;
+    }
+    for (const receipt of data) {
+      if (isAddress(receipt.launchedBy)) return receipt.launchedBy;
+      const source = receipt.origin?.sources?.threadId;
+      if ((source === "runtime_context" || source === "environment") && codexAddress(receipt.origin?.threadId)) {
+        return codexAddress(receipt.origin.threadId);
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Resolves `role:<name>` in threadId to the Codex thread holding it.
+   * @param {string} rawTarget
+   * @param {Record<string, any>} args
+   */
+  function resolveRoleTarget(rawTarget, args) {
+    if (!looksLikeRoleAddress(rawTarget)) return { threadId: rawTarget, role: null };
+    if (!roles) {
+      throw new AgentLinkError("unsupported", "Role addresses are not available on this server.", { details: { capability: "roles" } });
+    }
+    const role = roles.resolve(rawTarget);
+    const parsed = parseAddress(role.address);
+    if (parsed?.harness !== "codex") {
+      assertNoClaudeOverrides(args, role.address);
+      throw new AgentLinkError("invalid_arguments", `Role ${role.role} is held by ${role.address}, a Claude session; message_codex_thread only reaches Codex threads.`, {
+        details: { errors: [{ path: "threadId", rule: "harness", expected: "a role held by a codex: thread" }], role: role.role, address: role.address },
+        hint: `Call message_claude_session with sessionId="role:${role.role}".`
+      });
+    }
+    return { threadId: parsed.id, role };
+  }
 
   /**
    * @param {Record<string, any>} args
@@ -334,7 +341,7 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
    * @returns {Promise<Record<string, any>>}
    */
   async function messageThread(args, toolContext = {}) {
-    const threadId = requiredString(args.threadId, "threadId");
+    const { threadId, role } = resolveRoleTarget(requiredString(args.threadId, "threadId").trim(), args);
     const message = requiredString(args.message, "message").trim();
     if (!message) {
       throw new AgentLinkError("invalid_arguments", "message must not be empty.", {
@@ -353,19 +360,35 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
       throw await enrichThreadLookupError(error, threadId);
     }
     const initialThread = read.thread;
+    const targetAddress = /** @type {string} */ (codexAddress(threadId));
+    const senderAddress = callerAddress(toolContext);
+    const tableRead = roles?.read() ?? null;
+    const rolesOf = (/** @type {string} */ address) => (roles && tableRead && !tableRead.error ? roles.rolesOf(address, tableRead.table) : []);
+
+    // Role addressing between persistent agents (R1.23), before anything is sent.
+    const enforcement = roles && tableRead ? roles.enforcement(tableRead) : { mode: "off", source: "default" };
+    const addressing = checkRoleAddressing({ mode: enforcement.mode, senderAddress, targetAddress, via: role?.via ?? null, isReply: false, rolesOf });
+
     // turn/steer ignores cwd/model/effort, so a mismatch there is only a warning.
     const willSteer = mode === "steer_active" || (mode === "auto" && initialThread?.status?.type === "active");
-    const targetOverrides = checkTargetOverrides(initialThread, args, { steering: willSteer });
-    const overrides = targetOverrides.forward;
-    if (targetOverrides.conflicts.length > 0) {
-      throw new AgentLinkError("permission_denied", `Refusing to change ${targetOverrides.conflicts.map((conflict) => conflict.field).join(", ")} of existing thread ${threadId}; pass allowTargetOverride=true to do it intentionally.`, {
-        details: { reason: "target-override-rejected", conflicts: targetOverrides.conflicts },
-        hint: "Omit cwd/model/effort to run the turn with the thread's own settings, or set allowTargetOverride=true when changing them is intended."
-      });
-    }
+    const launcher = !willSteer && optionalString(args.effort).trim() ? await launcherOf(threadId) : null;
+    const decision = decideTargetOverrides({
+      thread: initialThread,
+      args,
+      steering: willSteer,
+      parties: { senderAddress, senderRoles: rolesOf(senderAddress), targetAddress, targetRoles: rolesOf(targetAddress) },
+      policy: tableRead && !tableRead.error ? tableRead.table.overridePolicy : {},
+      launcher
+    });
+    if (decision.denied) throw overrideDeniedError(decision.denied, threadId);
+    const overrides = decision.forward;
     let status = read.thread.status;
     let action = null;
-    const warnings = [...targetOverrides.warnings, ...warningsForMessageTarget(status, mode)];
+    const warnings = [
+      ...decision.warnings,
+      ...(addressing.warning ? [addressing.warning] : []),
+      ...warningsForMessageTarget(status, mode)
+    ];
 
     if (status.type === "notLoaded") {
       if (!resumeIfNeeded) {
@@ -396,6 +419,14 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
     }
 
     const steering = mode === "steer_active" || (mode === "auto" && status.type === "active");
+    // R1.20: the procedure text goes with the first delivery of each version
+    // to the holder; a failed send releases the claim.
+    const procedure = role?.procedure ?? null;
+    const procedureClaim = procedure ? { role: procedure.name, version: procedure.version, address: targetAddress } : null;
+    const withText = procedureClaim && roles ? roles.claimProcedureDelivery(procedureClaim) : false;
+    const roleFields = role
+      ? { via: role.via, procedure: procedure ? { name: procedure.name, version: procedure.version, ...(withText ? { text: procedure.text } : {}) } : null }
+      : null;
     // turn/steer ignores cwd/model/effort, so only a new turn shows overrides.
     const peer = buildPeerTurnInput({
       toolContext,
@@ -404,12 +435,27 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
       overrides: steering ? null : overrides,
       // R7.2 default label. Codex sends get anticipation/replyBy arguments
       // and mailbox records in B7b; until then the reply line stays direct.
-      anticipation: args.waitForReply === true ? "reply" : "fyi"
+      anticipation: args.waitForReply === true ? "reply" : "fyi",
+      role: roleFields
     });
     const input = peer.input;
+    const roleResult = role
+      ? { via: role.via, roleProcedure: procedure ? { name: procedure.name, version: procedure.version, textIncluded: withText } : null }
+      : {};
+    const receiptExtra = role ? { via: role.via, roleProcedure: procedure ? { name: procedure.name, version: procedure.version } : null } : null;
+    const receiptTags = addressing.tag ? [addressing.tag] : [];
+    const releaseClaim = () => {
+      if (withText && procedureClaim && roles) roles.releaseProcedureDelivery(procedureClaim);
+    };
+    /** @param {unknown} error */
+    const releaseOnFailure = (error) => {
+      releaseClaim();
+      throw error;
+    };
     if (steering) {
-      const expectedTurnId = args.expectedTurnId || await inferActiveTurnId(threadId);
+      const expectedTurnId = args.expectedTurnId || await inferActiveTurnId(threadId).catch(releaseOnFailure);
       if (!expectedTurnId) {
+        releaseClaim();
         throw new AgentLinkError("active_turn_conflict", "Cannot steer the active thread without expectedTurnId or an inferable in-progress turn.", {
           details: { status: status?.type ?? null, activeTurnId: null },
           hint: "Pass expectedTurnId, or use mode=start_turn with allowParallelTurn=true."
@@ -419,7 +465,7 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
         threadId,
         input,
         expectedTurnId
-      });
+      }).catch(releaseOnFailure);
       const wait = args.waitForReply
         ? await tryWaitForReply({
             threadId,
@@ -438,6 +484,7 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
         deliveredVia: "turn/steer",
         target: { threadId, address: codexAddress(threadId) },
         turn: { id: response.turnId },
+        ...roleResult,
         ...(wait ? { wait: waitOutcome(replyConfirmation, { threadId, turnId: response.turnId, waitedMs: wait.waitedMs }) } : {}),
         source: "app-server",
         action: actionName,
@@ -474,12 +521,15 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
         delivery: result.delivery,
         replyConfirmation,
         runtimeCallerContext: toolContext.callerContext,
-        appServer: appServerSummary
+        appServer: appServerSummary,
+        extra: receiptExtra,
+        tags: receiptTags
       });
       return result;
     }
 
     if (isRiskyParallelStatus(status) && !allowParallelTurn) {
+      releaseClaim();
       throw new AgentLinkError("active_turn_conflict", "Target thread has an active or waiting turn, and this request would start another turn.", {
         details: { status: status?.type ?? null, activeTurnId: await inferActiveTurnId(threadId).catch(() => null), warnings },
         hint: "Use mode=steer_active when possible, or set allowParallelTurn=true to intentionally start a parallel turn."
@@ -498,7 +548,7 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
       startParams.effort = overrides.effort;
     }
 
-    const response = await appServer.request("turn/start", startParams);
+    const response = await appServer.request("turn/start", startParams).catch(releaseOnFailure);
     const summarizedTurn = summarizeTurn(response.turn);
     const wait = args.waitForReply
       ? await tryWaitForReply({
@@ -517,6 +567,8 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
       messageId: peer.summary.messageId,
       deliveredVia: "turn/start",
       target: { threadId, address: codexAddress(threadId) },
+      ...roleResult,
+      ...(decision.switches.length ? { switches: decision.switches.map(switchResult) } : {}),
       ...(wait ? { wait: waitOutcome(replyConfirmation, { threadId, turnId: summarizedTurn.id, waitedMs: wait.waitedMs }) } : {}),
       source: "app-server",
       action: actionName,
@@ -553,9 +605,56 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
       delivery: result.delivery,
       replyConfirmation,
       runtimeCallerContext: toolContext.callerContext,
-      appServer: appServerSummary
+      appServer: appServerSummary,
+      extra: receiptExtra,
+      tags: receiptTags
     });
+    // R9.4/R9.10: every applied switch persists (no revert is ever sent) and
+    // gets its own receipt.
+    if (decision.switches.length) {
+      result.switchReceipts = [];
+      for (const change of decision.switches) {
+        result.switchReceipts.push(await recordActionReceipt({
+          action: change.kind.replace("-", "_"),
+          receipt: args.receipt,
+          target: { threadId, address: targetAddress, turnId: summarizedTurn.id, name: read.thread.name, cwd: read.thread.cwd },
+          message: null,
+          runtimeCallerContext: toolContext.callerContext,
+          appServer: appServerSummary,
+          extra: {
+            override: {
+              kind: change.kind,
+              address: targetAddress,
+              setting: change.field,
+              previous: change.previous,
+              current: change.current,
+              by: senderAddress,
+              grantedBy: change.grantedBy,
+              policy: change.policy,
+              expectedCost: change.expectedCost,
+              tokenUsage: { next: null }
+            }
+          }
+        }));
+      }
+    }
     return result;
+  }
+
+  /**
+   * The result entry for one applied switch (R9.4).
+   * @param {import("../delivery/override-policy.js").OverrideSwitch} change
+   */
+  function switchResult(change) {
+    return {
+      setting: change.field,
+      previous: change.previous,
+      current: change.current,
+      grantedBy: change.grantedBy,
+      ...(change.policy ? { policy: change.policy } : {}),
+      persists: true,
+      expectedCost: change.expectedCost
+    };
   }
 
   // The single Codex input point for another agent's text (design doc section
@@ -565,9 +664,9 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
   // is always wrapped in the peer envelope. The sender comes from runtime
   // identity (caller _meta, then host env), never from tool arguments.
   /**
-   * @param {{toolContext?: ToolContext, threadId: string, message: string, overrides?: Record<string, any> | null, anticipation?: string}} options
+   * @param {{toolContext?: ToolContext, threadId: string, message: string, overrides?: Record<string, any> | null, anticipation?: string, role?: {via: string, procedure: {name: string, version: number, text?: string} | null} | null}} options
    */
-  function buildPeerTurnInput({ toolContext = {}, threadId, message, overrides = null, anticipation = "fyi" }) {
+  function buildPeerTurnInput({ toolContext = {}, threadId, message, overrides = null, anticipation = "fyi", role = null }) {
     const caller = resolveCallerIdentity({
       host,
       runtimeCallerContext: toolContext.callerContext ?? null,
@@ -584,7 +683,8 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
       anticipation,
       body: message,
       overrides,
-      reply: "direct"
+      reply: "direct",
+      ...(role ? { via: role.via, procedure: role.procedure } : {})
     };
     const fields = normalizePeerMessage(peer);
     return {
@@ -603,7 +703,7 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
   /**
    * @param {ActionReceiptInput} input
    */
-  async function recordActionReceipt({ action, receipt, target, message, finalResponse, delivery, replyConfirmation, evidence, runtimeCallerContext, appServer: appServerSummary }) {
+  async function recordActionReceipt({ action, receipt, target, message, finalResponse, delivery, replyConfirmation, evidence, runtimeCallerContext, appServer: appServerSummary, extra = null, tags = [] }) {
     const receiptInput = normalizeReceiptInput(receipt, { runtimeCallerContext });
     if (receiptInput.record === false) {
       return {
@@ -633,9 +733,14 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
       runtimeCallerContext,
       appServer: appServerSummary
     });
+    const stored = {
+      ...built,
+      ...(extra ?? {}),
+      ...(tags.length ? { tags: [...new Set([...(built.tags ?? []), ...tags])] } : {})
+    };
     return {
       recorded: true,
-      ...await safeAppendReceipt(built)
+      ...await safeAppendReceipt(stored)
     };
   }
 
@@ -667,5 +772,5 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
     }
   }
 
-  return { messageThread, messageThreadTool, buildPeerTurnInput, recordActionReceipt, tryWaitForReply };
+  return { messageThread, messageThreadTool, buildPeerTurnInput, recordActionReceipt, tryWaitForReply, callerAddress, launcherOf };
 }

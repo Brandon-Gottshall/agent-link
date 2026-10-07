@@ -22,7 +22,9 @@ import { healthExtras } from "../tools/health.js";
  *   appServer: AppServerLike,
  *   hostInfo: {host: string, reason?: string | null},
  *   resolveCurrentSession: () => any,
- *   channelState: () => {enabled: boolean, error: string | null}
+ *   channelState: () => {enabled: boolean, error: string | null},
+ *   roles?: import("../registry/roles.js").RoleStore | null,
+ *   roleAdmin?: boolean
  * }} HealthDeps
  */
 
@@ -75,7 +77,7 @@ export function configuredEndpointSummary() {
 /**
  * @param {HealthDeps} deps
  */
-export function makeHealth({ appServer, hostInfo, resolveCurrentSession, channelState }) {
+export function makeHealth({ appServer, hostInfo, resolveCurrentSession, channelState, roles = null, roleAdmin = false }) {
   /**
    * @param {Record<string, any>} args
    * @param {{callerContext?: any}} [toolContext]
@@ -84,7 +86,13 @@ export function makeHealth({ appServer, hostInfo, resolveCurrentSession, channel
     const report = await healthReport(args, toolContext);
     // The caller's own address from runtime identity (R1.4).
     const caller = hostIdentity({ host: hostInfo.host, callerContext: toolContext.callerContext ?? null, currentSession: resolveCurrentSession });
-    return { ...report, address: caller.address, addressSource: caller.source, ...healthExtras({ codex: report.codex }) };
+    return {
+      ...report,
+      address: caller.address,
+      addressSource: caller.source,
+      ...healthExtras({ codex: report.codex }),
+      ...(roles ? { roles: rolesHealth(roles, roleAdmin) } : {})
+    };
   }
 
   /**
@@ -208,4 +216,30 @@ export function makeHealth({ appServer, hostInfo, resolveCurrentSession, channel
   }
 
   return { health, healthReport, claudeHealthSummary };
+}
+
+/**
+ * health.roles (design doc R1.25): the role table, the enforcement mode and
+ * where it came from, and whether this server allows role administration.
+ * Never fails the health call.
+ * @param {import("../registry/roles.js").RoleStore} roles
+ * @param {boolean} roleAdmin
+ */
+export function rolesHealth(roles, roleAdmin) {
+  try {
+    const read = roles.read();
+    return {
+      path: read.path,
+      exists: read.exists,
+      count: Object.keys(read.table.roles).length,
+      assigned: Object.values(read.table.roles).filter((role) => typeof role.address === "string").length,
+      policyTargets: Object.keys(read.table.overridePolicy).length,
+      enforcement: roles.enforcement(read),
+      admin: roleAdmin,
+      problems: read.problems.length,
+      error: read.error
+    };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error), admin: roleAdmin };
+  }
 }

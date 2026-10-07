@@ -22,7 +22,10 @@ export const RECEIPT_ACTIONS = Object.freeze([
   "archive_thread",
   "message_claude_session",
   "reply_message",
-  "message_status"
+  "message_status",
+  "model_switch",
+  "effort_change",
+  "cwd_change"
 ]);
 
 /**
@@ -138,14 +141,14 @@ export const turnOptions = {
   mode: enumOf(MESSAGE_MODES, "auto resumes idle or not-loaded threads, or steers an active turn when its turn id is known. Defaults to auto."),
   resumeIfNeeded: bool("Allow thread/resume before messaging a not-loaded target. Defaults to true."),
   expectedTurnId: str("Required by the app-server when steering an active turn unless Agent Link can infer the active turn."),
-  model: str("Optional model for the target turn. Without allowTargetOverride: rejected when it differs from the thread's reported model; not applied (with a warning) when the thread reports none."),
-  effort: enumOf(EFFORT_VALUES, "Optional reasoning effort for the target turn. Without allowTargetOverride: rejected when it differs from the thread's reported reasoningEffort; not applied (with a warning) when the thread reports none."),
+  model: str("Optional model for the target turn. A model different from the thread's own is refused (permission_denied, model_switch_requires_fork_or_opt_in) unless the target's override policy allows you; an allowed switch persists and the next turn re-reads the thread uncached. Not applied (with a warning) when the thread reports no model and no policy allows it."),
+  effort: enumOf(EFFORT_VALUES, "Optional reasoning effort for the target turn. The thread's launcher may change it; anyone else needs the target's override policy (permission_denied, effort_not_permitted). A change persists. Not applied (with a warning) when the thread reports none and you may not change it."),
   allowParallelTurn: bool("Allow mode=start_turn even when the target appears active or waiting. Defaults to false."),
   waitForReply: bool("After delivery, wait for the target turn to finish and return the result in `wait`. Defaults to false."),
   timeoutMs: timeoutMs("Maximum wait when waitForReply is true, in milliseconds."),
   pollIntervalMs: pollIntervalMs("Polling interval when waitForReply is true, in milliseconds."),
   recentItems: intRange({ ...LIMITS.replyRecentItems, description: RECENT_ITEMS_REPLY }),
-  allowTargetOverride: bool("Messaging an existing thread normally keeps that thread's own cwd, model, and reasoning effort. Without this flag, a cwd/model/effort that differs from a value the thread reports is rejected with permission_denied (only warned about when steering an active turn), and one the thread does not report is not applied (warning target-override-unverified). Set true only when you intend to change them. Defaults to false.")
+  allowTargetOverride: bool("Deprecated: grants nothing since 0.7.0 (an ignored_argument warning) and is rejected from 0.8.0. Whether cwd/model/effort of an existing thread may change is decided by its launcher (effort) and the target's override policy.")
 };
 
 /**

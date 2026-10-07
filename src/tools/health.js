@@ -48,7 +48,8 @@ export const healthTool = {
     callerContextContract: out("object", "Which _meta keys are read as caller context."),
     callerContext: out("object", "The caller context of this request (includeCallerContext)."),
     configuredEndpoint: out("object", "{url, socket}: the variable naming an external app-server, or null."),
-    autoStartEnabled: out("boolean", "Whether a managed app-server may be started.")
+    autoStartEnabled: out("boolean", "Whether a managed app-server may be started."),
+    roles: out("object", "{path, exists, count, assigned, policyTargets, enforcement: {mode: off|warn|enforce, source, ignored[]}, admin, problems, error}: the role table (roles.json), the role enforcement mode and its source, and whether the role write tools are enabled (AGENT_LINK_ROLE_ADMIN).")
   },
   annotations: { readOnlyHint: true }
 };

@@ -125,12 +125,14 @@ try {
     let result = await call("message_codex_thread", { threadId, message: "hi", cwd: "/tmp/elsewhere" });
     assert.equal(result.isError, true);
     assert.equal(result.payload.error.code, "permission_denied");
-    assert.equal(result.payload.error.details.reason, "target-override-rejected");
+    // B9 (R9.5): a cwd outside the thread's workspace is refused whatever the policy says.
+    assert.equal(result.payload.error.details.reason, "cwd_outside_workspace");
     assert.deepEqual(result.payload.error.details.conflicts, [{ field: "cwd", requested: "/tmp/elsewhere", threadValue: baseThread.cwd }]);
     assert.ok(!received.some((msg) => ["turn/start", "thread/resume", "turn/steer"].includes(msg.method)), "nothing was started");
 
     result = await call("message_codex_thread", { threadId, message: "hi", model: "other-model" });
     assert.equal(result.isError, true, "a model different from the reported one is refused");
+    assert.equal(result.payload.error.details.reason, "model_switch_requires_fork_or_opt_in");
     assert.deepEqual(result.payload.error.details.conflicts, [{ field: "model", requested: "other-model", threadValue: "gpt-known" }]);
 
     // Same values pass, cwd compared by real path; an effort the thread does
@@ -153,13 +155,15 @@ try {
     assert.ok(received.some((msg) => msg.method === "turn/steer"));
     assert.equal(result.payload.warnings.find((warning) => warning.code === "target-override-ignored-steer").field, "cwd");
 
-    // allowTargetOverride forwards everything.
+    // B9 (R9.13): allowTargetOverride grants nothing any more.
     received.length = 0;
-    result = await call("message_codex_thread", { threadId, message: "hi", cwd: "/tmp/elsewhere", model: "other-model", effort: "high", allowTargetOverride: true });
+    result = await call("message_codex_thread", { threadId, message: "hi", model: "other-model", allowTargetOverride: true });
+    assert.equal(result.isError, true);
+    assert.equal(result.payload.error.details.reason, "model_switch_requires_fork_or_opt_in");
+    assert.ok(!received.some((msg) => msg.method === "turn/start"), "nothing was started");
+    result = await call("message_codex_thread", { threadId, message: "hi", model: "gpt-known", allowTargetOverride: true });
     assert.equal(result.isError, false);
-    assert.equal(startParams().cwd, "/tmp/elsewhere");
-    assert.equal(startParams().model, "other-model");
-    assert.equal(startParams().effort, "high");
+    assert.equal(result.payload.warnings.find((warning) => warning.code === "ignored_argument").argument, "allowTargetOverride");
 
     // P2-04: message + waitForReply returns up to N recent items.
     result = await call("message_codex_thread", { threadId, message: "hi", waitForReply: true, timeoutMs: 2000, pollIntervalMs: 250, recentItems: 2 });

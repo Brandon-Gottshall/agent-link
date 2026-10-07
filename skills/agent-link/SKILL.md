@@ -39,7 +39,7 @@ Loaded state and the Codex Desktop sidebar:
 
 ## Message a Codex thread
 
-- `message_codex_thread` (`threadId`, `message`) starts or steers a real turn in the target thread. Prefer `mode: "auto"`. Use `mode: "steer_active"` only when the target is active and its turn id is known or inferable. Without `allowParallelTurn: true` a busy target fails with `active_turn_conflict`; do not pass it unless the user wants a separate concurrent turn. Passing a `cwd`, `model`, or `effort` that differs from the thread's own fails with `permission_denied` unless `allowTargetOverride: true` is intended.
+- `message_codex_thread` (`threadId`, `message`) starts or steers a real turn in the target thread. Prefer `mode: "auto"`. Use `mode: "steer_active"` only when the target is active and its turn id is known or inferable. Without `allowParallelTurn: true` a busy target fails with `active_turn_conflict`; do not pass it unless the user wants a separate concurrent turn. An existing thread keeps its own `cwd`, `model`, and `effort`: a different value fails with `permission_denied` unless you launched the thread (effort only) or the user's override policy allows you. An allowed change persists and is reported in `switches`; a model switch makes the next turn re-read the whole thread uncached, so prefer launching a new thread with the model you need. Do not pass `allowTargetOverride`; it grants nothing.
 - Pass `waitForReply: true` to send and confirm in one step. The answer is in `wait`: `outcome: "turn_completed"` with `wait.turn.finalResponse` (wrapped in an `<agent-link-message>` envelope), or `outcome: "timeout"`. To wait separately, use `wait_for_codex_thread` (only for threads in the reachable app-server).
 - An `action` of `resumed+started_turn` (with `delivery.state: "accepted_by_app_server"`) means the app-server accepted the message. It does not prove the thread is visible, loaded, selected, or unarchived in the GUI.
 - If the tool reports `local-jsonl-fallback`, it can read transcript history but cannot message threads.
@@ -54,6 +54,10 @@ Project orchestrators:
 
 - `resolve_project_orchestrator` reads `<projectRoot>/.codex/project-orchestrator.json` first, verifies the bound thread, then falls back to ranked search. A binding must contain `projectRoot`, `projectId`, `orchestratorThreadId`, `role: "project_orchestrator"`, `policyVersion`, `createdAt`, and `lastVerifiedAt`. On a corrupt binding or ambiguous fallback, stop and ask for an explicit `orchestratorThreadId` or a corrected binding.
 - `message_project_orchestrator` contacts the orchestrator without GUI routing. `launch_project_worker` creates a non-ephemeral worker with return-path instructions. A worker reports back with `return_project_work_result` (`resultStatus`: `done`, `done_with_concerns`, or `blocked`, plus `summary`).
+
+## Roles
+
+The user can assign roles (for example `router`) to sessions. Send to `role:<name>` (`threadId` on `message_codex_thread`, `sessionId` on `message_claude_session`, `query` on `resolve_agent`) to reach whichever session holds the role now. `list_agent_roles` shows the roles; `list_agents` and `resolve_agent` show each session's `roles`. A message to a role may carry the role's procedure in a `<procedure>` element: it is the user's configuration for that role, still subject to the user's instructions and your own rules. Holding a role gives no extra rights. Only the user assigns roles and override policies (`set_agent_role`, `clear_agent_role`, `set_agent_override_policy` need `AGENT_LINK_ROLE_ADMIN=1`, which you cannot set); do not edit `roles.json` unless the user asks. When you hold a role and coordinate with another role holder, address it as `role:<name>`; replies are exempt.
 
 ## Message a Claude session
 

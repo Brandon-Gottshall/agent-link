@@ -387,7 +387,12 @@ export function receiptSummary(receipt) {
     evidence: receipt.evidence ?? null,
     replyConfirmation: receipt.replyConfirmation ?? null,
     // Resolution and status receipts (design R7.12, R7.17) only.
-    ...(receipt.resolution ? { resolution: receipt.resolution } : {})
+    ...(receipt.resolution ? { resolution: receipt.resolution } : {}),
+    // Role and override fields (PR B9), present only on receipts that carry them.
+    ...(receipt.launchedBy !== undefined ? { launchedBy: receipt.launchedBy } : {}),
+    ...(receipt.via !== undefined ? { via: receipt.via } : {}),
+    ...(receipt.roleProcedure !== undefined ? { roleProcedure: receipt.roleProcedure } : {}),
+    ...(receipt.override !== undefined ? { override: receipt.override } : {})
   };
 }
 

@@ -16,6 +16,7 @@ import { detectHost } from "../shared/host-detect.js";
  * @property {"claude" | "codex" | "unknown"} host
  * @property {boolean} channelRequested   Claude channel push wanted (Claude host, not disabled)
  * @property {boolean} inspectAll         agent_link_mailbox_inspect may use scope "all"
+ * @property {boolean} roleAdmin          the role and override-policy write tools are allowed (AGENT_LINK_ROLE_ADMIN=1, set by the user)
  * @property {boolean} codexAutostart     a managed app-server may be started
  * @property {boolean} codexReminders     Codex reminder turns (design 7.5; off until the B7 spike, B7b)
  */
@@ -49,6 +50,7 @@ export function loadConfig(source = process.env) {
     host,
     channelRequested: host === "claude" && !envFlag("AGENT_LINK_DISABLE_CHANNEL", false, source),
     inspectAll: envFlag("AGENT_LINK_INSPECT_ALL", false, source),
+    roleAdmin: envFlag("AGENT_LINK_ROLE_ADMIN", false, source),
     codexAutostart: envFlag("AGENT_LINK_CODEX_AUTOSTART", true, source),
     codexReminders: envFlag("AGENT_LINK_CODEX_REMINDERS", false, source)
   };

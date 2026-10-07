@@ -51,7 +51,9 @@ const CLAUDE_LISTING_TOOLS = [
 
 // Every tool is registered on every host (design doc R1.16, PR B6): the
 // Claude listing tools and the host-neutral list_agents / resolve_agent too.
-const ALL_TOOLS = [...BASE_CODEX_TOOLS, ...CLAUDE_LISTING_TOOLS, "list_agents", "resolve_agent"].sort();
+// B9 adds the role and override-policy tools.
+const ROLE_TOOLS = ["set_agent_role", "clear_agent_role", "list_agent_roles", "get_agent_role", "set_agent_override_policy", "get_agent_override_policy"];
+const ALL_TOOLS = [...BASE_CODEX_TOOLS, ...CLAUDE_LISTING_TOOLS, "list_agents", "resolve_agent", ...ROLE_TOOLS].sort();
 
 async function listToolsWithEnv(envOverrides) {
   // Strip CLAUDE_* and CODEX_HOME from the inherited env so each scenario is hermetic.

@@ -43,7 +43,11 @@ export const messageThreadOut = {
   archiveState: out("object", "Archive state contract for the target."),
   desktopVisibility: out("object", "Whether Codex Desktop shows the change."),
   replyConfirmation: out("object", "Deprecated duplicate of wait in the 0.4 shape; removed in 0.6.0."),
-  appServer: commonOut.appServer
+  appServer: commonOut.appServer,
+  via: out("string", "role:<name> when the target was addressed by role; the message went to the role's current holder."),
+  roleProcedure: out(["object", "null"], "With a role target: {name, version, textIncluded} of the role's procedure, or null when the role has none. textIncluded is true on the first delivery of that version to the holder."),
+  switches: out("array", "In-place changes applied to the thread, one per setting: {setting, previous, current, grantedBy: launcher|policy, policy?, persists: true, expectedCost: {uncachedInputTokens, basis} | null}. A change persists; Agent Link never sends a revert."),
+  switchReceipts: out("array", "Receipt write results for the model-switch, effort-change, and cwd-change receipts, one per entry in switches.")
 };
 
 /** @type {ToolDefinition[]} */
@@ -110,14 +114,14 @@ export const codexActionTools = [
   },
   {
     name: "message_codex_thread",
-    description: "Send a direct text message to a Codex thread, wrapped in the peer-message envelope. Resumes not-loaded threads through the app-server before starting a new turn when needed, or steers an active turn. Starting a second turn on a busy thread fails with active_turn_conflict unless allowParallelTurn is true; changing the thread's cwd/model/effort fails with permission_denied unless allowTargetOverride is true.",
+    description: "Send a direct text message to a Codex thread, wrapped in the peer-message envelope. Resumes not-loaded threads through the app-server before starting a new turn when needed, or steers an active turn. Starting a second turn on a busy thread fails with active_turn_conflict unless allowParallelTurn is true; an existing thread keeps its cwd, model, and effort: a different value fails with permission_denied unless the thread's launcher changes effort or the target's override policy (set by the user) allows the change, which then persists. threadId also accepts role:<name>, which reaches the Codex thread holding that role.",
     inputSchema: {
       type: "object",
       required: ["threadId", "message"],
       properties: {
-        threadId: str("Target Codex thread ID."),
+        threadId: str("Target Codex thread ID, codex:<id> address, or role:<name> (the Codex thread currently holding the role)."),
         message: str("Text to send to the target thread (at most 64 KiB)."),
-        cwd: str("Optional cwd for the target turn. Without allowTargetOverride it must match the thread's own cwd (compared by real path); a different cwd is rejected."),
+        cwd: str("Optional cwd for the target turn. It must match the thread's own cwd (compared by real path) unless the target's override policy allows you to change it; a change must stay inside the thread's workspace (git top level of its cwd) and persists."),
         ...turnOptions,
         receipt: receiptInput
       },

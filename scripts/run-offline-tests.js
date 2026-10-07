@@ -46,8 +46,11 @@ const groups = {
     "tests/shared/jsonl.test.js",
     "tests/shared/legacy-state.test.js",
     "tests/shared/log.test.js",
+    "tests/shared/override-policy.test.js",
     "tests/shared/paths.test.js",
     "tests/shared/process-handlers.test.js",
+    "tests/shared/role-policy.test.js",
+    "tests/shared/roles-store.test.js",
     "tests/shared/state-dir.test.js",
     "tests/shared/text.test.js"
   ],
@@ -76,6 +79,7 @@ const groups = {
   ],
   server: [
     "tests/server/registry.test.js",
+    "tests/server/roles-e2e.test.js",
     "tests/server/server-modules.test.js",
     "tests/server/session-registry.test.js",
     "tests/server/tools-contract.test.js"
