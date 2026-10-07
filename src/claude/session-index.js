@@ -36,6 +36,16 @@ const transcriptSummaryCache = new Map();
 // listing instead of a full read and parse.
 const sidecarCache = new Map();
 
+/**
+ * @param {{
+ *   desktopRoot?: string,
+ *   codeRoot?: string,
+ *   projectsRoot?: string,
+ *   psOutput?: string,
+ *   surface?: string,
+ *   includeArchived?: boolean
+ * }} [options]
+ */
 export function listClaudeSessions({
   desktopRoot = DEFAULT_DESKTOP_ROOT,
   codeRoot = DEFAULT_CODE_ROOT,
@@ -73,6 +83,10 @@ export function listClaudeSessions({
 //     file it names.
 // The returned session has `loaded: false`; callers that know better (the
 // current session is by definition running) override it.
+/**
+ * @param {string} id
+ * @param {{desktopRoot?: string, codeRoot?: string, projectsRoot?: string, transcriptPath?: string}} [options]
+ */
 export function findClaudeSessionById(id, {
   desktopRoot = DEFAULT_DESKTOP_ROOT,
   codeRoot = DEFAULT_CODE_ROOT,
@@ -107,6 +121,15 @@ export function findClaudeSessionById(id, {
   return findTranscriptSessionByCliId(cliId, { transcriptPath, projectsRoot });
 }
 
+/**
+ * @param {{
+ *   sessionId?: string,
+ *   desktopRoot?: string,
+ *   codeRoot?: string,
+ *   projectsRoot?: string,
+ *   transcriptPath?: string
+ * }} [options]
+ */
 export function resolveCurrentClaudeSession({
   sessionId = currentClaudeSessionId(),
   desktopRoot,
@@ -123,6 +146,10 @@ export function resolveCurrentClaudeSession({
 // Is the `claude --resume <cliSessionId>` process for one session running?
 // One `ps` call and one regex, for wait loops that only care about a single
 // session (instead of re-listing every session).
+/**
+ * @param {string} cliSessionId
+ * @param {{psOutput?: string}} [options]
+ */
 export function isClaudeSessionLoaded(cliSessionId, { psOutput } = {}) {
   if (!cliSessionId) return false;
   return isLoaded(resumeCandidateLines(psOutput ?? safePs()), cliSessionId);
@@ -132,6 +159,10 @@ export function isClaudeSessionLoaded(cliSessionId, { psOutput } = {}) {
 // Desktop) by its cliSessionId. Kept cheap for the per-prompt notify hook:
 // prefer the hook payload's transcript_path (O(1)), otherwise probe one file
 // per project dir with existsSync — never parse transcript contents.
+/**
+ * @param {string} cliSessionId
+ * @param {{transcriptPath?: string, projectsRoot?: string}} [options]
+ */
 export function findTranscriptSessionByCliId(cliSessionId, { transcriptPath, projectsRoot = defaultProjectsRoot() } = {}) {
   if (!cliSessionId) return null;
   let file = null;

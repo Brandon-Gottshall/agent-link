@@ -438,13 +438,13 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
         turnId: response.turnId,
         peerMessage: peer.summary,
         warnings,
-        ...buildStateContract(/** @type {any} */ ({
+        ...buildStateContract({
           action: actionName,
           initialThread,
           beforeSendThread: read.thread,
           turnId: response.turnId,
           appServer: appServerSummary
-        })),
+        }),
         replyConfirmation,
         appServer: appServerSummary
       };
@@ -517,13 +517,13 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
       turn: summarizedTurn,
       peerMessage: peer.summary,
       warnings,
-      ...buildStateContract(/** @type {any} */ ({
+      ...buildStateContract({
         action: actionName,
         initialThread,
         beforeSendThread: read.thread,
         turn: summarizedTurn,
         appServer: appServerSummary
-      })),
+      }),
       replyConfirmation,
       appServer: appServerSummary
     };

@@ -124,7 +124,7 @@ export function reapOrphanedAppServers() {
 export function startChannelBridge({ enabled, server, resolveCurrentSession }) {
   if (!enabled) return { bridge: null, error: null };
   try {
-    const bridge = makeAgentLinkChannelBridge(/** @type {any} */ ({
+    const bridge = makeAgentLinkChannelBridge({
       resolveCurrentSession,
       notify: async (notification) => {
         if (typeof server.notification !== "function") {
@@ -132,7 +132,7 @@ export function startChannelBridge({ enabled, server, resolveCurrentSession }) {
         }
         await server.notification(notification);
       }
-    }));
+    });
     bridge.start();
     return { bridge, error: null };
   } catch (error) {

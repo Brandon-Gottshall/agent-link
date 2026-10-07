@@ -18,6 +18,7 @@
     "build": "node ./scripts/build.mjs",
     "check:dist": "node ./scripts/build.mjs --check",
     "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint .",
     "check:approval-config": "node ./scripts/approval-config-check.js",
     "test": "node ./scripts/run-offline-tests.js",
     "test:claude": "node ./scripts/run-offline-tests.js claude",
@@ -43,6 +44,7 @@
   "devDependencies": {
     "@types/node": "^20.19.43",
     "esbuild": "0.28.2",
+    "eslint": "10.12.0",
     "typescript": "^5.9.3"
   }
 }

@@ -135,6 +135,24 @@ export function normalizeReceiptInput(value = {}, options = {}) {
   };
 }
 
+/**
+ * Only `action` is required; every other field is recorded as null (or
+ * inferred) when absent. Claude send/reply pass no finalResponse,
+ * replyConfirmation, evidence, or appServer.
+ * @param {{
+ *   action: string,
+ *   receipt?: any,
+ *   target?: any,
+ *   message?: string | null,
+ *   finalResponse?: any,
+ *   delivery?: any,
+ *   replyConfirmation?: any,
+ *   evidence?: any,
+ *   runtimeCallerContext?: any,
+ *   appServer?: any,
+ *   host?: string | null
+ * }} input
+ */
 export function buildReceipt({
   action,
   receipt,

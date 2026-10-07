@@ -112,7 +112,7 @@ async function closeAndCheck({ child, closeAt, response, spawnLog, stub }) {
   await waitFor(() => pids.every((pid) => !alive(pid)), { timeoutMs: 4000, label: `${closeAt}: no app-server outlives the server` })
     .catch(() => {
       const survivors = pids.filter(alive);
-      for (const pid of survivors) try { process.kill(pid, "SIGKILL"); } catch {}
+      for (const pid of survivors) try { process.kill(pid, "SIGKILL"); } catch { /* already exited */ }
       assert.fail(`${closeAt}: app-server(s) outlived the server: ${survivors.join(", ")}`);
     });
   return { spawned: readSpawnLog(spawnLog).starts.length, reply };

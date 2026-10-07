@@ -32,10 +32,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check:dist
-      # Report only until the error count reaches 0 (design doc PR B8).
-      - name: Typecheck (non-blocking)
-        run: npm run -s typecheck
-        continue-on-error: true
+      # Blocking gates (design doc PR B8): typecheck at 0 errors, lint clean.
+      - run: npm run -s typecheck
+      - run: npm run -s lint
       - run: npm test
       - run: npm run -s wf:agent-link
       - name: Upload WF reports

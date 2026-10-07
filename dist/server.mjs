@@ -20838,6 +20838,7 @@ function openMailbox(options = {}) {
     listPendingFor,
     // Marks delivered only what it returns: with `limit`, the rest stays
     // pending for the next read.
+    /** @param {{toSessionId?: string, toSessionIds?: string[], limit?: number}} [query] */
     drainFor({ toSessionId, toSessionIds, limit: limit2 } = {}) {
       let rows = listPendingFor({ toSessionId, toSessionIds });
       if (Number.isFinite(limit2)) rows = rows.slice(0, Math.max(0, Math.floor(limit2)));
@@ -22120,7 +22121,10 @@ async function getFreePort() {
   return await new Promise((resolve, reject) => {
     const server = net.createServer();
     server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
+      const address = (
+        /** @type {import("node:net").AddressInfo} */
+        server.address()
+      );
       const port = address.port;
       server.close(() => resolve(port));
     });
@@ -24290,18 +24294,15 @@ function reapOrphanedAppServers() {
 function startChannelBridge({ enabled, server, resolveCurrentSession }) {
   if (!enabled) return { bridge: null, error: null };
   try {
-    const bridge = makeAgentLinkChannelBridge(
-      /** @type {any} */
-      {
-        resolveCurrentSession,
-        notify: async (notification) => {
-          if (typeof server.notification !== "function") {
-            throw new Error("MCP server notification API unavailable");
-          }
-          await server.notification(notification);
+    const bridge = makeAgentLinkChannelBridge({
+      resolveCurrentSession,
+      notify: async (notification) => {
+        if (typeof server.notification !== "function") {
+          throw new Error("MCP server notification API unavailable");
         }
+        await server.notification(notification);
       }
-    );
+    });
     bridge.start();
     return { bridge, error: null };
   } catch (error2) {
@@ -28043,16 +28044,13 @@ function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries }
         turnId: response2.turnId,
         peerMessage: peer.summary,
         warnings,
-        ...buildStateContract(
-          /** @type {any} */
-          {
-            action: actionName2,
-            initialThread,
-            beforeSendThread: read.thread,
-            turnId: response2.turnId,
-            appServer: appServerSummary2
-          }
-        ),
+        ...buildStateContract({
+          action: actionName2,
+          initialThread,
+          beforeSendThread: read.thread,
+          turnId: response2.turnId,
+          appServer: appServerSummary2
+        }),
         replyConfirmation: replyConfirmation2,
         appServer: appServerSummary2
       };
@@ -28118,16 +28116,13 @@ function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries }
       turn: summarizedTurn,
       peerMessage: peer.summary,
       warnings,
-      ...buildStateContract(
-        /** @type {any} */
-        {
-          action: actionName,
-          initialThread,
-          beforeSendThread: read.thread,
-          turn: summarizedTurn,
-          appServer: appServerSummary
-        }
-      ),
+      ...buildStateContract({
+        action: actionName,
+        initialThread,
+        beforeSendThread: read.thread,
+        turn: summarizedTurn,
+        appServer: appServerSummary
+      }),
       replyConfirmation,
       appServer: appServerSummary
     };

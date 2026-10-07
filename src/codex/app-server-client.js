@@ -17,6 +17,14 @@ import { getLogger } from "../shared/log.js";
 import { legacyManagedAppServerDirs, managedAppServerDir, stateDir as agentLinkStateDir } from "../shared/paths.js";
 import { ensureStateDir } from "../shared/state.js";
 
+/**
+ * A spawned app-server tagged with what exit and stop cleanup must remove.
+ * @typedef {import("node:child_process").ChildProcessByStdio<null, import("node:stream").Readable, import("node:stream").Readable> & {
+ *   __agentLinkEndpoint?: any,
+ *   __agentLinkRecordPath?: string | null
+ * }} ManagedChildProcess
+ */
+
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 const DEFAULT_STARTUP_TIMEOUT_MS = 15000;
 // A managed app-server is expensive (70-80% of a core while it boots, plus
@@ -607,6 +615,7 @@ export class CodexAppServerClient {
     // detached: the app-server leads its own process group, so shutdown can
     // signal the whole group (app-server plus anything it launches) instead of
     // only the direct child.
+    /** @type {ManagedChildProcess} */
     const child = spawn(launch.command, [...launch.args, "--listen", endpoint.listen, ...endpoint.args], {
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
@@ -896,7 +905,8 @@ function removeEndpointFiles(endpoint) {
       try {
         rmSync(file, { force: true });
       } catch {
-        // ignore
+        // Best-effort cleanup: force already ignores a missing file, and a
+        // leftover socket or token file is replaced on the next start.
       }
     }
   }
@@ -954,7 +964,8 @@ function removeManagedRecord(file) {
   try {
     rmSync(file, { force: true });
   } catch {
-    // ignore
+    // Best-effort cleanup: force already ignores a missing file, and the
+    // orphan reaper re-checks a leftover record before acting on it.
   }
 }
 
@@ -1167,7 +1178,8 @@ async function getFreePort() {
   return await new Promise((resolve, reject) => {
     const server = net.createServer();
     server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
+      // A TCP listen always reports an AddressInfo (a string is a pipe path).
+      const address = /** @type {import("node:net").AddressInfo} */ (server.address());
       const port = address.port;
       server.close(() => resolve(port));
     });

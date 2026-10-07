@@ -252,6 +252,7 @@ export async function readProjectOrchestratorBinding(projectRoot) {
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
+    /** @type {Error & {details?: object}} */
     const corrupt = new Error(`Project-orchestrator binding is corrupt: ${bindingPath}`);
     corrupt.details = { bindingPath, error: error.message };
     throw corrupt;
@@ -363,6 +364,7 @@ function validateBinding(value, { bindingPath, requestedProjectRoot }) {
 }
 
 function throwBindingError(message, details) {
+  /** @type {Error & {details?: object}} */
   const error = new Error(`Project-orchestrator binding is corrupt: ${message}`);
   error.details = details;
   throw error;

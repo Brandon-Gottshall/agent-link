@@ -4,7 +4,7 @@ Run these from a clone after `npm ci`. Protocol smoke tests are necessary but no
 
 ## Offline suite
 
-`npm test` runs every offline test with `node --test`, in parallel. Nothing in it launches Codex.app, a real Codex app-server, or a GUI; the app-server tests use the stub in `tests/fixtures/stub-codex-app-server.js`. CI runs the same suite on macOS with Node 20 and 22 (`.github/workflows/test.yml`).
+`npm test` runs every offline test with `node --test`, in parallel. Nothing in it launches Codex.app, a real Codex app-server, or a GUI; the app-server tests use the stub in `tests/fixtures/stub-codex-app-server.js`. CI runs the same suite on macOS with Node 20 and 22 (`.github/workflows/test.yml`), after `check:dist`, `typecheck`, and `lint`.
 
 | Command | What it covers |
 | --- | --- |
@@ -15,6 +15,8 @@ Run these from a clone after `npm ci`. Protocol smoke tests are necessary but no
 | `node scripts/run-offline-tests.js manifest` | The Claude and Codex plugin manifests, marketplace files, and `package.json` agree, and hook commands point at files that exist (`tests/manifest.test.js`). |
 | `npm run smoke` | The bundled MCP server (`dist/server.mjs`) starts, reports the package version, and exposes the same tools on both hosts. Also part of `npm test`. |
 | `npm run check:dist` | The committed bundle `dist/server.mjs` matches a fresh `npm run build`. |
+| `npm run typecheck` | `tsc` checks the JSDoc types in `src/` (`checkJs`, non-strict). Must report 0 errors; CI blocks on it. |
+| `npm run lint` | ESLint guardrails (`eslint.config.js`): in `src/`, no `console` calls and no `process.stdout` (stdout is the MCP protocol; log through `src/shared/log.js`; `src/claude/notify-hook.js` is exempt because its stdout is the hook protocol); everywhere, no empty blocks (an empty `catch` needs a comment saying why the error is safe to ignore), `===`, and `const` for bindings never reassigned. CI blocks on it. |
 | `npm run check:approval-config` | Codex approval settings let the model call every tool. Scripted calls can pass while model-selected calls are still blocked. Set `CODEX_AGENT_LINK_PLUGIN_ID` if you installed from a different marketplace. Reads your real Codex config, so it is not part of `npm test`. |
 | `npm run wf:agent-link` | WF suite, required tools, and fixture verdict logic, without launching live threads. Writes a report under `wf-runs/`. |
 | `npm run measure:idle-churn` | Idle CPU and app-server churn of one server over 120 s, as JSON, against the stub app-server. `scripts/idle-churn-measure.js` also takes `--idle-seconds`, `--plugin-root`, `--real-home`, and `--shutdown`. |

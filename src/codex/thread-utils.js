@@ -175,6 +175,18 @@ export function classifySidebarMembership(threadId, sidebarState) {
   return sidebarState.localThreadIds.includes(id) ? "in_sidebar_model" : "background_only";
 }
 
+/**
+ * `turn` wins over `turnId` when both are given; a steer passes only the
+ * accepted turnId, a new turn passes the summarized turn.
+ * @param {{
+ *   action: string,
+ *   initialThread?: any,
+ *   beforeSendThread?: any,
+ *   turn?: {id?: string | null, status?: string | null} | null,
+ *   turnId?: string | null,
+ *   appServer?: any
+ * }} input
+ */
 export function buildStateContract({ action, initialThread, beforeSendThread, turn, turnId, appServer }) {
   return {
     delivery: {

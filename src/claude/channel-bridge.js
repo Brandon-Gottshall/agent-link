@@ -28,6 +28,19 @@ export function renderChannelMessage(message) {
   };
 }
 
+/**
+ * Every option is optional: without `resolveCurrentSession` or `notify` a tick
+ * delivers nothing and reports why (`no_current_session`, `no_notify`).
+ * @param {{
+ *   resolveCurrentSession?: () => any,
+ *   mailboxOpener?: () => any,
+ *   mailboxPath?: string,
+ *   notify?: (notification: {method: string, params: any}) => Promise<void>,
+ *   pollIntervalMs?: number,
+ *   maxPollIntervalMs?: number,
+ *   watch?: boolean
+ * }} [options]
+ */
 export function makeAgentLinkChannelBridge({
   resolveCurrentSession,
   mailboxOpener,

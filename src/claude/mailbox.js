@@ -145,6 +145,17 @@ export function openMailbox(options = {}) {
     fs.appendFileSync(mailboxPath, line, { encoding: "utf8", mode: FILE_MODE });
   }
 
+  /**
+   * @param {{
+   *   fromSessionId: string,
+   *   fromSessionKind: string,
+   *   toSessionId: string,
+   *   toSessionKind: string,
+   *   body: string,
+   *   metadata?: object | null,
+   *   replyToMessageId?: string | null
+   * }} message
+   */
   function insertMessage({
     fromSessionId,
     fromSessionKind,
@@ -194,6 +205,7 @@ export function openMailbox(options = {}) {
 
   // `toSessionIds` matches any of several ids for one recipient (see
   // claudeSessionAliases()).
+  /** @param {{toSessionId?: string, toSessionIds?: string[]}} [query] */
   function listPendingFor({ toSessionId, toSessionIds } = {}) {
     const recipients = idSet(toSessionId, toSessionIds);
     return view()
@@ -209,6 +221,7 @@ export function openMailbox(options = {}) {
     listPendingFor,
     // Marks delivered only what it returns: with `limit`, the rest stays
     // pending for the next read.
+    /** @param {{toSessionId?: string, toSessionIds?: string[], limit?: number}} [query] */
     drainFor({ toSessionId, toSessionIds, limit } = {}) {
       let rows = listPendingFor({ toSessionId, toSessionIds });
       if (Number.isFinite(limit)) rows = rows.slice(0, Math.max(0, Math.floor(limit)));

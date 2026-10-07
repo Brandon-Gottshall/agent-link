@@ -113,6 +113,10 @@ export function renderNotice(pending) {
 // Resolve the receiving session as cheaply as possible:
 //   1. the payload's transcript_path, when it names this session (O(1));
 //   2. a sidecar whose cliSessionId matches, then a transcript scan.
+/**
+ * @param {string} cliSessionId
+ * @param {{transcriptPath?: string, desktopRoot?: string, codeRoot?: string, projectsRoot?: string}} [options]
+ */
 export function resolveHookSession(cliSessionId, { transcriptPath, ...roots } = {}) {
   if (transcriptPath && path.basename(transcriptPath, ".jsonl") === cliSessionId) {
     const session = findTranscriptSessionByCliId(cliSessionId, { transcriptPath, projectsRoot: roots.projectsRoot });
@@ -193,7 +197,8 @@ if (invokedDirectly()) {
     try {
       process.stdout.write("{}\n");
     } catch {
-      // ignore
+      // stdout is gone (the hook runner closed the pipe); nothing is left to
+      // report to, and the exit code must stay 0.
     }
     process.exit(0);
   });
