@@ -127,14 +127,25 @@ Options were checked against the installed Codex CLI (`codex-cli 0.159.2`) using
 - R1.11 Codex push. When the target is `codex:*` and an app-server is reachable:
   - Idle or not loaded: `thread/resume` if needed, then `turn/start` with `input = [text(envelope)]`, `turnTrigger = "agent-link"`, `clientUserMessageId = messageId`.
   - Active: `turn/steer` with the same input and `clientUserMessageId`.
+  - Spike finding (B7, codex-cli 0.159.2): `turn/start` on a thread with an active turn does not fail. It steers that turn, returns the active turn's id, and ignores `turnTrigger`. Agent Link therefore cannot rely on `turn/start` to fail when the thread is busy. `clientUserMessageId` comes back as `clientId` on the `userMessage` item, so delivery is matched on `clientId`.
   - On success, mark the message `delivered` with `deliveredVia: "codex-turn"`.
   - On failure, leave it `queued` and return `delivery: "queued"` with the push error in `warnings[]`.
-- R1.12 Endpoint preference for push: explicit env endpoint, then the running Codex app-server daemon control socket (`codex app-server daemon` / `proxy --sock`), then a managed app-server. The daemon is preferred because it is the process most likely to already own the thread.
+- R1.12 Endpoint preference for push: explicit env endpoint, then the running Codex app-server daemon control socket (`codex app-server daemon` / `proxy --sock`), then a managed app-server. The daemon is preferred because it is the process most likely to already own the thread. Spike finding (B7): this holds only for threads started through the daemon (for example, over SSH or remote control). The desktop app does not use the daemon (R1.12a), and on the tested machine the daemon was not running, so Agent Link normally falls through to its managed app-server.
 - R1.12a Desktop-app threads: spike first (owner answer to former open question 2). Whether Agent Link pushes into threads open in the Codex desktop app, or only queues mail and nudges, is decided by the B7 spike with this rule:
   - **Push** if the spike shows that the desktop app's open threads are served by the same app-server daemon Agent Link connects to. Pass criteria: a `turn/start` sent through the daemon socket to a thread open in the desktop app appears in that window without a reload, the window's next user turn continues the same thread history, and no second writer appends to the thread's transcript.
   - **Mailbox only** otherwise. Threads the desktop app holds get no `turn/start` or `turn/steer` from Agent Link, including reminder turns (section 7.5). The send stays `queued` and returns a `codex_desktop_push_disabled` warning. Receipt is by inbox pull (R1.13), plus the R1.14 contingency hook if it is built.
   - "Held by the desktop app" uses the most reliable signal the spike finds. If none is reliable, every thread not loaded in the endpoint Agent Link is connected to is treated as held (mailbox only), which never creates a second writer.
   - Before B7's push code merges, the spike's evidence, the Codex version tested, and the chosen mode are recorded here. `health.codex.desktopPush` reports `"shared-daemon"` or `"mailbox-only"` plus the verified Codex version, and warns when the installed version differs.
+  - **Spike result (2026-10-07): mailbox only.** Evidence and method are in [b7-spike-results.md](b7-spike-results.md), section A. Versions: Agent Link's endpoint was the installed `codex-cli 0.159.2`; the desktop app was ChatGPT.app 154.0.8037.98, bundling `codex-cli 0.160.1`.
+    - The desktop app spawns its own `codex app-server` child with the default `stdio://` transport. Its fds 0–2 are socketpairs to the app's main process, and it listens on nothing.
+    - No daemon was running: `app-server-control.sock` is absent, and `codex app-server daemon version` fails to connect.
+    - So the daemon in R1.12 cannot reach desktop threads, and any push from Agent Link would be a second writer. No GUI test was needed.
+    - `health.codex.desktopPush` = `"mailbox-only"`, verified on 0.159.2 (endpoint) and 0.160.1 (desktop).
+  - **Held signal (spike).** The R1.12a fallback is the rule: a thread is held unless it is loaded in Agent Link's own endpoint (`thread/loaded/list`).
+    - No reliable positive signal exists from outside. An app-server opens a thread's rollout JSONL on the first turn and keeps it open while the thread stays loaded: the fd persisted after `thread/unsubscribe` and closed on `thread/archive`.
+    - So "rollout open by another pid" (`lsof -t <thread.path>`) proves a thread is held, but its absence proves nothing: a desktop window can show a thread its app-server has not loaded, and the check races the push.
+    - Agent Link may report the lsof result in diagnostics. It never grants push.
+    - Consequence for the owner: a thread Agent Link launched is pushable only while it stays loaded in the same Agent Link endpoint. After that endpoint restarts, the thread is mailbox only.
 - R1.13 Pull. `read_agent_link_inbox` and `reply_agent_link_message` work on Codex whenever R1.4 yields a `codex:` address. Otherwise they return `no_current_session` with a Codex-specific hint.
 - R1.14 No Codex plugin hook (owner, 2026-10-06, former open question 4: "Just drop it and document the potential failover if needed for unsafe thread push."). B7 ships no Codex hook. Codex delivery and the section 7 reminders use app-server push (R1.11). Documented contingency, built only if needed: if the B7 spike shows that pushing into desktop-app-held threads is unsafe (R1.12a, mailbox only), those threads get mailbox-only delivery, and a Codex `userPromptSubmit` hook becomes the optional way to surface pending and unresolved mail in them. That hook fires only when a human types into the thread, so it never reaches agent-only threads. It would emit the section 2.4 notices, needs the user to trust it once, and needs the spike to confirm the plugin hook format and that the payload identifies the thread.
 - R1.15 Replies are explicit (section 7, owner answer to former open question 3). A Codex thread replies to or resolves a message with `reply_agent_link_message(messageId)`. A turn's final response is never recorded as a reply, whether or not anyone is waiting. This replaces the planned `replyKind: "turn-final"`.
@@ -794,6 +805,11 @@ pending ──reply──────> replied
   - Claude, `UserPromptSubmit`: when a reminder is due, the hook adds the reminder notice (R7.15) as hidden context.
   - Claude, `Stop`: when a reminder is due as a turn ends, the hook returns `decision:"block"` with the reminder notice as the `reason`, so the agent sees it before stopping. It blocks at most once per interval per recipient, however many messages are due, and each block counts as one reminder for every message it lists. When nothing is due (resolved, inside the interval, capped, or `fyi`), it never blocks, so a turn can always end.
   - Codex: reminders use app-server push (R1.11), with no Codex hook (R1.14). When a reminder is due and the thread is idle, a push-capable server starts a reminder turn (`turn/start`, `turnTrigger:"agent-link-reminder"`) whose text is the reminder notice. If a turn is active, the reminder waits for that turn to complete. Threads in mailbox-only mode (R1.12a) get no reminder turns; they rely on inbox pull, plus the R1.14 contingency hook if it is ever built.
+  - Turn-completion signal (B7 spike, codex-cli 0.159.2; [b7-spike-results.md](b7-spike-results.md) section B).
+    - The turn boundary is the `turn/completed` notification, `{threadId, turn:{id, status, items, error, startedAt, completedAt, durationMs}}`, with `status` one of `completed | interrupted | failed`. The final response is the `agentMessage` item with `phase:"final_answer"` in `turn.items`.
+    - `thread/status/changed` with `{type:"idle"}` arrives 0–1 ms before `turn/completed`, and `{type:"active"}` arrives with `turn/started`.
+    - A reminder is due-checked when Agent Link's endpoint emits `turn/completed`, or `thread/status/changed` → `idle`, for the thread. The reminder turn is sent only while the tracked status is `idle`.
+    - Because `turn/start` on an active thread steers that turn (R1.11 spike finding), a turn that starts between the check and the send turns the reminder into a steer. The protocol has no idle precondition. To keep the window to milliseconds, Spike recommendation: Agent Link sends reminder turns only from the idle notification handler, never from a timer while the thread is active. The remaining millisecond race is an accepted risk, for the owner to confirm.
 - R7.15 Reminder notice, fixed text. Only addresses and numbers are dynamic (R2.9 applies):
 
   ```
@@ -855,19 +871,29 @@ In short:
 | Change | Cache effect | Token cost |
 |---|---|---|
 | Model, provider, or service tier switch on an existing thread | The prompt cache is per model, so the next turn reads the whole context uncached | One full uncached read. A switch followed by a revert pays it twice |
-| Fork with another model | The original is untouched and its cache stays warm | The fork's first turn reads the inherited context once on the new model |
+| Fork with another model | The original is untouched and its cache stays warm | The fork's first turn reads the inherited context once on the new model (spike: cached share 0.20, static prefix only) |
+| Fork, same model | The fork does not reuse the original's cache (spike) | Same as another model: the first turn reads the inherited context uncached (spike: cached share 0.00 and 0.33) |
 | Model chosen at launch | No cache exists yet | None extra |
-| Effort change, same model | Presumed cache-neutral | Verified by the B7 spike (R9.12) |
-| cwd change | Environment context includes the cwd, so part of the cache may be lost | Measured by the B7 spike |
+| Effort change, same model | **Not cache-neutral** (spike, R9.12). A change to an effort not used recently loses the conversation cache (cached share 0.995 → 0.43 / 0.00). A change back to an effort used a turn earlier hits the warm prefix (0.99) | About one uncached read of the conversation, like a model switch |
+| cwd change | Cache-neutral (spike: 0.988 against 0.993). The new environment context is appended, about 158 tokens | Negligible |
 
-Codex app-server facts (codex-cli 0.159.2, `codex app-server generate-json-schema`):
+In-place model switch (spike): cached share 0.256 in both reps. Only the static prefix shared across threads hit; the conversation was read uncached, and the switch added about 4.4k input tokens of model-specific instructions.
+
+Codex app-server facts (codex-cli 0.159.2, `codex app-server generate-json-schema`, checked against live traffic by the B7 spike):
 
 - `TurnStartParams.model`, `effort`, and `cwd` each apply "for this turn and subsequent turns". Every turn-level override is sticky, so a turn-scoped override is really a switch plus a later revert.
 - `ThreadForkParams` takes `threadId` (required), `model`, `modelProvider`, `serviceTier`, `cwd`, `sandbox`, `approvalPolicy`, `approvalsReviewer`, `config`, `baseInstructions`, `developerInstructions`, `ephemeral`, `excludeTurns`, `lastTurnId` (fork through this turn, inclusive; it cannot be in progress), and `threadSource` (a client-supplied source classification). It has no effort field. Effort goes on the fork's first `turn/start`.
 - `ThreadForkResponse` returns the fork's `thread` (with `forkedFromId`) and its effective `model`, `modelProvider`, `serviceTier`, `reasoningEffort`, and `cwd`.
 - `thread/compact/start` takes only `threadId`.
 - `thread/tokenUsage/updated` carries `{threadId, turnId, tokenUsage: {last, total, modelContextWindow}}`. Each breakdown is `{inputTokens, cachedInputTokens, cacheWriteInputTokens, outputTokens, reasoningOutputTokens, totalTokens}`.
-- `thread/settings/updated` carries the thread's current settings, including `model`, `effort`, `cwd`, and `serviceTier`.
+  - Spike: it fires once per model request, not once per turn. `last` is that request and `total` is cumulative for the thread.
+  - It arrives before `turn/completed` (3–35 ms for the last request).
+  - A steered turn emits one notification per request with the same `turnId`.
+  - An interrupted turn emits one whose `last` repeats the previous request.
+  - A compaction emits `last` with only `totalTokens` set, and `total` unchanged.
+- `thread/settings/updated` carries the thread's current settings, including `model`, `effort`, `cwd`, and `serviceTier`. Spike: it is emitted 13–35 ms after a `turn/start` that changes model, effort, or cwd, and only then. It is not emitted for a turn without changes or for `thread/fork`, whose response carries the settings.
+- Spike: the effective default model comes from the user's config and can differ from `model/list` `isDefault`. Read it from the `thread/start`, `thread/resume`, or `thread/fork` response.
+- Spike: `thread/archive` on an already archived thread returns `-32600 "no rollout found for thread id …"`. Treat that as already archived.
 
 ### 9.2 Who may change what
 
@@ -880,7 +906,7 @@ Codex app-server facts (codex-cli 0.159.2, `codex app-server generate-json-schem
 
 - R9.1 No `model`, `modelProvider`, or `serviceTier` override on an existing thread by default. A send that sets one returns `permission_denied` with `reason:"model_switch_requires_fork_or_opt_in"` and a hint naming `fork_codex_thread`. It sends no turn and writes no mailbox record. To run another model on an existing thread's context, call `fork_codex_thread` (section 9.3). The original keeps its model and its warm cache.
 - R9.2 `launch_codex_thread` and `launch_project_worker` accept `model`, `modelProvider`, `serviceTier`, and `effort` from any caller, because a new thread has no cache to lose.
-- R9.3 The launcher (R9.9) may set `effort` on any turn it sends to the thread. Codex keeps a turn's effort for later turns, so the new effort persists. The result reports `effort: {previous, current}`, and Agent Link never sends a revert. Effort is presumed cache-neutral. If the spike (R9.12) shows that an effort change loses cache, the launcher keeps the right, and the result and receipt also report the expected cost as in R9.4.
+- R9.3 The launcher (R9.9) may set `effort` on any turn it sends to the thread. Codex keeps a turn's effort for later turns, so the new effort persists. The result reports `effort: {previous, current}`, and Agent Link never sends a revert. Effort is presumed cache-neutral. If the spike (R9.12) shows that an effort change loses cache, the launcher keeps the right, and the result and receipt also report the expected cost as in R9.4. Spike result: it does lose cache, so this fallback applies. Every launcher effort change reports `expectedCost` (`basis:"last-turn-input"`) and writes an `effort-change` receipt.
 - R9.4 In-place switch with the target's opt-in (B9). The user grants it in the override policy, stored in the role table:
 
   ```json
@@ -939,15 +965,38 @@ This is a separate tool rather than a `fork:true` option on `message_codex_threa
   - `{kind:"reconcile", forkJobId, messageId, from, to, fork, status, archived, tokenUsage: {delivery?}}`. `delivery` is the original's turn that received the message, when Agent Link pushed it.
   - `{kind:"model-switch" | "effort-change" | "cwd-change", address, previous, current, by, grantedBy: "launcher" | "policy" | "allowTargetOverride", expectedCost, tokenUsage: {next}}`. `next` is the first turn on the new setting.
   - If the notification does not arrive within 5 s after the turn ends, the field is `null` and the result carries a `token_usage_unavailable` warning.
+  - Spike correction: a turn's usage is the sum of `last` over every `thread/tokenUsage/updated` with that `turnId` seen up to `turn/completed`. A steered or tool-loop turn has one per model request. Equivalently, it is the difference in `total`. The notifications arrive before `turn/completed`, so the 5 s window is only a fallback.
+  - For an `interrupted` turn, a `last` equal to the previous request's is not counted.
+  - A compaction's usage is recorded as `{totalTokens}` only, because its `last` has no input or output breakdown.
   - Receipts link original and fork both ways (`original`, `fork`, `forkJobId`). `list_agent_link_receipts` gains a `kind` filter for these kinds.
   - `thread/settings/updated` confirms the applied model, effort, and cwd. A mismatch with the request adds a `settings_mismatch` warning.
 - R9.11 Forks are not free. The fork's first turn reads the inherited context once on the new model. Whether a same-model fork reuses the original's cache is measured (R9.12). `compactFork:"auto"` compacts the fork before the task when the original's last `inputTokens` exceeds a fraction of the fork model's `modelContextWindow`; the spike sets the fraction and records it here. Compaction is itself a full read on the fork, so it pays off only when the context is near the window or the task runs a long tool loop.
+  - **Spike result: the fraction is 0.5** (129,200 tokens for both tested models, window 258,400).
+  - A same-model fork does not reuse the original's cache, so every fork's first turn reads the inherited context uncached.
+  - Compaction keeps user messages verbatim and replaces everything else with one encrypted summary item. With context made of user messages it saved nothing. With assistant context of about 25k tokens it cut the next request's input by 45%, down to about the 30k baseline.
+  - Below half the window, a short fork task gains mostly on cached reads and pays about 8 s and lost detail. Above it, tool-loop tasks are likely to reach the window.
+  - The fraction is a judgment from these mechanics. Nothing was measured above 60k (turn budget).
 - R9.12 B7 spike measurements. They are recorded here, with the Codex version tested, before B7's fork code merges (as in R1.12a):
   1. Effort change on the same model: the next turn's cached share of input (`cachedInputTokens / inputTokens`) against the turn before. Cache-neutral if it is at least 90% of the previous share; otherwise R9.3's fallback applies.
   2. In-place model switch: the next turn's cached input is near zero (confirms R9.1's premise).
   3. cwd change: the next turn's cached share.
   4. Fork on the same model and on another model: the fork's first-turn cached share.
   5. Fork compaction: tokens spent compacting against tokens saved over the task, at several context sizes. Sets the `auto` threshold.
+
+  Results (B7 spike, 2026-10-07, codex-cli 0.159.2, models `gpt-6-astra` (config default) and `gpt-6.1-sol`, two reps each). Method and raw numbers are in [b7-spike-results.md](b7-spike-results.md) section C. Cached share = `cachedInputTokens / inputTokens`.
+
+  | # | Change | Previous turn's share | Next turn's share (rep1 / rep2) | Verdict |
+  |---|---|---|---|---|
+  | 1 | Effort high → low, same model | 0.995 | 0.434 / 0.000 | Not cache-neutral (below 90% of previous); R9.3 fallback applies |
+  | 1b | Effort low → high (back to an effort used a turn earlier) | 0.434 / 0.000 | 0.993 / 0.993 | Warm prefix reused |
+  | 2 | In-place model switch (astra → sol) | 0.991 / 0.995 | 0.256 / 0.256 | Conversation read uncached; only the shared static prefix (8,960) hits; +4.4k input |
+  | 3 | cwd change | 0.993 | 0.988 / 0.988 | Cache-neutral (+158 input) |
+  | 4a | Fork, same model, first turn | original 0.771 | 0.000 / 0.330 | No reuse of the original's cache |
+  | 4b | Fork, other model, first turn | original 0.771 | 0.202 / 0.202 | No reuse; static prefix only |
+  | 5 | Fork compaction at ~40k / ~56k (user-message context) | — | next input 39,226 vs 39,251 / 56,180 vs 56,139 uncompacted | No saving |
+  | 5b | Fork compaction at ~56k (assistant context) | — | next input 30,836 vs 56,177 uncompacted (−45%); compaction `last.totalTokens` 5,693, 8.1 s | Saves on every later request; `auto` fraction 0.5 (R9.11) |
+
+  Noise: identical to the token across reps, except the static-prefix hit on uncached first reads, which varied from 0 to 22,528 tokens with cache routing.
 
   `health.codex.overrideCosts` reports the recorded results and the Codex version they were measured on, and warns when the installed version differs.
 - R9.13 `allowTargetOverride` deprecation (R6.4):
