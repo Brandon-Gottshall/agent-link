@@ -290,8 +290,12 @@ export function openMailbox(options = {}) {
     }
   }
 
-  function markDelivered({ messageId, deliveredAt = Date.now() }) {
-    appendEvent({ type: "delivered", at: deliveredAt, messageId });
+  // `to` (optional) is the address the message was delivered to. After a
+  // role handover (R7.20) the new holder gets a fresh delivery, tracked by
+  // this field.
+  /** @param {{messageId: string, deliveredAt?: number, to?: string | null}} event */
+  function markDelivered({ messageId, deliveredAt = Date.now(), to = null }) {
+    appendEvent({ type: "delivered", at: deliveredAt, messageId, ...(typeof to === "string" && to ? { to } : {}) });
   }
 
   function markAcknowledged({ messageId, acknowledgedAt = Date.now() }) {
@@ -300,20 +304,24 @@ export function openMailbox(options = {}) {
 
   // Undo a delivery claim whose notification failed, so the message is
   // pending again for the next poll or the inbox tool.
-  function releaseDelivery({ messageId, releasedAt = Date.now() }) {
-    appendEvent({ type: "released", at: releasedAt, messageId });
+  /** @param {{messageId: string, releasedAt?: number, to?: string | null}} event */
+  function releaseDelivery({ messageId, releasedAt = Date.now(), to = null }) {
+    appendEvent({ type: "released", at: releasedAt, messageId, ...(typeof to === "string" && to ? { to } : {}) });
   }
 
   // `toSessionIds` matches any of several ids for one recipient (see
   // claudeSessionAliases()). `recipient`, when given, decides instead
   // (recipientMatcher in src/delivery/role-handover.js: a message handed
   // over to a role's new holder, R7.20).
-  /** @param {{toSessionId?: string, toSessionIds?: string[], recipient?: ((row: Record<string, any>) => boolean) | null}} [query] */
-  function listPendingFor({ toSessionId, toSessionIds, recipient = null } = {}) {
+  // `pending`, when given, decides whether a row is still undelivered for
+  // this recipient (a handed-over message is new to the role's new holder).
+  /** @param {{toSessionId?: string, toSessionIds?: string[], recipient?: ((row: Record<string, any>) => boolean) | null, pending?: ((row: Record<string, any>) => boolean) | null}} [query] */
+  function listPendingFor({ toSessionId, toSessionIds, recipient = null, pending = null } = {}) {
     const recipients = idSet(toSessionId, toSessionIds);
     const isRecipient = typeof recipient === "function" ? recipient : (/** @type {Record<string, any>} */ m) => recipients.has(m.to_session_id);
+    const isPending = typeof pending === "function" ? pending : (/** @type {Record<string, any>} */ m) => !m.delivered_at;
     return view()
-      .filter((m) => isRecipient(m) && !m.delivered_at)
+      .filter((m) => isRecipient(m) && isPending(m))
       .sort((a, b) => a.sent_at - b.sent_at);
   }
 
@@ -448,6 +456,7 @@ function mergedView(paths, claimsDir = null) {
     if (event.type === "delivered" && event.messageId && messages.has(event.messageId)) {
       const message = messages.get(event.messageId);
       message.delivered_at = event.at ?? Date.now();
+      message.deliveries.push({ to: typeof event.to === "string" && event.to ? event.to : null, at: message.delivered_at });
       // First surfacing, for the reminder interval (R7.13).
       message.first_delivered_at ??= message.delivered_at;
     } else if (event.type === "acknowledged" && event.messageId && messages.has(event.messageId)) {
@@ -455,9 +464,19 @@ function mergedView(paths, claimsDir = null) {
       message.acknowledged_at = event.at ?? Date.now();
     } else if (event.type === "released" && event.messageId && messages.has(event.messageId)) {
       const message = messages.get(event.messageId);
-      message.delivered_at = null;
-      // An undone claim was never surfaced (unless a reminder showed it).
-      if (!message.reminders.length) message.first_delivered_at = null;
+      // Undo the latest delivery to the same recipient (`to`, or none).
+      const to = typeof event.to === "string" && event.to ? event.to : null;
+      const index = message.deliveries.map((d) => d.to).lastIndexOf(to);
+      if (index >= 0) message.deliveries.splice(index, 1);
+      const remaining = message.deliveries[message.deliveries.length - 1] ?? null;
+      if (remaining) {
+        // Another recipient's delivery stands (a role handover, R7.20).
+        message.delivered_at = remaining.at;
+      } else {
+        message.delivered_at = null;
+        // An undone claim was never surfaced (unless a reminder showed it).
+        if (!message.reminders.length) message.first_delivered_at = null;
+      }
     } else if (event.type === "resolved" && event.messageId && messages.has(event.messageId)) {
       const message = messages.get(event.messageId);
       // A message resolves once (R7.10): the first trusted event wins. Only
@@ -550,6 +569,8 @@ function normalizeMessage(message, eventAt) {
     anticipation: ANTICIPATION_VALUES.has(message.anticipation) ? message.anticipation : "fyi",
     reply_by: Number.isFinite(message.reply_by) ? message.reply_by : null,
     first_delivered_at: message.delivered_at ?? null,
+    // Delivery events, each with the recipient it went to when recorded.
+    deliveries: message.delivered_at ? [{ to: null, at: message.delivered_at }] : [],
     resolution: null,
     reminders: []
   };

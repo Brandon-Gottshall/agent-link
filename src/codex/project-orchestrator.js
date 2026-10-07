@@ -82,11 +82,13 @@ export async function resolveProjectOrchestrator(args = {}, deps = {}) {
     }
   }
 
-  // A user-assigned orchestrator role with no project scope comes after the
-  // binding and before a search.
-  const unscoped = roleHolder(deps.roles, ORCHESTRATOR_ROLE, projectRoot, { scopes: ["role"] });
+  // The orchestrator role's own (unscoped) holder only stands in for a
+  // project that was named and has no binding file at all. A binding whose
+  // thread is unreadable keeps its binding-unreadable-search behavior, and a
+  // query-only call never reaches an unrelated project's holder.
+  const unscoped = projectRoot && !binding ? roleHolder(deps.roles, ORCHESTRATOR_ROLE, projectRoot, { scopes: ["role"] }) : null;
   if (unscoped) {
-    const resolved = await roleResolution(unscoped, { projectRoot, args, deps, binding });
+    const resolved = await roleResolution(unscoped, { projectRoot, args, deps });
     if (resolved.verification.readable !== false) return resolved;
   }
 
@@ -170,7 +172,7 @@ export async function messageProjectOrchestrator(args = {}, deps = {}, toolConte
     threadId: resolution.threadId,
     message,
     receipt: args.receipt ?? defaultReceipt("project_orchestrator_message", resolution)
-  }, toolContext);
+  }, orchestratorSendContext(resolution, toolContext));
   return {
     ok: result.ok !== false,
     source: "project-orchestrator",
@@ -259,7 +261,7 @@ export async function returnProjectWorkResult(args = {}, deps = {}, toolContext 
     threadId: resolution.threadId,
     message,
     receipt: args.receipt ?? defaultReceipt("project_work_result", resolution)
-  }, toolContext);
+  }, orchestratorSendContext(resolution, toolContext));
   return {
     ok: result.ok !== false,
     source: "project-orchestrator",
@@ -438,10 +440,25 @@ export function roleHolder(roles, name, projectRoot, { scopes }) {
 }
 
 /**
- * @param {NonNullable<ReturnType<typeof roleHolder>>} held
- * @param {{projectRoot: string, args: Record<string, any>, deps: Record<string, any>, binding?: any}} context
+ * The tool context for a send to a resolved orchestrator: a role decision
+ * travels as `roleVia`, so role enforcement (R1.23) sees a role-addressed
+ * send. Set only here, never from tool arguments.
+ * @param {Record<string, any> | null | undefined} resolution
+ * @param {Record<string, any>} toolContext
  */
-async function roleResolution(held, { projectRoot, args, deps, binding = null }) {
+export function orchestratorSendContext(resolution, toolContext) {
+  return resolution?.source === "role" && typeof resolution.role?.via === "string"
+    ? { ...toolContext, roleVia: resolution.role.via }
+    : toolContext;
+}
+
+/**
+ * A role decision never carries a binding's projectId (R1.21).
+ * @param {NonNullable<ReturnType<typeof roleHolder>>} held
+ * @param {{projectRoot: string, args: Record<string, any>, deps: Record<string, any>}} context
+ */
+async function roleResolution(held, { projectRoot, args, deps }) {
+  const binding = null;
   const verification = await verifyThreadReadable(held.threadId, deps);
   return {
     ok: true,

@@ -1,5 +1,5 @@
 import { AgentLinkError } from "../shared/errors.js";
-import { forwardMessageOptions } from "./project-orchestrator.js";
+import { forwardMessageOptions, orchestratorSendContext } from "./project-orchestrator.js";
 import { assertPeerBodyWithinLimit } from "../shared/envelope.js";
 
 const THREAD_ID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
@@ -211,7 +211,7 @@ export async function registerDependencyHandoff(args = {}, deps = {}, toolContex
       cleanupRecommendation: "keep_as_evidence",
       tags
     })
-  }, toolContext);
+  }, orchestratorSendContext(target.resolution, toolContext));
 
   return {
     ok: messageResult.ok !== false,

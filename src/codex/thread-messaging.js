@@ -42,7 +42,9 @@ import { checkRoleAddressing } from "../delivery/role-policy.js";
 
 /**
  * What a tool handler receives besides its arguments (src/server/registry.js).
- * @typedef {{callerContext?: any}} ToolContext
+ * @typedef {{callerContext?: any, roleVia?: string}} ToolContext
+ *   roleVia: set only by the orchestrator tools when the target came from
+ *   the role table (R1.21), never from tool arguments
  */
 
 /**
@@ -373,7 +375,9 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
 
     // Role addressing between persistent agents (R1.23), before anything is sent.
     const enforcement = roles && tableRead ? roles.enforcement(tableRead) : { mode: "off", source: "default" };
-    const addressing = checkRoleAddressing({ mode: enforcement.mode, senderAddress, targetAddress, via: role?.via ?? null, isReply: false, rolesOf });
+    const holdingsOf = (/** @type {string} */ address) => (roles && tableRead && !tableRead.error ? roles.holdings(address, tableRead.table) : { roles: [], projectRoots: [] });
+    const via = role?.via ?? (typeof toolContext.roleVia === "string" && toolContext.roleVia.startsWith("role:") ? toolContext.roleVia : null);
+    const addressing = checkRoleAddressing({ mode: enforcement.mode, senderAddress, targetAddress, via, isReply: false, rolesOf, holdingsOf });
 
     // turn/steer ignores cwd/model/effort, so a mismatch there is only a warning.
     const willSteer = mode === "steer_active" || (mode === "auto" && initialThread?.status?.type === "active");

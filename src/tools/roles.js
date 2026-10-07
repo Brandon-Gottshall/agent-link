@@ -36,7 +36,7 @@ const ADMIN_WRITE = { readOnlyHint: false, destructiveHint: true };
 const ADMIN_NOTE = "Requires AGENT_LINK_ROLE_ADMIN=1 in this Agent Link server's environment, set by the user; otherwise permission_denied (reason role_admin_disabled). A tool caller cannot enable it.";
 const ROLE_ARG = "Role name: 1 to 40 lowercase letters, digits, or hyphens (role:<name> is also accepted).";
 const ROLE_VIEW = "{role, roleAddress, address (holder, or null), assignedAt, projects? ({<absolute project root>: holder address}, when the role has per-project holders), procedure: {name, version, sha256, updatedAt, present} | null}";
-const PROJECT_ROOT_ARG = "Optional absolute project root. Scopes the change to that project's holder of the role (for the orchestrator role, the project orchestrator resolve_project_orchestrator returns, R1.21); the role's own holder is left as it is.";
+const PROJECT_ROOT_ARG = "Optional absolute project root, for the orchestrator role only. Scopes the change to that project's orchestrator (the one resolve_project_orchestrator returns, R1.21); the role's own holder is left as it is. Matched by path.resolve: no symlink resolution, no subdirectory matching.";
 
 /** @param {string} description */
 const senderList = (description) => ({
@@ -226,7 +226,7 @@ export function makeRoleHandlers({ roles, registry, admin }) {
         }
         procedure = args.procedure;
       }
-      const projectRoot = optionalProjectRoot(args.projectRoot);
+      const projectRoot = optionalProjectRoot(args.projectRoot, name);
       const session = await registry.get(agent);
       const result = roles.set({ role: name, address: session.address, procedureText: procedure, projectRoot });
       return {
@@ -242,7 +242,7 @@ export function makeRoleHandlers({ roles, registry, admin }) {
     clear_agent_role: async (args) => {
       requireAdmin();
       const name = requireRoleName(args.role);
-      const result = roles.clear(name, { projectRoot: optionalProjectRoot(args.projectRoot) });
+      const result = roles.clear(name, { projectRoot: optionalProjectRoot(args.projectRoot, name) });
       return {
         cleared: result.existed && typeof result.previousAddress === "string",
         previousAddress: typeof result.previousAddress === "string" ? result.previousAddress : null,
@@ -321,11 +321,20 @@ export function makeRoleHandlers({ roles, registry, admin }) {
 
 /**
  * An optional absolute project root argument, resolved; null when absent.
+ * Only the orchestrator role is scoped by project root (R1.21). Matching
+ * is by path.resolve: no symlink resolution and no subdirectory matching,
+ * the same as binding files.
  * @param {unknown} value
+ * @param {string} role
  * @returns {string | null}
  */
-function optionalProjectRoot(value) {
+function optionalProjectRoot(value, role) {
   if (value === undefined || value === null) return null;
+  if (role !== "orchestrator") {
+    throw new AgentLinkError("invalid_arguments", "projectRoot applies only to the orchestrator role.", {
+      details: { errors: [{ path: "projectRoot", rule: "scope", expected: "role orchestrator" }] }
+    });
+  }
   const root = typeof value === "string" ? value.trim() : "";
   if (!root || !path.isAbsolute(root)) {
     throw new AgentLinkError("invalid_arguments", "projectRoot must be an absolute path.", {

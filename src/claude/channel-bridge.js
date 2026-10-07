@@ -4,7 +4,7 @@ import { mailboxReadPaths, openMailbox } from "./mailbox.js";
 import { isHeldByActiveWait, onActiveWaitEnded } from "./active-waits.js";
 import { claudeSessionAliases } from "./identity.js";
 import { claudeAddress } from "../shared/identity.js";
-import { readRoleTable, recipientMatcher } from "../delivery/role-handover.js";
+import { readRoleTable, recipientView } from "../delivery/role-handover.js";
 import { normalizePeerMessage, peerMessageFromMailbox, renderPeerEnvelope } from "../shared/envelope.js";
 
 // Poll cadence: start at 1s, double on every tick that finds nothing to
@@ -134,9 +134,11 @@ export function makeAgentLinkChannelBridge({
     try {
       // A message handed over through a role (R7.20) is pushed to the role's
       // current holder, never to the previous one.
-      const all = mb.listPendingFor({
-        recipient: recipientMatcher({ aliases: claudeSessionAliases(session), address: claudeAddress(session), table: readRoleTable(roles) })
-      });
+      // It is a fresh delivery for the new holder even when the previous
+      // holder already had it, so deliveries record the address.
+      const address = claudeAddress(session);
+      const view = recipientView({ aliases: claudeSessionAliases(session), address, table: readRoleTable(roles) });
+      const all = mb.listPendingFor({ recipient: view.isRecipient, pending: view.isPending });
       // A reply that an in-process wait (message_claude_session with
       // waitForReply, or wait_for_claude_session) is blocked on stays pending
       // for that wait, which returns it as its tool result; pushing it here
@@ -150,7 +152,7 @@ export function makeAgentLinkChannelBridge({
       // notifying means it can never hand out a message the channel is
       // already delivering. A failed notification releases what it did not
       // deliver.
-      for (const message of pending) mb.markDelivered({ messageId: message.id });
+      for (const message of pending) mb.markDelivered({ messageId: message.id, to: address });
       let delivered = 0;
       try {
         for (const message of pending) {
@@ -165,7 +167,7 @@ export function makeAgentLinkChannelBridge({
           delivered += 1;
         }
       } catch (error) {
-        for (const message of pending.slice(delivered)) mb.releaseDelivery({ messageId: message.id });
+        for (const message of pending.slice(delivered)) mb.releaseDelivery({ messageId: message.id, to: address });
         throw error;
       }
       lastHadPending = held > 0;

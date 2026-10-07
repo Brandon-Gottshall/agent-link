@@ -50,9 +50,9 @@ function fixture() {
   return { mailboxPath: path.join(dir, "mailbox.jsonl"), roles };
 }
 
-function tools({ mailboxPath, roles }, as, { now = () => Date.now() } = {}) {
+function tools({ mailboxPath, roles }, as, { now = () => Date.now(), host = "claude" } = {}) {
   const deps = {
-    host: "claude",
+    host,
     listSessions: () => SESSIONS,
     mailboxOpener: () => openMailbox({ mailboxPath }),
     resolveCurrentSession: () => as,
@@ -138,7 +138,7 @@ test("T-7.9: the new holder sees the open message; the previous holder does not"
   const first = await tools(fx, FIRST).inbox({ markAsDelivered: false });
   assert.deepEqual(first.messages.map((m) => m.id), [fyi], "the first holder keeps only the fyi message, which never moves");
   const second = await tools(fx, SECOND).inbox({ markAsDelivered: false });
-  assert.deepEqual(second.messages.map((m) => [m.id, m.open]), [[id, true]]);
+  assert.deepEqual(second.messages.map((m) => [m.id, m.open]), [[id, false]], "a fresh delivery to the new holder (fix round a2)");
   assert.match(second.renderedBlock, /Please review the release notes/);
 
   // Cleared role: nobody holds it, so the message stays with its stored recipient.
@@ -181,7 +181,7 @@ test("T-7.9: reminders go to the new holder only, the count carries over, and th
   assert.deepEqual(hook(fx, FIRST, "Stop", T0 + 60_001), {}, "and its Stop hook never blocks for it");
   assert.match(reminderText(hook(fx, SECOND, "UserPromptSubmit", T0 + 60_000)), /reminder 2 of 3/);
   assert.match(reminderText(hook(fx, SECOND, "Stop", T0 + 90_000)), /reminder 3 of 3/);
-  assert.deepEqual(hook(fx, SECOND, "UserPromptSubmit", T0 + 120_000), {}, "capped");
+  assert.doesNotMatch(reminderText(hook(fx, SECOND, "UserPromptSubmit", T0 + 120_000)) ?? "", /reminder/, "capped");
 
   const reminders = row(fx.mailboxPath, id).reminders;
   assert.deepEqual(reminders.map((r) => [r.n, r.to]), [[1, addr(FIRST)], [2, addr(SECOND)], [3, addr(SECOND)]]);
@@ -196,7 +196,7 @@ test("T-7.9 concurrency: a role change inside the reminder window, and holders r
   // The role moves 10 s into the interval: the new holder waits for the
   // interval that started with the previous holder's reminder.
   fx.roles.set({ role: "lead", address: addr(SECOND) });
-  assert.deepEqual(hook(fx, SECOND, "UserPromptSubmit", T0 + 40_000), {});
+  assert.doesNotMatch(reminderText(hook(fx, SECOND, "UserPromptSubmit", T0 + 40_000)) ?? "", /reminder/, "no reminder inside the interval (only the fresh-delivery notice)");
   // Both holders' hooks run at the same instant once it is due; the first
   // holder's hook still read the table from before the move. Exactly one
   // reminder is recorded (claim before notify).
@@ -204,7 +204,7 @@ test("T-7.9 concurrency: a role change inside the reminder window, and holders r
     hook(fx, FIRST, "UserPromptSubmit", T0 + 60_000, { table: () => before }),
     hook(fx, SECOND, "UserPromptSubmit", T0 + 60_000)
   ];
-  assert.equal(outputs.filter((output) => reminderText(output)).length, 1);
+  assert.equal(outputs.filter((output) => /reminder \d of/.test(reminderText(output) ?? "")).length, 1);
   assert.deepEqual(row(fx.mailboxPath, id).reminders.map((r) => r.n), [1, 2]);
 });
 
@@ -277,6 +277,91 @@ test("handover to a Codex holder: the reminder turn goes to that thread", async 
   assert.deepEqual(requests, [["thread/read", CODEX_THREAD], ["turn/start", CODEX_THREAD]]);
   assert.deepEqual(row(fx.mailboxPath, id).reminders.map((r) => [r.n, r.to]), [[1, `codex:${CODEX_THREAD}`]]);
   assert.deepEqual(hook(fx, FIRST, "UserPromptSubmit", T0 + 60_000), {}, "the Claude previous holder is not reminded");
+});
+
+// Fix round a2, finding 1: a reply through message_claude_session with
+// replyToMessageId credits the authenticated caller, however it was
+// identified, so the handed-over holder is recorded (and not the old one).
+test("reply via send from a Codex holder (runtime context) resolves for the new holder", async () => {
+  const fx = fixture();
+  const { send, wait, status } = tools(fx, SENDER);
+  const sent = await send({ sessionId: "role:lead", message: "Need a go/no-go.", anticipation: "reply" });
+  fx.roles.set({ role: "lead", address: `codex:${CODEX_THREAD}` });
+  const waiting = wait({ sessionId: FIRST.sessionId, replyToMessageId: sent.messageId, timeoutMs: 5_000 });
+  const codexSend = tools(fx, null, { host: "codex" }).send;
+  await codexSend({ sessionId: SENDER.sessionId, message: "Go.", replyToMessageId: sent.messageId }, { runtimeCallerContext: { threadId: CODEX_THREAD } });
+  const done = await waiting;
+  assert.equal(done.outcome, "reply");
+  assert.match(JSON.stringify(done.reply), /Go\./);
+  const view = await status({ messageId: sent.messageId });
+  assert.equal(view.status, "replied");
+  assert.equal(view.resolution.by, `codex:${CODEX_THREAD}`);
+  assert.equal(view.holder, `codex:${CODEX_THREAD}`, "pinned to the Codex resolver, not the previous holder");
+  await rejectsWith(tools(fx, FIRST).reply({ messageId: sent.messageId, resolution: "done" }), "wrong_recipient");
+});
+
+test("reply via send from a Claude holder known only by CLAUDE_SESSION_ID credits that holder", async () => {
+  const fx = fixture();
+  const { send, status } = tools(fx, SENDER);
+  const sent = await send({ sessionId: "role:lead", message: "Ready to tag?", anticipation: "reply" });
+  fx.roles.set({ role: "lead", address: addr(SECOND) });
+  const saved = { CLAUDE_SESSION_ID: process.env.CLAUDE_SESSION_ID, CLAUDE_CODE_SESSION_ID: process.env.CLAUDE_CODE_SESSION_ID };
+  process.env.CLAUDE_SESSION_ID = SECOND.cliSessionId;
+  delete process.env.CLAUDE_CODE_SESSION_ID;
+  try {
+    await tools(fx, null).send({ sessionId: SENDER.sessionId, message: "Tag it.", replyToMessageId: sent.messageId });
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+  const view = await status({ messageId: sent.messageId });
+  assert.equal(view.status, "replied");
+  assert.equal(view.resolution.by, addr(SECOND));
+  assert.equal(view.holder, addr(SECOND));
+});
+
+// Fix round a2, finding 4: a handover is a fresh delivery to the new holder.
+test("handover after delivery: one fresh notice and one channel push for the new holder; count and cap unchanged", async () => {
+  const fx = fixture();
+  const id = roleMessage(fx.mailboxPath);
+  assert.match(reminderText(hook(fx, FIRST, "UserPromptSubmit", T0 + 30_000)), /reminder 1 of 3/);
+  fx.roles.set({ role: "lead", address: addr(SECOND) });
+
+  assert.match(reminderText(hook(fx, SECOND, "SessionStart", T0 + 31_000)), /1 pending peer message/);
+  const pushed = [];
+  const bridge = (as) => makeAgentLinkChannelBridge({
+    resolveCurrentSession: () => as,
+    mailboxOpener: () => openMailbox({ mailboxPath: fx.mailboxPath }),
+    mailboxPath: fx.mailboxPath,
+    roles: fx.roles,
+    watch: false,
+    notify: async () => { pushed.push(as.cliSessionId); }
+  });
+  assert.equal((await bridge(FIRST).pollOnce({ force: true })).delivered, 0);
+  assert.equal((await bridge(SECOND).pollOnce({ force: true })).delivered, 1);
+  assert.equal((await bridge(SECOND).pollOnce({ force: true })).delivered, 0, "exactly one push");
+  assert.deepEqual(pushed, [SECOND.cliSessionId]);
+  assert.deepEqual(hook(fx, SECOND, "SessionStart", T0 + 32_000), {}, "no notice once delivered to the new holder");
+  const inbox = await tools(fx, SECOND).inbox({});
+  assert.deepEqual(inbox.messages.map((m) => [m.id, m.open]), [[id, true]], "now an open message for the new holder");
+  assert.match(reminderText(hook(fx, SECOND, "UserPromptSubmit", T0 + 60_000)), /reminder 2 of 3/, "the count carries over");
+});
+
+test("a message capped (unresolved) under the previous holder is fresh mail, then open mail, for the new holder", async () => {
+  const fx = fixture();
+  const id = roleMessage(fx.mailboxPath);
+  for (const at of [30_000, 60_000, 90_000]) hook(fx, FIRST, "UserPromptSubmit", T0 + at);
+  assert.equal(messageStatus(row(fx.mailboxPath, id), { now: T0 + 130_000, settings: SETTINGS }).status, "unresolved");
+  fx.roles.set({ role: "lead", address: addr(SECOND) });
+  assert.match(reminderText(hook(fx, SECOND, "UserPromptSubmit", T0 + 130_000)), /^Agent Link: 1 pending peer message/);
+  assert.doesNotMatch(reminderText(hook(fx, SECOND, "UserPromptSubmit", T0 + 130_001)) ?? "", /reminder/, "the cap holds");
+  const at = T0 + 130_000;
+  const fresh = await tools(fx, SECOND, { now: () => at }).inbox({});
+  assert.deepEqual(fresh.messages.map((m) => [m.id, m.open]), [[id, false]]);
+  const open = await tools(fx, SECOND, { now: () => at }).inbox({});
+  assert.deepEqual(open.messages.map((m) => [m.id, m.open, m.status]), [[id, true, "unresolved"]]);
 });
 
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));

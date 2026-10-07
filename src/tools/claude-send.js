@@ -17,7 +17,7 @@ import { claudeAddress, hostIdentity, parseAddress } from "../shared/identity.js
 import { looksLikeRoleAddress, procedureProblemWarning } from "../registry/roles.js";
 import { checkRoleAddressing } from "../delivery/role-policy.js";
 import { readRoleTable, recipientMatcher } from "../delivery/role-handover.js";
-import { mailboxRowResult } from "../registry/addresses.js";
+import { mailboxRowResult, storedAddress } from "../registry/addresses.js";
 import { buildReceipt, normalizeReceiptInput, safeAppendReceipt } from "../shared/receipt-index.js";
 import { AgentLinkError } from "../shared/errors.js";
 import { LIMITS, bool, commonOut, enumOf, out, receiptInput, str, timeoutMs as timeoutMsSchema } from "../server/schemas.js";
@@ -263,7 +263,8 @@ export function makeClaudeSendHandler({
           targetAddress,
           via: role?.via ?? null,
           isReply: replyToMessageId !== undefined && replyToMessageId !== null,
-          rolesOf: (address) => (roles && tableRead && !tableRead.error ? roles.rolesOf(address, tableRead.table) : [])
+          rolesOf: (address) => (roles && tableRead && !tableRead.error ? roles.rolesOf(address, tableRead.table) : []),
+          holdingsOf: (address) => (roles && tableRead && !tableRead.error ? roles.holdings(address, tableRead.table) : { roles: [], projectRoots: [] })
         });
         if (addressing.warning) toolContext.warn?.(addressing.warning);
         // A procedure file that was refused (symlink, FIFO, over 64 KiB) is reported, not silently skipped.
@@ -316,7 +317,10 @@ export function makeClaudeSendHandler({
             messageId: answered.id,
             kind: "reply",
             by: answered.to_session_id,
-            byAddress: claudeAddress(resolveCurrentSessionSafe(resolveCurrentSession)) ?? null,
+            // The authenticated caller, however it was identified (current
+            // session, CLAUDE_SESSION_ID, or a Codex runtime context): after a
+            // role handover this is what credits the new holder (R7.20).
+            byAddress: callerAddress(caller),
             late: isLateResolution(view),
             replyMessageId: messageId
           });
@@ -514,15 +518,6 @@ async function pollForResolution(mb, { messageId, fromIds, toIds, timeoutMs, now
   }
 }
 
-/** @param {(() => any) | null} resolve */
-function resolveCurrentSessionSafe(resolve) {
-  try {
-    return typeof resolve === "function" ? resolve() : null;
-  } catch {
-    return null;
-  }
-}
-
 function messageStatusOf(mb, messageId, at, settings) {
   const row = mb.getMessage({ messageId });
   return row ? messageStatus(row, { now: at, settings }).status : null;
@@ -547,4 +542,15 @@ export function claudeSendEntries(deps) {
     definition: claudeSendTool,
     handler: (args, ctx) => handlers.message_claude_session(args, { runtimeCallerContext: ctx.callerContext, warn: ctx.warn })
   }];
+}
+
+/**
+ * The caller's canonical address, or null for an external caller.
+ * @param {{id: string, kind: string}} caller
+ * @returns {string | null}
+ */
+function callerAddress(caller) {
+  if (!caller || caller.id === "external") return null;
+  const address = storedAddress(caller.id, caller.kind);
+  return address.includes(":") ? address : null;
 }

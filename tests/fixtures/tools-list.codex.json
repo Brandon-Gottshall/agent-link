@@ -2121,7 +2121,7 @@
   },
   {
     "name": "resolve_project_orchestrator",
-    "description": "Resolve a project's orchestrator: an explicit orchestratorThreadId (a thread id or role:<name>), else the Codex thread holding the orchestrator role for this projectRoot (set_agent_role with projectRoot), else the source-owned .codex/project-orchestrator.json binding, else the orchestrator role's own holder, else ranked thread search by project cwd/name/preview. The verdict is in status (resolved, ambiguous, not_found); finding nothing is not an error.",
+    "description": "Resolve a project's orchestrator: an explicit orchestratorThreadId (a thread id or role:<name>), else the Codex thread holding the orchestrator role for this projectRoot (set_agent_role with projectRoot), else the source-owned .codex/project-orchestrator.json binding (an unreadable binding falls back to search), else the orchestrator role's own holder when projectRoot names a project with no binding file, else ranked thread search by project cwd/name/preview. Project roots match by path.resolve (no symlink resolution, no subdirectory matching). The verdict is in status (resolved, ambiguous, not_found); finding nothing is not an error.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -5582,7 +5582,7 @@
         },
         "projectRoot": {
           "type": "string",
-          "description": "Optional absolute project root. Scopes the change to that project's holder of the role (for the orchestrator role, the project orchestrator resolve_project_orchestrator returns, R1.21); the role's own holder is left as it is."
+          "description": "Optional absolute project root, for the orchestrator role only. Scopes the change to that project's orchestrator (the one resolve_project_orchestrator returns, R1.21); the role's own holder is left as it is. Matched by path.resolve: no symlink resolution, no subdirectory matching."
         }
       },
       "required": [
@@ -5716,7 +5716,7 @@
         },
         "projectRoot": {
           "type": "string",
-          "description": "Optional absolute project root. Scopes the change to that project's holder of the role (for the orchestrator role, the project orchestrator resolve_project_orchestrator returns, R1.21); the role's own holder is left as it is."
+          "description": "Optional absolute project root, for the orchestrator role only. Scopes the change to that project's orchestrator (the one resolve_project_orchestrator returns, R1.21); the role's own holder is left as it is. Matched by path.resolve: no symlink resolution, no subdirectory matching."
         }
       },
       "required": [

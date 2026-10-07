@@ -102,6 +102,47 @@ export function addressNames(address, ids) {
 }
 
 /**
+ * True when a delivery event recorded for one of `ids` exists.
+ * @param {Record<string, any>} row
+ * @param {Set<string>} ids
+ */
+export function deliveredTo(row, ids) {
+  return (Array.isArray(row.deliveries) ? row.deliveries : [])
+    .some((d) => typeof d?.to === "string" && addressNames(d.to, ids));
+}
+
+/**
+ * Whether a row the caller receives is still new to it. A handed-over row
+ * is a fresh delivery for the role's new holder (the owner's rule: role
+ * coordination is never missed), whatever the previous holder saw; any other
+ * row is new until delivered.
+ * @param {Record<string, any>} row
+ * @param {RoleTable | null} table
+ * @param {Set<string>} ids  the caller's ids and address
+ */
+export function isPendingFor(row, table, ids) {
+  return handedOverTo(row, table) ? !deliveredTo(row, ids) : !row.delivered_at;
+}
+
+/**
+ * The caller's view of the mailbox: which rows it receives now, and which
+ * of those are still new to it.
+ * @param {{aliases: Iterable<string>, address?: string | null, table?: RoleTable | null}} caller
+ */
+export function recipientView({ aliases, address = null, table = null }) {
+  const ids = new Set([...aliases].filter((id) => typeof id === "string" && id));
+  if (typeof address === "string" && address) ids.add(address);
+  const isRecipient = recipientMatcher({ aliases: ids, table });
+  return {
+    isRecipient,
+    /** @param {Record<string, any>} row */
+    isPending: (row) => isPendingFor(row, table, ids),
+    /** @param {Record<string, any>} row */
+    handedOver: (row) => handedOverTo(row, table) !== null
+  };
+}
+
+/**
  * A predicate for "this row is addressed to the caller now": the role's
  * current holder for a handed-over row, else the stored recipient.
  * @param {{aliases: Iterable<string>, address?: string | null, table?: RoleTable | null}} caller

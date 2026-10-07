@@ -48,7 +48,7 @@ import { isAnticipating, reminderSettings } from "../delivery/message-status.js"
 import { REMINDER_VIA, claimReminders, dueReminders, reminderNoticeFor, takeStopSlot } from "../delivery/reminders.js";
 import { createLogger } from "../shared/log.js";
 import { createRoleStore } from "../registry/roles.js";
-import { addressNames, handedOverTo, readRoleTable } from "../delivery/role-handover.js";
+import { addressNames, handedOverTo, isPendingFor, readRoleTable } from "../delivery/role-handover.js";
 
 // Hook failures go to stderr (Claude Code shows it in its hook log) and, when
 // the Agent Link log file is on (AGENT_LINK_DEBUG or AGENT_LINK_LOG_FILE), to
@@ -126,7 +126,10 @@ export function runNotifyHook(payload, {
       // (R7.20) is the new holder's, read from the current role table.
       const table = roleTable();
       const mine = mailForSession(all, session, { cliSessionId, findSidecarById, table });
-      if (!isStop) pending = mine.filter((m) => !m.delivered_at);
+      // A message handed over to this session is new to it (R7.20) until it
+      // is delivered here, whatever the previous holder saw.
+      const ids = new Set([...claudeSessionAliases(session), cliSessionId, `claude:${cliSessionId}`]);
+      if (!isStop) pending = mine.filter((m) => isPendingFor(m, table, ids));
       if (remind) {
         reminder = remindersFor(mb, all, mine, {
           isStop,

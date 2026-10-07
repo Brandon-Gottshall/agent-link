@@ -16,7 +16,7 @@ import { mailboxRowResult } from "../registry/addresses.js";
 import { AgentLinkError } from "../shared/errors.js";
 import { isAnticipating, messageStatus, reminderSettings } from "../delivery/message-status.js";
 import { LIMITS, bool, limit, out } from "../server/schemas.js";
-import { readRoleTable, recipientMatcher } from "../delivery/role-handover.js";
+import { readRoleTable, recipientView } from "../delivery/role-handover.js";
 
 /** @type {import("../server/registry.js").ToolDefinition} */
 export const readInboxTool = {
@@ -103,20 +103,23 @@ export function makeReadInboxHandler({
       // A message sent through role:<name> follows the role: while it is
       // open, the role's current holder reads it, not the previous one
       // (R7.20).
-      const recipient = recipientMatcher({ aliases: claudeSessionAliases(session), address: claudeAddress(session), table: readRoleTable(roles) });
+      // A handed-over message is a fresh delivery to the new holder, and
+      // deliveries are recorded with the address they went to.
+      const address = claudeAddress(session);
+      const inbox = recipientView({ aliases: claudeSessionAliases(session), address, table: readRoleTable(roles) });
       const mb = openMb();
       try {
         // A reply that an in-process wait (message_claude_session with
         // waitForReply, or wait_for_claude_session) is blocked on belongs to
         // that wait, which returns it as its tool result. Same rule as the
         // channel bridge: never drain or show it here, or it arrives twice.
-        const all = mb.listPendingFor({ recipient });
+        const all = mb.listPendingFor({ recipient: inbox.isRecipient, pending: inbox.isPending });
         const pending = all.filter((message) => !isHeldByActiveWait(message));
         // Slice before marking: with `limit`, only the returned messages are
         // marked delivered and the rest stay pending.
         const rows = pending.slice(0, limit);
         if (markAsDelivered) {
-          for (const row of rows) mb.markDelivered({ messageId: row.id });
+          for (const row of rows) mb.markDelivered({ messageId: row.id, to: address });
         }
         // Open messages (design 7.5): delivered reply/action messages still
         // pending resolution, so the reminder's "call read_agent_link_inbox
@@ -127,8 +130,8 @@ export function makeReadInboxHandler({
         const open = args.includeOpen === false || rows.length >= limit
           ? []
           : mb.inspect({ limit: Number.MAX_SAFE_INTEGER })
-            .filter((row) => recipient(row) && !shownIds.has(row.id) && row.delivered_at && isAnticipating(row) &&
-              messageStatus(row, { now: at, settings }).status === "pending")
+            .filter((row) => inbox.isRecipient(row) && !shownIds.has(row.id) && row.delivered_at && !inbox.isPending(row) &&
+              isAnticipating(row) && isOpenFor(row, inbox, at, settings))
             .sort((a, b) => a.sent_at - b.sent_at)
             .slice(0, limit - rows.length);
         const shown = [...rows, ...open];
@@ -158,6 +161,20 @@ export function makeReadInboxHandler({
       }
     }
   };
+}
+
+/**
+ * Open for the inbox: pending, or (handed over to this holder and still
+ * unresolved) unresolved or expired too, so a message that reached the cap
+ * under the previous holder is not lost (R7.20).
+ * @param {Record<string, any>} row
+ * @param {ReturnType<typeof recipientView>} inbox
+ * @param {number} at
+ * @param {import("../delivery/message-status.js").ReminderSettings} settings
+ */
+function isOpenFor(row, inbox, at, settings) {
+  const status = messageStatus(row, { now: at, settings }).status;
+  return status === "pending" || (inbox.handedOver(row) && !row.resolution && (status === "unresolved" || status === "expired"));
 }
 
 /**

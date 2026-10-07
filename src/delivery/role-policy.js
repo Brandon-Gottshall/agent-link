@@ -29,7 +29,8 @@ export const DIRECT_COORDINATION_TAG = "direct-coordination";
  *   targetAddress: string | null,
  *   via?: string | null,
  *   isReply?: boolean,
- *   rolesOf: (address: string) => string[]
+ *   rolesOf: (address: string) => string[],
+ *   holdingsOf?: ((address: string) => {roles: string[], projectRoots: string[]}) | null
  * }} RoleAddressingInput
  *
  * @typedef {{
@@ -48,7 +49,7 @@ export const DIRECT_COORDINATION_TAG = "direct-coordination";
  * @param {RoleAddressingInput} input
  * @returns {RoleAddressingResult}
  */
-export function checkRoleAddressing({ mode, senderAddress, targetAddress, via = null, isReply = false, rolesOf }) {
+export function checkRoleAddressing({ mode, senderAddress, targetAddress, via = null, isReply = false, rolesOf, holdingsOf = null }) {
   if (mode !== "warn" && mode !== "enforce") {
     return { action: "allow", reason: "enforcement_off", senderRoles: [], recipientRoles: [] };
   }
@@ -62,11 +63,20 @@ export function checkRoleAddressing({ mode, senderAddress, targetAddress, via = 
   if (typeof via === "string" && via.startsWith("role:")) {
     return { action: "allow", reason: "role_addressed", senderRoles, recipientRoles };
   }
-  const replacement = `role:${recipientRoles[0]}`;
+  // A target that holds the orchestrator role only for some projects
+  // (R1.21) is not what role:orchestrator resolves to; it is reached through
+  // the orchestrator tools with that projectRoot.
+  const holdings = holdingsOf ? holdingsOf(/** @type {string} */ (targetAddress)) : null;
+  const projectOnly = holdings !== null && holdings.roles.length === 0 && holdings.projectRoots.length > 0;
+  const replacement = projectOnly ? "message_project_orchestrator" : `role:${holdings?.roles[0] ?? recipientRoles[0]}`;
+  const projectDetails = projectOnly ? { projectRoots: holdings.projectRoots } : {};
+  const sendHint = projectOnly
+    ? `Send through message_project_orchestrator with projectRoot=${JSON.stringify(holdings.projectRoots[0])}, which addresses the orchestrator role for that project.`
+    : `Send to ${replacement} instead of the session address.`;
   if (mode === "enforce") {
     throw new AgentLinkError("permission_denied", `${targetAddress} holds role ${recipientRoles.join(", ")}; coordination between persistent agents must be addressed to the role.`, {
-      details: { reason: "role_address_required", recipientRoles, replacement },
-      hint: `Send to ${replacement} instead of the session address. Replies are exempt.`
+      details: { reason: "role_address_required", recipientRoles, replacement, ...projectDetails },
+      hint: `${sendHint} Replies are exempt.`
     });
   }
   return {
@@ -76,9 +86,11 @@ export function checkRoleAddressing({ mode, senderAddress, targetAddress, via = 
     recipientRoles,
     warning: {
       code: "direct_coordination",
-      message: `${targetAddress} holds role ${recipientRoles.join(", ")}; address coordination to ${replacement} so it reaches the current holder with its procedure.`,
+      message: projectOnly
+        ? `${targetAddress} holds role ${recipientRoles.join(", ")} for a project; ${sendHint}`
+        : `${targetAddress} holds role ${recipientRoles.join(", ")}; address coordination to ${replacement} so it reaches the current holder with its procedure.`,
       replacement,
-      details: { recipientRoles }
+      details: { recipientRoles, ...projectDetails }
     },
     tag: DIRECT_COORDINATION_TAG
   };

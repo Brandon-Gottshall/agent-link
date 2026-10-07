@@ -204,7 +204,9 @@ export function validateRoleTable(raw) {
     /** @type {Record<string, string>} */
     const projects = {};
     if (entry.projects !== undefined && entry.projects !== null) {
-      if (!isPlainObject(entry.projects)) {
+      if (name !== "orchestrator") {
+        problems.push({ path: `roles.${name}.projects`, rule: "scope", message: "Only the orchestrator role is scoped by project root; projects ignored." });
+      } else if (!isPlainObject(entry.projects)) {
         problems.push({ path: `roles.${name}.projects`, rule: "type", message: "projects must map absolute project roots to addresses; ignored." });
       } else {
         for (const [root, holder] of Object.entries(entry.projects)) {
@@ -706,6 +708,7 @@ export function createRoleStore({ env = process.env, homedir, now = () => Date.n
     if (!ROLE_NAME_PATTERN.test(name)) throw new TypeError(`invalid role name ${name}`);
     if (!isAddress(address)) throw new TypeError(`invalid holder address ${address}`);
     if (projectRoot !== null && !path.isAbsolute(projectRoot)) throw new TypeError(`projectRoot must be absolute: ${projectRoot}`);
+    if (projectRoot !== null && name !== "orchestrator") throw new TypeError("only the orchestrator role is scoped by project root");
     const root = projectRoot === null ? null : path.resolve(projectRoot);
     let previous = null;
     update((raw, table) => {
@@ -814,6 +817,24 @@ export function createRoleStore({ env = process.env, homedir, now = () => Date.n
   }
 
   /**
+   * What `address` holds: roles it holds outright, and the project roots it
+   * holds the orchestrator role for (R1.21).
+   * @param {string} address
+   * @param {RoleTable} [table]
+   * @returns {{roles: string[], projectRoots: string[]}}
+   */
+  function holdings(address, table = read().table) {
+    const roles = Object.entries(table.roles)
+      .filter(([, role]) => role.address === address || (Array.isArray(role.address) && role.address.includes(address)))
+      .map(([name]) => name)
+      .sort();
+    const projectRoots = Object.values(table.roles)
+      .flatMap((role) => Object.entries(role.projects ?? {}).filter(([, holder]) => holder === address).map(([root]) => root))
+      .sort();
+    return { roles, projectRoots };
+  }
+
+  /**
    * Resolves `role:<name>` to its holder at send time (R1.19). No holder is
    * not_found with details.role; several (a hand edit) are ambiguous.
    * `sync: true` (send paths only) first gives a changed procedure file its
@@ -919,6 +940,7 @@ export function createRoleStore({ env = process.env, homedir, now = () => Date.n
     clear,
     setPolicy,
     rolesOf,
+    holdings,
     resolve,
     claimProcedureDelivery,
     releaseProcedureDelivery,
