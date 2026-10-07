@@ -392,6 +392,7 @@ export function receiptSummary(receipt) {
     ...(receipt.launchedBy !== undefined ? { launchedBy: receipt.launchedBy } : {}),
     ...(receipt.via !== undefined ? { via: receipt.via } : {}),
     ...(receipt.roleProcedure !== undefined ? { roleProcedure: receipt.roleProcedure } : {}),
+    ...(receipt.roleProcedureWarning !== undefined ? { roleProcedureWarning: receipt.roleProcedureWarning } : {}),
     ...(receipt.override !== undefined ? { override: receipt.override } : {})
   };
 }

@@ -14,7 +14,7 @@ import { isAnticipating, isLateResolution, messageStatus, reminderSettings, reso
 import { checkMessageWait, recordStatusTransition } from "../delivery/message-wait.js";
 import { claimResolution } from "../delivery/resolution.js";
 import { claudeAddress, hostIdentity, parseAddress } from "../shared/identity.js";
-import { looksLikeRoleAddress } from "../registry/roles.js";
+import { looksLikeRoleAddress, procedureProblemWarning } from "../registry/roles.js";
 import { checkRoleAddressing } from "../delivery/role-policy.js";
 import { mailboxRowResult } from "../registry/addresses.js";
 import { buildReceipt, normalizeReceiptInput, safeAppendReceipt } from "../shared/receipt-index.js";
@@ -274,6 +274,9 @@ export function makeClaudeSendHandler({
           rolesOf: (address) => (roles && tableRead && !tableRead.error ? roles.rolesOf(address, tableRead.table) : [])
         });
         if (addressing.warning) toolContext.warn?.(addressing.warning);
+        // A procedure file that was refused (symlink, FIFO, over 64 KiB) is reported, not silently skipped.
+        const procedureWarning = procedureProblemWarning(role);
+        if (procedureWarning) toolContext.warn?.(procedureWarning);
 
         // R1.20: the procedure text rides along with the first delivery of
         // each version to the holder.
@@ -369,6 +372,7 @@ export function makeClaudeSendHandler({
           const stored = {
             ...built,
             ...(role ? { via: role.via, roleProcedure: procedure ? { name: procedure.name, version: procedure.version } : null } : {}),
+            ...(procedureWarning ? { roleProcedureWarning: procedureWarning.details } : {}),
             ...(addressing.tag ? { tags: [...new Set([...(built.tags ?? []), addressing.tag])] } : {})
           };
           receiptResult = { recorded: true, ...await appendReceipt(stored) };

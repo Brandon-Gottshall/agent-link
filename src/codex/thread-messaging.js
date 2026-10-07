@@ -32,7 +32,7 @@ import { codexAddress, hostIdentity, isAddress, parseAddress } from "../shared/i
 import { AgentLinkError } from "../shared/errors.js";
 import { buildReceipt, listReceipts as defaultListReceipts, normalizeReceiptInput, safeAppendReceipt } from "../shared/receipt-index.js";
 import { LIMITS } from "../server/schemas.js";
-import { looksLikeRoleAddress } from "../registry/roles.js";
+import { looksLikeRoleAddress, procedureProblemWarning } from "../registry/roles.js";
 import { assertNoClaudeOverrides, decideTargetOverrides, overrideDeniedError } from "../delivery/override-policy.js";
 import { checkRoleAddressing } from "../delivery/role-policy.js";
 
@@ -448,7 +448,16 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
     const roleResult = role
       ? { via: role.via, roleProcedure: procedure ? { name: procedure.name, version: procedure.version, textIncluded: withText } : null }
       : {};
-    const receiptExtra = role ? { via: role.via, roleProcedure: procedure ? { name: procedure.name, version: procedure.version } : null } : null;
+    // A procedure file that was refused (symlink, FIFO, over 64 KiB) is reported, not silently skipped.
+    const procedureWarning = procedureProblemWarning(role);
+    if (procedureWarning) warnings.push(procedureWarning);
+    const receiptExtra = role
+      ? {
+          via: role.via,
+          roleProcedure: procedure ? { name: procedure.name, version: procedure.version } : null,
+          ...(procedureWarning ? { roleProcedureWarning: procedureWarning.details } : {})
+        }
+      : null;
     const receiptTags = addressing.tag ? [addressing.tag] : [];
     const releaseClaim = () => {
       if (withText && procedureClaim && roles) roles.releaseProcedureDelivery(procedureClaim);

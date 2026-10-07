@@ -23413,6 +23413,7 @@ function receiptSummary(receipt) {
     ...receipt.launchedBy !== void 0 ? { launchedBy: receipt.launchedBy } : {},
     ...receipt.via !== void 0 ? { via: receipt.via } : {},
     ...receipt.roleProcedure !== void 0 ? { roleProcedure: receipt.roleProcedure } : {},
+    ...receipt.roleProcedureWarning !== void 0 ? { roleProcedureWarning: receipt.roleProcedureWarning } : {},
     ...receipt.override !== void 0 ? { override: receipt.override } : {}
   };
 }
@@ -26253,7 +26254,10 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
       role: name,
       via: `role:${name}`,
       address: role.address,
-      procedure: procedure && procedure.present && procedure.version !== null && procedure.sha256 !== null ? { name, version: procedure.version, sha256: procedure.sha256, ...procedure.text !== void 0 ? { text: procedure.text } : {} } : null
+      procedure: procedure && procedure.present && procedure.version !== null && procedure.sha256 !== null ? { name, version: procedure.version, sha256: procedure.sha256, ...procedure.text !== void 0 ? { text: procedure.text } : {} } : null,
+      // Why a procedure file exists but is not delivered (symlink, FIFO,
+      // over 64 KiB), so the send can say so.
+      procedureProblem: procedure?.problem ?? null
     };
   }
   function claimProcedureDelivery({ role, sha256: hash, address }) {
@@ -26296,6 +26300,14 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
     releaseProcedureDelivery,
     enforcement,
     paths: { table: tablePath, procedures: proceduresDir, procedureFile, state: statePath }
+  };
+}
+function procedureProblemWarning(role) {
+  if (!role?.procedureProblem) return null;
+  return {
+    code: "role_procedure_unavailable",
+    message: `The procedure for role ${role.role} was not sent: ${role.procedureProblem}. Ask the user to fix roles/${role.role}.md.`,
+    details: { role: role.role, problem: role.procedureProblem }
   };
 }
 
@@ -26618,6 +26630,8 @@ function makeClaudeSendHandler({
           rolesOf: (address) => roles && tableRead && !tableRead.error ? roles.rolesOf(address, tableRead.table) : []
         });
         if (addressing.warning) toolContext.warn?.(addressing.warning);
+        const procedureWarning = procedureProblemWarning(role);
+        if (procedureWarning) toolContext.warn?.(procedureWarning);
         const procedure = role?.procedure ?? null;
         const procedureClaim = procedure && targetAddress ? { role: procedure.name, sha256: procedure.sha256, address: targetAddress } : null;
         const withText = procedureClaim && roles ? roles.claimProcedureDelivery(procedureClaim) : false;
@@ -26693,6 +26707,7 @@ function makeClaudeSendHandler({
           const stored = {
             ...built,
             ...role ? { via: role.via, roleProcedure: procedure ? { name: procedure.name, version: procedure.version } : null } : {},
+            ...procedureWarning ? { roleProcedureWarning: procedureWarning.details } : {},
             ...addressing.tag ? { tags: [.../* @__PURE__ */ new Set([...built.tags ?? [], addressing.tag])] } : {}
           };
           receiptResult = { recorded: true, ...await appendReceipt2(stored) };
@@ -30215,7 +30230,13 @@ function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries, 
     });
     const input = peer.input;
     const roleResult = role ? { via: role.via, roleProcedure: procedure ? { name: procedure.name, version: procedure.version, textIncluded: withText } : null } : {};
-    const receiptExtra = role ? { via: role.via, roleProcedure: procedure ? { name: procedure.name, version: procedure.version } : null } : null;
+    const procedureWarning = procedureProblemWarning(role);
+    if (procedureWarning) warnings.push(procedureWarning);
+    const receiptExtra = role ? {
+      via: role.via,
+      roleProcedure: procedure ? { name: procedure.name, version: procedure.version } : null,
+      ...procedureWarning ? { roleProcedureWarning: procedureWarning.details } : {}
+    } : null;
     const receiptTags = addressing.tag ? [addressing.tag] : [];
     const releaseClaim = () => {
       if (withText && procedureClaim && roles) roles.releaseProcedureDelivery(procedureClaim);

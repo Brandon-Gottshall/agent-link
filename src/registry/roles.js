@@ -808,7 +808,10 @@ export function createRoleStore({ env = process.env, homedir, now = () => Date.n
       address: role.address,
       procedure: procedure && procedure.present && procedure.version !== null && procedure.sha256 !== null
         ? { name, version: procedure.version, sha256: procedure.sha256, ...(procedure.text !== undefined ? { text: procedure.text } : {}) }
-        : null
+        : null,
+      // Why a procedure file exists but is not delivered (symlink, FIFO,
+      // over 64 KiB), so the send can say so.
+      procedureProblem: procedure?.problem ?? null
     };
   }
 
@@ -882,3 +885,17 @@ export function createRoleStore({ env = process.env, homedir, now = () => Date.n
 }
 
 /** @typedef {ReturnType<typeof createRoleStore>} RoleStore */
+
+/**
+ * The warning a send carries when the role's procedure file was refused.
+ * @param {{role: string, procedureProblem?: string | null} | null} role
+ * @returns {{code: string, message: string, details: {role: string, problem: string}} | null}
+ */
+export function procedureProblemWarning(role) {
+  if (!role?.procedureProblem) return null;
+  return {
+    code: "role_procedure_unavailable",
+    message: `The procedure for role ${role.role} was not sent: ${role.procedureProblem}. Ask the user to fix roles/${role.role}.md.`,
+    details: { role: role.role, problem: role.procedureProblem }
+  };
+}

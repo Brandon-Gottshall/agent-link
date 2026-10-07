@@ -12,7 +12,7 @@
 // Never launches Codex; HOME, CODEX_HOME, the state dir, receipts and the
 // mailbox live in a temp directory.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -209,6 +209,22 @@ try {
   assert.match(lastTurnText(mark), /<procedure name="router" version="2">Route all work, v2\.<\/procedure>/);
   const receipts = await call("list_agent_link_receipts", { target: `codex:${ROUTER_T}`, limit: 5 });
   assert.deepEqual(receipts.data.slice(0, 3).map((receipt) => [receipt.via, receipt.roleProcedure?.version]), [["role:router", 2], ["role:router", 1], ["role:router", 1]]);
+
+  // A refused procedure file (here a symlink) is reported on the send and its receipt.
+  const procedurePath = path.join(stateDir, "roles", "router.md");
+  rmSync(procedurePath);
+  writeFileSync(path.join(tmp, "elsewhere.md"), "not a procedure");
+  symlinkSync(path.join(tmp, "elsewhere.md"), procedurePath);
+  mark = received.length;
+  r = await call("message_codex_thread", { threadId: "role:router", message: "with a bad procedure" });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.roleProcedure, null);
+  const refused = r.warnings.find((w) => w.code === "role_procedure_unavailable");
+  assert.match(refused.message, /not a regular file/);
+  assert.ok(!lastTurnText(mark).includes("<procedure"));
+  assert.match((await call("list_agent_link_receipts", { target: `codex:${ROUTER_T}`, limit: 1 })).data[0].roleProcedureWarning.problem, /not a regular file/);
+  rmSync(procedurePath);
+  writeFileSync(procedurePath, "Route all work, v2.");
 
   // Role holder on the wrong harness.
   assert.equal((await call("message_codex_thread", { threadId: "role:planner", message: "x" })).error.code, "invalid_arguments");
