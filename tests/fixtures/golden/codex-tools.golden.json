@@ -19,7 +19,50 @@
             "/nonexistent/golden/codex-app-server"
           ],
           "reason": "Configured Codex app-server binary does not exist: /nonexistent/golden/codex-app-server",
-          "usedForManagedAppServer": false
+          "usedForManagedAppServer": false,
+          "overrideCosts": {
+            "measured": true,
+            "codexVersion": "0.159.2",
+            "measuredAt": "2026-10-07",
+            "effortChange": {
+              "cachedShare": [
+                0.434,
+                0
+              ],
+              "cacheNeutral": false
+            },
+            "modelSwitch": {
+              "cachedShare": [
+                0.256,
+                0.256
+              ],
+              "cacheNeutral": false
+            },
+            "cwdChange": {
+              "cachedShare": [
+                0.988,
+                0.988
+              ],
+              "cacheNeutral": true
+            },
+            "forkSameModel": {
+              "cachedShare": [
+                0,
+                0.33
+              ],
+              "cacheNeutral": false
+            },
+            "forkOtherModel": {
+              "cachedShare": [
+                0.202,
+                0.202
+              ],
+              "cacheNeutral": false
+            },
+            "compactForkAutoFraction": 0.5,
+            "installedVersion": null,
+            "warning": null
+          }
         },
         "appServer": {
           "connected": false,
@@ -97,6 +140,12 @@
           "socket": null
         },
         "autoStartEnabled": true,
+        "forkJobs": {
+          "pending": 0,
+          "running": 0,
+          "stuck": 0,
+          "error": null
+        },
         "address": "external",
         "addressSource": "fallback",
         "providers": {
@@ -173,7 +222,50 @@
             "/nonexistent/golden/codex-app-server"
           ],
           "reason": "Configured Codex app-server binary does not exist: /nonexistent/golden/codex-app-server",
-          "usedForManagedAppServer": false
+          "usedForManagedAppServer": false,
+          "overrideCosts": {
+            "measured": true,
+            "codexVersion": "0.159.2",
+            "measuredAt": "2026-10-07",
+            "effortChange": {
+              "cachedShare": [
+                0.434,
+                0
+              ],
+              "cacheNeutral": false
+            },
+            "modelSwitch": {
+              "cachedShare": [
+                0.256,
+                0.256
+              ],
+              "cacheNeutral": false
+            },
+            "cwdChange": {
+              "cachedShare": [
+                0.988,
+                0.988
+              ],
+              "cacheNeutral": true
+            },
+            "forkSameModel": {
+              "cachedShare": [
+                0,
+                0.33
+              ],
+              "cacheNeutral": false
+            },
+            "forkOtherModel": {
+              "cachedShare": [
+                0.202,
+                0.202
+              ],
+              "cacheNeutral": false
+            },
+            "compactForkAutoFraction": 0.5,
+            "installedVersion": null,
+            "warning": null
+          }
         },
         "appServer": {
           "connected": true,
@@ -266,6 +358,12 @@
           "socket": null
         },
         "autoStartEnabled": true,
+        "forkJobs": {
+          "pending": 0,
+          "running": 0,
+          "stuck": 0,
+          "error": null
+        },
         "address": "external",
         "addressSource": "fallback",
         "providers": {
@@ -351,7 +449,50 @@
             "/nonexistent/golden/codex-app-server"
           ],
           "reason": "Configured Codex app-server binary does not exist: /nonexistent/golden/codex-app-server",
-          "usedForManagedAppServer": false
+          "usedForManagedAppServer": false,
+          "overrideCosts": {
+            "measured": true,
+            "codexVersion": "0.159.2",
+            "measuredAt": "2026-10-07",
+            "effortChange": {
+              "cachedShare": [
+                0.434,
+                0
+              ],
+              "cacheNeutral": false
+            },
+            "modelSwitch": {
+              "cachedShare": [
+                0.256,
+                0.256
+              ],
+              "cacheNeutral": false
+            },
+            "cwdChange": {
+              "cachedShare": [
+                0.988,
+                0.988
+              ],
+              "cacheNeutral": true
+            },
+            "forkSameModel": {
+              "cachedShare": [
+                0,
+                0.33
+              ],
+              "cacheNeutral": false
+            },
+            "forkOtherModel": {
+              "cachedShare": [
+                0.202,
+                0.202
+              ],
+              "cacheNeutral": false
+            },
+            "compactForkAutoFraction": 0.5,
+            "installedVersion": null,
+            "warning": null
+          }
         },
         "appServer": {
           "connected": true,
@@ -475,6 +616,12 @@
           "socket": null
         },
         "autoStartEnabled": true,
+        "forkJobs": {
+          "pending": 0,
+          "running": 0,
+          "stuck": 0,
+          "error": null
+        },
         "address": "codex:019d3000-0000-7000-8000-000000000002",
         "addressSource": "runtime_context",
         "providers": {
@@ -1880,6 +2027,7 @@
             "targetKind": null,
             "host": null,
             "targetSessionId": null,
+            "kind": null,
             "targetAddress": null,
             "searchTerm": ""
           }
@@ -4425,8 +4573,8 @@
             "grantedBy": "allowTargetOverride",
             "persists": true,
             "expectedCost": {
-              "uncachedInputTokens": null,
-              "basis": "unknown"
+              "uncachedInputTokens": 0,
+              "basis": "cache-neutral"
             }
           }
         ],
@@ -7221,6 +7369,7 @@
           "targetKind": null,
           "host": null,
           "targetSessionId": null,
+          "kind": null,
           "targetAddress": null,
           "searchTerm": ""
         }
@@ -7520,6 +7669,7 @@
           "targetKind": null,
           "host": null,
           "targetSessionId": null,
+          "kind": null,
           "targetAddress": null,
           "searchTerm": ""
         }
@@ -9967,7 +10117,50 @@
             "/nonexistent/golden/codex-app-server"
           ],
           "reason": "Configured Codex app-server binary does not exist: /nonexistent/golden/codex-app-server",
-          "usedForManagedAppServer": false
+          "usedForManagedAppServer": false,
+          "overrideCosts": {
+            "measured": true,
+            "codexVersion": "0.159.2",
+            "measuredAt": "2026-10-07",
+            "effortChange": {
+              "cachedShare": [
+                0.434,
+                0
+              ],
+              "cacheNeutral": false
+            },
+            "modelSwitch": {
+              "cachedShare": [
+                0.256,
+                0.256
+              ],
+              "cacheNeutral": false
+            },
+            "cwdChange": {
+              "cachedShare": [
+                0.988,
+                0.988
+              ],
+              "cacheNeutral": true
+            },
+            "forkSameModel": {
+              "cachedShare": [
+                0,
+                0.33
+              ],
+              "cacheNeutral": false
+            },
+            "forkOtherModel": {
+              "cachedShare": [
+                0.202,
+                0.202
+              ],
+              "cacheNeutral": false
+            },
+            "compactForkAutoFraction": 0.5,
+            "installedVersion": null,
+            "warning": null
+          }
         },
         "appServer": {
           "connected": true,
@@ -10052,6 +10245,12 @@
           "socket": null
         },
         "autoStartEnabled": true,
+        "forkJobs": {
+          "pending": 0,
+          "running": 0,
+          "stuck": 0,
+          "error": null
+        },
         "address": "external",
         "addressSource": "fallback",
         "providers": {
@@ -11747,6 +11946,7 @@
           "targetKind": null,
           "host": null,
           "targetSessionId": null,
+          "kind": null,
           "targetAddress": "codex:019d3000-0000-7000-8000-000000000003",
           "searchTerm": ""
         }
@@ -12077,7 +12277,50 @@
             "/nonexistent/golden/codex-app-server"
           ],
           "reason": "Configured Codex app-server binary does not exist: /nonexistent/golden/codex-app-server",
-          "usedForManagedAppServer": false
+          "usedForManagedAppServer": false,
+          "overrideCosts": {
+            "measured": true,
+            "codexVersion": "0.159.2",
+            "measuredAt": "2026-10-07",
+            "effortChange": {
+              "cachedShare": [
+                0.434,
+                0
+              ],
+              "cacheNeutral": false
+            },
+            "modelSwitch": {
+              "cachedShare": [
+                0.256,
+                0.256
+              ],
+              "cacheNeutral": false
+            },
+            "cwdChange": {
+              "cachedShare": [
+                0.988,
+                0.988
+              ],
+              "cacheNeutral": true
+            },
+            "forkSameModel": {
+              "cachedShare": [
+                0,
+                0.33
+              ],
+              "cacheNeutral": false
+            },
+            "forkOtherModel": {
+              "cachedShare": [
+                0.202,
+                0.202
+              ],
+              "cacheNeutral": false
+            },
+            "compactForkAutoFraction": 0.5,
+            "installedVersion": null,
+            "warning": null
+          }
         },
         "appServer": {
           "connected": false,
@@ -12155,6 +12398,12 @@
           "socket": null
         },
         "autoStartEnabled": true,
+        "forkJobs": {
+          "pending": 0,
+          "running": 0,
+          "stuck": 0,
+          "error": null
+        },
         "address": "external",
         "addressSource": "fallback",
         "providers": {

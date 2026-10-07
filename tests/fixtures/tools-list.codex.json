@@ -133,7 +133,11 @@
         },
         "codex": {
           "type": "object",
-          "description": "Codex install: {available, path, source, version, versionProbed, searched, reason, usedForManagedAppServer}."
+          "description": "Codex install: {available, path, source, version, versionProbed, searched, reason, usedForManagedAppServer, overrideCosts}. overrideCosts: {measured, codexVersion, measuredAt, effortChange, modelSwitch, cwdChange, forkSameModel, forkOtherModel (each {cachedShare: [rep1, rep2], cacheNeutral}), compactForkAutoFraction, installedVersion, warning}: the measured prompt-cache effect of overrides and forks (B7 spike, R9.12) and the Codex version it was measured on; warning when the installed version differs, also added to the result's warnings[] (code override_costs_version_mismatch)."
+        },
+        "forkJobs": {
+          "type": "object",
+          "description": "{pending, running, stuck, error}: unfinished fork_codex_thread jobs in the job log. pending: the task ended and the reconcile is not finished yet; running: the task turn is running; stuck: no task turn long after the fork, or a written reconcile left unfinished (the server's sweeper finishes both). Counts are null with error when the log cannot be read. Health reads the log only; the sweep runs on a timer, never from this tool."
         },
         "appServer": {
           "type": [
@@ -1932,7 +1936,7 @@
         },
         "switches": {
           "type": "array",
-          "description": "In-place changes applied to the thread, one per setting: {setting, previous, current, grantedBy: launcher|policy|allowTargetOverride, policy?, persists: true, expectedCost: {uncachedInputTokens, basis} | null}. A change persists; Agent Link never sends a revert."
+          "description": "In-place changes applied to the thread, one per setting: {setting, previous, current, grantedBy: launcher|policy|allowTargetOverride, policy?, persists: true, expectedCost: {uncachedInputTokens, basis}}. expectedCost is the last turn's input tokens (basis last-turn-input, or null with basis unknown) for a model or effort change, which re-reads the thread uncached, and 0 (basis cache-neutral) for a cwd change. A change persists; Agent Link never sends a revert."
         },
         "switchReceipts": {
           "type": "array",
@@ -1951,8 +1955,302 @@
     }
   },
   {
+    "name": "fork_codex_thread",
+    "description": "Run a task on a fork of an existing Codex thread, then send the fork's final response back to the original thread as a new Agent Link message (a reconcile message with a <fork> element). Use it to run another model, effort, or cwd on a thread's context: an existing thread keeps its model and warm prompt cache, because the cache is per model and a switch re-reads the whole thread uncached. The fork takes the original's completed turns only; the original gets no turn with model, effort, or cwd and is never compacted. One reconcile message is sent per job for every outcome (completed, failed, interrupted, or a task that never started), also when this server stops before the task ends: the sweeper of any Agent Link server finishes the job, as long as one runs. A completed fork is then archived unless archiveFork is false. Claude sessions cannot be forked (unsupported).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "threadId": {
+          "type": "string",
+          "description": "The original: a codex:<id> address or Codex thread id."
+        },
+        "query": {
+          "type": "string",
+          "description": "Fuzzy search for the original when threadId is omitted; ambiguous matches fail."
+        },
+        "message": {
+          "type": "string",
+          "description": "The task for the fork (at most 64 KiB), wrapped in the peer-message envelope."
+        },
+        "model": {
+          "type": "string",
+          "description": "Model for the fork. Any caller may choose it."
+        },
+        "modelProvider": {
+          "type": "string",
+          "description": "Model provider for the fork."
+        },
+        "serviceTier": {
+          "type": "string",
+          "description": "Service tier for the fork."
+        },
+        "effort": {
+          "type": "string",
+          "enum": [
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "description": "Reasoning effort for the fork's task turn."
+        },
+        "cwd": {
+          "type": "string",
+          "description": "Absolute working directory for the fork. It must stay inside the original's workspace (git top level of its cwd, symlinks resolved); otherwise permission_denied (cwd_outside_workspace)."
+        },
+        "lastTurnId": {
+          "type": "string",
+          "description": "Fork through this completed turn of the original. Defaults to the latest completed turn."
+        },
+        "compactFork": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "always",
+            "never"
+          ],
+          "description": "Compact the fork before the task: auto (default) when the original's last turn used more than a set fraction of the context window, always, or never. Compaction is itself a full read on the fork."
+        },
+        "reconcile": {
+          "type": "object",
+          "description": "Labels of the reconcile message the original receives.",
+          "properties": {
+            "anticipation": {
+              "type": "string",
+              "enum": [
+                "fyi",
+                "action",
+                "reply"
+              ],
+              "description": "fyi (default): for information; action: the original should act on the result and mark it done; reply: the original should answer you."
+            },
+            "replyBy": {
+              "type": "string",
+              "description": "Optional deadline for action or reply, ISO 8601 with a time zone, at least 30 s ahead."
+            }
+          },
+          "additionalProperties": false
+        },
+        "archiveFork": {
+          "type": "boolean",
+          "description": "Archive the fork after a completed reconcile. Defaults to true. A failed or interrupted fork is always kept."
+        },
+        "waitForResult": {
+          "type": "boolean",
+          "description": "Wait for the reconcile, up to timeoutMs. On timeout status is running and the job continues. When you fork your own thread and wait, the fork's output comes back here (output) instead of as a pushed message."
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600000,
+          "default": 60000,
+          "description": "Maximum wait when waitForResult is true, in milliseconds. Integer 0..600000; defaults to 60000."
+        },
+        "receipt": {
+          "type": "object",
+          "description": "Optional provenance metadata for the local Agent Link receipt index. Receipts are recorded by default for launch, message, reply, and archive actions; set record=false to opt out.",
+          "properties": {
+            "record": {
+              "type": "boolean",
+              "description": "When false, skip writing a receipt for this action. Defaults to true."
+            },
+            "purpose": {
+              "type": "string",
+              "description": "Short human-readable reason, such as WF verification, handoff, coordination, or receipt test."
+            },
+            "originThreadId": {
+              "type": "string",
+              "description": "Thread ID that caused this action, when known."
+            },
+            "originTurnId": {
+              "type": "string",
+              "description": "Turn ID that caused this action, when known."
+            },
+            "originToolCallId": {
+              "type": "string",
+              "description": "Tool call ID that caused this action, when known."
+            },
+            "cleanupRecommendation": {
+              "type": "string",
+              "description": "Caller guidance for the created, messaged, or archived target, for example archiveable, archived, keep_as_evidence, or review_before_archive."
+            },
+            "note": {
+              "type": "string",
+              "description": "Brief extra provenance note."
+            },
+            "tags": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "One entry."
+              },
+              "description": "Optional searchable tags."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "true on success, false on failure; isError is set exactly when this is false."
+        },
+        "error": {
+          "type": "object",
+          "description": "Present only when ok is false.",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "invalid_arguments",
+                "unknown_tool",
+                "not_found",
+                "ambiguous",
+                "archived",
+                "wrong_recipient",
+                "already_resolved",
+                "no_current_session",
+                "body_too_large",
+                "permission_denied",
+                "active_turn_conflict",
+                "codex_unavailable",
+                "claude_unavailable",
+                "upstream_error",
+                "unsupported",
+                "state_io_error",
+                "internal_error"
+              ],
+              "description": "Stable error code (design doc section 3.2)."
+            },
+            "message": {
+              "type": "string",
+              "description": "Human-readable description of the failure."
+            },
+            "details": {
+              "type": "object",
+              "description": "Code-specific details, for example errors[] for invalid_arguments or limitBytes/actualBytes for body_too_large."
+            },
+            "hint": {
+              "type": "string",
+              "description": "Suggested next step, when there is one."
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "warnings": {
+          "type": "array",
+          "description": "Non-fatal notices, omitted when empty. Deprecated arguments add {code:'deprecated_argument', message, replacement}.",
+          "items": {
+            "type": "object",
+            "description": "One warning: at least code and message.",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Warning code."
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable warning."
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "forkJobId": {
+          "type": "string",
+          "description": "The fork job id; it is also the task turn's clientUserMessageId."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "running",
+            "completed",
+            "failed",
+            "interrupted",
+            "aborted"
+          ],
+          "description": "The task turn's outcome, or running."
+        },
+        "original": {
+          "type": "object",
+          "description": "{address, threadId} of the original thread."
+        },
+        "fork": {
+          "type": "object",
+          "description": "{threadId, address, forkedFromId, model, effort, cwd} of the fork."
+        },
+        "lastTurnId": {
+          "type": "string",
+          "description": "The original's turn the fork was taken through."
+        },
+        "turn": {
+          "type": "object",
+          "description": "{id} of the fork's task turn, or {id: null} if it could not start."
+        },
+        "compaction": {
+          "type": "object",
+          "description": "{mode, compact, compacted, reason, threshold, inputTokens, modelContextWindow, windowBasis, tokenUsage}: the R9.11 decision."
+        },
+        "reconcile": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "When finished: {messageId, delivery: queued|delivered, deliveredVia?, anticipation} of the reconcile message in the original's mailbox."
+        },
+        "output": {
+          "type": "object",
+          "description": "Only when you forked your own thread and waited: the fork's output as a peer message (envelope plus header fields)."
+        },
+        "tokenUsage": {
+          "type": "object",
+          "description": "When finished: {compaction?, task}. task: the summed `last` breakdown of the task turn's model requests plus modelContextWindow, modelRequests and turnId, or null when no notification arrived (token_usage_unavailable); compaction: {totalTokens}."
+        },
+        "archived": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Whether the fork was archived; null when a self-fork's result came back before the archive finished."
+        },
+        "receipt": {
+          "type": "object",
+          "description": "Result of writing the receipt for this action."
+        },
+        "reconcileReceipt": {
+          "type": "object",
+          "description": "The reconcile receipt write result."
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
     "name": "list_agent_link_receipts",
-    "description": "List local Agent Link launch/message/archive/Claude-session/reply receipts, newest first, by target address, target thread, target session, origin thread, action, host, target kind, or search query.",
+    "description": "List local Agent Link launch/message/archive/fork/Claude-session/reply receipts, newest first, by target address, target thread, target session, origin thread, action, receipt kind, host, target kind, or search query.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1979,9 +2277,22 @@
             "message_status",
             "model_switch",
             "effort_change",
-            "cwd_change"
+            "cwd_change",
+            "fork_thread",
+            "reconcile_fork"
           ],
           "description": "Only receipts for this action."
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "fork",
+            "reconcile",
+            "model-switch",
+            "effort-change",
+            "cwd-change"
+          ],
+          "description": "Only section 9 receipts of this kind: fork and reconcile (fork_codex_thread), model-switch, effort-change, cwd-change. They link original and fork both ways (original, fork, forkJobId) and record token usage."
         },
         "targetKind": {
           "type": "string",

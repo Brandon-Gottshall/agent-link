@@ -15,6 +15,7 @@ const BASE_CODEX_TOOLS = [
   "agent_link_mailbox_inspect",
   "archive_codex_thread",
   "check_coordination_obligations",
+  "fork_codex_thread",
   "get_codex_sidebar_state",
   "get_codex_thread",
   "launch_codex_thread",

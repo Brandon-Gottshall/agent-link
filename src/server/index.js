@@ -17,6 +17,7 @@ import { createLifecycle, reapOrphanedAppServers, startChannelBridge } from "./l
 import { healthTool } from "../tools/health.js";
 import { codexThreadEntries } from "../tools/codex-threads.js";
 import { codexActionEntries } from "../tools/codex-actions.js";
+import { forkEntries } from "../tools/fork.js";
 import { orchestrationEntries } from "../tools/orchestration.js";
 import { receiptEntries } from "../tools/receipts.js";
 import { claudeListingEntries } from "../tools/claude-listing.js";
@@ -41,6 +42,9 @@ import { makeLoadedThreads } from "../codex/loaded-threads.js";
 import { makeThreadActions } from "../codex/thread-actions.js";
 import { makeThreadMessaging } from "../codex/thread-messaging.js";
 import { makeThreadQueries } from "../codex/thread-queries.js";
+import { FORK_SWEEP_INTERVAL_MS, makeForkJobs, queuedDelivery } from "../codex/fork.js";
+import { createTokenUsageTracker } from "../codex/token-usage.js";
+import { forkJobsPath } from "../shared/paths.js";
 import {
   launchProjectWorker,
   messageProjectOrchestrator,
@@ -185,14 +189,29 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
     collectAppServerThreadSummaries: queries.collectAppServerThreadSummaries
   });
   const desktop = makeDesktopRouting({ appServer: codexAppServer });
+  // Token usage and applied settings from app-server notifications (R9.10).
+  const tokenUsage = createTokenUsageTracker({ appServer: codexAppServer });
   const messaging = makeThreadMessaging({
     appServer: codexAppServer,
     host: hostInfo.host,
     resolveCurrentSession: currentClaudeSession,
     queries,
-    roles
+    roles,
+    tokenUsage
   });
   const actions = makeThreadActions({ appServer: codexAppServer, messaging, desktop });
+  // Fork and reconcile (section 9.3). `deliver` pushes a reconcile message
+  // that is already in the original's mailbox; queuedDelivery leaves it for
+  // inbox pull until Codex push (src/delivery/codex-push.js) is wired in here.
+  const forks = makeForkJobs({
+    appServer: codexAppServer,
+    host: hostInfo.host,
+    resolveCurrentSession: currentClaudeSession,
+    queries,
+    messaging,
+    tokenUsage,
+    deliver: queuedDelivery
+  });
   // The session registry (section 1.4): both providers on every host.
   const sessionRegistry = createSessionRegistry({
     claude: makeClaudeProvider(),
@@ -204,7 +223,8 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
     resolveCurrentSession: currentClaudeSession,
     channelState: () => ({ enabled: channelEnabled, error: channelError }),
     roles,
-    roleAdmin: config.roleAdmin
+    roleAdmin: config.roleAdmin,
+    forkJobs: () => (existsSync(forkJobsPath()) ? forks.jobCounts() : { pending: 0, running: 0, stuck: 0 })
   });
 
   /** @param {Record<string, any>} [args] */
@@ -282,6 +302,7 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
       archive_codex_thread: actions.archiveThreadTool,
       message_codex_thread: messaging.messageThreadTool
     }),
+    ...forkEntries(forks.forkThread),
     ...receiptEntries(),
     ...orchestrationEntries({
       resolve_project_orchestrator: resolveProjectOrchestratorTool,
@@ -335,11 +356,12 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
 
     if (config.codexReminders) startCodexReminders({ appServer: codexAppServer, roles });
     startClaimSweeper({ host: hostInfo.host });
+    lifecycle.onShutdown(startForkSweep(forks));
 
     lifecycle.installSignalHandlers();
   }
 
-  return { server, appServer: codexAppServer, registry, lifecycle, config, start };
+  return { server, appServer: codexAppServer, registry, lifecycle, config, start, forks, tokenUsage };
 }
 
 const CLAIM_SWEEP_INTERVAL_MS = 3_600_000;
@@ -374,6 +396,43 @@ function startClaimSweeper({ host }) {
   first.unref?.();
   const timer = setInterval(run, CLAIM_SWEEP_INTERVAL_MS);
   timer.unref?.();
+}
+
+/**
+ * The fork job sweeper (R9.7): shortly after start, then every
+ * FORK_SWEEP_INTERVAL_MS. It finishes jobs whose task ended while their
+ * server was gone, and checks running jobs no server here watches; each job
+ * is swept by one server at a time (a lease). Only when a fork job log
+ * exists, so a server that never forked creates nothing. The timers never
+ * keep the process alive. Returns the stop for shutdown, which also stops
+ * this server's fork watchers.
+ * @param {{sweep: () => Promise<any>, close: () => void}} forks
+ * @returns {() => void}
+ */
+function startForkSweep(forks) {
+  let running = false;
+  const run = async () => {
+    if (running) return;
+    running = true;
+    try {
+      if (!existsSync(forkJobsPath())) return;
+      const result = await forks.sweep();
+      if (result.checked) getLogger().info("forks.swept", result);
+    } catch (error) {
+      getLogger().warn("forks.sweep_failed", { message: error instanceof Error ? error.message : String(error) });
+    } finally {
+      running = false;
+    }
+  };
+  const first = setTimeout(run, 5_000);
+  first.unref?.();
+  const timer = setInterval(run, FORK_SWEEP_INTERVAL_MS);
+  timer.unref?.();
+  return () => {
+    clearTimeout(first);
+    clearInterval(timer);
+    forks.close();
+  };
 }
 
 /**

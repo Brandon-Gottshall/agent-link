@@ -53,6 +53,12 @@ export const SWITCH_KINDS = Object.freeze({
   cwd: "cwd-change"
 });
 
+/**
+ * A cwd change keeps the prompt cache (B7 spike, R9.12: cached share 0.988
+ * against 0.993; about 158 tokens of new environment context).
+ */
+export const CWD_EXPECTED_COST = Object.freeze({ uncachedInputTokens: 0, basis: "cache-neutral" });
+
 /** The release in which allowTargetOverride stops granting anything (R9.13). */
 export const ALLOW_TARGET_OVERRIDE_GRANTS_UNTIL = "0.7.0";
 /** The release in which allowTargetOverride becomes invalid_arguments (R9.13). */
@@ -164,7 +170,7 @@ function ownValue(thread, field) {
  *   current: string,
  *   grantedBy: "launcher" | "policy" | "allowTargetOverride",
  *   policy: PolicyMatch | null,
- *   expectedCost: {uncachedInputTokens: number | null, basis: string} | null
+ *   expectedCost: {uncachedInputTokens: number | null, basis: string}
  * }} OverrideSwitch
  *
  * @typedef {{
@@ -270,7 +276,10 @@ export function decideTargetOverrides({ thread, args, steering = false, parties,
       current: requested,
       grantedBy,
       policy: match,
-      expectedCost: setting === "effort" ? null : expectedCost
+      // B7 spike (R9.12): an effort change loses the conversation cache like
+      // a model switch, so it reports the same expected cost (R9.3 fallback);
+      // a cwd change is cache-neutral.
+      expectedCost: setting === "cwd" ? CWD_EXPECTED_COST : expectedCost
     });
   }
 

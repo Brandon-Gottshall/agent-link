@@ -300,6 +300,7 @@ export async function listReceipts(options = {}) {
     targetKind: cleanText(options.targetKind, 40),
     host: cleanText(options.host, 40),
     targetSessionId: cleanText(options.targetSessionId, 160),
+    kind: cleanText(options.kind, 40),
     targetAddress: targetAddressFilter(options),
     searchTerm: normalizeSearch(options.searchTerm)
   };
@@ -393,7 +394,10 @@ export function receiptSummary(receipt) {
     ...(receipt.via !== undefined ? { via: receipt.via } : {}),
     ...(receipt.roleProcedure !== undefined ? { roleProcedure: receipt.roleProcedure } : {}),
     ...(receipt.roleProcedureWarning !== undefined ? { roleProcedureWarning: receipt.roleProcedureWarning } : {}),
-    ...(receipt.override !== undefined ? { override: receipt.override } : {})
+    ...(receipt.override !== undefined ? { override: receipt.override } : {}),
+    // Section 9 receipts (B7b): the kind, and the fork/reconcile links.
+    ...(receiptKind(receipt) ? { kind: receiptKind(receipt) } : {}),
+    ...Object.fromEntries(SECTION9_FIELDS.filter((field) => receipt[field] !== undefined).map((field) => [field, receipt[field]]))
   };
 }
 
@@ -433,6 +437,9 @@ function receiptMatches(receipt, filters) {
   if (filters.action && receipt.action !== filters.action) {
     return false;
   }
+  if (filters.kind && receiptKind(receipt) !== filters.kind) {
+    return false;
+  }
   if (filters.targetKind && receipt.target?.kind !== filters.targetKind) {
     return false;
   }
@@ -447,6 +454,19 @@ function receiptMatches(receipt, filters) {
   }
   return true;
 }
+
+/**
+ * The section 9 kind of a receipt (R9.10): `kind`, or the kind of a switch
+ * receipt written before receipts carried it (B9 kept it in `override`).
+ * @param {Record<string, any>} receipt
+ * @returns {string | null}
+ */
+function receiptKind(receipt) {
+  return typeof receipt.kind === "string" ? receipt.kind : typeof receipt.override?.kind === "string" ? receipt.override.kind : null;
+}
+
+/** Fork and reconcile fields (R9.10), present only on receipts that carry them. */
+const SECTION9_FIELDS = ["forkJobId", "original", "fork", "forkedFromId", "lastTurnId", "model", "effort", "cwd", "compacted", "by", "status", "messageId", "from", "to", "archived", "deliveredVia", "tokenUsage"];
 
 function receiptSearchText(receipt) {
   return normalizeSearch([

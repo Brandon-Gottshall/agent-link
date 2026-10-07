@@ -9,6 +9,7 @@ import { listClaudeSessions } from "../claude/session-index.js";
 import { mailboxStatus } from "../claude/mailbox.js";
 import { AppServerError, describeCodexInstall } from "../codex/app-server-client.js";
 import { loadedStateSemantics } from "../codex/thread-utils.js";
+import { overrideCostsHealth } from "../codex/override-costs.js";
 import { callerContextContract, summarizeRuntimeCallerContext } from "../shared/caller-context.js";
 import { env, envFlag } from "../shared/env.js";
 import { hostIdentity } from "../shared/identity.js";
@@ -24,7 +25,8 @@ import { healthExtras } from "../tools/health.js";
  *   resolveCurrentSession: () => any,
  *   channelState: () => {enabled: boolean, error: string | null},
  *   roles?: import("../registry/roles.js").RoleStore | null,
- *   roleAdmin?: boolean
+ *   roleAdmin?: boolean,
+ *   forkJobs?: (() => {pending: number, running: number, stuck: number}) | null
  * }} HealthDeps
  */
 
@@ -77,7 +79,7 @@ export function configuredEndpointSummary() {
 /**
  * @param {HealthDeps} deps
  */
-export function makeHealth({ appServer, hostInfo, resolveCurrentSession, channelState, roles = null, roleAdmin = false }) {
+export function makeHealth({ appServer, hostInfo, resolveCurrentSession, channelState, roles = null, roleAdmin = false, forkJobs = null }) {
   /**
    * @param {Record<string, any>} args
    * @param {{callerContext?: any}} [toolContext]
@@ -86,8 +88,14 @@ export function makeHealth({ appServer, hostInfo, resolveCurrentSession, channel
     const report = await healthReport(args, toolContext);
     // The caller's own address from runtime identity (R1.4).
     const caller = hostIdentity({ host: hostInfo.host, callerContext: toolContext.callerContext ?? null, currentSession: resolveCurrentSession });
+    // R9.12: the recorded override costs, and a warning when they were
+    // measured on another Codex version.
+    const overrideCosts = overrideCostsHealth(report.codex?.version ?? null);
     return {
       ...report,
+      codex: { ...report.codex, overrideCosts },
+      ...(forkJobs ? { forkJobs: forkJobCounts(forkJobs) } : {}),
+      ...(overrideCosts.warning ? { warnings: [overrideCosts.warning] } : {}),
       address: caller.address,
       addressSource: caller.source,
       ...healthExtras({ codex: report.codex }),
@@ -216,6 +224,19 @@ export function makeHealth({ appServer, hostInfo, resolveCurrentSession, channel
   }
 
   return { health, healthReport, claudeHealthSummary };
+}
+
+/**
+ * Fork job counts for health (read-only, from the job log): the same shape
+ * on error, with null counts.
+ * @param {() => {pending: number, running: number, stuck: number}} counts
+ */
+export function forkJobCounts(counts) {
+  try {
+    return { ...counts(), error: null };
+  } catch (error) {
+    return { pending: null, running: null, stuck: null, error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 /**

@@ -86,7 +86,7 @@ test("matrix: equal values pass; launcher effort; peer denied; policy allowed", 
   // Launcher may change effort, nothing else.
   const launcher = decide({ effort: "high" }, { sender: LAUNCHER });
   assert.equal(launcher.denied, null);
-  assert.deepEqual(launcher.switches.map((s) => [s.field, s.previous, s.current, s.grantedBy, s.expectedCost]), [["effort", "medium", "high", "launcher", null]]);
+  assert.deepEqual(launcher.switches.map((s) => [s.field, s.previous, s.current, s.grantedBy, s.expectedCost]), [["effort", "medium", "high", "launcher", { uncachedInputTokens: null, basis: "unknown" }]]);
   assert.equal(decide({ model: "gpt-b" }, { sender: LAUNCHER }).denied.reason, "model_switch_requires_fork_or_opt_in");
 
   // A peer without policy: each setting has its own reason.

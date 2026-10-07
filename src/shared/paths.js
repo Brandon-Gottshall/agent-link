@@ -162,6 +162,17 @@ export function mailboxPath(options = {}) {
 }
 
 /**
+ * The fork job log (design doc R9.7): `<state>/forks.jsonl`, one event per
+ * line (created, forked, compacted, turn-started, completed | failed |
+ * interrupted, reconciled, archived).
+ * @param {PathOptions} [options]
+ * @returns {string}
+ */
+export function forkJobsPath(options = {}) {
+  return path.join(stateDir(options), "forks.jsonl");
+}
+
+/**
  * Where receipts are written. With no override, reads also merge the legacy
  * log from legacyReceiptPaths().
  * @param {PathOptions} [options]

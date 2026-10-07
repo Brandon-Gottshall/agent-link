@@ -35,6 +35,7 @@ import { LIMITS } from "../server/schemas.js";
 import { looksLikeRoleAddress, procedureProblemWarning } from "../registry/roles.js";
 import { assertNoClaudeOverrides, decideTargetOverrides, overrideDeniedError } from "../delivery/override-policy.js";
 import { checkRoleAddressing } from "../delivery/role-policy.js";
+import { expectedCostFrom, lastRecordedUsage, settingsMismatchWarning, tokenUsageUnavailableWarning } from "./token-usage.js";
 
 /** @typedef {import("./thread-queries.js").AppServerLike} AppServerLike */
 /** @typedef {import("./thread-queries.js").WaitReadArgs} WaitReadArgs */
@@ -85,6 +86,7 @@ import { checkRoleAddressing } from "../delivery/role-policy.js";
  *   resolveCurrentSession: () => any,
  *   roles?: import("../registry/roles.js").RoleStore | null,
  *   listReceipts?: (options: Record<string, any>) => Promise<{data: any[]}>,
+ *   tokenUsage?: import("./token-usage.js").TokenUsageTracker | null,
  *   queries: {
  *     waitForThreadRead: (args: WaitReadArgs) => Promise<WaitReadResult>,
  *     enrichThreadLookupError: (error: any, threadId: string) => Promise<any>,
@@ -272,7 +274,7 @@ export function sameDirectory(a, b) {
 /**
  * @param {ThreadMessagingDeps} deps
  */
-export function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries, roles = null, listReceipts = defaultListReceipts }) {
+export function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries, roles = null, listReceipts = defaultListReceipts, tokenUsage = null }) {
   const { waitForThreadRead, enrichThreadLookupError, inferActiveTurnId } = queries;
 
   /**
@@ -298,6 +300,8 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
     let data = [];
     try {
       data = (await listReceipts({ targetThreadId: threadId, action: "launch_thread", limit: 20 })).data ?? [];
+      // A fork's launcher is the caller of fork_codex_thread (R9.9).
+      if (!data.length) data = (await listReceipts({ targetThreadId: threadId, action: "fork_thread", limit: 20 })).data ?? [];
     } catch {
       return null;
     }
@@ -382,13 +386,21 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
     // turn/steer ignores cwd/model/effort, so a mismatch there is only a warning.
     const willSteer = mode === "steer_active" || (mode === "auto" && initialThread?.status?.type === "active");
     const launcher = !willSteer && optionalString(args.effort).trim() ? await launcherOf(threadId) : null;
+    // R9.3/R9.4: an in-place model or effort switch reports the last turn's
+    // input tokens as its expected cost, when a receipt or notification
+    // recorded them (a cwd change is cache-neutral, B7 spike).
+    const switchCandidate = !willSteer && ["model", "modelProvider", "serviceTier", "effort"].some((field) => optionalString(args[field]).trim());
+    const expectedCost = switchCandidate
+      ? expectedCostFrom(await lastRecordedUsage({ threadId, tracker: tokenUsage, listReceipts }))
+      : undefined;
     const decision = decideTargetOverrides({
       thread: initialThread,
       args,
       steering: willSteer,
       parties: { senderAddress, senderRoles: rolesOf(senderAddress), targetAddress, targetRoles: rolesOf(targetAddress) },
       policy: tableRead && !tableRead.error ? tableRead.table.overridePolicy : {},
-      launcher
+      launcher,
+      ...(expectedCost ? { expectedCost } : {})
     });
     if (decision.denied) throw overrideDeniedError(decision.denied, threadId);
     const overrides = decision.forward;
@@ -566,6 +578,8 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
       startParams.effort = overrides.effort;
     }
 
+    // thread/settings/updated follows only a turn/start that changes settings.
+    const settingsMark = tokenUsage?.mark() ?? 0;
     const response = await appServer.request("turn/start", startParams).catch(releaseOnFailure);
     const summarizedTurn = summarizeTurn(response.turn);
     const wait = args.waitForReply
@@ -627,8 +641,10 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
       tags: receiptTags
     });
     // R9.4/R9.10: every applied switch persists (no revert is ever sent) and
-    // gets its own receipt.
+    // gets its own receipt, with the token usage of the first turn on the new
+    // setting (known only when the call waited for that turn to end).
     if (decision.switches.length) {
+      const tokenUsageNext = await firstTurnUsage({ threadId, turnId: summarizedTurn.id, wait, warnings, overrides, settingsMark });
       result.switchReceipts = [];
       for (const change of decision.switches) {
         result.switchReceipts.push(await recordActionReceipt({
@@ -639,6 +655,7 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
           runtimeCallerContext: toolContext.callerContext,
           appServer: appServerSummary,
           extra: {
+            kind: change.kind,
             override: {
               kind: change.kind,
               address: targetAddress,
@@ -649,7 +666,7 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
               grantedBy: change.grantedBy,
               policy: change.policy,
               expectedCost: change.expectedCost,
-              tokenUsage: { next: null }
+              tokenUsage: tokenUsageNext
             }
           }
         }));
@@ -657,6 +674,35 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
     }
     return result;
   }
+
+  /**
+   * Token usage of the first turn on a new setting (R9.10), waiting at most
+   * 5 s after the turn ended (the notifications normally arrive before it
+   * ends). `{next: null, reason: "not_waited"}` when the call did not wait
+   * for the turn (no warning); `{next: null, reason: "no_notification"}` with
+   * a token_usage_unavailable warning when it waited and none came. Adds a settings_mismatch
+   * warning when a thread/settings/updated sent after this turn/start reports
+   * other values than the ones sent; no notification is not a mismatch.
+   * @param {{threadId: string, turnId: string, wait: ReplyWait | null, warnings: any[], overrides: Record<string, string>, settingsMark: number}} input
+   */
+  async function firstTurnUsage({ threadId, turnId, wait, warnings, overrides, settingsMark }) {
+    if (!tokenUsage) return { next: null };
+    const mismatch = settingsMismatchWarning({ threadId, requested: { model: overrides.model, effort: overrides.effort, cwd: overrides.cwd }, applied: tokenUsage.settingsSince(threadId, settingsMark) });
+    if (mismatch) warnings.push(mismatch);
+    // Not waiting for the turn is the caller's choice, not a failure: no warning.
+    if (!wait) return { next: null, reason: "not_waited" };
+    if (!(wait.ok === true && wait.timedOut === false)) {
+      warnings.push(tokenUsageUnavailableWarning({ threadId, turnId, purpose: "the first turn on the new setting", reason: "turn_not_ended" }));
+      return { next: null, reason: "turn_not_ended" };
+    }
+    const usage = await tokenUsage.awaitTurnUsage(threadId, turnId);
+    if (!usage) {
+      warnings.push(tokenUsageUnavailableWarning({ threadId, turnId, purpose: "the first turn on the new setting" }));
+      return { next: null, reason: "no_notification" };
+    }
+    return { next: usage };
+  }
+
 
   /**
    * The result entry for one applied switch (R9.4).

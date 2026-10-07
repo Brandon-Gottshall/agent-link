@@ -25,8 +25,13 @@ export const RECEIPT_ACTIONS = Object.freeze([
   "message_status",
   "model_switch",
   "effort_change",
-  "cwd_change"
+  "cwd_change",
+  "fork_thread",
+  "reconcile_fork"
 ]);
+
+/** Receipt kinds for the section 9 receipts (R9.10), for list_agent_link_receipts `kind`. */
+export const RECEIPT_KINDS = Object.freeze(["fork", "reconcile", "model-switch", "effort-change", "cwd-change"]);
 
 /**
  * @param {string} description

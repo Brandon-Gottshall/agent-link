@@ -3,12 +3,12 @@
 // list_agent_link_receipts: the local receipt index.
 
 import { listReceipts } from "../shared/receipt-index.js";
-import { LIMITS, RECEIPT_ACTIONS, enumOf, limit, out, str } from "../server/schemas.js";
+import { LIMITS, RECEIPT_ACTIONS, RECEIPT_KINDS, enumOf, limit, out, str } from "../server/schemas.js";
 
 /** @type {import("../server/registry.js").ToolDefinition} */
 export const listReceiptsTool = {
   name: "list_agent_link_receipts",
-  description: "List local Agent Link launch/message/archive/Claude-session/reply receipts, newest first, by target address, target thread, target session, origin thread, action, host, target kind, or search query.",
+  description: "List local Agent Link launch/message/archive/fork/Claude-session/reply receipts, newest first, by target address, target thread, target session, origin thread, action, receipt kind, host, target kind, or search query.",
   inputSchema: {
     type: "object",
     properties: {
@@ -16,6 +16,7 @@ export const listReceiptsTool = {
       targetThreadId: str("Only receipts whose target.threadId matches this thread. A codex:<id> address is matched as target."),
       originThreadId: str("Only receipts whose origin.threadId matches this thread."),
       action: enumOf(RECEIPT_ACTIONS, "Only receipts for this action."),
+      kind: enumOf(RECEIPT_KINDS, "Only section 9 receipts of this kind: fork and reconcile (fork_codex_thread), model-switch, effort-change, cwd-change. They link original and fork both ways (original, fork, forkJobId) and record token usage."),
       targetKind: enumOf(["claude", "codex"], "Only receipts whose target.kind matches."),
       host: enumOf(["claude", "codex"], "Only receipts written by this host. Useful for auditing which side initiated a cross-host action."),
       targetSessionId: str("Only receipts for this Claude target session id (e.g. local_<uuid>). A claude:<id> address is matched as target."),
@@ -43,6 +44,7 @@ export async function listAgentLinkReceipts(args) {
     targetThreadId: args.targetThreadId,
     originThreadId: args.originThreadId,
     action: args.action,
+    kind: args.kind,
     targetKind: args.targetKind,
     host: args.host,
     targetSessionId: args.targetSessionId,

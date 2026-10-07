@@ -157,6 +157,8 @@ export class CodexAppServerClient {
     this.lastStartupFailure = null;
     this.pendingStops = new Set();
     this.notifications = { total: 0, parseErrors: 0, byMethod: {}, recent: [] };
+    /** @type {Set<(notification: {method: string, params?: any}) => void>} */
+    this.notificationListeners = new Set();
     this.serverRequests = { total: 0, declined: 0, rejected: 0, unanswered: 0, byMethod: {}, last: null };
   }
 
@@ -406,7 +408,24 @@ export class CodexAppServerClient {
       if (this.notifications.recent.length > RECENT_NOTIFICATIONS) {
         this.notifications.recent.shift();
       }
+      for (const listener of this.notificationListeners) {
+        try {
+          listener(message);
+        } catch (error) {
+          getLogger().warn("app_server.notification_listener_failed", { method: message.method, error });
+        }
+      }
     }
+  }
+
+  // Notifications (no id) are handed to every listener, for example the
+  // token-usage tracker (src/codex/token-usage.js). Returns an unsubscribe.
+  /** @param {(notification: {method: string, params?: any}) => void} listener */
+  onNotification(listener) {
+    this.notificationListeners.add(listener);
+    return () => {
+      this.notificationListeners.delete(listener);
+    };
   }
 
   // Only an app-server Agent Link started itself is answered automatically.
