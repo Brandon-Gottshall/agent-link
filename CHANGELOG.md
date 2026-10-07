@@ -28,12 +28,15 @@ The argument aliases and duplicated output keys that 0.5.0 deprecated (with a `d
     - It forks the thread through its latest completed turn (`thread/fork`, `threadSource: "agent-link-fork"`), optionally compacts the fork, and runs the enveloped task on the fork (`turnTrigger: "agent-link-fork"`, `clientUserMessageId` = the fork job id).
     - When the task's turn ends, it writes one reconcile message to the original thread's mailbox: `from` the caller, the requested `anticipation` (default `fyi`), and the final response as the body. The fork is then archived, unless `archiveFork: false`. The original never gets a turn with `model`, `effort`, or `cwd`, and is never compacted.
     - A failed or interrupted fork is reconciled too, with that status, and kept. `cwd` must stay inside the original's workspace (`cwd_outside_workspace`). A `claude:` target is `unsupported` (`capability: "fork"`).
+  - A completed fork is archived only when it reports the original as `forkedFromId` and `threadSource: "agent-link-fork"`; otherwise it is kept with a `fork_archive_refused` warning.
   - **Envelope change.** A reconcile message carries `<fork thread model effort status/>` after `<overrides>`. A fork's task envelope has a fixed `<reply>` line saying its final response is the result.
   - Fork jobs live in `<state>/forks.jsonl`.
     - Only the server that started a job watches it live. It polls the fork's status without reading turns, backs off to 15 s, and wakes on `turn/completed`.
     - Every server runs a sweeper shortly after start and then every 60 s (only when the log exists), and stops it on shutdown. A lease (one server per job per minute) keeps the sweeps from multiplying.
     - The sweeper finishes jobs whose server stopped. That includes a reconcile message written but not finished (delivery, `reconciled`, archive and missing receipts, after 60 s). It also covers a task turn whose `turn/start` answer was lost: it is found by its `clientUserMessageId`, or failed and reconciled 15 minutes after the fork.
-    - Claims keep it to one reconcile message per job, and are removed once the job is reconciled.
+    - Claims keep it to one reconcile message per job, and are removed once the job is reconciled. A push holds a per-message claim; a sweep takes a push over only after 10 minutes. `reconciled` is written once, and only its writer archives and writes receipts.
+    - A self-fork result counts as delivered only when the tool call actually returned it (`returned`). Otherwise a sweep makes it new mail again and pushes it, once, after the longest possible wait (11 minutes).
+    - The job log's appends and compaction share a file lock (`src/shared/file-lock.js`, moved from the role table code), so compaction loses no event.
     - Past 512 KiB the log drops jobs finished more than 7 days ago.
     - Nothing is finished while no Agent Link server runs.
   - `agent_link_health` writes nothing. It reports `forkJobs: {pending, running, stuck, error}` from the job log.

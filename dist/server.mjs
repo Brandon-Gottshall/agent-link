@@ -3238,8 +3238,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path19) {
-      let input = path19;
+    function removeDotSegments(path21) {
+      let input = path21;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3491,8 +3491,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path19, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path19 && path19 !== "/" ? path19 : void 0;
+        const [path21, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path21 && path21 !== "/" ? path21 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -6885,12 +6885,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs18, exportName) {
+    function addFormats(ajv, list, fs19, exportName) {
       var _a3;
       var _b;
       (_a3 = (_b = ajv.opts.code).formats) !== null && _a3 !== void 0 ? _a3 : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs18[f]);
+        ajv.addFormat(f, fs19[f]);
     }
     module.exports = exports = formatsPlugin;
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -11285,10 +11285,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path19) {
-  if (!path19)
+function getElementAtPath(obj, path21) {
+  if (!path21)
     return obj;
-  return path19.reduce((acc, key) => acc?.[key], obj);
+  return path21.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -11697,11 +11697,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path19, issues) {
+function prefixIssues(path21, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path19);
+    iss.path.unshift(path21);
     return iss;
   });
 }
@@ -11848,16 +11848,16 @@ function flattenError(error2, mapper = (issue2) => issue2.message) {
 }
 function formatError(error2, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error3, path19 = []) => {
+  const processError = (error3, path21 = []) => {
     for (const issue2 of error3.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path19, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path21, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path19, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path21, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path19, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path21, ...issue2.path]);
       } else {
-        const fullpath = [...path19, ...issue2.path];
+        const fullpath = [...path21, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -19613,16 +19613,16 @@ function typeMatches(actual, wanted) {
 function join(base, key) {
   return base ? `${base}.${key}` : key;
 }
-function validateSchema(schema, value, path19 = "") {
+function validateSchema(schema, value, path21 = "") {
   const problems = [];
   if (!schema || typeof schema !== "object") return problems;
-  const where = path19 || "(arguments)";
+  const where = path21 || "(arguments)";
   if (Array.isArray(schema.oneOf) || Array.isArray(schema.anyOf)) {
     const options = (
       /** @type {JsonSchema[]} */
       schema.oneOf ?? schema.anyOf
     );
-    const matches = options.filter((option) => validateSchema(option, value, path19).length === 0).length;
+    const matches = options.filter((option) => validateSchema(option, value, path21).length === 0).length;
     const ok = schema.oneOf ? matches === 1 : matches >= 1;
     if (!ok) {
       problems.push({ path: where, rule: schema.oneOf ? "oneOf" : "anyOf", expected: options.map(describe2).join(" or ") });
@@ -19664,7 +19664,7 @@ function validateSchema(schema, value, path19 = "") {
           /** @type {JsonSchema} */
           schema.items,
           item,
-          `${path19 || ""}[${index}]`
+          `${path21 || ""}[${index}]`
         ));
       });
     }
@@ -19677,17 +19677,17 @@ function validateSchema(schema, value, path19 = "") {
     const properties = schema.properties ?? {};
     for (const key of schema.required ?? []) {
       if (record2[key] === void 0) {
-        problems.push({ path: join(path19, key), rule: "required", expected: describe2(properties[key]) });
+        problems.push({ path: join(path21, key), rule: "required", expected: describe2(properties[key]) });
       }
     }
     for (const [key, item] of Object.entries(record2)) {
       if (item === void 0) continue;
       if (Object.prototype.hasOwnProperty.call(properties, key)) {
-        problems.push(...validateSchema(properties[key], item, join(path19, key)));
+        problems.push(...validateSchema(properties[key], item, join(path21, key)));
       } else if (schema.additionalProperties === false) {
-        problems.push({ path: join(path19, key), rule: "additionalProperties", expected: "no such property" });
+        problems.push({ path: join(path21, key), rule: "additionalProperties", expected: "no such property" });
       } else if (schema.additionalProperties && typeof schema.additionalProperties === "object") {
-        problems.push(...validateSchema(schema.additionalProperties, item, join(path19, key)));
+        problems.push(...validateSchema(schema.additionalProperties, item, join(path21, key)));
       }
     }
   }
@@ -19734,7 +19734,7 @@ function coerceScalar(schema, text2) {
   if (types.includes("boolean") && (text2 === "true" || text2 === "false")) return text2 === "true";
   return void 0;
 }
-function normalizeArguments(schema, value, notes, path19 = "") {
+function normalizeArguments(schema, value, notes, path21 = "") {
   if (!schema || !value || typeof value !== "object" || Array.isArray(value) || !schema.properties) return value;
   const record2 = (
     /** @type {Record<string, unknown>} */
@@ -19744,7 +19744,7 @@ function normalizeArguments(schema, value, notes, path19 = "") {
   const out2 = {};
   for (const [key, item] of Object.entries(record2)) {
     const property = schema.properties[key];
-    const where = join(path19, key);
+    const where = join(path21, key);
     if (!property) {
       out2[key] = item;
       continue;
@@ -22459,32 +22459,32 @@ function normalizeArchiveScope(args = {}) {
   return args.archived === true ? "archived" : "active";
 }
 function inferArchiveState(threadOrPath) {
-  const path19 = typeof threadOrPath === "string" ? threadOrPath : threadOrPath?.path ?? null;
-  if (!path19) {
+  const path21 = typeof threadOrPath === "string" ? threadOrPath : threadOrPath?.path ?? null;
+  if (!path21) {
     return {
       scope: "unknown",
       inferredFrom: "missingPath",
       path: null
     };
   }
-  if (path19.includes("/archived_sessions/")) {
+  if (path21.includes("/archived_sessions/")) {
     return {
       scope: "archived",
       inferredFrom: "path",
-      path: path19
+      path: path21
     };
   }
-  if (path19.includes("/sessions/")) {
+  if (path21.includes("/sessions/")) {
     return {
       scope: "active",
       inferredFrom: "path",
-      path: path19
+      path: path21
     };
   }
   return {
     scope: "unknown",
     inferredFrom: "path",
-    path: path19
+    path: path21
   };
 }
 function desktopVisibilityContract(appServerSummary = {}) {
@@ -24857,9 +24857,119 @@ function makeThreadActions({ appServer, messaging, desktop }) {
 }
 
 // src/codex/fork-jobs.js
+import fs9 from "node:fs";
+import path12 from "node:path";
+
+// src/shared/file-lock.js
+import crypto3 from "node:crypto";
 import fs8 from "node:fs";
+import path11 from "node:path";
+var LOCK_STALE_MS = 3e4;
+var LOCK_TIMEOUT_MS = 250;
+var LOCK_RETRY_MS = 5;
+var BREAKER_STALE_MS = 5e3;
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+function processAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error2) {
+    return (
+      /** @type {NodeJS.ErrnoException} */
+      error2.code === "EPERM"
+    );
+  }
+}
+function lockSnapshot(lockPath) {
+  try {
+    const stat = fs8.statSync(lockPath);
+    return { raw: fs8.readFileSync(lockPath, "utf8"), ino: stat.ino, mtimeMs: stat.mtimeMs };
+  } catch {
+    return null;
+  }
+}
+function ownerPid(raw) {
+  try {
+    return Number(JSON.parse(raw)?.pid);
+  } catch {
+    return NaN;
+  }
+}
+function breakStaleLock(lockPath, observed, token, now) {
+  const breaker = `${lockPath}.break`;
+  try {
+    fs8.writeFileSync(breaker, JSON.stringify({ pid: process.pid, token }), { flag: "wx", mode: FILE_MODE });
+  } catch (error2) {
+    if (
+      /** @type {NodeJS.ErrnoException} */
+      error2.code !== "EEXIST"
+    ) return false;
+    const stale = lockSnapshot(breaker);
+    if (stale && now() - stale.mtimeMs > BREAKER_STALE_MS && !processAlive(ownerPid(stale.raw))) {
+      fs8.rmSync(breaker, { force: true });
+    }
+    return false;
+  }
+  try {
+    const current = lockSnapshot(lockPath);
+    if (!current || current.raw !== observed.raw || current.ino !== observed.ino || current.mtimeMs !== observed.mtimeMs) return false;
+    fs8.rmSync(lockPath, { force: true });
+    return true;
+  } finally {
+    fs8.rmSync(breaker, { force: true });
+  }
+}
+function withFileLockSync(lockPath, fn, { timeoutMs: timeoutMs2 = LOCK_TIMEOUT_MS, staleMs = LOCK_STALE_MS, now = () => Date.now(), label = "role table" } = {}) {
+  const deadline = now() + timeoutMs2;
+  const token = `${process.pid}:${crypto3.randomUUID()}`;
+  for (; ; ) {
+    try {
+      fs8.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, token, at: new Date(now()).toISOString() }), { flag: "wx", mode: FILE_MODE });
+      break;
+    } catch (error2) {
+      if (
+        /** @type {NodeJS.ErrnoException} */
+        error2.code !== "EEXIST"
+      ) {
+        throw new AgentLinkError("state_io_error", `Could not create the ${label} lock. (${/** @type {NodeJS.ErrnoException} */
+        error2.code ?? "error"})`, {
+          details: { path: path11.basename(lockPath), errno: (
+            /** @type {NodeJS.ErrnoException} */
+            error2.code ?? null
+          ) },
+          cause: error2
+        });
+      }
+    }
+    const observed = lockSnapshot(lockPath);
+    if (observed && now() - observed.mtimeMs > staleMs && !processAlive(ownerPid(observed.raw))) {
+      if (breakStaleLock(lockPath, observed, token, now)) continue;
+    }
+    if (now() >= deadline) {
+      throw new AgentLinkError("state_io_error", `The ${label} is busy (another Agent Link server holds its lock).`, {
+        details: { path: path11.basename(lockPath), errno: "ETIMEDOUT" },
+        hint: `Retry the call. If this persists, check that no Agent Link process is stuck, then remove ${path11.basename(lockPath)} from the state directory.`
+      });
+    }
+    sleepSync(LOCK_RETRY_MS);
+  }
+  try {
+    return fn();
+  } finally {
+    try {
+      const current = JSON.parse(fs8.readFileSync(lockPath, "utf8"));
+      if (current?.token === token) fs8.rmSync(lockPath, { force: true });
+    } catch {
+    }
+  }
+}
+
+// src/codex/fork-jobs.js
 var FORK_OUTCOMES = Object.freeze(["completed", "failed", "interrupted"]);
-var EVENT_TYPES = /* @__PURE__ */ new Set(["created", "forked", "compacted", "turn-started", ...FORK_OUTCOMES, "reconcile-written", "reconciled", "archived", "aborted"]);
+var EVENT_TYPES = /* @__PURE__ */ new Set(["created", "forked", "compacted", "turn-started", ...FORK_OUTCOMES, "reconcile-written", "reconciled", "returned", "redelivered", "archived", "aborted"]);
 var FORK_LOG_MAX_BYTES = 512 * 1024;
 var FORK_LOG_RETENTION_MS = 7 * 24 * 60 * 60 * 1e3;
 function foldForkJobs(events) {
@@ -24868,7 +24978,7 @@ function foldForkJobs(events) {
     if (!event || typeof event.jobId !== "string" || !EVENT_TYPES.has(event.type)) continue;
     let job = jobs.get(event.jobId);
     if (!job) {
-      job = { id: event.jobId, createdAt: null, created: null, forked: null, compacted: null, turnStarted: null, outcome: null, written: null, reconciled: null, archived: null, aborted: null };
+      job = { id: event.jobId, createdAt: null, created: null, forked: null, compacted: null, turnStarted: null, outcome: null, written: null, reconciled: null, returned: null, redelivered: null, archived: null, aborted: null };
       jobs.set(event.jobId, job);
     }
     const slot = slotOf(event.type);
@@ -24892,8 +25002,8 @@ function forkJobStatus(job) {
   if (job.aborted) return "aborted";
   return job.outcome?.type ?? "running";
 }
-function createForkJobStore({ path: path19 = void 0, now = () => Date.now() } = {}) {
-  const file = () => path19 ?? forkJobsPath();
+function createForkJobStore({ path: path21 = void 0, now = () => Date.now() } = {}) {
+  const file = () => path21 ?? forkJobsPath();
   return {
     path: file,
     /**
@@ -24903,8 +25013,25 @@ function createForkJobStore({ path: path19 = void 0, now = () => Date.now() } = 
      */
     append(type, jobId, fields = {}) {
       const event = { type, jobId, at: now(), ...fields };
-      appendJsonlSync(file(), event);
+      withForkLogLock(file(), () => appendJsonlSync(file(), event));
       return event;
+    },
+    /**
+     * Appends the event only when the job has none of that type yet, under
+     * the log's lock (exactly one `reconciled`). Null when one existed.
+     * @param {string} type
+     * @param {string} jobId
+     * @param {Record<string, any>} [fields]
+     * @returns {ForkJobEvent | null}
+     */
+    appendIfAbsent(type, jobId, fields = {}) {
+      return withForkLogLock(file(), () => {
+        const job = foldForkJobs(readJsonlSync(file())).find((j) => j.id === jobId);
+        if (job && job[slotOf(type)]) return null;
+        const event = { type, jobId, at: now(), ...fields };
+        appendJsonlSync(file(), event);
+        return event;
+      });
     },
     /** @returns {ForkJob[]} */
     list() {
@@ -24920,39 +25047,39 @@ function createForkJobStore({ path: path19 = void 0, now = () => Date.now() } = 
     }
   };
 }
+function withForkLogLock(file, fn) {
+  fs9.mkdirSync(path12.dirname(file), { recursive: true, mode: DIR_MODE });
+  return withFileLockSync(`${file}.lock`, fn, { label: "fork job log", timeoutMs: 2e3 });
+}
 function compactForkJobs(file, { now = Date.now(), maxBytes = FORK_LOG_MAX_BYTES, retentionMs = FORK_LOG_RETENTION_MS } = {}) {
-  let raw;
   try {
-    if (fs8.statSync(file).size <= maxBytes) return { compacted: false, dropped: 0 };
-    raw = fs8.readFileSync(file, "utf8");
+    if (fs9.statSync(file).size <= maxBytes) return { compacted: false, dropped: 0 };
   } catch {
     return { compacted: false, dropped: 0 };
   }
-  const events = parseJsonlLines(raw);
-  const finished = new Set(foldForkJobs(events).filter((job) => {
-    const end = job.reconciled?.at ?? job.aborted?.at;
-    return Number.isFinite(end) && now - end > retentionMs;
-  }).map((job) => job.id));
-  if (!finished.size) return { compacted: false, dropped: 0 };
-  const kept = events.filter((event) => !finished.has(event?.jobId));
-  const tmp = `${file}.compact-${process.pid}`;
-  fs8.writeFileSync(tmp, toJsonl(kept), { encoding: "utf8", mode: FILE_MODE });
-  if (fs8.statSync(file).size !== Buffer.byteLength(raw, "utf8")) {
-    fs8.rmSync(tmp, { force: true });
-    return { compacted: false, dropped: 0 };
-  }
-  fs8.renameSync(tmp, file);
-  return { compacted: true, dropped: finished.size };
+  return withForkLogLock(file, () => {
+    const events = parseJsonlLines(fs9.readFileSync(file, "utf8"));
+    const finished = new Set(foldForkJobs(events).filter((job) => {
+      const end = job.reconciled?.at ?? job.aborted?.at;
+      return Number.isFinite(end) && now - end > retentionMs;
+    }).map((job) => job.id));
+    if (!finished.size) return { compacted: false, dropped: 0 };
+    const kept = events.filter((event) => !finished.has(event?.jobId));
+    const tmp = `${file}.compact-${process.pid}`;
+    fs9.writeFileSync(tmp, toJsonl(kept), { encoding: "utf8", mode: FILE_MODE });
+    fs9.renameSync(tmp, file);
+    return { compacted: true, dropped: finished.size };
+  });
 }
 
 // src/delivery/override-policy.js
-import fs10 from "node:fs";
-import path12 from "node:path";
+import fs11 from "node:fs";
+import path14 from "node:path";
 
 // src/registry/roles.js
-import crypto3 from "node:crypto";
-import fs9 from "node:fs";
-import path11 from "node:path";
+import crypto4 from "node:crypto";
+import fs10 from "node:fs";
+import path13 from "node:path";
 var ROLE_NAME_PATTERN = /^[a-z0-9-]{1,40}$/;
 var ROLE_ADDRESS_PATTERN = /^role:([a-z0-9-]{1,40})$/;
 var ROLE_TABLE_VERSION = 1;
@@ -24961,10 +25088,6 @@ var DEFAULT_ENFORCEMENT = "off";
 var POLICY_SETTINGS = Object.freeze(["model", "effort", "cwd"]);
 var MAX_PROCEDURE_BYTES = 64 * 1024;
 var MAX_POLICY_SENDERS = 50;
-var LOCK_STALE_MS = 3e4;
-var LOCK_TIMEOUT_MS = 250;
-var LOCK_RETRY_MS = 5;
-var BREAKER_STALE_MS = 5e3;
 var STATE_FILE = "role-state.json";
 var STATE_VERSION = 1;
 function emptyRoleTable() {
@@ -25047,11 +25170,11 @@ function validateRoleTable(raw) {
         problems.push({ path: `roles.${name}.projects`, rule: "type", message: "projects must map absolute project roots to addresses; ignored." });
       } else {
         for (const [root, holder] of Object.entries(entry.projects)) {
-          if (!path11.isAbsolute(root) || !isAddress(holder)) {
+          if (!path13.isAbsolute(root) || !isAddress(holder)) {
             problems.push({ path: `roles.${name}.projects`, rule: "format", message: "projects keys are absolute project roots and values claude:<id> or codex:<id> addresses; invalid entries were ignored." });
             continue;
           }
-          projects[path11.resolve(root)] = holder;
+          projects[path13.resolve(root)] = holder;
         }
       }
     }
@@ -25092,111 +25215,20 @@ function validateRoleTable(raw) {
   }
   return { table, problems };
 }
-function sleepSync(ms) {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-function processAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error2) {
-    return (
-      /** @type {NodeJS.ErrnoException} */
-      error2.code === "EPERM"
-    );
-  }
-}
-function lockSnapshot(lockPath) {
-  try {
-    const stat = fs9.statSync(lockPath);
-    return { raw: fs9.readFileSync(lockPath, "utf8"), ino: stat.ino, mtimeMs: stat.mtimeMs };
-  } catch {
-    return null;
-  }
-}
-function ownerPid(raw) {
-  try {
-    return Number(JSON.parse(raw)?.pid);
-  } catch {
-    return NaN;
-  }
-}
-function breakStaleLock(lockPath, observed, token, now) {
-  const breaker = `${lockPath}.break`;
-  try {
-    fs9.writeFileSync(breaker, JSON.stringify({ pid: process.pid, token }), { flag: "wx", mode: FILE_MODE });
-  } catch (error2) {
-    if (
-      /** @type {NodeJS.ErrnoException} */
-      error2.code !== "EEXIST"
-    ) return false;
-    const stale = lockSnapshot(breaker);
-    if (stale && now() - stale.mtimeMs > BREAKER_STALE_MS && !processAlive(ownerPid(stale.raw))) {
-      fs9.rmSync(breaker, { force: true });
-    }
-    return false;
-  }
-  try {
-    const current = lockSnapshot(lockPath);
-    if (!current || current.raw !== observed.raw || current.ino !== observed.ino || current.mtimeMs !== observed.mtimeMs) return false;
-    fs9.rmSync(lockPath, { force: true });
-    return true;
-  } finally {
-    fs9.rmSync(breaker, { force: true });
-  }
-}
-function withFileLockSync(lockPath, fn, { timeoutMs: timeoutMs2 = LOCK_TIMEOUT_MS, staleMs = LOCK_STALE_MS, now = () => Date.now() } = {}) {
-  const deadline = now() + timeoutMs2;
-  const token = `${process.pid}:${crypto3.randomUUID()}`;
-  for (; ; ) {
-    try {
-      fs9.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, token, at: new Date(now()).toISOString() }), { flag: "wx", mode: FILE_MODE });
-      break;
-    } catch (error2) {
-      if (
-        /** @type {NodeJS.ErrnoException} */
-        error2.code !== "EEXIST"
-      ) {
-        throw stateIoError(lockPath, error2, "Could not create the role table lock.");
-      }
-    }
-    const observed = lockSnapshot(lockPath);
-    if (observed && now() - observed.mtimeMs > staleMs && !processAlive(ownerPid(observed.raw))) {
-      if (breakStaleLock(lockPath, observed, token, now)) continue;
-    }
-    if (now() >= deadline) {
-      throw new AgentLinkError("state_io_error", "The role table is busy (another Agent Link server holds its lock).", {
-        details: { path: path11.basename(lockPath), errno: "ETIMEDOUT" },
-        hint: `Retry the call. If this persists, check that no Agent Link process is stuck, then remove ${path11.basename(lockPath)} from the state directory.`
-      });
-    }
-    sleepSync(LOCK_RETRY_MS);
-  }
-  try {
-    return fn();
-  } finally {
-    try {
-      const current = JSON.parse(fs9.readFileSync(lockPath, "utf8"));
-      if (current?.token === token) fs9.rmSync(lockPath, { force: true });
-    } catch {
-    }
-  }
-}
 function writeFileAtomicSync(filePath, text2) {
-  fs9.mkdirSync(path11.dirname(filePath), { recursive: true, mode: DIR_MODE });
-  const temp = `${filePath}.${process.pid}.${crypto3.randomBytes(6).toString("hex")}.tmp`;
+  fs10.mkdirSync(path13.dirname(filePath), { recursive: true, mode: DIR_MODE });
+  const temp = `${filePath}.${process.pid}.${crypto4.randomBytes(6).toString("hex")}.tmp`;
   try {
-    const fd = fs9.openSync(temp, "wx", FILE_MODE);
+    const fd = fs10.openSync(temp, "wx", FILE_MODE);
     try {
-      fs9.writeFileSync(fd, text2, "utf8");
-      fs9.fsyncSync(fd);
+      fs10.writeFileSync(fd, text2, "utf8");
+      fs10.fsyncSync(fd);
     } finally {
-      fs9.closeSync(fd);
+      fs10.closeSync(fd);
     }
-    fs9.renameSync(temp, filePath);
+    fs10.renameSync(temp, filePath);
   } catch (error2) {
-    fs9.rmSync(temp, { force: true });
+    fs10.rmSync(temp, { force: true });
     throw stateIoError(filePath, error2, "Could not write the role table.");
   }
   tightenMode(filePath, FILE_MODE);
@@ -25207,36 +25239,36 @@ function stateIoError(filePath, error2, message) {
     error2?.code ?? null
   );
   return new AgentLinkError("state_io_error", `${message} (${errno ?? "error"})`, {
-    details: { path: path11.basename(filePath), errno },
+    details: { path: path13.basename(filePath), errno },
     cause: error2
   });
 }
 function readProcedureFileSafe(dir, file) {
   try {
-    if (!fs9.lstatSync(dir).isDirectory()) return { error: "the roles directory is not a directory" };
+    if (!fs10.lstatSync(dir).isDirectory()) return { error: "the roles directory is not a directory" };
   } catch {
     return null;
   }
   let stat;
   try {
-    stat = fs9.lstatSync(file);
+    stat = fs10.lstatSync(file);
   } catch {
     return null;
   }
   if (!stat.isFile()) return { error: "the procedure file is not a regular file (symlinks, FIFOs, and devices are refused)" };
   let fd;
   try {
-    fd = fs9.openSync(file, fs9.constants.O_RDONLY | fs9.constants.O_NOFOLLOW | fs9.constants.O_NONBLOCK);
+    fd = fs10.openSync(file, fs10.constants.O_RDONLY | fs10.constants.O_NOFOLLOW | fs10.constants.O_NONBLOCK);
   } catch (error2) {
     return { error: `the procedure file could not be opened (${/** @type {NodeJS.ErrnoException} */
     error2.code ?? "error"})` };
   }
   try {
-    if (!fs9.fstatSync(fd).isFile()) return { error: "the procedure file is not a regular file" };
+    if (!fs10.fstatSync(fd).isFile()) return { error: "the procedure file is not a regular file" };
     const buffer = Buffer.alloc(MAX_PROCEDURE_BYTES + 1);
     let length = 0;
     for (; ; ) {
-      const read = fs9.readSync(fd, buffer, length, buffer.length - length, null);
+      const read = fs10.readSync(fd, buffer, length, buffer.length - length, null);
       if (read === 0) break;
       length += read;
       if (length > MAX_PROCEDURE_BYTES) {
@@ -25249,21 +25281,21 @@ function readProcedureFileSafe(dir, file) {
     return { error: `the procedure file could not be read (${/** @type {NodeJS.ErrnoException} */
     error2.code ?? "error"})` };
   } finally {
-    fs9.closeSync(fd);
+    fs10.closeSync(fd);
   }
 }
 function sha256(text2) {
-  return crypto3.createHash("sha256").update(text2, "utf8").digest("hex");
+  return crypto4.createHash("sha256").update(text2, "utf8").digest("hex");
 }
 function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () => Date.now(), lockTimeoutMs = LOCK_TIMEOUT_MS } = {}) {
   const pathOptions = { env: env2, ...homedir3 ? { homedir: homedir3 } : {} };
   const tablePath = () => rolesPath(pathOptions);
   const proceduresDir = () => roleProceduresDir(pathOptions);
-  const statePath = () => path11.join(stateDir(pathOptions), STATE_FILE);
+  const statePath = () => path13.join(stateDir(pathOptions), STATE_FILE);
   const iso2 = () => new Date(now()).toISOString();
   const lockOptions = { now, timeoutMs: lockTimeoutMs };
   function procedureFile(name) {
-    return path11.join(proceduresDir(), `${name}.md`);
+    return path13.join(proceduresDir(), `${name}.md`);
   }
   function readProcedure(name) {
     return readProcedureFileSafe(proceduresDir(), procedureFile(name));
@@ -25273,7 +25305,7 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
     const base = { path: file, exists: true, writable: false, raw: null };
     let text2;
     try {
-      text2 = fs9.readFileSync(file, "utf8");
+      text2 = fs10.readFileSync(file, "utf8");
     } catch (error2) {
       if (
         /** @type {NodeJS.ErrnoException} */
@@ -25324,7 +25356,7 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
   }
   function readState() {
     try {
-      const parsed = JSON.parse(fs9.readFileSync(statePath(), "utf8"));
+      const parsed = JSON.parse(fs10.readFileSync(statePath(), "utf8"));
       if (isPlainObject3(parsed)) {
         return {
           version: STATE_VERSION,
@@ -25410,9 +25442,9 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
   function set({ role: name, address, procedureText = null, projectRoot = null }) {
     if (!ROLE_NAME_PATTERN.test(name)) throw new TypeError(`invalid role name ${name}`);
     if (!isAddress(address)) throw new TypeError(`invalid holder address ${address}`);
-    if (projectRoot !== null && !path11.isAbsolute(projectRoot)) throw new TypeError(`projectRoot must be absolute: ${projectRoot}`);
+    if (projectRoot !== null && !path13.isAbsolute(projectRoot)) throw new TypeError(`projectRoot must be absolute: ${projectRoot}`);
     if (projectRoot !== null && name !== "orchestrator") throw new TypeError("only the orchestrator role is scoped by project root");
-    const root = projectRoot === null ? null : path11.resolve(projectRoot);
+    const root = projectRoot === null ? null : path13.resolve(projectRoot);
     let previous = null;
     update((raw, table) => {
       const entry = isPlainObject3(raw.roles[name]) ? raw.roles[name] : {};
@@ -25430,9 +25462,9 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
       raw.roles[name] = entry;
     });
     if (typeof procedureText === "string") {
-      fs9.mkdirSync(proceduresDir(), { recursive: true, mode: DIR_MODE });
+      fs10.mkdirSync(proceduresDir(), { recursive: true, mode: DIR_MODE });
       tightenMode(proceduresDir(), DIR_MODE);
-      const existing = fs9.lstatSync(procedureFile(name), { throwIfNoEntry: false });
+      const existing = fs10.lstatSync(procedureFile(name), { throwIfNoEntry: false });
       if (existing && !existing.isFile()) {
         throw new AgentLinkError("state_io_error", `The procedure file for ${name} is not a regular file; Agent Link will not replace it.`, {
           details: { path: `roles/${name}.md`, errno: null }
@@ -25447,7 +25479,7 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
   function clear(name, { projectRoot = null } = {}) {
     let previous = null;
     let existed = false;
-    const root = projectRoot === null ? null : path11.resolve(projectRoot);
+    const root = projectRoot === null ? null : path13.resolve(projectRoot);
     update((raw, table) => {
       if (!table.roles[name] || !isPlainObject3(raw.roles[name])) return;
       existed = true;
@@ -25455,7 +25487,7 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
         previous = table.roles[name].projects?.[root] ?? null;
         if (isPlainObject3(raw.roles[name].projects)) {
           for (const key of Object.keys(raw.roles[name].projects)) {
-            if (path11.isAbsolute(key) && path11.resolve(key) === root) delete raw.roles[name].projects[key];
+            if (path13.isAbsolute(key) && path13.resolve(key) === root) delete raw.roles[name].projects[key];
           }
           if (Object.keys(raw.roles[name].projects).length === 0) delete raw.roles[name].projects;
         }
@@ -25624,15 +25656,15 @@ function policyAllows(policy, setting, { senderAddress, senderRoles, targetAddre
   return null;
 }
 function resolveRealPath(target) {
-  let current = path12.resolve(target);
+  let current = path14.resolve(target);
   const rest = [];
   for (; ; ) {
     try {
-      return path12.join(fs10.realpathSync(current), ...rest.reverse());
+      return path14.join(fs11.realpathSync(current), ...rest.reverse());
     } catch {
-      const parent = path12.dirname(current);
-      if (parent === current) return path12.resolve(target);
-      rest.push(path12.basename(current));
+      const parent = path14.dirname(current);
+      if (parent === current) return path14.resolve(target);
+      rest.push(path14.basename(current));
       current = parent;
     }
   }
@@ -25641,15 +25673,15 @@ function workspaceRoot(cwd) {
   const start = resolveRealPath(cwd);
   let dir = start;
   for (; ; ) {
-    if (fs10.existsSync(path12.join(dir, ".git"))) return dir;
-    const parent = path12.dirname(dir);
+    if (fs11.existsSync(path14.join(dir, ".git"))) return dir;
+    const parent = path14.dirname(dir);
     if (parent === dir) return start;
     dir = parent;
   }
 }
 function isWithinWorkspace(candidate, root) {
-  const relative = path12.relative(root, resolveRealPath(candidate));
-  return relative === "" || !relative.startsWith("..") && !path12.isAbsolute(relative);
+  const relative = path14.relative(root, resolveRealPath(candidate));
+  return relative === "" || !relative.startsWith("..") && !path14.isAbsolute(relative);
 }
 function sameDirectory(a, b) {
   return resolveRealPath(a) === resolveRealPath(b);
@@ -25676,7 +25708,7 @@ function decideTargetOverrides({ thread, args, steering = false, parties, policy
   for (const field of FIELD_ORDER) {
     const requested = text(args[field]);
     if (!requested) continue;
-    if (field === "cwd" && !path12.isAbsolute(requested)) {
+    if (field === "cwd" && !path14.isAbsolute(requested)) {
       throw new AgentLinkError("invalid_arguments", "cwd must be an absolute path.", {
         details: { errors: [{ path: "cwd", rule: "absolute", expected: "an absolute directory path" }] }
       });
@@ -26072,9 +26104,9 @@ function reminderSettings(source = process.env) {
   }
   return { limit: limit2, intervalMs, warnings };
 }
-function invalid(path19, rule, expected, message) {
+function invalid(path21, rule, expected, message) {
   return new AgentLinkError("invalid_arguments", message, {
-    details: { errors: [{ path: path19, rule, expected }] }
+    details: { errors: [{ path: path21, rule, expected }] }
   });
 }
 function resolveLabels({ anticipation, replyBy, waitForReply = false, now = Date.now() } = {}) {
@@ -26189,8 +26221,8 @@ function explicitReplies(mb, messageId, from, to) {
 
 // src/shared/receipt-index.js
 import { randomUUID } from "node:crypto";
-import { promises as fs11 } from "node:fs";
-import path13 from "node:path";
+import { promises as fs12 } from "node:fs";
+import path15 from "node:path";
 
 // src/shared/caller-context.js
 var MAX_TEXT = 300;
@@ -26521,16 +26553,16 @@ function summarizeResolution(resolution) {
 }
 async function tightenFileMode(target, mode) {
   try {
-    const stat = await fs11.stat(target);
+    const stat = await fs12.stat(target);
     const uid = typeof process.getuid === "function" ? process.getuid() : null;
     if (uid !== null && stat.uid !== uid) return;
-    if ((stat.mode & 511 & ~mode) !== 0) await fs11.chmod(target, mode);
+    if ((stat.mode & 511 & ~mode) !== 0) await fs12.chmod(target, mode);
   } catch {
   }
 }
 async function appendReceipt(receipt, options = {}) {
   const logPath = receiptWritePath(options);
-  if (path13.resolve(path13.dirname(logPath)) === path13.resolve(stateDir())) ensureStateDir();
+  if (path15.resolve(path15.dirname(logPath)) === path15.resolve(stateDir())) ensureStateDir();
   await appendJsonl(logPath, receipt);
   await tightenFileMode(logPath, 384);
   return {
@@ -26562,7 +26594,7 @@ function safeWritePath(options) {
 }
 async function readReceiptFile(file) {
   try {
-    return parseJsonlLines(await fs11.readFile(file, "utf8"));
+    return parseJsonlLines(await fs12.readFile(file, "utf8"));
   } catch (error2) {
     if (error2.code === "ENOENT") return [];
     throw error2;
@@ -26806,6 +26838,8 @@ var WATCH_MAX_CONSECUTIVE_ERRORS = 30;
 var COMPACTION_WAIT_MS = 10 * 6e4;
 var STALE_RECONCILE_MS = 6e4;
 var FORK_START_STALE_MS = COMPACTION_WAIT_MS + 5 * 6e4;
+var PUSH_CLAIM_STALE_MS = 10 * 6e4;
+var TOOL_RESULT_GRACE_MS = LIMITS.timeoutMs.max + 6e4;
 var SWEEP_LEASE_MS = 6e4;
 var FORK_SWEEP_INTERVAL_MS = 6e4;
 var MAX_RECONCILE_CLAIMS = 5;
@@ -27037,6 +27071,7 @@ function makeForkJobs({
       runtime.waiting = false;
       if (!finished && runtime.toolResult) finished = runtime.toolResult;
       if (runtime.done) active.delete(jobId);
+      if (finished?.output) store.append("returned", jobId, { messageId: finished.reconcile?.messageId ?? null });
     }
     const job = store.get(jobId);
     const result = {
@@ -27287,12 +27322,13 @@ function makeForkJobs({
             reconcile: { messageId, delivery: "delivered", deliveredVia: "tool-result", anticipation: labels.anticipation ?? "fyi" },
             ...peer ? { output: peerMessageResult(peer) } : {},
             taskUsage,
-            archived: null,
+            // Only a completed fork is archived, after this record.
+            archived: outcome.status === "completed" && created.request?.archiveFork !== false ? null : false,
             warnings
           };
         }
       } else {
-        delivery = await safeDeliver({ messageId, job, originalAddress, originalId, row, peer }, warnings);
+        delivery = await safeDeliver({ messageId, job, originalAddress, originalId, row, peer }, warnings, mb);
       }
       return await completeReconcile(mb, fresh, { messageId, peer, delivery, status: outcome.status, taskUsage, warnings, labels, viaToolResult });
     } finally {
@@ -27302,8 +27338,9 @@ function makeForkJobs({
   function alreadyReconciled(job) {
     return { reconcile: { messageId: job.reconciled?.messageId ?? job.written?.messageId ?? null, delivery: "already-reconciled" }, warnings: [] };
   }
-  async function safeDeliver({ messageId, job, originalAddress, originalId, row, peer }, warnings) {
+  async function safeDeliver({ messageId, job, originalAddress, originalId, row, peer }, warnings, mb) {
     let delivery;
+    if (!takePushClaim(mb, messageId)) return { delivery: "queued", deliveredVia: "push-in-flight" };
     try {
       delivery = await deliver({ kind: "fork-reconcile", messageId, forkJobId: job.id, to: originalAddress, threadId: originalId, row, envelope: peer ? renderPeerEnvelope(peer) : null });
     } catch (error2) {
@@ -27328,17 +27365,29 @@ function makeForkJobs({
       /** @type {string} */
       parseAddress(originalAddress)?.id
     );
-    const row = mb.getMessage({ messageId });
-    const peer = row ? peerMessageFromMailbox(row) : null;
+    let row = mb.getMessage({ messageId });
     const warnings = [];
     let delivery;
-    if (written.deliveredVia === "tool-result") {
+    const toolResult = written.deliveredVia === "tool-result";
+    if (toolResult && job.returned) {
       delivery = { delivery: "delivered", deliveredVia: "tool-result" };
-    } else if (row?.delivered_at) {
+    } else if (!toolResult && pushInFlight(mb, messageId)) {
+      mb.removeClaim(`fork-recover-${job.id}`);
+      return { reconcile: { messageId, delivery: "in-progress" }, warnings: [] };
+    } else if (toolResult && now() - written.at < TOOL_RESULT_GRACE_MS) {
+      mb.removeClaim(`fork-recover-${job.id}`);
+      return { reconcile: { messageId, delivery: "in-progress" }, warnings: [] };
+    } else if (!toolResult && row?.delivered_at) {
       delivery = { delivery: "delivered" };
     } else {
-      delivery = await safeDeliver({ messageId, job, originalAddress, originalId, row, peer }, warnings);
+      if (toolResult && row?.delivered_at) {
+        mb.releaseDelivery({ messageId, to: originalAddress });
+        row = mb.getMessage({ messageId });
+      }
+      const peerNow = row ? peerMessageFromMailbox(row) : null;
+      delivery = await safeDeliver({ messageId, job, originalAddress, originalId, row, peer: peerNow }, warnings, mb);
     }
+    const peer = row ? peerMessageFromMailbox(row) : null;
     const status = written.status ?? job.outcome?.type ?? observed.status;
     const taskUsage = await taskUsageOf(job, 0, warnings);
     return await completeReconcile(mb, job, {
@@ -27349,7 +27398,7 @@ function makeForkJobs({
       taskUsage,
       warnings,
       labels: created.request?.reconcile ?? {},
-      viaToolResult: written.deliveredVia === "tool-result",
+      viaToolResult: false,
       recovered: true
     });
   }
@@ -27362,7 +27411,11 @@ function makeForkJobs({
       /** @type {string} */
       parseAddress(originalAddress)?.id
     );
-    store.append("reconciled", job.id, { messageId, delivery: delivery.delivery, deliveredVia: delivery.deliveredVia ?? null, ...recovered ? { recovered: true } : {} });
+    const appended = store.appendIfAbsent("reconciled", job.id, { messageId, delivery: delivery.delivery, deliveredVia: delivery.deliveredVia ?? null, ...recovered ? { recovered: true } : {} });
+    if (!appended) {
+      mb.removeClaim(`fork-recover-${job.id}`);
+      return { ...alreadyReconciled(store.get(job.id) ?? job), status, taskUsage, warnings };
+    }
     let archived = !!job.archived;
     if (!archived && status === "completed" && created.request?.archiveFork !== false) {
       archived = await archiveForkThread(job, forkInfo, originalId, warnings);
@@ -27412,7 +27465,7 @@ function makeForkJobs({
       }
     });
     for (const name of mb.listClaims()) {
-      if (name.startsWith(`fork-reconcile-${job.id}`) || name === `fork-recover-${job.id}` || name === `fork-lease-${job.id}`) mb.removeClaim(name);
+      if (name.startsWith(`fork-reconcile-${job.id}`) || name === `fork-recover-${job.id}` || name === `fork-lease-${job.id}` || name === `fork-push-${messageId}`) mb.removeClaim(name);
     }
     if (forkInfo.threadId) tokenUsage?.unwatch(forkInfo.threadId);
     return {
@@ -27444,8 +27497,8 @@ function makeForkJobs({
       return false;
     }
     if (thread.forkedFromId !== originalId) return refuse(`it reports forkedFromId ${String(thread.forkedFromId ?? null)}, not ${originalId}`);
-    if (thread.threadSource !== void 0 && thread.threadSource !== null && thread.threadSource !== FORK_THREAD_SOURCE) {
-      return refuse(`its threadSource is ${String(thread.threadSource)}, not ${FORK_THREAD_SOURCE}`);
+    if (thread.threadSource !== FORK_THREAD_SOURCE) {
+      return refuse(`its threadSource is ${String(thread.threadSource ?? "missing")}, not ${FORK_THREAD_SOURCE}`);
     }
     try {
       await appServer.request("thread/archive", { threadId: forkInfo.threadId });
@@ -27468,6 +27521,52 @@ function makeForkJobs({
       if (now() - takenAt < STALE_RECONCILE_MS) return 0;
     }
     return 0;
+  }
+  function needsRedelivery(job) {
+    return job.reconciled?.deliveredVia === "tool-result" && !job.returned && !job.redelivered;
+  }
+  async function redeliver(job) {
+    if (!needsRedelivery(job)) return null;
+    const written = job.written ?? job.reconciled;
+    const messageId = (
+      /** @type {string} */
+      job.reconciled?.messageId ?? written?.messageId
+    );
+    if (now() - Number(written?.at ?? 0) < TOOL_RESULT_GRACE_MS) return { reconcile: { messageId, delivery: "in-progress" } };
+    const created = job.created ?? /** @type {any} */
+    {};
+    const originalAddress = created.original;
+    const originalId = (
+      /** @type {string} */
+      parseAddress(originalAddress)?.id
+    );
+    const mb = openMailbox2();
+    try {
+      if (!mb.claim(`fork-redeliver-${job.id}`, String(now()))) return { reconcile: { messageId, delivery: "claimed-elsewhere" } };
+      if (mb.getMessage({ messageId })?.delivered_at) mb.releaseDelivery({ messageId, to: originalAddress });
+      const row = mb.getMessage({ messageId });
+      const warnings = [];
+      const delivery = await safeDeliver({ messageId, job, originalAddress, originalId, row, peer: row ? peerMessageFromMailbox(row) : null }, warnings, mb);
+      store.appendIfAbsent("redelivered", job.id, { messageId, delivery: delivery.delivery, deliveredVia: delivery.deliveredVia ?? null });
+      for (const name of mb.listClaims()) {
+        if (name === `fork-redeliver-${job.id}` || name === `fork-push-${messageId}` || name === `fork-lease-${job.id}`) mb.removeClaim(name);
+      }
+      return { reconcile: { messageId, delivery: delivery.delivery, redelivered: true }, warnings };
+    } finally {
+      mb.close?.();
+    }
+  }
+  function takePushClaim(mb, messageId) {
+    const key = `fork-push-${messageId}`;
+    if (mb.claim(key, String(now()))) return true;
+    if (pushInFlight(mb, messageId)) return false;
+    mb.removeClaim(key);
+    return mb.claim(key, String(now()));
+  }
+  function pushInFlight(mb, messageId) {
+    const key = `fork-push-${messageId}`;
+    const takenAt = Number(mb.claimContent(key)) || mb.claimTakenAt(key);
+    return takenAt !== null && takenAt !== 0 && now() - takenAt < PUSH_CLAIM_STALE_MS;
   }
   function findReconcileMessage(mb, originalId, jobId) {
     return mb.inspect({ toSessionId: originalId, limit: 1e3 }).find((row) => {
@@ -27506,7 +27605,7 @@ function makeForkJobs({
     } catch {
       return summary;
     }
-    const pending = jobs.filter((job) => !job.reconciled && !job.aborted && job.forked && !active.has(job.id));
+    const pending = jobs.filter((job) => (!job.reconciled || needsRedelivery(job)) && !job.aborted && job.forked && !active.has(job.id));
     if (pending.length) {
       const mb = openMailbox2();
       try {
@@ -27534,6 +27633,7 @@ function makeForkJobs({
     return summary;
   }
   async function sweepJob(job, summary) {
+    if (job.reconciled) return await redeliver(job);
     if (job.outcome || job.written) return await finishJob(job, outcomeOf(job), { graceMs: 0 });
     const forkThreadId = (
       /** @type {string} */
@@ -27564,7 +27664,11 @@ function makeForkJobs({
   function jobCounts() {
     const counts = { pending: 0, running: 0, stuck: 0 };
     for (const job of store.list()) {
-      if (job.reconciled || job.aborted || !job.forked) continue;
+      if (job.aborted || !job.forked) continue;
+      if (job.reconciled) {
+        if (needsRedelivery(job) && now() - Number(job.written?.at ?? job.reconciled.at) > TOOL_RESULT_GRACE_MS) counts.stuck += 1;
+        continue;
+      }
       if (job.written && now() - Number(job.written.at) > STALE_RECONCILE_MS) counts.stuck += 1;
       else if (job.outcome || job.written) counts.pending += 1;
       else if (job.turnStarted) counts.running += 1;
@@ -27629,15 +27733,15 @@ function versionNumber(value) {
 }
 
 // src/tools/health.js
-import fs13 from "node:fs";
+import fs14 from "node:fs";
 
 // src/shared/legacy-state.js
-import fs12 from "node:fs";
-import path14 from "node:path";
+import fs13 from "node:fs";
+import path16 from "node:path";
 var LEGACY_STILL_WRITTEN_WARNING = "A legacy Agent Link state file changed after the migration to ~/.agent-link: an older plugin copy is still running. Upgrade the plugin in every harness and restart its sessions.";
 function statOrNull(file) {
   try {
-    return fs12.statSync(file);
+    return fs13.statSync(file);
   } catch {
     return null;
   }
@@ -27645,14 +27749,14 @@ function statOrNull(file) {
 function newestRecordMtimeMs(dir) {
   let names = [];
   try {
-    names = fs12.readdirSync(dir);
+    names = fs13.readdirSync(dir);
   } catch {
     return null;
   }
   let newest = null;
   for (const name of names) {
     if (!name.endsWith(".json")) continue;
-    const stat = statOrNull(path14.join(dir, name));
+    const stat = statOrNull(path16.join(dir, name));
     if (stat?.isFile() && (newest === null || stat.mtimeMs > newest)) newest = stat.mtimeMs;
   }
   return newest;
@@ -27660,7 +27764,7 @@ function newestRecordMtimeMs(dir) {
 function readMigration(options) {
   const file = migrationRecordPath(options);
   try {
-    const record2 = JSON.parse(fs12.readFileSync(file, "utf8"));
+    const record2 = JSON.parse(fs13.readFileSync(file, "utf8"));
     return {
       path: file,
       at: typeof record2?.at === "string" ? record2.at : null,
@@ -27938,7 +28042,7 @@ function redactValue(value, depth) {
 }
 function exists(file) {
   try {
-    return fs13.existsSync(file);
+    return fs14.existsSync(file);
   } catch {
     return false;
   }
@@ -28171,8 +28275,8 @@ function rolesHealth(roles, roleAdmin) {
 }
 
 // src/claude/channel-bridge.js
-import fs14 from "node:fs";
-import path15 from "node:path";
+import fs15 from "node:fs";
+import path17 from "node:path";
 
 // src/claude/active-waits.js
 var waits = /* @__PURE__ */ new Map();
@@ -28274,7 +28378,7 @@ function makeAgentLinkChannelBridge({
     const parts = [];
     for (const file of signaturePaths) {
       try {
-        const st = fs14.statSync(file);
+        const st = fs15.statSync(file);
         parts.push(`${st.ino}:${st.size}:${st.mtimeMs}`);
       } catch (error2) {
         if (error2?.code !== "ENOENT") return null;
@@ -28368,11 +28472,11 @@ function makeAgentLinkChannelBridge({
       targets.get(dir).add(name);
     };
     for (const file of signaturePaths) {
-      const dir = path15.dirname(file);
-      if (fs14.existsSync(dir)) {
-        add(dir, path15.basename(file));
-      } else if (fs14.existsSync(path15.dirname(dir))) {
-        add(path15.dirname(dir), path15.basename(dir));
+      const dir = path17.dirname(file);
+      if (fs15.existsSync(dir)) {
+        add(dir, path17.basename(file));
+      } else if (fs15.existsSync(path17.dirname(dir))) {
+        add(path17.dirname(dir), path17.basename(dir));
       }
     }
     return targets;
@@ -28386,11 +28490,11 @@ function makeAgentLinkChannelBridge({
     closeWatchers();
     for (const [dir, names] of watchTargets()) {
       try {
-        const w = fs14.watch(dir, { persistent: false }, (_event, filename) => {
+        const w = fs15.watch(dir, { persistent: false }, (_event, filename) => {
           if (stopped) return;
           const name = filename ? String(filename) : null;
           if (name && !names.has(name)) return;
-          if (name && fs14.existsSync(path15.join(dir, name)) && fs14.statSync(path15.join(dir, name)).isDirectory()) {
+          if (name && fs15.existsSync(path17.join(dir, name)) && fs15.statSync(path17.join(dir, name)).isDirectory()) {
             startWatcher();
           }
           wake();
@@ -30530,9 +30634,9 @@ function alreadyResolved(messageId, view) {
     hint: "Send a new message with message_claude_session if there is more to say."
   });
 }
-function invalid2(path19, message) {
+function invalid2(path21, message) {
   return new AgentLinkError("invalid_arguments", message, {
-    details: { errors: [{ path: path19, rule: "required", expected: "non-empty string" }] }
+    details: { errors: [{ path: path21, rule: "required", expected: "non-empty string" }] }
   });
 }
 function replyAgentLinkMessageEntries(deps) {
@@ -30962,7 +31066,7 @@ function agentEntries(deps) {
 }
 
 // src/tools/roles.js
-import path16 from "node:path";
+import path18 from "node:path";
 var READ_ONLY4 = { readOnlyHint: true };
 var ADMIN_WRITE = { readOnlyHint: false, destructiveHint: true };
 var ADMIN_NOTE = "Requires AGENT_LINK_ROLE_ADMIN=1 in this Agent Link server's environment, set by the user; otherwise permission_denied (reason role_admin_disabled). A tool caller cannot enable it.";
@@ -31227,12 +31331,12 @@ function optionalProjectRoot(value, role) {
     });
   }
   const root = typeof value === "string" ? value.trim() : "";
-  if (!root || !path16.isAbsolute(root)) {
+  if (!root || !path18.isAbsolute(root)) {
     throw new AgentLinkError("invalid_arguments", "projectRoot must be an absolute path.", {
       details: { errors: [{ path: "projectRoot", rule: "format", expected: "an absolute path" }] }
     });
   }
-  return path16.resolve(root);
+  return path18.resolve(root);
 }
 function roleEntries(deps) {
   const handlers = makeRoleHandlers(deps);
@@ -31246,7 +31350,7 @@ function roleEntries(deps) {
 }
 
 // src/registry/claude.js
-import fs15 from "node:fs";
+import fs16 from "node:fs";
 function isoFromMs(ms) {
   return typeof ms === "number" && Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString() : null;
 }
@@ -31274,7 +31378,7 @@ function toClaudeAgent(session) {
 }
 function exists2(dir) {
   try {
-    return fs15.existsSync(dir);
+    return fs16.existsSync(dir);
   } catch {
     return false;
   }
@@ -31351,8 +31455,8 @@ function makeClaudeProvider({
 }
 
 // src/registry/codex.js
-import fs16 from "node:fs";
-import path17 from "node:path";
+import fs17 from "node:fs";
+import path19 from "node:path";
 var SURFACE_BY_SOURCE = Object.freeze({ vscode: "app", cli: "cli", exec: "cli" });
 var LOADED_STATUS = /* @__PURE__ */ new Set(["idle", "active", "systemError"]);
 function codexSurfaces(source) {
@@ -31396,7 +31500,7 @@ function codexInstallState() {
   }
   const hasSessions = Boolean(home) && ["sessions", "archived_sessions"].some((dir) => {
     try {
-      return fs16.existsSync(path17.join(
+      return fs17.existsSync(path19.join(
         /** @type {string} */
         home,
         dir
@@ -32466,9 +32570,9 @@ function makeThreadQueries({ appServer, now = () => Date.now(), wait = sleep2 })
 }
 
 // src/codex/project-orchestrator.js
-import { promises as fs17 } from "node:fs";
-import path18 from "node:path";
-var PROJECT_ORCHESTRATOR_BINDING_PATH = path18.join(".codex", "project-orchestrator.json");
+import { promises as fs18 } from "node:fs";
+import path20 from "node:path";
+var PROJECT_ORCHESTRATOR_BINDING_PATH = path20.join(".codex", "project-orchestrator.json");
 var DEFAULT_POLICY_VERSION = "v0";
 var ALLOWED_RETURN_STATUSES = /* @__PURE__ */ new Set(["done", "done_with_concerns", "blocked"]);
 var ORCHESTRATOR_ROLE = "orchestrator";
@@ -32700,10 +32804,10 @@ async function returnProjectWorkResult(args = {}, deps = {}, toolContext = {}) {
   };
 }
 async function readProjectOrchestratorBinding(projectRoot) {
-  const bindingPath = path18.join(requiredString(projectRoot, "projectRoot"), PROJECT_ORCHESTRATOR_BINDING_PATH);
+  const bindingPath = path20.join(requiredString(projectRoot, "projectRoot"), PROJECT_ORCHESTRATOR_BINDING_PATH);
   let raw;
   try {
-    raw = await fs17.readFile(bindingPath, "utf8");
+    raw = await fs18.readFile(bindingPath, "utf8");
   } catch (error2) {
     if (error2.code === "ENOENT") {
       return null;
@@ -32781,8 +32885,8 @@ function validateBinding(value, { bindingPath, requestedProjectRoot }) {
       throwBindingError(`Binding field ${field} is required`, { bindingPath, field });
     }
   }
-  const resolvedBindingRoot = path18.resolve(value.projectRoot);
-  const resolvedRequestedRoot = path18.resolve(requestedProjectRoot);
+  const resolvedBindingRoot = path20.resolve(value.projectRoot);
+  const resolvedRequestedRoot = path20.resolve(requestedProjectRoot);
   if (resolvedBindingRoot !== resolvedRequestedRoot) {
     throwBindingError("Binding projectRoot does not match the source root that contains it", {
       bindingPath,
@@ -32829,7 +32933,7 @@ function roleHolder(roles, name, projectRoot, { scopes }) {
   }
   const entry = table?.roles?.[name];
   if (!entry) return null;
-  const root = projectRoot && path18.isAbsolute(projectRoot) ? path18.resolve(projectRoot) : null;
+  const root = projectRoot && path20.isAbsolute(projectRoot) ? path20.resolve(projectRoot) : null;
   for (const scope of scopes) {
     const address = scope === "project" ? root ? entry.projects?.[root] : null : entry.address;
     if (typeof address === "string" && address.startsWith("codex:")) {
@@ -32902,7 +33006,7 @@ function buildFallbackQuery(args) {
     return `Project Orchestrator ${projectId}`;
   }
   if (args.projectRoot) {
-    return `${path18.basename(args.projectRoot)} Project Orchestrator`;
+    return `${path20.basename(args.projectRoot)} Project Orchestrator`;
   }
   return "";
 }

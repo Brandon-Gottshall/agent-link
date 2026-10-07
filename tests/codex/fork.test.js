@@ -32,7 +32,9 @@ const { AppServerError, CodexAppServerClient } = await import("../../src/codex/a
 const { makeThreadQueries } = await import("../../src/codex/thread-queries.js");
 const { makeThreadMessaging } = await import("../../src/codex/thread-messaging.js");
 const { COMPACT_FORK_AUTO_FRACTION, FORK_THREAD_SOURCE, FORK_TURN_TRIGGER, decideForkCompaction, makeForkJobs, reconcileBody } = await import("../../src/codex/fork.js");
-const { compactForkJobs, createForkJobStore } = await import("../../src/codex/fork-jobs.js");
+const { compactForkJobs, createForkJobStore, withForkLogLock } = await import("../../src/codex/fork-jobs.js");
+const { withFileLockSync: rolesLock } = await import("../../src/registry/roles.js");
+const { withFileLockSync: sharedLock } = await import("../../src/shared/file-lock.js");
 const { FORK_START_STALE_MS } = await import("../../src/codex/fork.js");
 const { forkJobCounts } = await import("../../src/server/health.js");
 const { createLifecycle } = await import("../../src/server/lifecycle.js");
@@ -892,7 +894,9 @@ test("fix 2: a server that stopped between the mailbox write and `reconciled` is
   await early.forks.sweep();
   assert.equal(store.get(result.forkJobId).reconciled, null);
 
-  const later = () => Date.now() + 61_000;
+  // The stopped owner's push claim is fresh for PUSH_CLAIM_STALE_MS (N2):
+  // only after that does a sweep take the push over.
+  const later = () => Date.now() + 11 * 60_000;
   const b = makeServer(fake, { mailboxPath, store, now: later, deliver: async (r) => (delivered.push(r), { delivery: "delivered" }) });
   const c = makeServer(fake, { mailboxPath, store, now: later, deliver: async (r) => (delivered.push(r), { delivery: "delivered" }) });
   await Promise.all([b.forks.sweep(), c.forks.sweep()]);
@@ -1039,7 +1043,8 @@ test("fix 8: the tracker keeps only small turn records, and only for watched thr
 });
 
 test("fix 9: the fork is archived only when it reports the original as forkedFromId and the fork threadSource", async () => {
-  for (const tamper of [(t) => { t.forkedFromId = uuid(0xbad); }, (t) => { t.threadSource = "user"; }]) {
+  // A missing threadSource refuses too (strict; Codex 0.159.2 echoes it).
+  for (const tamper of [(t) => { t.forkedFromId = uuid(0xbad); }, (t) => { t.threadSource = "user"; }, (t) => { delete t.threadSource; }]) {
     const { fake, original, forks } = setup();
     const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never" }, asCaller());
     tamper(fake.threads.get(result.fork.threadId));
@@ -1097,4 +1102,146 @@ test("fix 2: a superseded reconcile claim finds a message its holder wrote witho
   assert.equal(job.written.messageId, orphan);
   assert.ok(job.reconciled);
   assert.deepEqual(delivered.map((r) => r.messageId), [orphan]);
+});
+
+// ---------------------------------------------------------------------------
+// Review round 3 (PR #27).
+
+const countEvents = (store, jobId, type) => readFileSync(store.path(), "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((e) => e.jobId === jobId && e.type === type).length;
+
+test("N1: an append that arrives during compaction waits for the lock and survives", async () => {
+  assert.equal(rolesLock, sharedLock, "roles.js re-exports the shared lock");
+  const file = path.join(tmp, "n1-forks.jsonl");
+  const store = createForkJobStore({ path: file });
+  const old = Date.now() - 8 * 24 * 60 * 60 * 1000;
+  appendFileSync(file, [{ type: "created", jobId: "old", at: old }, { type: "reconciled", jobId: "old", at: old }].map((l) => JSON.stringify(l)).join("\n") + "\n");
+  // Hold the log's lock as compaction does, and append from "another server"
+  // (a child process) while it is held: the append must wait, not be lost.
+  const { spawn } = await import("node:child_process");
+  let child;
+  const result = withForkLogLock(file, () => {
+    child = spawn(process.execPath, ["--input-type=module", "-e", `
+      const { createForkJobStore } = await import(${JSON.stringify(new URL("../../src/codex/fork-jobs.js", import.meta.url).href)});
+      createForkJobStore({ path: ${JSON.stringify(file)} }).append("created", "new-job", {});
+    `], { stdio: "ignore" });
+    // Inside the lock: the child is blocked on it. Rewrite as compaction does.
+    const start = Date.now();
+    while (Date.now() - start < 300) { /* keep the lock while the child tries */ }
+    return "held";
+  });
+  assert.equal(result, "held");
+  await new Promise((resolve) => child.on("exit", resolve));
+  assert.deepEqual(compactForkJobs(file, { maxBytes: 10 }), { compacted: true, dropped: 1 });
+  assert.deepEqual(store.list().map((job) => job.id), ["new-job"]);
+});
+
+test("N1: compaction itself holds the lock: a concurrent append lands in the new log", () => {
+  const file = path.join(tmp, "n1b-forks.jsonl");
+  const store = createForkJobStore({ path: file });
+  const old = Date.now() - 8 * 24 * 60 * 60 * 1000;
+  appendFileSync(file, [{ type: "created", jobId: "old", at: old }, { type: "reconciled", jobId: "old", at: old }, { type: "created", jobId: "keep", at: old }].map((l) => JSON.stringify(l)).join("\n") + "\n");
+  compactForkJobs(file, { maxBytes: 10 });
+  store.append("forked", "keep", {});
+  assert.deepEqual(store.list().map((job) => [job.id, !!job.forked]), [["keep", true]]);
+  assert.ok(!readdirSync(tmp).includes("n1b-forks.jsonl.lock"), "lock released");
+});
+
+test("N2: an owner push slower than 60 s is not pushed again by a recovery sweep; one reconciled, one set of receipts", async () => {
+  let release;
+  const ownerDelivered = [];
+  const { fake, original, forks, mailboxPath, store, rowsTo } = setup({
+    deliver: (record) => {
+      ownerDelivered.push(record);
+      return new Promise((resolve) => {
+        release = () => resolve({ delivery: "delivered", deliveredVia: "codex-turn" });
+      });
+    }
+  });
+  const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never" }, asCaller());
+  fake.complete(result.fork.threadId, result.turn.id);
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(ownerDelivered.length, 1);
+  const sweeperDelivered = [];
+  const b = makeServer(fake, { mailboxPath, store, now: () => Date.now() + 61_000, deliver: async (r) => (sweeperDelivered.push(r), { delivery: "delivered" }) });
+  await b.forks.sweep();
+  assert.equal(sweeperDelivered.length, 0, "the push is in flight");
+  assert.equal(store.get(result.forkJobId).reconciled, null);
+  release();
+  await forks.settled();
+  await b.forks.sweep();
+  assert.equal(sweeperDelivered.length, 0);
+  assert.equal(countEvents(store, result.forkJobId, "reconciled"), 1);
+  assert.equal((await listReceipts({ kind: "reconcile", targetThreadId: original })).data.length, 1);
+  assert.equal((await listReceipts({ kind: "fork", targetThreadId: result.fork.threadId })).data.length, 1);
+  assert.equal(rowsTo(original).length, 1);
+  assert.deepEqual(claimNames(mailboxPath).filter((n) => n.includes(result.forkJobId) || n.includes(store.get(result.forkJobId).written.messageId)), []);
+});
+
+test("N2: the owner's completion is idempotent: a second completer writes nothing", async () => {
+  const { fake, original, forks, store } = setup();
+  const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never" }, asCaller());
+  fake.complete(result.fork.threadId, result.turn.id);
+  await forks.settled();
+  const job = store.get(result.forkJobId);
+  const again = await forks.reconcile({ ...job, reconciled: null, written: null }, { status: "completed", text: "x", error: null }, { graceMs: 0 });
+  assert.notEqual(again.reconcile?.delivery, "queued");
+  assert.equal(countEvents(store, result.forkJobId, "reconciled"), 1);
+  assert.equal((await listReceipts({ kind: "reconcile", targetThreadId: original })).data.length, 1);
+});
+
+test("N3: a returned self-fork result is recorded; one never handed back is released and pushed as new mail", async () => {
+  // Returned: the caller got it, `returned` is recorded.
+  {
+    const { fake, original, forks, store } = setup();
+    setTimeout(() => {
+      const fork = forkOf(fake, original);
+      fake.complete(fork.id, fork.turns.at(-1).id, { text: "mine" });
+    }, 20);
+    const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never", waitForResult: true, timeoutMs: 5000 }, asCaller(original));
+    assert.ok(result.output);
+    assert.equal(store.get(result.forkJobId).returned.messageId, result.reconcile.messageId);
+  }
+  // Never handed back: the owner stopped after writing it for the tool result.
+  {
+    const { fake, original, forks, mailboxPath, store, rowsTo } = setup();
+    fake.behavior.archiveDelayMs = 2_000;
+    const call = forks.forkThread({ threadId: original, message: "x", compactFork: "never", waitForResult: true, timeoutMs: 600_000 }, asCaller(original));
+    call.catch(() => {});
+    await new Promise((r) => setTimeout(r, 20));
+    const fork = forkOf(fake, original);
+    fake.complete(fork.id, fork.turns.at(-1).id, { text: "lost" });
+    await new Promise((r) => setTimeout(r, 50));
+    forks.close();
+    const job = store.list().at(-1);
+    assert.equal(job.written.deliveredVia, "tool-result");
+    assert.equal(job.returned, null);
+    assert.ok(rowsTo(original)[0].delivered_at);
+    const delivered = [];
+    // Within the caller's possible wait: left alone.
+    const soon = makeServer(fake, { mailboxPath, store, now: () => Date.now() + 61_000, deliver: async (r) => (delivered.push(r), { delivery: "delivered" }) });
+    await soon.forks.sweep();
+    assert.equal(delivered.length, 0);
+    // After it: released (new mail again) and pushed once.
+    const late = makeServer(fake, { mailboxPath, store, now: () => Date.now() + 12 * 60_000, deliver: async (r) => (delivered.push(r), { delivery: "queued" }) });
+    await late.forks.sweep();
+    assert.equal(delivered.length, 1);
+    assert.equal(delivered[0].messageId, job.written.messageId);
+    assert.equal(rowsTo(original)[0].delivered_at ?? null, null, "pending again for the inbox");
+    assert.equal(countEvents(store, job.id, "reconciled"), 1);
+    assert.equal(countEvents(store, job.id, "redelivered"), 1);
+    await late.forks.sweep();
+    assert.equal(delivered.length, 1, "redelivered once");
+  }
+});
+
+test("N4: a failed self-fork returned through its tool result reports archived false", async () => {
+  const { fake, original, forks } = setup();
+  fake.behavior.archiveDelayMs = 300;
+  setTimeout(() => {
+    const fork = forkOf(fake, original);
+    fake.complete(fork.id, fork.turns.at(-1).id, { status: "failed", text: null, error: "boom", requests: [] });
+  }, 20);
+  const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never", waitForResult: true, timeoutMs: 5000 }, asCaller(original));
+  assert.equal(result.status, "failed");
+  assert.equal(result.archived, false);
 });

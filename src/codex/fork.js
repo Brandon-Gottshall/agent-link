@@ -80,6 +80,20 @@ const COMPACTION_WAIT_MS = 10 * 60_000;
 const STALE_RECONCILE_MS = 60_000;
 /** A job forked this long ago whose task never started is failed (R9.7.5). */
 export const FORK_START_STALE_MS = COMPACTION_WAIT_MS + 5 * 60_000;
+/**
+ * A push (`deliver`) in flight holds a `fork-push-<messageId>` claim. A
+ * recovery sweep leaves the message alone while the claim is younger than
+ * this, and supersedes it (pushes again) only after. Far above any realistic
+ * push, which is one turn/start.
+ */
+export const PUSH_CLAIM_STALE_MS = 10 * 60_000;
+/**
+ * A self-fork's tool-result message that was never marked `returned` is
+ * pushed by a recovery sweep only after the longest possible wait
+ * (timeoutMs max, 10 min) plus a minute: until then its caller may still
+ * return it.
+ */
+export const TOOL_RESULT_GRACE_MS = LIMITS.timeoutMs.max + 60_000;
 /** One server at a time sweeps a job: a lease this long (claim-gated). */
 const SWEEP_LEASE_MS = 60_000;
 /** How often the server-wide sweeper runs (src/server/index.js). */
@@ -432,6 +446,8 @@ export function makeForkJobs({
       runtime.waiting = false;
       if (!finished && runtime.toolResult) finished = runtime.toolResult;
       if (runtime.done) active.delete(jobId);
+      // The caller now has the result: a recovery must not push it again (R9.8).
+      if (finished?.output) store.append("returned", jobId, { messageId: finished.reconcile?.messageId ?? null });
     }
 
     const job = store.get(jobId);
@@ -766,12 +782,13 @@ export function makeForkJobs({
             reconcile: { messageId, delivery: "delivered", deliveredVia: "tool-result", anticipation: labels.anticipation ?? "fyi" },
             ...(peer ? { output: peerMessageResult(peer) } : {}),
             taskUsage,
-            archived: null,
+            // Only a completed fork is archived, after this record.
+            archived: outcome.status === "completed" && created.request?.archiveFork !== false ? null : false,
             warnings
           };
         }
       } else {
-        delivery = await safeDeliver({ messageId, job, originalAddress, originalId, row, peer }, warnings);
+        delivery = await safeDeliver({ messageId, job, originalAddress, originalId, row, peer }, warnings, mb);
       }
       return await completeReconcile(mb, fresh, { messageId, peer, delivery, status: outcome.status, taskUsage, warnings, labels, viaToolResult });
     } finally {
@@ -788,11 +805,15 @@ export function makeForkJobs({
    * Hands a written reconcile message to `deliver`; a throw leaves it queued.
    * @param {{messageId: string, job: import("./fork-jobs.js").ForkJob, originalAddress: string, originalId: string, row: Record<string, any> | null, peer: any}} input
    * @param {any[]} warnings
+   * @param {ReturnType<typeof defaultOpenMailbox>} mb
    * @returns {Promise<DeliveryResult>}
    */
-  async function safeDeliver({ messageId, job, originalAddress, originalId, row, peer }, warnings) {
+  async function safeDeliver({ messageId, job, originalAddress, originalId, row, peer }, warnings, mb) {
     /** @type {DeliveryResult} */
     let delivery;
+    // Claim-before-push per message: a recovery sweep does not push while
+    // this claim is fresh (PUSH_CLAIM_STALE_MS).
+    if (!takePushClaim(mb, messageId)) return { delivery: "queued", deliveredVia: "push-in-flight" };
     try {
       delivery = await deliver({ kind: "fork-reconcile", messageId, forkJobId: job.id, to: originalAddress, threadId: originalId, row, envelope: peer ? renderPeerEnvelope(peer) : null });
     } catch (error) {
@@ -821,25 +842,41 @@ export function makeForkJobs({
     const created = job.created ?? /** @type {any} */ ({});
     const originalAddress = created.original;
     const originalId = /** @type {string} */ (parseAddress(originalAddress)?.id);
-    const row = mb.getMessage({ messageId });
-    const peer = row ? peerMessageFromMailbox(row) : null;
+    let row = mb.getMessage({ messageId });
     const warnings = [];
     /** @type {DeliveryResult} */
     let delivery;
-    if (written.deliveredVia === "tool-result") {
-      // Treated as delivered: the waiting caller may have returned it.
+    const toolResult = written.deliveredVia === "tool-result";
+    if (toolResult && job.returned) {
+      // The self-fork's caller received it in its tool result.
       delivery = { delivery: "delivered", deliveredVia: "tool-result" };
-    } else if (row?.delivered_at) {
+    } else if (!toolResult && pushInFlight(mb, messageId)) {
+      // The owner is still pushing it: not abandoned.
+      mb.removeClaim(`fork-recover-${job.id}`);
+      return { reconcile: { messageId, delivery: "in-progress" }, warnings: [] };
+    } else if (toolResult && now() - written.at < TOOL_RESULT_GRACE_MS) {
+      // Its caller may still return it.
+      mb.removeClaim(`fork-recover-${job.id}`);
+      return { reconcile: { messageId, delivery: "in-progress" }, warnings: [] };
+    } else if (!toolResult && row?.delivered_at) {
       delivery = { delivery: "delivered" };
     } else {
-      delivery = await safeDeliver({ messageId, job, originalAddress, originalId, row, peer }, warnings);
+      // Nobody received it (a tool-result never handed back, or a push that
+      // never ran): clear the delivered mark so it is new mail, then push.
+      if (toolResult && row?.delivered_at) {
+        mb.releaseDelivery({ messageId, to: originalAddress });
+        row = mb.getMessage({ messageId });
+      }
+      const peerNow = row ? peerMessageFromMailbox(row) : null;
+      delivery = await safeDeliver({ messageId, job, originalAddress, originalId, row, peer: peerNow }, warnings, mb);
     }
+    const peer = row ? peerMessageFromMailbox(row) : null;
     const status = written.status ?? job.outcome?.type ?? observed.status;
     const taskUsage = await taskUsageOf(job, 0, warnings);
     return await completeReconcile(mb, job, {
       messageId, peer, delivery, status, taskUsage, warnings,
       labels: created.request?.reconcile ?? {},
-      viaToolResult: written.deliveredVia === "tool-result",
+      viaToolResult: false,
       recovered: true
     });
   }
@@ -857,7 +894,13 @@ export function makeForkJobs({
     const forkInfo = job.forked?.fork ?? {};
     const originalAddress = created.original;
     const originalId = /** @type {string} */ (parseAddress(originalAddress)?.id);
-    store.append("reconciled", job.id, { messageId, delivery: delivery.delivery, deliveredVia: delivery.deliveredVia ?? null, ...(recovered ? { recovered: true } : {}) });
+    // Exactly one `reconciled`, and only its writer archives and writes the
+    // receipts (owner or recovery, whichever gets here first).
+    const appended = store.appendIfAbsent("reconciled", job.id, { messageId, delivery: delivery.delivery, deliveredVia: delivery.deliveredVia ?? null, ...(recovered ? { recovered: true } : {}) });
+    if (!appended) {
+      mb.removeClaim(`fork-recover-${job.id}`);
+      return { ...alreadyReconciled(store.get(job.id) ?? job), status, taskUsage, warnings };
+    }
 
     // 6. Archive a completed fork, unless archiveFork is false; a failed or
     // interrupted one is kept.
@@ -914,7 +957,7 @@ export function makeForkJobs({
 
     // The job is done: its claims are no longer needed (bounded state).
     for (const name of mb.listClaims()) {
-      if (name.startsWith(`fork-reconcile-${job.id}`) || name === `fork-recover-${job.id}` || name === `fork-lease-${job.id}`) mb.removeClaim(name);
+      if (name.startsWith(`fork-reconcile-${job.id}`) || name === `fork-recover-${job.id}` || name === `fork-lease-${job.id}` || name === `fork-push-${messageId}`) mb.removeClaim(name);
     }
     if (forkInfo.threadId) tokenUsage?.unwatch(forkInfo.threadId);
     return {
@@ -931,8 +974,8 @@ export function makeForkJobs({
 
   /**
    * Archives the fork, only after checking it is the fork this job made:
-   * not the original, forked from the original, and (when the app-server
-   * reports it) with threadSource "agent-link-fork". An already archived
+   * not the original, forked from the original, and with threadSource
+   * "agent-link-fork" (a missing threadSource refuses). An already archived
    * fork counts as archived.
    * @param {import("./fork-jobs.js").ForkJob} job
    * @param {Record<string, any>} forkInfo
@@ -957,8 +1000,10 @@ export function makeForkJobs({
       return false;
     }
     if (thread.forkedFromId !== originalId) return refuse(`it reports forkedFromId ${String(thread.forkedFromId ?? null)}, not ${originalId}`);
-    if (thread.threadSource !== undefined && thread.threadSource !== null && thread.threadSource !== FORK_THREAD_SOURCE) {
-      return refuse(`its threadSource is ${String(thread.threadSource)}, not ${FORK_THREAD_SOURCE}`);
+    // Strict: Codex echoes threadSource (B7 spike, 0.159.2); a fork that does
+    // not report it is kept rather than risk archiving the wrong thread.
+    if (thread.threadSource !== FORK_THREAD_SOURCE) {
+      return refuse(`its threadSource is ${String(thread.threadSource ?? "missing")}, not ${FORK_THREAD_SOURCE}`);
     }
     try {
       await appServer.request("thread/archive", { threadId: forkInfo.threadId });
@@ -990,6 +1035,72 @@ export function makeForkJobs({
       if (now() - takenAt < STALE_RECONCILE_MS) return 0;
     }
     return 0;
+  }
+
+  /**
+   * A self-fork message recorded as delivered in a tool result that its
+   * caller never received (no `returned`): its server stopped first.
+   * @param {import("./fork-jobs.js").ForkJob} job
+   */
+  function needsRedelivery(job) {
+    return job.reconciled?.deliveredVia === "tool-result" && !job.returned && !job.redelivered;
+  }
+
+  /**
+   * Once the caller can no longer return it (TOOL_RESULT_GRACE_MS after the
+   * write), clears the delivered mark so the message is new mail again and
+   * pushes it, once (a `fork-redeliver-<jobId>` claim).
+   * @param {import("./fork-jobs.js").ForkJob} job
+   * @returns {Promise<Record<string, any> | null>}
+   */
+  async function redeliver(job) {
+    if (!needsRedelivery(job)) return null;
+    const written = job.written ?? job.reconciled;
+    const messageId = /** @type {string} */ (job.reconciled?.messageId ?? written?.messageId);
+    if (now() - Number(written?.at ?? 0) < TOOL_RESULT_GRACE_MS) return { reconcile: { messageId, delivery: "in-progress" } };
+    const created = job.created ?? /** @type {any} */ ({});
+    const originalAddress = created.original;
+    const originalId = /** @type {string} */ (parseAddress(originalAddress)?.id);
+    const mb = openMailbox();
+    try {
+      if (!mb.claim(`fork-redeliver-${job.id}`, String(now()))) return { reconcile: { messageId, delivery: "claimed-elsewhere" } };
+      if (mb.getMessage({ messageId })?.delivered_at) mb.releaseDelivery({ messageId, to: originalAddress });
+      const row = mb.getMessage({ messageId });
+      const warnings = [];
+      const delivery = await safeDeliver({ messageId, job, originalAddress, originalId, row, peer: row ? peerMessageFromMailbox(row) : null }, warnings, mb);
+      store.appendIfAbsent("redelivered", job.id, { messageId, delivery: delivery.delivery, deliveredVia: delivery.deliveredVia ?? null });
+      for (const name of mb.listClaims()) {
+        if (name === `fork-redeliver-${job.id}` || name === `fork-push-${messageId}` || name === `fork-lease-${job.id}`) mb.removeClaim(name);
+      }
+      return { reconcile: { messageId, delivery: delivery.delivery, redelivered: true }, warnings };
+    } finally {
+      mb.close?.();
+    }
+  }
+
+  /**
+   * The push claim for one message: taken when absent, or when the holder's
+   * claim is older than PUSH_CLAIM_STALE_MS (superseded).
+   * @param {ReturnType<typeof defaultOpenMailbox>} mb
+   * @param {string} messageId
+   */
+  function takePushClaim(mb, messageId) {
+    const key = `fork-push-${messageId}`;
+    if (mb.claim(key, String(now()))) return true;
+    if (pushInFlight(mb, messageId)) return false;
+    mb.removeClaim(key);
+    return mb.claim(key, String(now()));
+  }
+
+  /**
+   * True while a push of this message holds a fresh claim.
+   * @param {ReturnType<typeof defaultOpenMailbox>} mb
+   * @param {string} messageId
+   */
+  function pushInFlight(mb, messageId) {
+    const key = `fork-push-${messageId}`;
+    const takenAt = Number(mb.claimContent(key)) || mb.claimTakenAt(key);
+    return takenAt !== null && takenAt !== 0 && now() - takenAt < PUSH_CLAIM_STALE_MS;
   }
 
   /**
@@ -1056,7 +1167,7 @@ export function makeForkJobs({
     } catch {
       return summary;
     }
-    const pending = jobs.filter((job) => !job.reconciled && !job.aborted && job.forked && !active.has(job.id));
+    const pending = jobs.filter((job) => (!job.reconciled || needsRedelivery(job)) && !job.aborted && job.forked && !active.has(job.id));
     if (pending.length) {
       const mb = openMailbox();
       try {
@@ -1090,6 +1201,7 @@ export function makeForkJobs({
    * @returns {Promise<Record<string, any> | null>}
    */
   async function sweepJob(job, summary) {
+    if (job.reconciled) return await redeliver(job);
     if (job.outcome || job.written) return await finishJob(job, outcomeOf(job), { graceMs: 0 });
     const forkThreadId = /** @type {string} */ (job.forked?.fork?.threadId);
     let turnId = job.turnStarted?.turnId ?? null;
@@ -1127,7 +1239,11 @@ export function makeForkJobs({
   function jobCounts() {
     const counts = { pending: 0, running: 0, stuck: 0 };
     for (const job of store.list()) {
-      if (job.reconciled || job.aborted || !job.forked) continue;
+      if (job.aborted || !job.forked) continue;
+      if (job.reconciled) {
+        if (needsRedelivery(job) && now() - Number(job.written?.at ?? job.reconciled.at) > TOOL_RESULT_GRACE_MS) counts.stuck += 1;
+        continue;
+      }
       if (job.written && now() - Number(job.written.at) > STALE_RECONCILE_MS) counts.stuck += 1;
       else if (job.outcome || job.written) counts.pending += 1;
       else if (job.turnStarted) counts.running += 1;
