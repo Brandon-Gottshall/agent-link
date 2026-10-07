@@ -3238,8 +3238,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path21) {
-      let input = path21;
+    function removeDotSegments(path22) {
+      let input = path22;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3491,8 +3491,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path21, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path21 && path21 !== "/" ? path21 : void 0;
+        const [path22, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path22 && path22 !== "/" ? path22 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -6885,12 +6885,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs20, exportName) {
+    function addFormats(ajv, list, fs21, exportName) {
       var _a3;
       var _b;
       (_a3 = (_b = ajv.opts.code).formats) !== null && _a3 !== void 0 ? _a3 : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs20[f]);
+        ajv.addFormat(f, fs21[f]);
     }
     module.exports = exports = formatsPlugin;
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -11337,10 +11337,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path21) {
-  if (!path21)
+function getElementAtPath(obj, path22) {
+  if (!path22)
     return obj;
-  return path21.reduce((acc, key) => acc?.[key], obj);
+  return path22.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -11749,11 +11749,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path21, issues) {
+function prefixIssues(path22, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path21);
+    iss.path.unshift(path22);
     return iss;
   });
 }
@@ -11900,16 +11900,16 @@ function flattenError(error2, mapper = (issue2) => issue2.message) {
 }
 function formatError(error2, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error3, path21 = []) => {
+  const processError = (error3, path22 = []) => {
     for (const issue2 of error3.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path21, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path22, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path21, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path22, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path21, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path22, ...issue2.path]);
       } else {
-        const fullpath = [...path21, ...issue2.path];
+        const fullpath = [...path22, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -19665,16 +19665,16 @@ function typeMatches(actual, wanted) {
 function join(base, key) {
   return base ? `${base}.${key}` : key;
 }
-function validateSchema(schema, value, path21 = "") {
+function validateSchema(schema, value, path22 = "") {
   const problems = [];
   if (!schema || typeof schema !== "object") return problems;
-  const where = path21 || "(arguments)";
+  const where = path22 || "(arguments)";
   if (Array.isArray(schema.oneOf) || Array.isArray(schema.anyOf)) {
     const options = (
       /** @type {JsonSchema[]} */
       schema.oneOf ?? schema.anyOf
     );
-    const matches = options.filter((option) => validateSchema(option, value, path21).length === 0).length;
+    const matches = options.filter((option) => validateSchema(option, value, path22).length === 0).length;
     const ok = schema.oneOf ? matches === 1 : matches >= 1;
     if (!ok) {
       problems.push({ path: where, rule: schema.oneOf ? "oneOf" : "anyOf", expected: options.map(describe2).join(" or ") });
@@ -19716,7 +19716,7 @@ function validateSchema(schema, value, path21 = "") {
           /** @type {JsonSchema} */
           schema.items,
           item,
-          `${path21 || ""}[${index}]`
+          `${path22 || ""}[${index}]`
         ));
       });
     }
@@ -19729,17 +19729,17 @@ function validateSchema(schema, value, path21 = "") {
     const properties = schema.properties ?? {};
     for (const key of schema.required ?? []) {
       if (record2[key] === void 0) {
-        problems.push({ path: join(path21, key), rule: "required", expected: describe2(properties[key]) });
+        problems.push({ path: join(path22, key), rule: "required", expected: describe2(properties[key]) });
       }
     }
     for (const [key, item] of Object.entries(record2)) {
       if (item === void 0) continue;
       if (Object.prototype.hasOwnProperty.call(properties, key)) {
-        problems.push(...validateSchema(properties[key], item, join(path21, key)));
+        problems.push(...validateSchema(properties[key], item, join(path22, key)));
       } else if (schema.additionalProperties === false) {
-        problems.push({ path: join(path21, key), rule: "additionalProperties", expected: "no such property" });
+        problems.push({ path: join(path22, key), rule: "additionalProperties", expected: "no such property" });
       } else if (schema.additionalProperties && typeof schema.additionalProperties === "object") {
-        problems.push(...validateSchema(schema.additionalProperties, item, join(path21, key)));
+        problems.push(...validateSchema(schema.additionalProperties, item, join(path22, key)));
       }
     }
   }
@@ -19786,7 +19786,7 @@ function coerceScalar(schema, text2) {
   if (types.includes("boolean") && (text2 === "true" || text2 === "false")) return text2 === "true";
   return void 0;
 }
-function normalizeArguments(schema, value, notes, path21 = "") {
+function normalizeArguments(schema, value, notes, path22 = "") {
   if (!schema || !value || typeof value !== "object" || Array.isArray(value) || !schema.properties) return value;
   const record2 = (
     /** @type {Record<string, unknown>} */
@@ -19796,7 +19796,7 @@ function normalizeArguments(schema, value, notes, path21 = "") {
   const out2 = {};
   for (const [key, item] of Object.entries(record2)) {
     const property = schema.properties[key];
-    const where = join(path21, key);
+    const where = join(path22, key);
     if (!property) {
       out2[key] = item;
       continue;
@@ -22570,32 +22570,32 @@ function normalizeArchiveScope(args = {}) {
   return args.archived === true ? "archived" : "active";
 }
 function inferArchiveState(threadOrPath) {
-  const path21 = typeof threadOrPath === "string" ? threadOrPath : threadOrPath?.path ?? null;
-  if (!path21) {
+  const path22 = typeof threadOrPath === "string" ? threadOrPath : threadOrPath?.path ?? null;
+  if (!path22) {
     return {
       scope: "unknown",
       inferredFrom: "missingPath",
       path: null
     };
   }
-  if (path21.includes("/archived_sessions/")) {
+  if (path22.includes("/archived_sessions/")) {
     return {
       scope: "archived",
       inferredFrom: "path",
-      path: path21
+      path: path22
     };
   }
-  if (path21.includes("/sessions/")) {
+  if (path22.includes("/sessions/")) {
     return {
       scope: "active",
       inferredFrom: "path",
-      path: path21
+      path: path22
     };
   }
   return {
     scope: "unknown",
     inferredFrom: "path",
-    path: path21
+    path: path22
   };
 }
 function desktopVisibilityContract(appServerSummary = {}) {
@@ -24684,9 +24684,9 @@ function reminderSettings(source = process.env) {
   }
   return { limit: limit2, intervalMs, warnings };
 }
-function invalid(path21, rule, expected, message) {
+function invalid(path22, rule, expected, message) {
   return new AgentLinkError("invalid_arguments", message, {
-    details: { errors: [{ path: path21, rule, expected }] }
+    details: { errors: [{ path: path22, rule, expected }] }
   });
 }
 function resolveLabels({ anticipation, replyBy, waitForReply = false, now = Date.now() } = {}) {
@@ -25302,8 +25302,8 @@ function forkJobStatus(job) {
   if (job.aborted) return "aborted";
   return job.outcome?.type ?? "running";
 }
-function createForkJobStore({ path: path21 = void 0, now = () => Date.now() } = {}) {
-  const file = () => path21 ?? forkJobsPath();
+function createForkJobStore({ path: path22 = void 0, now = () => Date.now() } = {}) {
+  const file = () => path22 ?? forkJobsPath();
   return {
     path: file,
     /**
@@ -28333,16 +28333,104 @@ async function pushWhenIdle({ appServer, mailbox, messageId, threadId, policy = 
   return { delivery: push.delivery, deliveredVia: push.deliveredVia, turnId: push.response?.turn?.id ?? push.response?.turnId ?? null, warnings: push.warnings };
 }
 
-// src/tools/health.js
-import fs15 from "node:fs";
-
-// src/shared/legacy-state.js
+// src/codex/prompt-hook-health.js
 import fs14 from "node:fs";
 import path16 from "node:path";
+import { fileURLToPath } from "node:url";
+var PROMPT_HOOK_FILE = "hooks/codex-hooks.json";
+var PROMPT_HOOK_SCRIPT = "src/codex/prompt-hook.js";
+var CODEX_PLUGIN_NAME = "codex-agent-link";
+var TRUST_STATES = /* @__PURE__ */ new Set(["trusted", "untrusted", "modified", "managed"]);
+function findPluginRoot(from = path16.dirname(fileURLToPath(import.meta.url))) {
+  let dir = from;
+  for (let i = 0; i < 4; i++) {
+    try {
+      const manifest = JSON.parse(fs14.readFileSync(path16.join(dir, ".codex-plugin", "plugin.json"), "utf8"));
+      if (manifest?.name === CODEX_PLUGIN_NAME) return dir;
+    } catch {
+    }
+    const parent = path16.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+function promptHookDeclaration(root) {
+  if (!root) return { declared: false, hooksFile: null, reason: "plugin root not found" };
+  try {
+    const manifest = JSON.parse(fs14.readFileSync(path16.join(root, ".codex-plugin", "plugin.json"), "utf8"));
+    const file = typeof manifest.hooks === "string" ? path16.posix.normalize(manifest.hooks) : null;
+    if (file !== PROMPT_HOOK_FILE) {
+      return { declared: false, hooksFile: file, reason: `.codex-plugin/plugin.json hooks is not ./${PROMPT_HOOK_FILE}` };
+    }
+    const hooks = JSON.parse(fs14.readFileSync(path16.join(root, PROMPT_HOOK_FILE), "utf8"));
+    const commands = (hooks?.hooks?.UserPromptSubmit ?? []).flatMap((group) => Array.isArray(group?.hooks) ? group.hooks : []).map((hook) => typeof hook?.command === "string" ? hook.command : "");
+    const declared = commands.some((command) => command.includes(PROMPT_HOOK_SCRIPT));
+    return { declared, hooksFile: file, reason: declared ? null : `${PROMPT_HOOK_FILE} has no UserPromptSubmit entry for ${PROMPT_HOOK_SCRIPT}` };
+  } catch (error2) {
+    return { declared: false, hooksFile: null, reason: `manifest unreadable: ${error2 instanceof Error ? error2.message : String(error2)}` };
+  }
+}
+function findInstalledPromptHook(listResult) {
+  const entries = Array.isArray(listResult?.data) ? listResult.data : [];
+  for (const entry of entries) {
+    for (const hook of Array.isArray(entry?.hooks) ? entry.hooks : []) {
+      if (hook?.source !== "plugin" || hook?.eventName !== "userPromptSubmit") continue;
+      if (typeof hook.pluginId !== "string" || !hook.pluginId.startsWith(`${CODEX_PLUGIN_NAME}@`)) continue;
+      if (typeof hook.key !== "string" || !hook.key.includes(`:${PROMPT_HOOK_FILE}:`)) continue;
+      return hook;
+    }
+  }
+  return null;
+}
+async function promptHookReport({ root = findPluginRoot(), listHooks = null } = {}) {
+  const declaration = promptHookDeclaration(root);
+  const base = {
+    declared: declaration.declared,
+    hooksFile: declaration.hooksFile,
+    event: "UserPromptSubmit",
+    ...declaration.reason ? { reason: declaration.reason } : {}
+  };
+  if (typeof listHooks !== "function") {
+    return { ...base, trust: "unknown", trustSource: null, enabled: null, pluginId: null, hint: null };
+  }
+  let hook;
+  try {
+    hook = findInstalledPromptHook(await listHooks());
+  } catch {
+    return { ...base, trust: "unknown", trustSource: null, enabled: null, pluginId: null, hint: null };
+  }
+  if (!hook) {
+    return {
+      ...base,
+      trust: "not_installed",
+      trustSource: "hooks/list",
+      enabled: null,
+      pluginId: null,
+      hint: "The Codex install of Agent Link does not declare the prompt hook. Update the Codex plugin to this version."
+    };
+  }
+  const trust = TRUST_STATES.has(hook.trustStatus) ? hook.trustStatus : "unknown";
+  return {
+    ...base,
+    trust,
+    trustSource: "hooks/list",
+    enabled: hook.enabled === true,
+    pluginId: hook.pluginId,
+    hint: trust === "untrusted" || trust === "modified" ? "Codex runs the Agent Link prompt hook only after you trust it once: choose Review hooks / Trust when Codex asks, or open /hooks in the Codex CLI." : null
+  };
+}
+
+// src/tools/health.js
+import fs16 from "node:fs";
+
+// src/shared/legacy-state.js
+import fs15 from "node:fs";
+import path17 from "node:path";
 var LEGACY_STILL_WRITTEN_WARNING = "A legacy Agent Link state file changed after the migration to ~/.agent-link: an older plugin copy is still running. Upgrade the plugin in every harness and restart its sessions.";
 function statOrNull(file) {
   try {
-    return fs14.statSync(file);
+    return fs15.statSync(file);
   } catch {
     return null;
   }
@@ -28350,14 +28438,14 @@ function statOrNull(file) {
 function newestRecordMtimeMs(dir) {
   let names = [];
   try {
-    names = fs14.readdirSync(dir);
+    names = fs15.readdirSync(dir);
   } catch {
     return null;
   }
   let newest = null;
   for (const name of names) {
     if (!name.endsWith(".json")) continue;
-    const stat = statOrNull(path16.join(dir, name));
+    const stat = statOrNull(path17.join(dir, name));
     if (stat?.isFile() && (newest === null || stat.mtimeMs > newest)) newest = stat.mtimeMs;
   }
   return newest;
@@ -28365,7 +28453,7 @@ function newestRecordMtimeMs(dir) {
 function readMigration(options) {
   const file = migrationRecordPath(options);
   try {
-    const record2 = JSON.parse(fs14.readFileSync(file, "utf8"));
+    const record2 = JSON.parse(fs15.readFileSync(file, "utf8"));
     return {
       path: file,
       at: typeof record2?.at === "string" ? record2.at : null,
@@ -28617,7 +28705,7 @@ var healthTool = {
     legacyState: out("object", "{files: [{kind, path, modifiedAt, writtenAfterMigration}], migration, stillWritten, warning}: pre-0.5 state files still present."),
     reminders: out("object", "{limit, intervalMs, codexTurns, warnings}: re-surfacing of open reply/action messages (AGENT_LINK_REMINDER_LIMIT, AGENT_LINK_REMINDER_INTERVAL_MS, AGENT_LINK_CODEX_REMINDERS, on by default). warnings lists settings that were ignored."),
     recentEvents: out("array", "Recent log events (most recent last). Stack traces and process output are redacted."),
-    codex: out("object", "Codex install: {available, path, source, version, versionProbed, searched, reason, usedForManagedAppServer, overrideCosts, desktopPush}. overrideCosts: {measured, codexVersion, measuredAt, effortChange, modelSwitch, cwdChange, forkSameModel, forkOtherModel (each {cachedShare: [rep1, rep2], cacheNeutral}), compactForkAutoFraction, installedVersion, warning}: the measured prompt-cache effect of overrides and forks (B7 spike, R9.12) and the Codex version it was measured on; warning when the installed version differs, also added to the result's warnings[] (code override_costs_version_mismatch). desktopPush: {mode: mailbox-only|shared-daemon, source, refused, verifiedCodexVersion, installedCodexVersion, heldSignal, turnCompletedMethod, warnings, rolloutChecks: {checked, held, skipped: {<reason>: count}}} (R1.12a): in mailbox-only mode (the B7 spike's result) a thread not loaded in Agent Link's own app-server is treated as held by the Codex desktop app and gets mail by inbox only; warnings name a Codex version that differs from the verified one, and a refused shared-daemon setting (it needs an explicit AGENT_LINK_CODEX_URL or AGENT_LINK_CODEX_SOCK)."),
+    codex: out("object", "Codex install: {available, path, source, version, versionProbed, searched, reason, usedForManagedAppServer, overrideCosts, desktopPush}. overrideCosts: {measured, codexVersion, measuredAt, effortChange, modelSwitch, cwdChange, forkSameModel, forkOtherModel (each {cachedShare: [rep1, rep2], cacheNeutral}), compactForkAutoFraction, installedVersion, warning}: the measured prompt-cache effect of overrides and forks (B7 spike, R9.12) and the Codex version it was measured on; warning when the installed version differs, also added to the result's warnings[] (code override_costs_version_mismatch). desktopPush: {mode: mailbox-only|shared-daemon, source, refused, verifiedCodexVersion, installedCodexVersion, heldSignal, turnCompletedMethod, warnings, rolloutChecks: {checked, held, skipped: {<reason>: count}}} (R1.12a): in mailbox-only mode (the B7 spike's result) a thread not loaded in Agent Link's own app-server is treated as held by the Codex desktop app and gets mail by inbox only; warnings name a Codex version that differs from the verified one, and a refused shared-daemon setting (it needs an explicit AGENT_LINK_CODEX_URL or AGENT_LINK_CODEX_SOCK). Also promptHook: {declared, hooksFile, event, trust: trusted|untrusted|modified|managed|not_installed|unknown, trustSource, enabled, pluginId, hint} (R1.14): whether this package declares the Codex UserPromptSubmit hook that tells desktop-held threads they have mail, and the trust state Codex reports through hooks/list when the app-server is connected (otherwise unknown)."),
     forkJobs: out("object", "{pending, running, stuck, error}: unfinished fork_codex_thread jobs in the job log. pending: the task ended and the reconcile is not finished yet; running: the task turn is running; stuck: no task turn long after the fork, or a written reconcile left unfinished (the server's sweeper finishes both). Counts are null with error when the log cannot be read. Health reads the log only; the sweep runs on a timer, never from this tool."),
     appServer: commonOut.appServer,
     loadedThreadProbe: outAny("Result of a one-thread thread/loaded/list probe."),
@@ -28660,7 +28748,7 @@ function redactValue(value, depth) {
 }
 function exists(file) {
   try {
-    return fs15.existsSync(file);
+    return fs16.existsSync(file);
   } catch {
     return false;
   }
@@ -28755,7 +28843,9 @@ function makeHealth({ appServer, hostInfo, resolveCurrentSession, channelState, 
     return {
       ...report,
       // R1.12a: whether Agent Link pushes into threads the Codex desktop app
-      // holds, as decided by the B7 spike; R9.12: the measured override costs.
+      // holds, as decided by the B7 spike; R9.12: the measured override costs;
+      // R1.14: the Codex prompt hook (trust from `hooks/list`, asked only when
+      // the app-server is already connected for this report).
       codex: {
         ...report.codex,
         overrideCosts,
@@ -28764,7 +28854,10 @@ function makeHealth({ appServer, hostInfo, resolveCurrentSession, channelState, 
           // The deny-only lsof check (R1.12a): how often it ran, found
           // another holder, or was skipped and why.
           ...typeof rolloutStats === "function" ? { rolloutChecks: rolloutStats() } : {}
-        }
+        },
+        promptHook: await promptHookReport({
+          listHooks: "loadedThreadProbe" in report ? () => appServer.request("hooks/list", {}) : null
+        })
       },
       ...forkJobs ? { forkJobs: forkJobCounts(forkJobs) } : {},
       ...overrideCosts.warning ? { warnings: [overrideCosts.warning] } : {},
@@ -28904,8 +28997,8 @@ function rolesHealth(roles, roleAdmin) {
 }
 
 // src/claude/channel-bridge.js
-import fs16 from "node:fs";
-import path17 from "node:path";
+import fs17 from "node:fs";
+import path18 from "node:path";
 
 // src/claude/active-waits.js
 var waits = /* @__PURE__ */ new Map();
@@ -29007,7 +29100,7 @@ function makeAgentLinkChannelBridge({
     const parts = [];
     for (const file of signaturePaths) {
       try {
-        const st = fs16.statSync(file);
+        const st = fs17.statSync(file);
         parts.push(`${st.ino}:${st.size}:${st.mtimeMs}`);
       } catch (error2) {
         if (error2?.code !== "ENOENT") return null;
@@ -29101,11 +29194,11 @@ function makeAgentLinkChannelBridge({
       targets.get(dir).add(name);
     };
     for (const file of signaturePaths) {
-      const dir = path17.dirname(file);
-      if (fs16.existsSync(dir)) {
-        add(dir, path17.basename(file));
-      } else if (fs16.existsSync(path17.dirname(dir))) {
-        add(path17.dirname(dir), path17.basename(dir));
+      const dir = path18.dirname(file);
+      if (fs17.existsSync(dir)) {
+        add(dir, path18.basename(file));
+      } else if (fs17.existsSync(path18.dirname(dir))) {
+        add(path18.dirname(dir), path18.basename(dir));
       }
     }
     return targets;
@@ -29119,11 +29212,11 @@ function makeAgentLinkChannelBridge({
     closeWatchers();
     for (const [dir, names] of watchTargets()) {
       try {
-        const w = fs16.watch(dir, { persistent: false }, (_event, filename) => {
+        const w = fs17.watch(dir, { persistent: false }, (_event, filename) => {
           if (stopped) return;
           const name = filename ? String(filename) : null;
           if (name && !names.has(name)) return;
-          if (name && fs16.existsSync(path17.join(dir, name)) && fs16.statSync(path17.join(dir, name)).isDirectory()) {
+          if (name && fs17.existsSync(path18.join(dir, name)) && fs17.statSync(path18.join(dir, name)).isDirectory()) {
             startWatcher();
           }
           wake();
@@ -31062,6 +31155,15 @@ function noCurrentSession(tool, host) {
   });
 }
 
+// src/delivery/inbox-view.js
+function isOpenFor(row, inbox, at, settings) {
+  const status = messageStatus(row, { now: at, settings }).status;
+  return status === "pending" || inbox.handedOver(row) && !row.resolution && (status === "unresolved" || status === "expired");
+}
+function isOpenMailFor(row, inbox, at, settings) {
+  return inbox.isRecipient(row) && Boolean(row.delivered_at) && !inbox.isPending(row) && isAnticipating(row) && isOpenFor(row, inbox, at, settings);
+}
+
 // src/tools/read-inbox.js
 var readInboxTool = {
   name: "read_agent_link_inbox",
@@ -31124,7 +31226,7 @@ function makeReadInboxHandler({
         const at = now();
         const settings = settingsFn();
         const shownIds = new Set(rows.map((row) => row.id));
-        const open = args.includeOpen === false || rows.length >= limit2 ? [] : mb.inspect({ limit: Number.MAX_SAFE_INTEGER }).filter((row) => inbox.isRecipient(row) && !shownIds.has(row.id) && row.delivered_at && !inbox.isPending(row) && isAnticipating(row) && isOpenFor(row, inbox, at, settings)).sort((a, b) => a.sent_at - b.sent_at).slice(0, limit2 - rows.length);
+        const open = args.includeOpen === false || rows.length >= limit2 ? [] : mb.inspect({ limit: Number.MAX_SAFE_INTEGER }).filter((row) => !shownIds.has(row.id) && isOpenMailFor(row, inbox, at, settings)).sort((a, b) => a.sent_at - b.sent_at).slice(0, limit2 - rows.length);
         const shown = [...rows, ...open];
         const peers = shown.map(peerMessageFromMailbox);
         const messages = shown.map((row, index) => ({
@@ -31149,10 +31251,6 @@ ${pending.length - rows.length} more pending message(s): call read_agent_link_in
       }
     }
   };
-}
-function isOpenFor(row, inbox, at, settings) {
-  const status = messageStatus(row, { now: at, settings }).status;
-  return status === "pending" || inbox.handedOver(row) && !row.resolution && (status === "unresolved" || status === "expired");
 }
 function readInboxEntries(deps) {
   const handlers = makeReadInboxHandler(deps);
@@ -31347,9 +31445,9 @@ function alreadyResolved(messageId, view) {
     hint: "Send a new message with message_claude_session if there is more to say."
   });
 }
-function invalid2(path21, message) {
+function invalid2(path22, message) {
   return new AgentLinkError("invalid_arguments", message, {
-    details: { errors: [{ path: path21, rule: "required", expected: "non-empty string" }] }
+    details: { errors: [{ path: path22, rule: "required", expected: "non-empty string" }] }
   });
 }
 function replyAgentLinkMessageEntries(deps) {
@@ -32127,7 +32225,7 @@ function agentEntries(deps) {
 }
 
 // src/tools/roles.js
-import path18 from "node:path";
+import path19 from "node:path";
 var READ_ONLY4 = { readOnlyHint: true };
 var ADMIN_WRITE = { readOnlyHint: false, destructiveHint: true };
 var ADMIN_NOTE = "Requires AGENT_LINK_ROLE_ADMIN=1 in this Agent Link server's environment, set by the user; otherwise permission_denied (reason role_admin_disabled). A tool caller cannot enable it.";
@@ -32392,12 +32490,12 @@ function optionalProjectRoot(value, role) {
     });
   }
   const root = typeof value === "string" ? value.trim() : "";
-  if (!root || !path18.isAbsolute(root)) {
+  if (!root || !path19.isAbsolute(root)) {
     throw new AgentLinkError("invalid_arguments", "projectRoot must be an absolute path.", {
       details: { errors: [{ path: "projectRoot", rule: "format", expected: "an absolute path" }] }
     });
   }
-  return path18.resolve(root);
+  return path19.resolve(root);
 }
 function roleEntries(deps) {
   const handlers = makeRoleHandlers(deps);
@@ -32411,7 +32509,7 @@ function roleEntries(deps) {
 }
 
 // src/registry/claude.js
-import fs17 from "node:fs";
+import fs18 from "node:fs";
 function isoFromMs(ms) {
   return typeof ms === "number" && Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString() : null;
 }
@@ -32439,7 +32537,7 @@ function toClaudeAgent(session) {
 }
 function exists2(dir) {
   try {
-    return fs17.existsSync(dir);
+    return fs18.existsSync(dir);
   } catch {
     return false;
   }
@@ -32516,8 +32614,8 @@ function makeClaudeProvider({
 }
 
 // src/registry/codex.js
-import fs18 from "node:fs";
-import path19 from "node:path";
+import fs19 from "node:fs";
+import path20 from "node:path";
 var SURFACE_BY_SOURCE = Object.freeze({ vscode: "app", cli: "cli", exec: "cli" });
 var LOADED_STATUS = /* @__PURE__ */ new Set(["idle", "active", "systemError"]);
 function codexSurfaces(source) {
@@ -32541,7 +32639,8 @@ function toCodexAgent(thread, { fromAppServer = true } = {}) {
     loaded: fromAppServer && LOADED_STATUS.has(statusType2),
     archived: thread.archiveState?.scope === "archived",
     lastActivityAt: typeof thread.updatedAt === "string" ? thread.updatedAt : null,
-    receive: { push: "codex-turn", nudge: null, pull: false },
+    // nudge: the Codex prompt hook (R1.9, R1.14), once the user trusts it.
+    receive: { push: "codex-turn", nudge: "codex-hook", pull: false },
     threadId: thread.id,
     status: statusType2
   };
@@ -32561,7 +32660,7 @@ function codexInstallState() {
   }
   const hasSessions = Boolean(home) && ["sessions", "archived_sessions"].some((dir) => {
     try {
-      return fs18.existsSync(path19.join(
+      return fs19.existsSync(path20.join(
         /** @type {string} */
         home,
         dir
@@ -33653,9 +33752,9 @@ function makeThreadQueries({ appServer, now = () => Date.now(), wait = sleep2 })
 }
 
 // src/codex/project-orchestrator.js
-import { promises as fs19 } from "node:fs";
-import path20 from "node:path";
-var PROJECT_ORCHESTRATOR_BINDING_PATH = path20.join(".codex", "project-orchestrator.json");
+import { promises as fs20 } from "node:fs";
+import path21 from "node:path";
+var PROJECT_ORCHESTRATOR_BINDING_PATH = path21.join(".codex", "project-orchestrator.json");
 var DEFAULT_POLICY_VERSION = "v0";
 var ALLOWED_RETURN_STATUSES = /* @__PURE__ */ new Set(["done", "done_with_concerns", "blocked"]);
 var ORCHESTRATOR_ROLE = "orchestrator";
@@ -33892,10 +33991,10 @@ async function returnProjectWorkResult(args = {}, deps = {}, toolContext = {}) {
   };
 }
 async function readProjectOrchestratorBinding(projectRoot) {
-  const bindingPath = path20.join(requiredString(projectRoot, "projectRoot"), PROJECT_ORCHESTRATOR_BINDING_PATH);
+  const bindingPath = path21.join(requiredString(projectRoot, "projectRoot"), PROJECT_ORCHESTRATOR_BINDING_PATH);
   let raw;
   try {
-    raw = await fs19.readFile(bindingPath, "utf8");
+    raw = await fs20.readFile(bindingPath, "utf8");
   } catch (error2) {
     if (error2.code === "ENOENT") {
       return null;
@@ -33973,8 +34072,8 @@ function validateBinding(value, { bindingPath, requestedProjectRoot }) {
       throwBindingError(`Binding field ${field} is required`, { bindingPath, field });
     }
   }
-  const resolvedBindingRoot = path20.resolve(value.projectRoot);
-  const resolvedRequestedRoot = path20.resolve(requestedProjectRoot);
+  const resolvedBindingRoot = path21.resolve(value.projectRoot);
+  const resolvedRequestedRoot = path21.resolve(requestedProjectRoot);
   if (resolvedBindingRoot !== resolvedRequestedRoot) {
     throwBindingError("Binding projectRoot does not match the source root that contains it", {
       bindingPath,
@@ -34021,7 +34120,7 @@ function roleHolder(roles, name, projectRoot, { scopes }) {
   }
   const entry = table?.roles?.[name];
   if (!entry) return null;
-  const root = projectRoot && path20.isAbsolute(projectRoot) ? path20.resolve(projectRoot) : null;
+  const root = projectRoot && path21.isAbsolute(projectRoot) ? path21.resolve(projectRoot) : null;
   for (const scope of scopes) {
     const address = scope === "project" ? root ? entry.projects?.[root] : null : entry.address;
     if (typeof address === "string" && address.startsWith("codex:")) {
@@ -34094,7 +34193,7 @@ function buildFallbackQuery(args) {
     return `Project Orchestrator ${projectId}`;
   }
   if (args.projectRoot) {
-    return `${path20.basename(args.projectRoot)} Project Orchestrator`;
+    return `${path21.basename(args.projectRoot)} Project Orchestrator`;
   }
   return "";
 }

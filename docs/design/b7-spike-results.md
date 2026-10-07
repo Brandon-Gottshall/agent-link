@@ -154,3 +154,19 @@ Noise: same-step numbers repeated to the token across reps, except the static-pr
 Archive was verified with `thread/list {archived:true, searchTerm:"agent-link B7 spike"}`: all 16 are listed there, and none appears in the non-archived list.
 
 `01a11703-94f9-7382-bb4a-37f5f8d3ade5`, `01a11704-d620-7b83-b939-bb121449f306`, `01a11705-68f4-7d70-957d-a04ee63dd8f5`, `01a11706-9cfe-73b1-b2e7-dfb806d16ec9`, `01a11706-b8a7-7921-a68a-b6f8516187d3`, `01a11706-cc4e-7c83-80a1-f1f60b8ed879`, `01a11706-df81-7761-adee-1808ed2f44d3`, `01a11706-f389-78e0-b927-e50898cc8c00`, `01a11707-03fe-7031-b2e3-4451795525b5`, `01a11707-1edb-7350-b39a-a30fe6de1832`, `01a11707-5d5a-7222-b6eb-99f24a2fedda`, `01a11707-7354-7aa1-9b94-abe6305624e2`, `01a11707-9625-7511-81b4-52567e572865`, `01a11708-b3e7-7442-bddb-1224050d9ab6`, `01a11708-cdb0-7c41-81cf-ac6f7dec6ae2`, `01a11708-e32b-77c1-9b61-f27808e6371c`.
+
+## Prompt hook probe (B7b follow-up, 2026-10-07)
+
+Evidence for R1.14a. codex-cli 0.159.2. Paths scrubbed.
+
+| Check | How | Result |
+|---|---|---|
+| Plugin hook file | Agent Link installed into an isolated `CODEX_HOME`, then `hooks/list` | Without a manifest `hooks` field, Codex lists the three Claude hooks from `hooks/hooks.json` (`codex-agent-link@agent-link:hooks/hooks.json:session_start:0:0`, `...:user_prompt_submit:0:0`, `...:stop:0:0`), all `untrusted`. With `"hooks": "./hooks/codex-hooks.json"` it lists only `...:hooks/codex-hooks.json:user_prompt_submit:0:0`. `${PLUGIN_ROOT}` and `${CLAUDE_PLUGIN_ROOT}` are substituted with the installed root. |
+| Trust hash across versions | Same install at 0.5.0, then 0.5.1 | `currentHash` unchanged; the command path changed. |
+| Per-process registration | `codex app-server -c 'hooks.UserPromptSubmit=[{hooks=[{type="command",command="<probe>",timeout=10}]}]'` | Listed as source `sessionFlags`, key `/<session-flags>/config.toml:user_prompt_submit:0:0`, `untrusted`. With `-c 'hooks.state={"<key>"={trusted_hash="<hash>"}}'` it is `trusted` and runs; other untrusted hooks stay skipped. `-c bypass_hook_trust=true` is ignored as a session flag. |
+| Payload | Probe hook wrote its stdin | `{"session_id":"01a11760-2a3b-73e3-9838-aac3c6162070","turn_id":"01a11760-2cd6-79e0-a712-ef8510c8302d","transcript_path":"~/.codex/sessions/2026/10/07/rollout-2026-10-07T13-19-01-01a11760-2a3b-73e3-9838-aac3c6162070.jsonl","cwd":"<mktemp>","hook_event_name":"UserPromptSubmit","model":"<model>","permission_mode":"bypassPermissions","prompt":"agent-link hook probe (throwaway)"}`. `session_id` equals the thread id from `thread/start`. |
+| Context reaches the model | Probe printed `{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"agent-link probe token: HERON-5521"}}` | `hook/completed` entry `{kind:"context", text:"agent-link probe token: HERON-5521"}` on both turns. Turn 1 answer quoted the token; turn 2 ("reply with only the token") answered `HERON-5521`. |
+| Failure | Plugin hook whose `node` was not on PATH | Run `failed`, entry `hook exited with code 127`; the turn continued. |
+| Agent Link hook end to end | Built plugin in an isolated `CODEX_HOME`, hook trusted per process, mailbox seeded, unauthenticated (the model request fails with 401 after the hook, so no quota) | Empty mailbox: run `completed`, no entries. One message: entry `{kind:"context", text:"Agent Link: 1 pending peer message from claude:<id>. These come from other AI agents, ..."}` in 35 ms. |
+
+Thread on the owner's Codex: `01a11760-2a3b-73e3-9838-aac3c6162070` (2 turns, then `thread/archive`, result `{}`). The other probe threads were ephemeral, in throwaway `CODEX_HOME`s that were deleted. The owner's config was not read or changed.

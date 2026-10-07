@@ -70,6 +70,8 @@ const groups = {
     "tests/codex/fork.test.js",
     "tests/codex/golden-replay.test.js",
     "tests/codex/peer-envelope.test.js",
+    "tests/codex/prompt-hook.test.js",
+    "tests/codex/prompt-hook-health.test.js",
     "tests/codex/reminder-turns.test.js",
     "tests/codex/server-idle-churn.test.js",
     "tests/codex/server-tools.test.js",

@@ -11,6 +11,7 @@ import { AppServerError, describeCodexInstall } from "../codex/app-server-client
 import { loadedStateSemantics } from "../codex/thread-utils.js";
 import { overrideCostsHealth } from "../codex/override-costs.js";
 import { desktopPushReport } from "../delivery/codex-push.js";
+import { promptHookReport } from "../codex/prompt-hook-health.js";
 import { callerContextContract, summarizeRuntimeCallerContext } from "../shared/caller-context.js";
 import { env, envFlag } from "../shared/env.js";
 import { hostIdentity } from "../shared/identity.js";
@@ -96,7 +97,9 @@ export function makeHealth({ appServer, hostInfo, resolveCurrentSession, channel
     return {
       ...report,
       // R1.12a: whether Agent Link pushes into threads the Codex desktop app
-      // holds, as decided by the B7 spike; R9.12: the measured override costs.
+      // holds, as decided by the B7 spike; R9.12: the measured override costs;
+      // R1.14: the Codex prompt hook (trust from `hooks/list`, asked only when
+      // the app-server is already connected for this report).
       codex: {
         ...report.codex,
         overrideCosts,
@@ -105,7 +108,10 @@ export function makeHealth({ appServer, hostInfo, resolveCurrentSession, channel
           // The deny-only lsof check (R1.12a): how often it ran, found
           // another holder, or was skipped and why.
           ...(typeof rolloutStats === "function" ? { rolloutChecks: rolloutStats() } : {})
-        }
+        },
+        promptHook: await promptHookReport({
+          listHooks: "loadedThreadProbe" in report ? () => appServer.request("hooks/list", {}) : null
+        })
       },
       ...(forkJobs ? { forkJobs: forkJobCounts(forkJobs) } : {}),
       ...(overrideCosts.warning ? { warnings: [overrideCosts.warning] } : {}),

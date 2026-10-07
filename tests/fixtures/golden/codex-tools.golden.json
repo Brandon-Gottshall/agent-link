@@ -77,6 +77,16 @@
               "held": 0,
               "skipped": {}
             }
+          },
+          "promptHook": {
+            "declared": true,
+            "hooksFile": "hooks/codex-hooks.json",
+            "event": "UserPromptSubmit",
+            "trust": "unknown",
+            "trustSource": null,
+            "enabled": null,
+            "pluginId": null,
+            "hint": null
           }
         },
         "appServer": {
@@ -295,6 +305,16 @@
               "held": 0,
               "skipped": {}
             }
+          },
+          "promptHook": {
+            "declared": true,
+            "hooksFile": "hooks/codex-hooks.json",
+            "event": "UserPromptSubmit",
+            "trust": "unknown",
+            "trustSource": null,
+            "enabled": null,
+            "pluginId": null,
+            "hint": null
           }
         },
         "appServer": {
@@ -457,6 +477,10 @@
           "params": {
             "limit": 1
           }
+        },
+        {
+          "method": "hooks/list",
+          "params": {}
         }
       ]
     },
@@ -537,6 +561,16 @@
               "held": 0,
               "skipped": {}
             }
+          },
+          "promptHook": {
+            "declared": true,
+            "hooksFile": "hooks/codex-hooks.json",
+            "event": "UserPromptSubmit",
+            "trust": "unknown",
+            "trustSource": null,
+            "enabled": null,
+            "pluginId": null,
+            "hint": null
           }
         },
         "appServer": {
@@ -730,6 +764,10 @@
           "params": {
             "limit": 1
           }
+        },
+        {
+          "method": "hooks/list",
+          "params": {}
         }
       ]
     },
@@ -10080,6 +10118,16 @@
                 "no_rollout_path": 3
               }
             }
+          },
+          "promptHook": {
+            "declared": true,
+            "hooksFile": "hooks/codex-hooks.json",
+            "event": "UserPromptSubmit",
+            "trust": "unknown",
+            "trustSource": null,
+            "enabled": null,
+            "pluginId": null,
+            "hint": null
           }
         },
         "appServer": {
@@ -10262,7 +10310,7 @@
             "lastActivityAt": "2026-05-18T06:41:00.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000001",
@@ -10283,7 +10331,7 @@
             "lastActivityAt": "2026-05-18T06:41:00.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000002",
@@ -10304,7 +10352,7 @@
             "lastActivityAt": "2026-05-18T06:41:00.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000005",
@@ -10365,7 +10413,7 @@
             "lastActivityAt": "2026-05-18T06:40:05.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000261",
@@ -10384,7 +10432,7 @@
             "lastActivityAt": "2026-05-18T06:40:04.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000260",
@@ -10403,7 +10451,7 @@
             "lastActivityAt": "2026-05-18T06:40:03.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000259",
@@ -10422,7 +10470,7 @@
             "lastActivityAt": "2026-05-18T06:40:02.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000258",
@@ -10441,7 +10489,7 @@
             "lastActivityAt": "2026-05-18T06:40:01.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000257",
@@ -10508,7 +10556,7 @@
             "lastActivityAt": "2026-05-18T06:41:00.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000001",
@@ -10529,7 +10577,7 @@
             "lastActivityAt": "2026-05-18T06:41:00.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000002",
@@ -10550,7 +10598,7 @@
             "lastActivityAt": "2026-05-18T06:41:00.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000003",
@@ -10571,7 +10619,7 @@
             "lastActivityAt": "2026-05-18T06:41:00.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000005",
@@ -10592,7 +10640,7 @@
             "lastActivityAt": "2026-05-18T06:41:00.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000006",
@@ -10611,7 +10659,7 @@
             "lastActivityAt": "2026-05-18T06:40:05.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000261",
@@ -10630,7 +10678,7 @@
             "lastActivityAt": "2026-05-18T06:40:04.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000260",
@@ -10649,7 +10697,7 @@
             "lastActivityAt": "2026-05-18T06:40:03.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000259",
@@ -10668,7 +10716,7 @@
             "lastActivityAt": "2026-05-18T06:40:02.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000258",
@@ -10687,7 +10735,7 @@
             "lastActivityAt": "2026-05-18T06:40:01.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000257",
@@ -10826,7 +10874,7 @@
             "lastActivityAt": "2026-05-18T06:41:00.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000001",
@@ -10847,7 +10895,7 @@
             "lastActivityAt": "2026-05-18T06:41:00.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000002",
@@ -10868,7 +10916,7 @@
             "lastActivityAt": "2026-05-18T06:41:00.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000005",
@@ -10934,7 +10982,7 @@
           "lastActivityAt": "2026-05-18T06:41:00.000Z",
           "receive": {
             "push": "codex-turn",
-            "nudge": null,
+            "nudge": "codex-hook",
             "pull": false
           },
           "threadId": "019d3000-0000-7000-8000-000000000001",
@@ -10960,7 +11008,7 @@
             "lastActivityAt": "2026-05-18T06:41:00.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000001",
@@ -11042,7 +11090,7 @@
           "lastActivityAt": "2026-05-18T06:41:00.000Z",
           "receive": {
             "push": "codex-turn",
-            "nudge": null,
+            "nudge": "codex-hook",
             "pull": false
           },
           "threadId": "019d3000-0000-7000-8000-000000000001",
@@ -11068,7 +11116,7 @@
             "lastActivityAt": "2026-05-18T06:41:00.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000001",
@@ -11175,7 +11223,7 @@
             "lastActivityAt": "2026-05-18T06:41:00.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000001",
@@ -12256,6 +12304,16 @@
               "held": 0,
               "skipped": {}
             }
+          },
+          "promptHook": {
+            "declared": true,
+            "hooksFile": "hooks/codex-hooks.json",
+            "event": "UserPromptSubmit",
+            "trust": "unknown",
+            "trustSource": null,
+            "enabled": null,
+            "pluginId": null,
+            "hint": null
           }
         },
         "appServer": {
@@ -12785,7 +12843,7 @@
             "lastActivityAt": "2026-05-18T06:41:00.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000001",
@@ -12806,7 +12864,7 @@
             "lastActivityAt": "2026-05-18T06:41:00.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000002",
@@ -12827,7 +12885,7 @@
             "lastActivityAt": "2026-05-18T06:41:00.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000003",
@@ -12848,7 +12906,7 @@
             "lastActivityAt": "2026-05-18T06:41:00.000Z",
             "receive": {
               "push": "codex-turn",
-              "nudge": null,
+              "nudge": "codex-hook",
               "pull": false
             },
             "threadId": "019d3000-0000-7000-8000-000000000005",

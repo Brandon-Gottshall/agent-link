@@ -12,7 +12,8 @@ import { isHeldByActiveWait } from "../claude/active-waits.js";
 import { peerMessageFromMailbox, renderInbox } from "../shared/envelope.js";
 import { mailboxRowResult } from "../registry/addresses.js";
 import { currentRecipient, noCurrentSession } from "../delivery/recipient.js";
-import { isAnticipating, messageStatus, reminderSettings } from "../delivery/message-status.js";
+import { reminderSettings } from "../delivery/message-status.js";
+import { isOpenMailFor } from "../delivery/inbox-view.js";
 import { LIMITS, bool, limit, out } from "../server/schemas.js";
 import { readRoleTable, recipientView } from "../delivery/role-handover.js";
 
@@ -122,8 +123,7 @@ export function makeReadInboxHandler({
         const open = args.includeOpen === false || rows.length >= limit
           ? []
           : mb.inspect({ limit: Number.MAX_SAFE_INTEGER })
-            .filter((row) => inbox.isRecipient(row) && !shownIds.has(row.id) && row.delivered_at && !inbox.isPending(row) &&
-              isAnticipating(row) && isOpenFor(row, inbox, at, settings))
+            .filter((row) => !shownIds.has(row.id) && isOpenMailFor(row, inbox, at, settings))
             .sort((a, b) => a.sent_at - b.sent_at)
             .slice(0, limit - rows.length);
         const shown = [...rows, ...open];
@@ -154,20 +154,6 @@ export function makeReadInboxHandler({
       }
     }
   };
-}
-
-/**
- * Open for the inbox: pending, or (handed over to this holder and still
- * unresolved) unresolved or expired too, so a message that reached the cap
- * under the previous holder is not lost (R7.20).
- * @param {Record<string, any>} row
- * @param {ReturnType<typeof recipientView>} inbox
- * @param {number} at
- * @param {import("../delivery/message-status.js").ReminderSettings} settings
- */
-function isOpenFor(row, inbox, at, settings) {
-  const status = messageStatus(row, { now: at, settings }).status;
-  return status === "pending" || (inbox.handedOver(row) && !row.resolution && (status === "unresolved" || status === "expired"));
 }
 
 /**

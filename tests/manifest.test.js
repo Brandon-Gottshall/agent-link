@@ -26,6 +26,7 @@ const codexMarket = readJson(".agents/plugins/marketplace.json");
 const mcp = readJson(".mcp.json");
 const codexMcp = readJson(".codex-mcp.json");
 const hooks = readJson("hooks/hooks.json");
+const codexHooks = readJson("hooks/codex-hooks.json");
 
 const NAME = "agent-link";
 const CODEX_NAME = "codex-agent-link";
@@ -108,6 +109,26 @@ test("hook commands point at files that exist", () => {
     assert.ok(refs.length > 0, `hook command references the plugin root: ${command}`);
     for (const rel of refs) assert.ok(existsSync(path.join(root, rel)), `hook target exists: ${rel}`);
   }
+});
+
+// Codex reads hooks/hooks.json from a plugin by default, and that file holds
+// the Claude hooks. The Codex manifest names its own file instead (design
+// R1.14): Codex then loads only the prompt hook, never the Claude hooks.
+test("the Codex manifest declares only the Codex prompt hook", () => {
+  assert.equal(codex.hooks, "./hooks/codex-hooks.json");
+  assert.equal(claude.hooks, undefined, "Claude Code loads hooks/hooks.json by default");
+  assert.deepEqual(Object.keys(codexHooks.hooks), ["UserPromptSubmit"]);
+  const entries = codexHooks.hooks.UserPromptSubmit.flatMap((group) => group.hooks);
+  assert.equal(entries.length, 1);
+  const [hook] = entries;
+  assert.equal(hook.type, "command");
+  assert.ok(hook.timeout > 0 && hook.timeout <= 10, "short timeout");
+  assert.equal(hook.command, "node \"${PLUGIN_ROOT}/src/codex/prompt-hook.js\" 2>/dev/null; exit 0",
+    "the exact command is the trust hash: changing it makes users trust the hook again");
+  const refs = [...hook.command.matchAll(/\$\{PLUGIN_ROOT\}\/([^"'\s;]+)/g)].map((m) => m[1]);
+  assert.deepEqual(refs, ["src/codex/prompt-hook.js"]);
+  for (const rel of refs) assert.ok(existsSync(path.join(root, rel)), `hook target exists: ${rel}`);
+  assert.ok(!JSON.stringify(codexHooks).includes("notify-hook"), "no Claude hook in the Codex file");
 });
 
 test("marketplace files reference the right plugin names", () => {

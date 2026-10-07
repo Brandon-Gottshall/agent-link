@@ -45,9 +45,10 @@ export default [
     }
   },
   {
-    // The UserPromptSubmit/SessionStart hook runs as its own process, and its
-    // stdout is the hook protocol: it must write exactly one JSON object there.
-    files: ["src/claude/notify-hook.js"],
+    // The hooks run as their own processes, and their stdout is the hook
+    // protocol: the Claude hook writes exactly one JSON object there, the
+    // Codex prompt hook one JSON object or nothing.
+    files: ["src/claude/notify-hook.js", "src/codex/prompt-hook.js"],
     rules: {
       "no-restricted-properties": "off"
     }

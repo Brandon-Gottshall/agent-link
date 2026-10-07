@@ -135,6 +135,16 @@ function canWrite(target) {
   }
 }
 
+// Read-only mailbox rows for a caller that must never write state (the
+// Codex prompt hook, design R1.14): no state directory, no mode change, no
+// lock, no claim. Same rows as openMailbox().inspect() without filters,
+// unsorted. A missing mailbox is an empty one.
+/** @param {MailboxLocation} [options] */
+export function readMailboxRows(options = {}) {
+  const mailboxPath = resolveMailboxPath(options);
+  return mergedView(mailboxReadPaths(options), `${mailboxPath}.claims`);
+}
+
 export function openMailbox(options = {}) {
   const mailboxPath = resolveMailboxPath(options);
   const readPaths = mailboxReadPaths(options);

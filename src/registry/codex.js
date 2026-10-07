@@ -58,7 +58,8 @@ export function toCodexAgent(thread, { fromAppServer = true } = {}) {
     loaded: fromAppServer && LOADED_STATUS.has(statusType),
     archived: thread.archiveState?.scope === "archived",
     lastActivityAt: typeof thread.updatedAt === "string" ? thread.updatedAt : null,
-    receive: { push: "codex-turn", nudge: null, pull: false },
+    // nudge: the Codex prompt hook (R1.9, R1.14), once the user trusts it.
+    receive: { push: "codex-turn", nudge: "codex-hook", pull: false },
     threadId: thread.id,
     status: statusType
   };
