@@ -44,16 +44,21 @@ function runServer(entry, inject) {
   });
 }
 
+// Fire only once the server has installed its handler for `event`, so a slow
+// module load cannot let the fault escape to Node's default crash handler.
+const whenHandled = (event, fault) =>
+  `const t = setInterval(() => { if (process.listenerCount(${JSON.stringify(event)}) > 0) { clearInterval(t); ${fault} } }, 20);`;
+
 for (const entry of ["src/server.js", "dist/server.mjs"]) {
   test(`${entry}: unhandled rejection is logged and shuts down with exit 1`, async () => {
-    const result = await runServer(entry, 'setTimeout(() => { Promise.reject(new Error("stray rejection")); }, 400);');
+    const result = await runServer(entry, whenHandled("unhandledRejection", 'Promise.reject(new Error("stray rejection"));'));
     assert.equal(result.code, 1);
     assert.match(result.stderr, /agent-link: \[error\] process\.unhandled_rejection .*stray rejection/);
     assert.equal(result.stdout, "", "nothing written to the protocol stream");
   });
 
   test(`${entry}: uncaught exception is logged and shuts down with exit 1`, async () => {
-    const result = await runServer(entry, 'setTimeout(() => { throw new Error("stray throw"); }, 400);');
+    const result = await runServer(entry, whenHandled("uncaughtException", 'throw new Error("stray throw");'));
     assert.equal(result.code, 1);
     assert.match(result.stderr, /agent-link: \[error\] process\.uncaught_exception .*stray throw/);
     assert.equal(result.stdout, "");
