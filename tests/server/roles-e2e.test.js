@@ -192,6 +192,17 @@ try {
   assert.ok(!text.includes("<procedure"), "the text goes only with the first delivery of a version");
   // A hand edit of the procedure file is version 2, delivered once.
   writeFileSync(path.join(stateDir, "roles", "router.md"), "Route all work, v2.");
+  // I3: read-only tools see the change as pending and write nothing.
+  const snapshot = () => ["roles.json", "role-state.json"].map((name) => readFileSync(path.join(stateDir, name), "utf8"));
+  const beforeReads = snapshot();
+  const pending = await call("get_agent_role", { role: "router" });
+  assert.deepEqual([pending.role.procedure.version, pending.role.procedure.pending], [1, true]);
+  await call("list_agent_roles", {});
+  await call("resolve_agent", { query: "role:router" });
+  await call("list_agents", { harness: "claude" });
+  await call("get_agent_override_policy", {});
+  await call("agent_link_health", { startAppServer: false });
+  assert.deepEqual(snapshot(), beforeReads, "read-only tools wrote nothing");
   mark = received.length;
   r = await call("message_codex_thread", { threadId: "role:router", message: "third" });
   assert.deepEqual(r.roleProcedure, { name: "router", version: 2, textIncluded: true });
@@ -243,9 +254,13 @@ try {
   r = await call("message_codex_thread", { threadId: WORKER_T, message: "x", model: "gpt-other" }, OTHER);
   assert.deepEqual([r.error.code, r.error.details.reason], ["permission_denied", "model_switch_requires_fork_or_opt_in"]);
   assert.equal(turnStarts(mark).length, 0, "nothing was sent");
-  // allowTargetOverride grants nothing.
-  r = await call("message_codex_thread", { threadId: WORKER_T, message: "x", model: "gpt-other", allowTargetOverride: true }, OTHER);
-  assert.equal(r.error.details.reason, "model_switch_requires_fork_or_opt_in");
+  // The deprecated allowTargetOverride still grants (0.6.0), with a warning and a receipt.
+  r = await call("message_codex_thread", { threadId: LAUNCHED, message: "x", model: "gpt-flag", allowTargetOverride: true }, OTHER);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.switches.map((s) => [s.setting, s.grantedBy]), [["model", "allowTargetOverride"]]);
+  assert.ok(r.warnings.some((w) => w.code === "deprecated_argument"));
+  const flagReceipts = await call("list_agent_link_receipts", { action: "model_switch", limit: 1 });
+  assert.equal(flagReceipts.data[0].override.grantedBy, "allowTargetOverride");
 
   // With policy: the switch is applied, reported, receipted, and never reverted.
   r = await call("set_agent_override_policy", { target: `codex:${WORKER_T}`, model: [`codex:${OTHER}`], cwd: ["*"] });

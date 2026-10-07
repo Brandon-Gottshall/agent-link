@@ -10,11 +10,15 @@ const pluginId = process.env.CODEX_AGENT_LINK_PLUGIN_ID || "codex-agent-link@age
 const mcpServer = "codex-agent-link";
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SERVER_ENTRY = "./dist/server.mjs";
+// Which Codex config to check. The user's real config (under CODEX_HOME or
+// ~/.codex) is read only when asked for explicitly, so agents and test runs
+// never read it by accident:
+//   --config <path> or CODEX_CONFIG=<path>        check that file
+//   --real-config or AGENT_LINK_CHECK_REAL_CONFIG=1  check the real config
+const configPath = resolveConfigPath(process.argv.slice(2), process.env);
+
 // Derive the tool list from the server itself so it cannot drift from what Codex exposes.
 const tools = await listCodexHostTools(pluginRoot);
-
-const configPath = process.env.CODEX_CONFIG
-  || path.join(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"), "config.toml");
 
 const source = fs.readFileSync(configPath, "utf8");
 const lines = source.split(/\r?\n/);
@@ -56,6 +60,32 @@ if (failures.length > 0 || envelopeFailures.length > 0) {
 }
 
 console.log(`Codex Agent Link approval config OK in ${configPath}; ${tools.length} MCP tools approved.`);
+
+/**
+ * @param {string[]} argv
+ * @param {Record<string, string | undefined>} env
+ * @returns {string}
+ */
+function resolveConfigPath(argv, env) {
+  const flag = argv.indexOf("--config");
+  if (flag >= 0) {
+    const value = argv[flag + 1];
+    if (!value || value.startsWith("--")) refuse("--config needs a path.");
+    return path.resolve(value);
+  }
+  if (env.CODEX_CONFIG) return path.resolve(env.CODEX_CONFIG);
+  if (argv.includes("--real-config") || env.AGENT_LINK_CHECK_REAL_CONFIG === "1") {
+    return path.join(env.CODEX_HOME || path.join(os.homedir(), ".codex"), "config.toml");
+  }
+  refuse("No config named. This check does not read your real Codex config unless asked.");
+  return "";
+}
+
+/** @param {string} reason */
+function refuse(reason) {
+  console.error(`${reason}\nPass --config <path> (or CODEX_CONFIG=<path>) to check a specific file, or --real-config (or AGENT_LINK_CHECK_REAL_CONFIG=1) to check your real Codex config (npm run check:approval-config:real).`);
+  process.exit(2);
+}
 
 function hasSetting(sectionName, key, expectedValue) {
   const sectionStart = lines.findIndex((line) => line.trim() === `[${sectionName}]`);

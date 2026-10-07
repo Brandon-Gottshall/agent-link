@@ -119,9 +119,8 @@ export function archiveReceiptEvidence({ loadedCheck, archive, action }) {
 }
 
 /**
- * @param {ThreadActionDeps} deps
- */
-/**
+ * The launcher recorded on a launch receipt (R9.9): a session address from
+ * runtime identity, never `external`.
  * @param {string | null | undefined} address
  * @returns {string | null}
  */
@@ -129,6 +128,9 @@ function launcherAddress(address) {
   return typeof address === "string" && /^(claude|codex):/.test(address) ? address : null;
 }
 
+/**
+ * @param {ThreadActionDeps} deps
+ */
 export function makeThreadActions({ appServer, messaging, desktop }) {
   const { buildPeerTurnInput, recordActionReceipt, callerAddress } = messaging;
   const { openCodexDesktopThread } = desktop;

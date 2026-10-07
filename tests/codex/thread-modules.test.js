@@ -8,7 +8,7 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { AppServerError } from "../../src/codex/app-server-client.js";
+import { AppServerError, managedAppServerEnv } from "../../src/codex/app-server-client.js";
 import { codexThreadDeepLink, makeDesktopRouting } from "../../src/codex/desktop-routing.js";
 import {
   buildSubagentRegistryEntry,
@@ -151,10 +151,12 @@ test("decideTargetOverrides: equal values forward, known differences are denied,
     const steering = decide({ model: "m2" }, { steering: true });
     assert.equal(steering.denied, null);
     assert.equal(steering.warnings[0].code, "target-override-ignored-steer");
-    // allowTargetOverride grants nothing since 0.7.0 (R9.13).
+    // allowTargetOverride still grants in 0.6.0, with a deprecation warning (R9.13).
     const flagged = decide({ model: "m2", allowTargetOverride: true });
-    assert.equal(flagged.denied.reason, "model_switch_requires_fork_or_opt_in");
-    assert.equal(flagged.warnings[0].code, "ignored_argument");
+    assert.equal(flagged.denied, null);
+    assert.deepEqual(flagged.forward, { model: "m2" });
+    assert.equal(flagged.switches[0].grantedBy, "allowTargetOverride");
+    assert.equal(flagged.warnings[0].code, "deprecated_argument");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -367,4 +369,32 @@ test("makeCurrentClaudeSession memoizes per source and only on the Claude host",
   assert.equal(calls.length, 3, "a sidecar session is kept for good");
   assert.deepEqual(calls[0], { sessionId: "sid" });
   assert.equal(makeCurrentClaudeSession({ host: "codex", resolve: () => assert.fail("not on codex") })(), null);
+});
+
+test("I2: the launcher comes only from launchedBy, or a pre-launchedBy Codex-host runtime origin", async () => {
+  const T = "019d9000-0000-7000-8000-0000000000aa";
+  const O = "019d9000-0000-7000-8000-0000000000bb";
+  const origin = (source, host = "codex") => ({ host, origin: { threadId: O, sources: { threadId: source } } });
+  const launcher = async (receipts) => makeThreadMessaging({
+    appServer: /** @type {any} */ ({}),
+    host: "codex",
+    resolveCurrentSession: () => null,
+    queries: /** @type {any} */ ({}),
+    listReceipts: async () => ({ data: receipts })
+  }).launcherOf(T);
+  assert.equal(await launcher([{ launchedBy: `codex:${O}`, ...origin("caller_supplied") }]), `codex:${O}`);
+  // launchedBy present decides alone: null (an external launcher) is no launcher, even with a runtime origin.
+  assert.equal(await launcher([{ launchedBy: null, ...origin("runtime_context") }]), null);
+  assert.equal(await launcher([{ launchedBy: "external", ...origin("runtime_context") }]), null);
+  // Older receipts: only a Codex-host runtime origin counts.
+  assert.equal(await launcher([origin("runtime_context")]), `codex:${O}`);
+  assert.equal(await launcher([origin("runtime_context", "claude")]), null, "a _meta thread id on a Claude host is not a launcher");
+  assert.equal(await launcher([origin("environment")]), null, "an environment origin is not a launcher");
+  assert.equal(await launcher([origin("caller_supplied")]), null, "a caller-supplied origin is not a launcher");
+  assert.equal(await launcher([]), null);
+});
+
+test("I5: the managed app-server never inherits role administration or enforcement", () => {
+  const env = managedAppServerEnv({ PATH: "/bin", AGENT_LINK_ROLE_ADMIN: "1", AGENT_LINK_ROLE_ENFORCEMENT: "off", AGENT_LINK_STATE_DIR: "/s" });
+  assert.deepEqual(env, { PATH: "/bin", AGENT_LINK_STATE_DIR: "/s" });
 });

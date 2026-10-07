@@ -1,28 +1,35 @@
 // src/registry/roles.js
 //
-// User-assigned roles (design doc section 1.8, PR B9). The role table lives
-// in `<state>/roles.json` (0600) and each role's procedure text in
-// `<state>/roles/<name>.md`:
+// User-assigned roles (design doc section 1.8, PR B9). Two files hold them:
 //
-//   { "version": 1,
-//     "enforcement": "off" | "warn" | "enforce",          (optional, R1.25)
-//     "roles": { "<name>": { "address": "codex:<id>", "assignedAt": "<iso>",
-//                            "procedure": {"version", "sha256", "updatedAt"} } },
-//     "overridePolicy": { "<target>": {"model": [...], "effort": [...], "cwd": [...]} } }
+//   <state>/roles.json         the user's configuration (0600)
+//     { "version": 1,
+//       "enforcement": "off" | "warn" | "enforce",          (optional, R1.25)
+//       "roles": { "<name>": { "address": "codex:<id>", "assignedAt": "<iso>" } },
+//       "overridePolicy": { "<target>": {"model": [...], "effort": [...], "cwd": [...]} } }
+//   <state>/roles/<name>.md    each role's procedure text (R1.20)
+//
+// and Agent Link's own bookkeeping, which is never part of the user's file:
+//
+//   <state>/role-state.json
+//     { "version": 1,
+//       "procedures": { "<name>": {"version", "sha256", "updatedAt"} },
+//       "deliveries": { "<name>": { "<holder address>": "<sha256 last delivered>" } } }
 //
 // A role is a pointer, not a privilege (R1.22): it names the session that
 // receives `role:<name>` messages and carries one procedure the user tunes in
 // one place. The only permission in the table is target-side, the override
 // policy (R9.4).
 //
-// Writes take a lock file beside the table and replace the table atomically
-// (temporary file, fsync, rename), so concurrent servers never interleave or
-// leave a half-written table. Hand edits are supported: the table is
-// validated on every read, invalid entries are dropped and reported, and a
-// procedure file whose SHA-256 changed gets a new version on the next read
-// that syncs (R1.20). A table that cannot be parsed is reported, never
-// guessed at: role lookups fail with state_io_error and the override policy
-// is read as empty (nothing allowed).
+// roles.json is written only by the role write tools. Each write takes a lock
+// file, re-reads the file, changes only the keys it owns on the raw JSON (so
+// entries it does not understand survive), and replaces the file atomically
+// (temporary file, fsync, rename). A file whose `version` is not 1 is never
+// written. Reads validate on every call and never write: invalid entries are
+// ignored and reported, and a file that cannot be parsed fails role lookups
+// with state_io_error and is read as an empty policy (nothing allowed).
+// Procedure versions are assigned only on send paths and by set_agent_role,
+// so the read-only tools never write anything.
 
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -47,13 +54,18 @@ export const MAX_PROCEDURE_BYTES = 64 * 1024;
 export const MAX_POLICY_SENDERS = 50;
 
 const LOCK_STALE_MS = 30_000;
-const LOCK_TIMEOUT_MS = 5_000;
-const LOCK_RETRY_MS = 20;
-const DELIVERIES_FILE = "role-procedure-deliveries.json";
+// Critical sections take milliseconds. A request waits at most this long for
+// the lock and then fails fast with a retry hint instead of blocking the
+// server's event loop.
+const LOCK_TIMEOUT_MS = 250;
+const LOCK_RETRY_MS = 5;
+const BREAKER_STALE_MS = 5_000;
+const STATE_FILE = "role-state.json";
+const STATE_VERSION = 1;
 
 /**
  * @typedef {{version: number, sha256: string, updatedAt: string}} ProcedureRecord
- * @typedef {{address: string | string[] | null, assignedAt: string | null, procedure: ProcedureRecord | null}} RoleRecord
+ * @typedef {{address: string | string[] | null, assignedAt: string | null}} RoleRecord
  * @typedef {{model?: string[], effort?: string[], cwd?: string[]}} PolicyEntry
  * @typedef {{
  *   version: number,
@@ -62,7 +74,8 @@ const DELIVERIES_FILE = "role-procedure-deliveries.json";
  *   overridePolicy: Record<string, PolicyEntry>
  * }} RoleTable
  * @typedef {{path: string, rule: string, message: string}} TableProblem
- * @typedef {{table: RoleTable, problems: TableProblem[], error: string | null, path: string, exists: boolean}} TableRead
+ * @typedef {{table: RoleTable, problems: TableProblem[], error: string | null, path: string, exists: boolean, writable: boolean, raw: Record<string, any> | null}} TableRead
+ * @typedef {{version: number, procedures: Record<string, ProcedureRecord>, deliveries: Record<string, Record<string, string>>}} RoleState
  */
 
 /** @returns {RoleTable} */
@@ -152,8 +165,8 @@ export function validateRoleTable(raw) {
     problems.push({ path: "", rule: "type", message: "roles.json must hold a JSON object." });
     return { table, problems };
   }
-  if (raw.version !== undefined && raw.version !== ROLE_TABLE_VERSION) {
-    problems.push({ path: "version", rule: "version", message: `Unsupported roles.json version ${JSON.stringify(raw.version)}; expected ${ROLE_TABLE_VERSION}. Entries were read as version ${ROLE_TABLE_VERSION}.` });
+  if (raw.version !== ROLE_TABLE_VERSION) {
+    problems.push({ path: "version", rule: "version", message: `roles.json version is ${JSON.stringify(raw.version ?? null)}; expected ${ROLE_TABLE_VERSION}. Entries were read as version ${ROLE_TABLE_VERSION}, and Agent Link will not write the file until its version is ${ROLE_TABLE_VERSION}.` });
   }
   if (raw.enforcement !== undefined && raw.enforcement !== null) {
     if (ENFORCEMENT_MODES.includes(raw.enforcement)) table.enforcement = raw.enforcement;
@@ -186,17 +199,7 @@ export function validateRoleTable(raw) {
     } else if (entry.address !== undefined && entry.address !== null) {
       problems.push({ path: `roles.${name}.address`, rule: "type", message: "address must be a string; the role has no holder." });
     }
-    /** @type {ProcedureRecord | null} */
-    let procedure = null;
-    if (isPlainObject(entry.procedure)) {
-      const p = entry.procedure;
-      if (Number.isInteger(p.version) && p.version >= 1 && typeof p.sha256 === "string" && /^[0-9a-f]{64}$/.test(p.sha256)) {
-        procedure = { version: p.version, sha256: p.sha256, updatedAt: isoOrNull(p.updatedAt) ?? new Date(0).toISOString() };
-      } else {
-        problems.push({ path: `roles.${name}.procedure`, rule: "format", message: "procedure must be {version >= 1, sha256, updatedAt}; it is rebuilt from the procedure file." });
-      }
-    }
-    table.roles[name] = { address, assignedAt: isoOrNull(entry.assignedAt), procedure };
+    table.roles[name] = { address, assignedAt: isoOrNull(entry.assignedAt) };
   }
   if (raw.overridePolicy !== undefined && !isPlainObject(raw.overridePolicy)) {
     problems.push({ path: "overridePolicy", rule: "type", message: "overridePolicy must be an object; ignored (nothing is allowed)." });
@@ -252,9 +255,69 @@ function processAlive(pid) {
 }
 
 /**
+ * Identity of a lock file as seen at one moment: content, inode, mtime.
+ * @param {string} lockPath
+ * @returns {{raw: string, ino: number, mtimeMs: number} | null}
+ */
+function lockSnapshot(lockPath) {
+  try {
+    const stat = fs.statSync(lockPath);
+    return { raw: fs.readFileSync(lockPath, "utf8"), ino: stat.ino, mtimeMs: stat.mtimeMs };
+  } catch {
+    return null;
+  }
+}
+
+/** @param {string} raw */
+function ownerPid(raw) {
+  try {
+    return Number(JSON.parse(raw)?.pid);
+  } catch {
+    return NaN;
+  }
+}
+
+/**
+ * Removes a stale lock without ever removing a live one. Only the holder of
+ * the O_EXCL breaker file `<lock>.break` may remove the lock, and only after
+ * re-checking that the lock is still exactly the stale file it observed
+ * (same content, inode, and mtime). Returns true when it removed the lock.
+ * @param {string} lockPath
+ * @param {{raw: string, ino: number, mtimeMs: number}} observed
+ * @param {string} token
+ * @param {() => number} now
+ */
+function breakStaleLock(lockPath, observed, token, now) {
+  const breaker = `${lockPath}.break`;
+  try {
+    fs.writeFileSync(breaker, JSON.stringify({ pid: process.pid, token }), { flag: "wx", mode: FILE_MODE });
+  } catch (error) {
+    if (/** @type {NodeJS.ErrnoException} */ (error).code !== "EEXIST") return false;
+    // A breaker left by a process that died while breaking: clear it so the
+    // next attempt can proceed. Breaking takes microseconds, so a breaker
+    // this old whose owner is gone is abandoned.
+    const stale = lockSnapshot(breaker);
+    if (stale && now() - stale.mtimeMs > BREAKER_STALE_MS && !processAlive(ownerPid(stale.raw))) {
+      fs.rmSync(breaker, { force: true });
+    }
+    return false;
+  }
+  try {
+    const current = lockSnapshot(lockPath);
+    if (!current || current.raw !== observed.raw || current.ino !== observed.ino || current.mtimeMs !== observed.mtimeMs) return false;
+    fs.rmSync(lockPath, { force: true });
+    return true;
+  } finally {
+    fs.rmSync(breaker, { force: true });
+  }
+}
+
+/**
  * Runs `fn` while holding `<lockPath>` (created with O_EXCL). A lock older
- * than 30 s whose owner process is gone is stale and is taken over. Waits up
- * to 5 s, then fails with state_io_error.
+ * than `staleMs` whose owner process is gone is stale and is taken over
+ * through breakStaleLock. Waits at most `timeoutMs` (250 ms by default, so a
+ * request never blocks the server for long), then fails with
+ * state_io_error and a retry hint.
  * @template T
  * @param {string} lockPath
  * @param {() => T} fn
@@ -273,28 +336,14 @@ export function withFileLockSync(lockPath, fn, { timeoutMs = LOCK_TIMEOUT_MS, st
         throw stateIoError(lockPath, error, "Could not create the role table lock.");
       }
     }
-    try {
-      const stat = fs.statSync(lockPath);
-      let owner = null;
-      try {
-        owner = JSON.parse(fs.readFileSync(lockPath, "utf8"));
-      } catch {
-        owner = null;
-      }
-      if (now() - stat.mtimeMs > staleMs && !processAlive(Number(owner?.pid))) {
-        // Move the stale lock aside first: only one contender's rename succeeds.
-        const aside = `${lockPath}.stale-${token.replace(/[^A-Za-z0-9-]/g, "")}`;
-        fs.renameSync(lockPath, aside);
-        fs.rmSync(aside, { force: true });
-        continue;
-      }
-    } catch {
-      // The lock disappeared or was taken over meanwhile: retry.
+    const observed = lockSnapshot(lockPath);
+    if (observed && now() - observed.mtimeMs > staleMs && !processAlive(ownerPid(observed.raw))) {
+      if (breakStaleLock(lockPath, observed, token, now)) continue;
     }
     if (now() >= deadline) {
-      throw new AgentLinkError("state_io_error", "Timed out waiting for the role table lock.", {
+      throw new AgentLinkError("state_io_error", "The role table is busy (another Agent Link server holds its lock).", {
         details: { path: path.basename(lockPath), errno: "ETIMEDOUT" },
-        hint: `Another Agent Link server is writing the role table. Retry; if this persists, remove ${path.basename(lockPath)} from the state directory.`
+        hint: `Retry the call. If this persists, check that no Agent Link process is stuck, then remove ${path.basename(lockPath)} from the state directory.`
       });
     }
     sleepSync(LOCK_RETRY_MS);
@@ -350,14 +399,52 @@ function stateIoError(filePath, error, message) {
 }
 
 /**
- * Procedure text as delivered: a hand-edited file over the cap is cut, with a note.
- * @param {string} text
+ * Reads a procedure file safely: a regular file only (no symlink, FIFO, or
+ * device), opened without following links and without blocking, at most
+ * MAX_PROCEDURE_BYTES. Null when there is no file; {error} when the file
+ * cannot be used.
+ * @param {string} dir   the procedures directory
+ * @param {string} file
+ * @returns {{text: string, sha256: string} | {error: string} | null}
  */
-export function capProcedureText(text) {
-  const bytes = Buffer.byteLength(text, "utf8");
-  if (bytes <= MAX_PROCEDURE_BYTES) return text;
-  const cut = new TextDecoder("utf-8").decode(Buffer.from(text, "utf8").subarray(0, MAX_PROCEDURE_BYTES)).replace(/\uFFFD+$/, "");
-  return `${cut}\n[Agent Link: procedure truncated; the file is ${bytes} bytes and the limit is ${MAX_PROCEDURE_BYTES}.]`;
+export function readProcedureFileSafe(dir, file) {
+  try {
+    if (!fs.lstatSync(dir).isDirectory()) return { error: "the roles directory is not a directory" };
+  } catch {
+    return null;
+  }
+  let stat;
+  try {
+    stat = fs.lstatSync(file);
+  } catch {
+    return null;
+  }
+  if (!stat.isFile()) return { error: "the procedure file is not a regular file (symlinks, FIFOs, and devices are refused)" };
+  let fd;
+  try {
+    fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+  } catch (error) {
+    return { error: `the procedure file could not be opened (${/** @type {NodeJS.ErrnoException} */ (error).code ?? "error"})` };
+  }
+  try {
+    if (!fs.fstatSync(fd).isFile()) return { error: "the procedure file is not a regular file" };
+    const buffer = Buffer.alloc(MAX_PROCEDURE_BYTES + 1);
+    let length = 0;
+    for (;;) {
+      const read = fs.readSync(fd, buffer, length, buffer.length - length, null);
+      if (read === 0) break;
+      length += read;
+      if (length > MAX_PROCEDURE_BYTES) {
+        return { error: `the procedure file is larger than ${MAX_PROCEDURE_BYTES} bytes (64 KiB)` };
+      }
+    }
+    const text = buffer.subarray(0, length).toString("utf8");
+    return { text, sha256: sha256(text) };
+  } catch (error) {
+    return { error: `the procedure file could not be read (${/** @type {NodeJS.ErrnoException} */ (error).code ?? "error"})` };
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 /** @param {string} text */
@@ -367,44 +454,51 @@ export function sha256(text) {
 
 /**
  * The role store for one state directory.
- * @param {{env?: Record<string, string | undefined>, homedir?: string, now?: () => number}} [options]
+ * @param {{env?: Record<string, string | undefined>, homedir?: string, now?: () => number, lockTimeoutMs?: number}} [options]
  */
-export function createRoleStore({ env = process.env, homedir, now = () => Date.now() } = {}) {
+export function createRoleStore({ env = process.env, homedir, now = () => Date.now(), lockTimeoutMs = LOCK_TIMEOUT_MS } = {}) {
   const pathOptions = { env, ...(homedir ? { homedir } : {}) };
   const tablePath = () => rolesPath(pathOptions);
   const proceduresDir = () => roleProceduresDir(pathOptions);
-  const deliveriesPath = () => path.join(stateDir(pathOptions), DELIVERIES_FILE);
-  const lockPath = () => `${tablePath()}.lock`;
+  const statePath = () => path.join(stateDir(pathOptions), STATE_FILE);
   const iso = () => new Date(now()).toISOString();
+  const lockOptions = { now, timeoutMs: lockTimeoutMs };
 
   /** @param {string} name */
   function procedureFile(name) {
     return path.join(proceduresDir(), `${name}.md`);
   }
 
+  /** @param {string} name */
+  function readProcedure(name) {
+    return readProcedureFileSafe(proceduresDir(), procedureFile(name));
+  }
+
   /**
-   * Reads and validates the table without writing anything.
+   * Reads and validates the table. Never writes.
    * @returns {TableRead}
    */
   function read() {
     const file = tablePath();
-    let raw;
+    const base = { path: file, exists: true, writable: false, raw: null };
+    let text;
     try {
-      raw = fs.readFileSync(file, "utf8");
+      text = fs.readFileSync(file, "utf8");
     } catch (error) {
       if (/** @type {NodeJS.ErrnoException} */ (error).code === "ENOENT") {
-        return { table: emptyRoleTable(), problems: [], error: null, path: file, exists: false };
+        return { ...base, table: emptyRoleTable(), problems: [], error: null, exists: false, writable: true };
       }
-      return { table: emptyRoleTable(), problems: [], error: `roles.json could not be read (${/** @type {NodeJS.ErrnoException} */ (error).code ?? "error"}).`, path: file, exists: true };
+      return { ...base, table: emptyRoleTable(), problems: [], error: `roles.json could not be read (${/** @type {NodeJS.ErrnoException} */ (error).code ?? "error"}).` };
     }
     let parsed;
     try {
-      parsed = JSON.parse(raw);
+      parsed = JSON.parse(text);
     } catch {
-      return { table: emptyRoleTable(), problems: [], error: "roles.json is not valid JSON; roles and the override policy are unavailable until it is fixed.", path: file, exists: true };
+      return { ...base, table: emptyRoleTable(), problems: [], error: "roles.json is not valid JSON; roles and the override policy are unavailable until it is fixed." };
     }
     const { table, problems } = validateRoleTable(parsed);
-    return { table, problems, error: null, path: file, exists: true };
+    const writable = isPlainObject(parsed) && parsed.version === ROLE_TABLE_VERSION;
+    return { ...base, table, problems, error: null, writable, raw: isPlainObject(parsed) ? parsed : null };
   }
 
   /**
@@ -421,124 +515,148 @@ export function createRoleStore({ env = process.env, homedir, now = () => Date.n
   }
 
   /**
-   * Runs `mutate(table)` under the lock and writes the result atomically.
+   * Runs `mutate(raw, table)` on the raw JSON under the lock and writes the
+   * result atomically. Only the keys the mutation touches change; entries
+   * Agent Link does not understand are kept. A file whose version is not 1
+   * is refused (fail closed).
    * @template T
-   * @param {(table: RoleTable) => T} mutate
+   * @param {(raw: Record<string, any>, table: RoleTable) => T} mutate
    * @returns {T}
    */
   function update(mutate) {
     ensureStateDir(pathOptions);
-    return withFileLockSync(lockPath(), () => {
+    return withFileLockSync(`${tablePath()}.lock`, () => {
       const current = read();
       assertUsable(current);
-      const result = mutate(current.table);
-      writeFileAtomicSync(tablePath(), `${JSON.stringify(serialize(current.table), null, 2)}\n`);
-      return result;
-    }, { now });
-  }
-
-  /** @param {RoleTable} table */
-  function serialize(table) {
-    /** @type {Record<string, any>} */
-    const out = { version: ROLE_TABLE_VERSION };
-    if (table.enforcement) out.enforcement = table.enforcement;
-    out.roles = {};
-    for (const name of Object.keys(table.roles).sort()) {
-      const role = table.roles[name];
-      out.roles[name] = {
-        ...(role.address ? { address: role.address } : {}),
-        ...(role.assignedAt ? { assignedAt: role.assignedAt } : {}),
-        ...(role.procedure ? { procedure: role.procedure } : {})
-      };
-    }
-    out.overridePolicy = {};
-    for (const target of Object.keys(table.overridePolicy).sort()) out.overridePolicy[target] = table.overridePolicy[target];
-    return out;
-  }
-
-  /**
-   * The procedure file's text and hash, or null when there is none.
-   * @param {string} name
-   * @returns {{text: string, sha256: string} | null}
-   */
-  function readProcedureFile(name) {
-    try {
-      const text = fs.readFileSync(procedureFile(name), "utf8");
-      return { text, sha256: sha256(text) };
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * True when a procedure file exists whose hash differs from the record.
-   * @param {RoleTable} table
-   * @param {string} name
-   */
-  function procedureStale(table, name) {
-    const file = readProcedureFile(name);
-    const record = table.roles[name]?.procedure ?? null;
-    return file !== null && file.sha256 !== record?.sha256;
-  }
-
-  /**
-   * R1.20: a procedure file whose SHA-256 differs from the record gets the
-   * next version. Runs under the lock only when something changed, so a
-   * hand edit bumps the version exactly once.
-   * @param {string[]} names
-   * @returns {TableRead}
-   */
-  function sync(names) {
-    const first = read();
-    if (first.error) return first;
-    const stale = names.filter((name) => first.table.roles[name] && procedureStale(first.table, name));
-    if (stale.length === 0) return first;
-    update((table) => {
-      for (const name of stale) {
-        const role = table.roles[name];
-        const file = readProcedureFile(name);
-        if (!role || !file || file.sha256 === role.procedure?.sha256) continue;
-        role.procedure = { version: (role.procedure?.version ?? 0) + 1, sha256: file.sha256, updatedAt: iso() };
+      if (!current.writable) {
+        throw new AgentLinkError("state_io_error", "roles.json has an unsupported version; Agent Link will not rewrite it.", {
+          details: { path: "roles.json", errno: null, version: current.raw?.version ?? null },
+          hint: `Set "version": ${ROLE_TABLE_VERSION} in roles.json after checking its contents, or move the file aside.`
+        });
       }
-    });
-    return read();
+      const raw = current.raw ?? { version: ROLE_TABLE_VERSION };
+      if (!isPlainObject(raw.roles)) raw.roles = {};
+      if (!isPlainObject(raw.overridePolicy)) raw.overridePolicy = {};
+      const result = mutate(raw, current.table);
+      writeFileAtomicSync(tablePath(), `${JSON.stringify(raw, null, 2)}\n`);
+      return result;
+    }, lockOptions);
   }
 
   /**
-   * The public view of one role.
+   * Agent Link's bookkeeping (procedure versions, deliveries). Never fails:
+   * a missing or unreadable file is empty.
+   * @returns {RoleState}
+   */
+  function readState() {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(statePath(), "utf8"));
+      if (isPlainObject(parsed)) {
+        return {
+          version: STATE_VERSION,
+          procedures: isPlainObject(parsed.procedures) ? parsed.procedures : {},
+          deliveries: isPlainObject(parsed.deliveries) ? parsed.deliveries : {}
+        };
+      }
+    } catch {
+      // Missing or unreadable: start over (at worst a procedure is shown again).
+    }
+    return { version: STATE_VERSION, procedures: {}, deliveries: {} };
+  }
+
+  /**
+   * @template T
+   * @param {(state: RoleState) => T} mutate
+   * @returns {T}
+   */
+  function updateState(mutate) {
+    ensureStateDir(pathOptions);
+    return withFileLockSync(`${statePath()}.lock`, () => {
+      const state = readState();
+      const result = mutate(state);
+      writeFileAtomicSync(statePath(), `${JSON.stringify(state, null, 2)}\n`);
+      return result;
+    }, lockOptions);
+  }
+
+  /**
+   * @param {RoleState} state
+   * @param {string} name
+   * @returns {ProcedureRecord | null}
+   */
+  function procedureRecord(state, name) {
+    const p = state.procedures[name];
+    return isPlainObject(p) && Number.isInteger(p.version) && p.version >= 1 && typeof p.sha256 === "string"
+      ? { version: p.version, sha256: p.sha256, updatedAt: isoOrNull(p.updatedAt) ?? new Date(0).toISOString() }
+      : null;
+  }
+
+  /**
+   * R1.20: gives a changed procedure file the next version. Called only on
+   * send paths and by set_agent_role, never by read-only tools. Writes only
+   * when the file's hash differs from the recorded one.
+   * @param {string} name
+   */
+  function syncProcedure(name) {
+    const file = readProcedure(name);
+    if (!file || "error" in file) return;
+    if (procedureRecord(readState(), name)?.sha256 === file.sha256) return;
+    updateState((state) => {
+      const again = readProcedure(name);
+      if (!again || "error" in again) return;
+      const record = procedureRecord(state, name);
+      if (record?.sha256 === again.sha256) return;
+      state.procedures[name] = { version: (record?.version ?? 0) + 1, sha256: again.sha256, updatedAt: iso() };
+    });
+  }
+
+  /**
+   * The procedure as it stands, without writing: the recorded version, and
+   * whether the file has changed since (`pending`; the next send or
+   * set_agent_role assigns the next version).
+   * @param {string} name
+   * @param {{includeText?: boolean, state?: RoleState}} [options]
+   */
+  function procedureView(name, { includeText = false, state = readState() } = {}) {
+    const record = procedureRecord(state, name);
+    const file = readProcedure(name);
+    if (!record && !file) return null;
+    const usable = file && !("error" in file) ? file : null;
+    const present = Boolean(usable && record && usable.sha256 === record.sha256);
+    return {
+      name,
+      version: record?.version ?? null,
+      sha256: record?.sha256 ?? null,
+      updatedAt: record?.updatedAt ?? null,
+      present,
+      pending: Boolean(usable && usable.sha256 !== record?.sha256),
+      ...(file && "error" in file ? { problem: file.error } : {}),
+      ...(includeText && present && usable ? { text: usable.text } : {})
+    };
+  }
+
+  /**
+   * The public view of one role. Never writes.
    * @param {string} name
    * @param {RoleRecord} role
-   * @param {{includeProcedureText?: boolean}} [options]
+   * @param {{includeProcedureText?: boolean, state?: RoleState}} [options]
    */
-  function view(name, role, { includeProcedureText = false } = {}) {
-    const file = role.procedure ? readProcedureFile(name) : null;
-    const present = file !== null && file.sha256 === role.procedure?.sha256;
+  function view(name, role, { includeProcedureText = false, state } = {}) {
     return {
       role: name,
       roleAddress: `role:${name}`,
       address: role.address,
       assignedAt: role.assignedAt,
-      procedure: role.procedure
-        ? {
-            name,
-            version: role.procedure.version,
-            sha256: role.procedure.sha256,
-            updatedAt: role.procedure.updatedAt,
-            present,
-            ...(includeProcedureText && present && file ? { text: capProcedureText(file.text) } : {})
-          }
-        : null
+      procedure: procedureView(name, { includeText: includeProcedureText, ...(state ? { state } : {}) })
     };
   }
 
-  /**
-   * @param {{sync?: boolean}} [options]
-   */
-  function list({ sync: doSync = true } = {}) {
-    const first = read();
-    const result = doSync && !first.error ? sync(Object.keys(first.table.roles)) : first;
+  /** Every role, by name. Never writes. */
+  function list() {
+    const result = read();
+    const state = readState();
     return {
-      roles: Object.keys(result.table.roles).sort().map((name) => view(name, result.table.roles[name])),
+      roles: Object.keys(result.table.roles).sort().map((name) => view(name, result.table.roles[name], { state })),
       problems: result.problems,
       error: result.error,
       path: result.path,
@@ -548,12 +666,12 @@ export function createRoleStore({ env = process.env, homedir, now = () => Date.n
   }
 
   /**
-   * One role, or null.
+   * One role, or null. Never writes.
    * @param {string} name
    * @param {{includeProcedureText?: boolean}} [options]
    */
   function get(name, options = {}) {
-    const result = sync([name]);
+    const result = read();
     assertUsable(result);
     const role = result.table.roles[name];
     return role ? view(name, role, options) : null;
@@ -561,31 +679,34 @@ export function createRoleStore({ env = process.env, homedir, now = () => Date.n
 
   /**
    * Assigns a role (R1.18). `procedureText`, when given, replaces the
-   * procedure file; a changed hash increments the version.
+   * procedure file; a changed hash is the next version.
    * @param {{role: string, address: string, procedureText?: string | null}} input
    */
   function set({ role: name, address, procedureText = null }) {
     if (!ROLE_NAME_PATTERN.test(name)) throw new TypeError(`invalid role name ${name}`);
     if (!isAddress(address)) throw new TypeError(`invalid holder address ${address}`);
     let previous = null;
-    update((table) => {
-      previous = table.roles[name]?.address ?? null;
-      const role = table.roles[name] ?? { address: null, assignedAt: null, procedure: null };
-      if (role.address !== address) role.assignedAt = iso();
-      role.address = address;
-      role.assignedAt ??= iso();
-      if (typeof procedureText === "string") {
-        const hash = sha256(procedureText);
-        fs.mkdirSync(proceduresDir(), { recursive: true, mode: DIR_MODE });
-        tightenMode(proceduresDir(), DIR_MODE);
-        writeFileAtomicSync(procedureFile(name), procedureText);
-        if (hash !== role.procedure?.sha256) {
-          role.procedure = { version: (role.procedure?.version ?? 0) + 1, sha256: hash, updatedAt: iso() };
-        }
-      }
-      table.roles[name] = role;
+    update((raw, table) => {
+      const before = table.roles[name]?.address ?? null;
+      previous = typeof before === "string" ? before : null;
+      const entry = isPlainObject(raw.roles[name]) ? raw.roles[name] : {};
+      if (entry.address !== address || !isoOrNull(entry.assignedAt)) entry.assignedAt = iso();
+      entry.address = address;
+      raw.roles[name] = entry;
     });
-    const result = sync([name]);
+    if (typeof procedureText === "string") {
+      fs.mkdirSync(proceduresDir(), { recursive: true, mode: DIR_MODE });
+      tightenMode(proceduresDir(), DIR_MODE);
+      const existing = fs.lstatSync(procedureFile(name), { throwIfNoEntry: false });
+      if (existing && !existing.isFile()) {
+        throw new AgentLinkError("state_io_error", `The procedure file for ${name} is not a regular file; Agent Link will not replace it.`, {
+          details: { path: `roles/${name}.md`, errno: null }
+        });
+      }
+      writeFileAtomicSync(procedureFile(name), procedureText);
+    }
+    syncProcedure(name);
+    const result = read();
     return { previousAddress: previous, role: view(name, result.table.roles[name]) };
   }
 
@@ -597,13 +718,13 @@ export function createRoleStore({ env = process.env, homedir, now = () => Date.n
   function clear(name) {
     let previous = null;
     let existed = false;
-    update((table) => {
-      const role = table.roles[name];
-      if (!role) return;
+    update((raw, table) => {
+      if (!table.roles[name] || !isPlainObject(raw.roles[name])) return;
       existed = true;
-      previous = role.address;
-      role.address = null;
-      role.assignedAt = null;
+      const before = table.roles[name].address;
+      previous = typeof before === "string" ? before : null;
+      delete raw.roles[name].address;
+      delete raw.roles[name].assignedAt;
     });
     const result = read();
     const role = result.table.roles[name];
@@ -620,16 +741,16 @@ export function createRoleStore({ env = process.env, homedir, now = () => Date.n
   function setPolicy(target, settings) {
     /** @type {PolicyEntry | null} */
     let entry = null;
-    update((table) => {
-      const next = { ...(table.overridePolicy[target] ?? {}) };
+    update((raw) => {
+      const next = isPlainObject(raw.overridePolicy[target]) ? { ...raw.overridePolicy[target] } : {};
       for (const setting of POLICY_SETTINGS) {
         const senders = settings[/** @type {"model" | "effort" | "cwd"} */ (setting)];
         if (senders === undefined) continue;
-        next[/** @type {"model" | "effort" | "cwd"} */ (setting)] = [...new Set(senders)];
+        next[setting] = [...new Set(senders)];
       }
-      const empty = POLICY_SETTINGS.every((setting) => !(next[/** @type {"model" | "effort" | "cwd"} */ (setting)]?.length));
-      if (empty) delete table.overridePolicy[target];
-      else table.overridePolicy[target] = next;
+      const empty = Object.values(next).every((senders) => !Array.isArray(senders) || senders.length === 0);
+      if (empty) delete raw.overridePolicy[target];
+      else raw.overridePolicy[target] = next;
       entry = empty ? null : next;
     });
     return entry;
@@ -652,17 +773,19 @@ export function createRoleStore({ env = process.env, homedir, now = () => Date.n
   /**
    * Resolves `role:<name>` to its holder at send time (R1.19). No holder is
    * not_found with details.role; several (a hand edit) are ambiguous.
+   * `sync: true` (send paths only) first gives a changed procedure file its
+   * next version; read-only callers pass false and never write.
    * @param {string} roleAddress
-   * @param {{includeProcedureText?: boolean}} [options]
+   * @param {{includeProcedureText?: boolean, sync?: boolean}} [options]
    */
-  function resolve(roleAddress, { includeProcedureText = true } = {}) {
+  function resolve(roleAddress, { includeProcedureText = true, sync = true } = {}) {
     const name = parseRoleAddress(roleAddress);
     if (!name) {
       throw new AgentLinkError("invalid_arguments", `${JSON.stringify(String(roleAddress).slice(0, 60))} is not a role address; use role:<name> with 1 to 40 lowercase letters, digits, or hyphens.`, {
         details: { errors: [{ path: "role", rule: "pattern", expected: "role:[a-z0-9-]{1,40}" }] }
       });
     }
-    const result = sync([name]);
+    const result = read();
     assertUsable(result);
     const role = result.table.roles[name];
     if (!role || !role.address) {
@@ -677,56 +800,44 @@ export function createRoleStore({ env = process.env, homedir, now = () => Date.n
         hint: "A role has one holder. Ask the user to fix roles.json or reassign the role with set_agent_role."
       });
     }
-    const v = view(name, role, { includeProcedureText });
+    if (sync) syncProcedure(name);
+    const procedure = procedureView(name, { includeText: includeProcedureText });
     return {
       role: name,
       via: `role:${name}`,
       address: role.address,
-      procedure: v.procedure && v.procedure.present ? v.procedure : null
+      procedure: procedure && procedure.present && procedure.version !== null && procedure.sha256 !== null
+        ? { name, version: procedure.version, sha256: procedure.sha256, ...(procedure.text !== undefined ? { text: procedure.text } : {}) }
+        : null
     };
   }
 
   /**
-   * Records that `address` received procedure `role@version` and reports
-   * whether this is the first delivery of that version to it (R1.20). The
-   * caller includes the procedure text only then.
-   * @param {{role: string, version: number, address: string}} input
+   * Records that `address` received the procedure text with hash `sha256`
+   * and reports whether it had not received that exact text before (R1.20).
+   * Keyed by content, so a recreated role whose versions restart still
+   * delivers new text, and unchanged text is never sent twice.
+   * @param {{role: string, sha256: string, address: string}} input
    * @returns {boolean}
    */
-  function claimProcedureDelivery({ role, version, address }) {
-    ensureStateDir(pathOptions);
-    return withFileLockSync(lockPath(), () => {
-      const file = deliveriesPath();
-      /** @type {{version: number, deliveries: Record<string, Record<string, number>>}} */
-      let data = { version: 1, deliveries: {} };
-      try {
-        const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
-        if (isPlainObject(parsed) && isPlainObject(parsed.deliveries)) data = { version: 1, deliveries: parsed.deliveries };
-      } catch {
-        // Missing or unreadable: start over (at worst a procedure is shown again).
-      }
-      const seen = Number(data.deliveries[role]?.[address] ?? 0);
-      if (Number.isFinite(seen) && seen >= version) return false;
-      data.deliveries[role] = { ...(isPlainObject(data.deliveries[role]) ? data.deliveries[role] : {}), [address]: version };
-      writeFileAtomicSync(file, `${JSON.stringify(data, null, 2)}\n`);
+  function claimProcedureDelivery({ role, sha256: hash, address }) {
+    return updateState((state) => {
+      const seen = isPlainObject(state.deliveries[role]) ? state.deliveries[role] : {};
+      if (seen[address] === hash) return false;
+      state.deliveries[role] = { ...seen, [address]: hash };
       return true;
-    }, { now });
+    });
   }
 
   /**
    * Undoes a claim after a delivery failed, so the next send carries the text.
-   * @param {{role: string, version: number, address: string}} input
+   * @param {{role: string, sha256: string, address: string}} input
    */
-  function releaseProcedureDelivery({ role, version, address }) {
+  function releaseProcedureDelivery({ role, sha256: hash, address }) {
     try {
-      withFileLockSync(lockPath(), () => {
-        const file = deliveriesPath();
-        const data = JSON.parse(fs.readFileSync(file, "utf8"));
-        if (data?.deliveries?.[role]?.[address] === version) {
-          delete data.deliveries[role][address];
-          writeFileAtomicSync(file, `${JSON.stringify(data, null, 2)}\n`);
-        }
-      }, { now });
+      updateState((state) => {
+        if (state.deliveries[role]?.[address] === hash) delete state.deliveries[role][address];
+      });
     } catch {
       // Best effort.
     }
@@ -734,7 +845,10 @@ export function createRoleStore({ env = process.env, homedir, now = () => Date.n
 
   /**
    * The role enforcement mode (R1.25): AGENT_LINK_ROLE_ENFORCEMENT, then
-   * roles.json `enforcement`, then the release default (off).
+   * roles.json `enforcement`, then the release default (off). A roles.json
+   * that cannot be parsed contributes nothing, so enforcement falls back to
+   * the default: it fails open, because enforcement keeps coordination
+   * consistent and is not a security boundary (R1.27).
    * @param {TableRead} [tableRead]
    * @returns {{mode: string, source: string, ignored: {source: string, reason: string}[]}}
    */
@@ -746,6 +860,7 @@ export function createRoleStore({ env = process.env, homedir, now = () => Date.n
       if (ENFORCEMENT_MODES.includes(fromEnv)) return { mode: fromEnv, source: "AGENT_LINK_ROLE_ENFORCEMENT", ignored };
       ignored.push({ source: "AGENT_LINK_ROLE_ENFORCEMENT", reason: `not one of ${ENFORCEMENT_MODES.join(", ")}` });
     }
+    if (tableRead.error) ignored.push({ source: "roles.json", reason: "unreadable; enforcement falls back to the default (fails open)" });
     if (tableRead.table.enforcement) return { mode: tableRead.table.enforcement, source: "roles.json", ignored };
     return { mode: DEFAULT_ENFORCEMENT, source: "default", ignored };
   }
@@ -762,7 +877,7 @@ export function createRoleStore({ env = process.env, homedir, now = () => Date.n
     claimProcedureDelivery,
     releaseProcedureDelivery,
     enforcement,
-    paths: { table: tablePath, procedures: proceduresDir, procedureFile }
+    paths: { table: tablePath, procedures: proceduresDir, procedureFile, state: statePath }
   };
 }
 

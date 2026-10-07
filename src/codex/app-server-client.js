@@ -620,7 +620,7 @@ export class CodexAppServerClient {
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
       env: {
-        ...process.env,
+        ...managedAppServerEnv(process.env),
         CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "Codex Agent Link"
       }
     });
@@ -1277,4 +1277,24 @@ async function httpGetStatus(url) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Settings that grant or change role administration on this Agent Link
+ * server. They are never inherited by the managed Codex app-server, so the
+ * agent sessions it runs (and any Agent Link server they start) do not get
+ * role administration or a different enforcement mode from this one.
+ */
+export const MANAGED_APP_SERVER_STRIPPED_ENV = Object.freeze(["AGENT_LINK_ROLE_ADMIN", "AGENT_LINK_ROLE_ENFORCEMENT"]);
+
+/**
+ * The environment for the managed app-server child: this process's, minus
+ * MANAGED_APP_SERVER_STRIPPED_ENV.
+ * @param {Record<string, string | undefined>} source
+ * @returns {Record<string, string | undefined>}
+ */
+export function managedAppServerEnv(source) {
+  const out = { ...source };
+  for (const name of MANAGED_APP_SERVER_STRIPPED_ENV) delete out[name];
+  return out;
 }

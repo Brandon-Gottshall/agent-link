@@ -358,7 +358,7 @@ const SCRIPT = [
   ["message_codex_thread", { threadId: GAMMA, message: "wake gamma" }],
   ["message_codex_thread", { threadId: ALPHA, message: "elsewhere", cwd: "/somewhere/else" }],
   ["message_codex_thread", { threadId: ALPHA, message: "same dir", cwd: projectDir, model: "gpt-known", effort: "high" }],
-  ["message_codex_thread", { threadId: ALPHA, message: "override", cwd: "/somewhere/else", allowTargetOverride: true, receipt: { record: false } }],
+  ["message_codex_thread", { threadId: ALPHA, message: "override", cwd: path.join(projectDir, "sub"), allowTargetOverride: true, receipt: { record: false } }],
   ["message_codex_thread", { threadId: MISSING, message: "nobody home" }],
   ["message_codex_thread", { threadId: ALPHA, message: "   " }],
   ["wait_for_codex_thread", { threadId: ALPHA, timeoutMs: 1000, pollIntervalMs: 250, recentItems: 2 }],

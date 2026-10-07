@@ -14,7 +14,10 @@
 //     of the thread's cwd (or the cwd itself outside a repository), after
 //     symlinks are resolved, even when the policy allows it (R9.5);
 //   - Claude targets accept no turn overrides (R9.6);
-//   - allowTargetOverride grants nothing from 0.7.0 (R9.13).
+//   - allowTargetOverride is deprecated (R9.13, R6.4): in this release it
+//     still grants every requested change (grantedBy "allowTargetOverride",
+//     with a deprecated_argument warning), cwd changes still have to pass
+//     the workspace check, and from 0.7.0 it grants nothing.
 //
 // `model` in the policy covers modelProvider and serviceTier.
 
@@ -50,6 +53,8 @@ export const SWITCH_KINDS = Object.freeze({
   cwd: "cwd-change"
 });
 
+/** The release in which allowTargetOverride stops granting anything (R9.13). */
+export const ALLOW_TARGET_OVERRIDE_GRANTS_UNTIL = "0.7.0";
 /** The release in which allowTargetOverride becomes invalid_arguments (R9.13). */
 export const ALLOW_TARGET_OVERRIDE_REMOVAL = "0.8.0";
 
@@ -157,7 +162,7 @@ function ownValue(thread, field) {
  *   kind: string,
  *   previous: string | null,
  *   current: string,
- *   grantedBy: "launcher" | "policy",
+ *   grantedBy: "launcher" | "policy" | "allowTargetOverride",
  *   policy: PolicyMatch | null,
  *   expectedCost: {uncachedInputTokens: number | null, basis: string} | null
  * }} OverrideSwitch
@@ -193,17 +198,23 @@ export function decideTargetOverrides({ thread, args, steering = false, parties,
   const conflicts = [];
   let workspace = null;
 
-  if (args.allowTargetOverride === true) {
+  const flagged = args.allowTargetOverride === true;
+  if (flagged) {
     warnings.push({
-      code: "ignored_argument",
-      message: `allowTargetOverride grants nothing since 0.7.0 and becomes invalid_arguments in ${ALLOW_TARGET_OVERRIDE_REMOVAL}. Changing an existing thread's model, effort, or cwd needs its launcher (effort only) or the target's override policy (set_agent_override_policy, by the user).`,
-      argument: "allowTargetOverride"
+      code: "deprecated_argument",
+      message: `allowTargetOverride is deprecated and stops granting overrides in ${ALLOW_TARGET_OVERRIDE_GRANTS_UNTIL} (it is rejected from ${ALLOW_TARGET_OVERRIDE_REMOVAL}). Instead: launch a new thread (later: fork it) for a different model, ask the thread's launcher to change effort, or ask the user for an override policy (set_agent_override_policy).`,
+      replacement: "a new thread or fork for model; the launcher for effort; set_agent_override_policy otherwise"
     });
   }
 
   for (const field of FIELD_ORDER) {
     const requested = text(args[field]);
     if (!requested) continue;
+    if (field === "cwd" && !path.isAbsolute(requested)) {
+      throw new AgentLinkError("invalid_arguments", "cwd must be an absolute path.", {
+        details: { errors: [{ path: "cwd", rule: "absolute", expected: "an absolute directory path" }] }
+      });
+    }
     const setting = /** @type {"model" | "effort" | "cwd"} */ (OVERRIDE_FIELDS[field]);
     const own = ownValue(thread, field);
     if (own && (field === "cwd" ? sameDirectory(own, requested) : own === requested)) {
@@ -224,7 +235,7 @@ export function decideTargetOverrides({ thread, args, steering = false, parties,
         continue;
       }
     }
-    /** @type {"launcher" | "policy" | null} */
+    /** @type {"launcher" | "policy" | "allowTargetOverride" | null} */
     let grantedBy = null;
     /** @type {PolicyMatch | null} */
     let match = null;
@@ -233,6 +244,7 @@ export function decideTargetOverrides({ thread, args, steering = false, parties,
     } else {
       match = policyAllows(policy, setting, parties);
       if (match) grantedBy = "policy";
+      else if (flagged) grantedBy = "allowTargetOverride";
     }
     if (field === "cwd" && grantedBy && !own) {
       // No reported cwd means no workspace to check against: never applied.

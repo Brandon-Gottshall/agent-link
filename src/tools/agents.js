@@ -111,7 +111,7 @@ export function makeAgentHandlers({ registry, host, resolveCurrentSession = () =
     if (!roles) return { ...base, status: "not_found", best: null, candidates: [] };
     let role;
     try {
-      role = roles.resolve(query, { includeProcedureText: false });
+      role = roles.resolve(query, { includeProcedureText: false, sync: false });
     } catch (error) {
       if (error instanceof AgentLinkError && (error.errorCode === "not_found" || error.errorCode === "ambiguous")) {
         const details = /** @type {Record<string, any>} */ (error.details ?? {});

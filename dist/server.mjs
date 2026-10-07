@@ -19817,14 +19817,14 @@ var turnOptions = {
   mode: enumOf(MESSAGE_MODES, "auto resumes idle or not-loaded threads, or steers an active turn when its turn id is known. Defaults to auto."),
   resumeIfNeeded: bool("Allow thread/resume before messaging a not-loaded target. Defaults to true."),
   expectedTurnId: str("Required by the app-server when steering an active turn unless Agent Link can infer the active turn."),
-  model: str("Optional model for the target turn. A model different from the thread's own is refused (permission_denied, model_switch_requires_fork_or_opt_in) unless the target's override policy allows you; an allowed switch persists and the next turn re-reads the thread uncached. Not applied (with a warning) when the thread reports no model and no policy allows it."),
-  effort: enumOf(EFFORT_VALUES, "Optional reasoning effort for the target turn. The thread's launcher may change it; anyone else needs the target's override policy (permission_denied, effort_not_permitted). A change persists. Not applied (with a warning) when the thread reports none and you may not change it."),
+  model: str("Optional model for the target turn. A model different from the thread's own is refused (permission_denied, model_switch_requires_fork_or_opt_in) unless the target's override policy allows you (or the deprecated allowTargetOverride is set); an allowed switch persists and the next turn re-reads the thread uncached. Not applied (with a warning) when the thread reports no model and nothing allows it."),
+  effort: enumOf(EFFORT_VALUES, "Optional reasoning effort for the target turn. The thread's launcher may change it; anyone else needs the target's override policy (or the deprecated allowTargetOverride), otherwise permission_denied (effort_not_permitted). A change persists. Not applied (with a warning) when the thread reports none and you may not change it."),
   allowParallelTurn: bool("Allow mode=start_turn even when the target appears active or waiting. Defaults to false."),
   waitForReply: bool("After delivery, wait for the target turn to finish and return the result in `wait`. Defaults to false."),
   timeoutMs: timeoutMs("Maximum wait when waitForReply is true, in milliseconds."),
   pollIntervalMs: pollIntervalMs("Polling interval when waitForReply is true, in milliseconds."),
   recentItems: intRange({ ...LIMITS.replyRecentItems, description: RECENT_ITEMS_REPLY }),
-  allowTargetOverride: bool("Deprecated: grants nothing since 0.7.0 (an ignored_argument warning) and is rejected from 0.8.0. Whether cwd/model/effort of an existing thread may change is decided by its launcher (effort) and the target's override policy.")
+  allowTargetOverride: bool("Deprecated (deprecated_argument warning). Until 0.7.0 it still lets you change an existing thread's cwd, model, and effort (the change persists; a cwd must stay inside the thread's workspace); from 0.7.0 it grants nothing and from 0.8.0 it is rejected. Prefer a new thread for another model, the thread's launcher for effort, or the target's override policy.")
 };
 var orchestratorTarget = {
   projectRoot: str("Source project root containing .codex/project-orchestrator.json."),
@@ -21779,7 +21779,7 @@ var CodexAppServerClient = class {
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
       env: {
-        ...process.env,
+        ...managedAppServerEnv(process.env),
         CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "Codex Agent Link"
       }
     });
@@ -22112,14 +22112,14 @@ function reapOrphanedManagedAppServers({ stateDir: stateDir2 = managedAppServerS
       continue;
     }
     const pid = Number(record2?.pid);
-    const ownerPid = Number(record2?.ownerPid);
+    const ownerPid2 = Number(record2?.ownerPid);
     if (!Number.isInteger(pid) || pid <= 1) {
       removeManagedRecord(file);
       result.removed.push({ file, reason: "invalid" });
       continue;
     }
-    if (Number.isInteger(ownerPid) && ownerPid > 1 && pidIsAlive(ownerPid)) {
-      result.kept.push({ file, pid, ownerPid });
+    if (Number.isInteger(ownerPid2) && ownerPid2 > 1 && pidIsAlive(ownerPid2)) {
+      result.kept.push({ file, pid, ownerPid: ownerPid2 });
       continue;
     }
     const recordEndpoint = {
@@ -22148,7 +22148,7 @@ function reapOrphanedManagedAppServers({ stateDir: stateDir2 = managedAppServerS
     }, graceMs);
     escalate.unref?.();
     removeManagedRecord(file);
-    result.reaped.push({ pid, pgid, url: record2.url, ownerPid });
+    result.reaped.push({ pid, pgid, url: record2.url, ownerPid: ownerPid2 });
   }
   return result;
 }
@@ -22360,6 +22360,12 @@ async function httpGetStatus(url) {
 }
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+var MANAGED_APP_SERVER_STRIPPED_ENV = Object.freeze(["AGENT_LINK_ROLE_ADMIN", "AGENT_LINK_ROLE_ENFORCEMENT"]);
+function managedAppServerEnv(source) {
+  const out2 = { ...source };
+  for (const name of MANAGED_APP_SERVER_STRIPPED_ENV) delete out2[name];
+  return out2;
 }
 
 // src/shared/text.js
@@ -25059,7 +25065,7 @@ var messageThreadOut = {
   appServer: commonOut.appServer,
   via: out("string", "role:<name> when the target was addressed by role; the message went to the role's current holder."),
   roleProcedure: out(["object", "null"], "With a role target: {name, version, textIncluded} of the role's procedure, or null when the role has none. textIncluded is true on the first delivery of that version to the holder."),
-  switches: out("array", "In-place changes applied to the thread, one per setting: {setting, previous, current, grantedBy: launcher|policy, policy?, persists: true, expectedCost: {uncachedInputTokens, basis} | null}. A change persists; Agent Link never sends a revert."),
+  switches: out("array", "In-place changes applied to the thread, one per setting: {setting, previous, current, grantedBy: launcher|policy|allowTargetOverride, policy?, persists: true, expectedCost: {uncachedInputTokens, basis} | null}. A change persists; Agent Link never sends a revert."),
   switchReceipts: out("array", "Receipt write results for the model-switch, effort-change, and cwd-change receipts, one per entry in switches.")
 };
 var codexActionTools = [
@@ -25125,14 +25131,14 @@ var codexActionTools = [
   },
   {
     name: "message_codex_thread",
-    description: "Send a direct text message to a Codex thread, wrapped in the peer-message envelope. Resumes not-loaded threads through the app-server before starting a new turn when needed, or steers an active turn. Starting a second turn on a busy thread fails with active_turn_conflict unless allowParallelTurn is true; an existing thread keeps its cwd, model, and effort: a different value fails with permission_denied unless the thread's launcher changes effort or the target's override policy (set by the user) allows the change, which then persists. threadId also accepts role:<name>, which reaches the Codex thread holding that role.",
+    description: "Send a direct text message to a Codex thread, wrapped in the peer-message envelope. Resumes not-loaded threads through the app-server before starting a new turn when needed, or steers an active turn. Starting a second turn on a busy thread fails with active_turn_conflict unless allowParallelTurn is true; an existing thread keeps its cwd, model, and effort: a different value fails with permission_denied unless the thread's launcher changes effort, the target's override policy (set by the user) allows the change, or the deprecated allowTargetOverride is set (until 0.7.0); an allowed change persists. threadId also accepts role:<name>, which reaches the Codex thread holding that role.",
     inputSchema: {
       type: "object",
       required: ["threadId", "message"],
       properties: {
         threadId: str("Target Codex thread ID, codex:<id> address, or role:<name> (the Codex thread currently holding the role)."),
         message: str("Text to send to the target thread (at most 64 KiB)."),
-        cwd: str("Optional cwd for the target turn. It must match the thread's own cwd (compared by real path) unless the target's override policy allows you to change it; a change must stay inside the thread's workspace (git top level of its cwd) and persists."),
+        cwd: str("Optional absolute cwd for the target turn. It must match the thread's own cwd (compared by real path) unless the target's override policy (or the deprecated allowTargetOverride) allows you to change it; a change must stay inside the thread's workspace (git top level of its cwd, symlinks resolved) and persists."),
         ...turnOptions,
         receipt: receiptInput
       },
@@ -25727,9 +25733,11 @@ var POLICY_SETTINGS = Object.freeze(["model", "effort", "cwd"]);
 var MAX_PROCEDURE_BYTES = 64 * 1024;
 var MAX_POLICY_SENDERS = 50;
 var LOCK_STALE_MS = 3e4;
-var LOCK_TIMEOUT_MS = 5e3;
-var LOCK_RETRY_MS = 20;
-var DELIVERIES_FILE = "role-procedure-deliveries.json";
+var LOCK_TIMEOUT_MS = 250;
+var LOCK_RETRY_MS = 5;
+var BREAKER_STALE_MS = 5e3;
+var STATE_FILE = "role-state.json";
+var STATE_VERSION = 1;
 function emptyRoleTable() {
   return { version: ROLE_TABLE_VERSION, enforcement: null, roles: {}, overridePolicy: {} };
 }
@@ -25770,8 +25778,8 @@ function validateRoleTable(raw) {
     problems.push({ path: "", rule: "type", message: "roles.json must hold a JSON object." });
     return { table, problems };
   }
-  if (raw.version !== void 0 && raw.version !== ROLE_TABLE_VERSION) {
-    problems.push({ path: "version", rule: "version", message: `Unsupported roles.json version ${JSON.stringify(raw.version)}; expected ${ROLE_TABLE_VERSION}. Entries were read as version ${ROLE_TABLE_VERSION}.` });
+  if (raw.version !== ROLE_TABLE_VERSION) {
+    problems.push({ path: "version", rule: "version", message: `roles.json version is ${JSON.stringify(raw.version ?? null)}; expected ${ROLE_TABLE_VERSION}. Entries were read as version ${ROLE_TABLE_VERSION}, and Agent Link will not write the file until its version is ${ROLE_TABLE_VERSION}.` });
   }
   if (raw.enforcement !== void 0 && raw.enforcement !== null) {
     if (ENFORCEMENT_MODES.includes(raw.enforcement)) table.enforcement = raw.enforcement;
@@ -25802,16 +25810,7 @@ function validateRoleTable(raw) {
     } else if (entry.address !== void 0 && entry.address !== null) {
       problems.push({ path: `roles.${name}.address`, rule: "type", message: "address must be a string; the role has no holder." });
     }
-    let procedure = null;
-    if (isPlainObject5(entry.procedure)) {
-      const p = entry.procedure;
-      if (Number.isInteger(p.version) && p.version >= 1 && typeof p.sha256 === "string" && /^[0-9a-f]{64}$/.test(p.sha256)) {
-        procedure = { version: p.version, sha256: p.sha256, updatedAt: isoOrNull(p.updatedAt) ?? (/* @__PURE__ */ new Date(0)).toISOString() };
-      } else {
-        problems.push({ path: `roles.${name}.procedure`, rule: "format", message: "procedure must be {version >= 1, sha256, updatedAt}; it is rebuilt from the procedure file." });
-      }
-    }
-    table.roles[name] = { address, assignedAt: isoOrNull(entry.assignedAt), procedure };
+    table.roles[name] = { address, assignedAt: isoOrNull(entry.assignedAt) };
   }
   if (raw.overridePolicy !== void 0 && !isPlainObject5(raw.overridePolicy)) {
     problems.push({ path: "overridePolicy", rule: "type", message: "overridePolicy must be an object; ignored (nothing is allowed)." });
@@ -25863,6 +25862,45 @@ function processAlive(pid) {
     );
   }
 }
+function lockSnapshot(lockPath) {
+  try {
+    const stat = fs10.statSync(lockPath);
+    return { raw: fs10.readFileSync(lockPath, "utf8"), ino: stat.ino, mtimeMs: stat.mtimeMs };
+  } catch {
+    return null;
+  }
+}
+function ownerPid(raw) {
+  try {
+    return Number(JSON.parse(raw)?.pid);
+  } catch {
+    return NaN;
+  }
+}
+function breakStaleLock(lockPath, observed, token, now) {
+  const breaker = `${lockPath}.break`;
+  try {
+    fs10.writeFileSync(breaker, JSON.stringify({ pid: process.pid, token }), { flag: "wx", mode: FILE_MODE });
+  } catch (error2) {
+    if (
+      /** @type {NodeJS.ErrnoException} */
+      error2.code !== "EEXIST"
+    ) return false;
+    const stale = lockSnapshot(breaker);
+    if (stale && now() - stale.mtimeMs > BREAKER_STALE_MS && !processAlive(ownerPid(stale.raw))) {
+      fs10.rmSync(breaker, { force: true });
+    }
+    return false;
+  }
+  try {
+    const current = lockSnapshot(lockPath);
+    if (!current || current.raw !== observed.raw || current.ino !== observed.ino || current.mtimeMs !== observed.mtimeMs) return false;
+    fs10.rmSync(lockPath, { force: true });
+    return true;
+  } finally {
+    fs10.rmSync(breaker, { force: true });
+  }
+}
 function withFileLockSync(lockPath, fn, { timeoutMs: timeoutMs2 = LOCK_TIMEOUT_MS, staleMs = LOCK_STALE_MS, now = () => Date.now() } = {}) {
   const deadline = now() + timeoutMs2;
   const token = `${process.pid}:${crypto3.randomUUID()}`;
@@ -25878,26 +25916,14 @@ function withFileLockSync(lockPath, fn, { timeoutMs: timeoutMs2 = LOCK_TIMEOUT_M
         throw stateIoError(lockPath, error2, "Could not create the role table lock.");
       }
     }
-    try {
-      const stat = fs10.statSync(lockPath);
-      let owner = null;
-      try {
-        owner = JSON.parse(fs10.readFileSync(lockPath, "utf8"));
-      } catch {
-        owner = null;
-      }
-      if (now() - stat.mtimeMs > staleMs && !processAlive(Number(owner?.pid))) {
-        const aside = `${lockPath}.stale-${token.replace(/[^A-Za-z0-9-]/g, "")}`;
-        fs10.renameSync(lockPath, aside);
-        fs10.rmSync(aside, { force: true });
-        continue;
-      }
-    } catch {
+    const observed = lockSnapshot(lockPath);
+    if (observed && now() - observed.mtimeMs > staleMs && !processAlive(ownerPid(observed.raw))) {
+      if (breakStaleLock(lockPath, observed, token, now)) continue;
     }
     if (now() >= deadline) {
-      throw new AgentLinkError("state_io_error", "Timed out waiting for the role table lock.", {
+      throw new AgentLinkError("state_io_error", "The role table is busy (another Agent Link server holds its lock).", {
         details: { path: path13.basename(lockPath), errno: "ETIMEDOUT" },
-        hint: `Another Agent Link server is writing the role table. Retry; if this persists, remove ${path13.basename(lockPath)} from the state directory.`
+        hint: `Retry the call. If this persists, check that no Agent Link process is stuck, then remove ${path13.basename(lockPath)} from the state directory.`
       });
     }
     sleepSync(LOCK_RETRY_MS);
@@ -25940,49 +25966,88 @@ function stateIoError(filePath, error2, message) {
     cause: error2
   });
 }
-function capProcedureText(text2) {
-  const bytes = Buffer.byteLength(text2, "utf8");
-  if (bytes <= MAX_PROCEDURE_BYTES) return text2;
-  const cut = new TextDecoder("utf-8").decode(Buffer.from(text2, "utf8").subarray(0, MAX_PROCEDURE_BYTES)).replace(/\uFFFD+$/, "");
-  return `${cut}
-[Agent Link: procedure truncated; the file is ${bytes} bytes and the limit is ${MAX_PROCEDURE_BYTES}.]`;
+function readProcedureFileSafe(dir, file) {
+  try {
+    if (!fs10.lstatSync(dir).isDirectory()) return { error: "the roles directory is not a directory" };
+  } catch {
+    return null;
+  }
+  let stat;
+  try {
+    stat = fs10.lstatSync(file);
+  } catch {
+    return null;
+  }
+  if (!stat.isFile()) return { error: "the procedure file is not a regular file (symlinks, FIFOs, and devices are refused)" };
+  let fd;
+  try {
+    fd = fs10.openSync(file, fs10.constants.O_RDONLY | fs10.constants.O_NOFOLLOW | fs10.constants.O_NONBLOCK);
+  } catch (error2) {
+    return { error: `the procedure file could not be opened (${/** @type {NodeJS.ErrnoException} */
+    error2.code ?? "error"})` };
+  }
+  try {
+    if (!fs10.fstatSync(fd).isFile()) return { error: "the procedure file is not a regular file" };
+    const buffer = Buffer.alloc(MAX_PROCEDURE_BYTES + 1);
+    let length = 0;
+    for (; ; ) {
+      const read = fs10.readSync(fd, buffer, length, buffer.length - length, null);
+      if (read === 0) break;
+      length += read;
+      if (length > MAX_PROCEDURE_BYTES) {
+        return { error: `the procedure file is larger than ${MAX_PROCEDURE_BYTES} bytes (64 KiB)` };
+      }
+    }
+    const text2 = buffer.subarray(0, length).toString("utf8");
+    return { text: text2, sha256: sha256(text2) };
+  } catch (error2) {
+    return { error: `the procedure file could not be read (${/** @type {NodeJS.ErrnoException} */
+    error2.code ?? "error"})` };
+  } finally {
+    fs10.closeSync(fd);
+  }
 }
 function sha256(text2) {
   return crypto3.createHash("sha256").update(text2, "utf8").digest("hex");
 }
-function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () => Date.now() } = {}) {
+function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () => Date.now(), lockTimeoutMs = LOCK_TIMEOUT_MS } = {}) {
   const pathOptions = { env: env2, ...homedir3 ? { homedir: homedir3 } : {} };
   const tablePath = () => rolesPath(pathOptions);
   const proceduresDir = () => roleProceduresDir(pathOptions);
-  const deliveriesPath = () => path13.join(stateDir(pathOptions), DELIVERIES_FILE);
-  const lockPath = () => `${tablePath()}.lock`;
+  const statePath = () => path13.join(stateDir(pathOptions), STATE_FILE);
   const iso2 = () => new Date(now()).toISOString();
+  const lockOptions = { now, timeoutMs: lockTimeoutMs };
   function procedureFile(name) {
     return path13.join(proceduresDir(), `${name}.md`);
   }
+  function readProcedure(name) {
+    return readProcedureFileSafe(proceduresDir(), procedureFile(name));
+  }
   function read() {
     const file = tablePath();
-    let raw;
+    const base = { path: file, exists: true, writable: false, raw: null };
+    let text2;
     try {
-      raw = fs10.readFileSync(file, "utf8");
+      text2 = fs10.readFileSync(file, "utf8");
     } catch (error2) {
       if (
         /** @type {NodeJS.ErrnoException} */
         error2.code === "ENOENT"
       ) {
-        return { table: emptyRoleTable(), problems: [], error: null, path: file, exists: false };
+        return { ...base, table: emptyRoleTable(), problems: [], error: null, exists: false, writable: true };
       }
-      return { table: emptyRoleTable(), problems: [], error: `roles.json could not be read (${/** @type {NodeJS.ErrnoException} */
-      error2.code ?? "error"}).`, path: file, exists: true };
+      return { ...base, table: emptyRoleTable(), problems: [], error: `roles.json could not be read (${/** @type {NodeJS.ErrnoException} */
+      error2.code ?? "error"}).` };
     }
     let parsed;
     try {
-      parsed = JSON.parse(raw);
+      parsed = JSON.parse(text2);
     } catch {
-      return { table: emptyRoleTable(), problems: [], error: "roles.json is not valid JSON; roles and the override policy are unavailable until it is fixed.", path: file, exists: true };
+      return { ...base, table: emptyRoleTable(), problems: [], error: "roles.json is not valid JSON; roles and the override policy are unavailable until it is fixed." };
     }
     const { table, problems } = validateRoleTable(parsed);
-    return { table, problems, error: null, path: file, exists: true };
+    const writable = isPlainObject5(parsed) && parsed.version === ROLE_TABLE_VERSION;
+    return { ...base, table, problems, error: null, writable, raw: isPlainObject5(parsed) ? parsed : null };
   }
   function assertUsable(result) {
     if (result.error) {
@@ -25994,82 +26059,95 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
   }
   function update(mutate) {
     ensureStateDir(pathOptions);
-    return withFileLockSync(lockPath(), () => {
+    return withFileLockSync(`${tablePath()}.lock`, () => {
       const current = read();
       assertUsable(current);
-      const result = mutate(current.table);
-      writeFileAtomicSync(tablePath(), `${JSON.stringify(serialize(current.table), null, 2)}
+      if (!current.writable) {
+        throw new AgentLinkError("state_io_error", "roles.json has an unsupported version; Agent Link will not rewrite it.", {
+          details: { path: "roles.json", errno: null, version: current.raw?.version ?? null },
+          hint: `Set "version": ${ROLE_TABLE_VERSION} in roles.json after checking its contents, or move the file aside.`
+        });
+      }
+      const raw = current.raw ?? { version: ROLE_TABLE_VERSION };
+      if (!isPlainObject5(raw.roles)) raw.roles = {};
+      if (!isPlainObject5(raw.overridePolicy)) raw.overridePolicy = {};
+      const result = mutate(raw, current.table);
+      writeFileAtomicSync(tablePath(), `${JSON.stringify(raw, null, 2)}
 `);
       return result;
-    }, { now });
+    }, lockOptions);
   }
-  function serialize(table) {
-    const out2 = { version: ROLE_TABLE_VERSION };
-    if (table.enforcement) out2.enforcement = table.enforcement;
-    out2.roles = {};
-    for (const name of Object.keys(table.roles).sort()) {
-      const role = table.roles[name];
-      out2.roles[name] = {
-        ...role.address ? { address: role.address } : {},
-        ...role.assignedAt ? { assignedAt: role.assignedAt } : {},
-        ...role.procedure ? { procedure: role.procedure } : {}
-      };
-    }
-    out2.overridePolicy = {};
-    for (const target of Object.keys(table.overridePolicy).sort()) out2.overridePolicy[target] = table.overridePolicy[target];
-    return out2;
-  }
-  function readProcedureFile(name) {
+  function readState() {
     try {
-      const text2 = fs10.readFileSync(procedureFile(name), "utf8");
-      return { text: text2, sha256: sha256(text2) };
-    } catch {
-      return null;
-    }
-  }
-  function procedureStale(table, name) {
-    const file = readProcedureFile(name);
-    const record2 = table.roles[name]?.procedure ?? null;
-    return file !== null && file.sha256 !== record2?.sha256;
-  }
-  function sync(names) {
-    const first = read();
-    if (first.error) return first;
-    const stale = names.filter((name) => first.table.roles[name] && procedureStale(first.table, name));
-    if (stale.length === 0) return first;
-    update((table) => {
-      for (const name of stale) {
-        const role = table.roles[name];
-        const file = readProcedureFile(name);
-        if (!role || !file || file.sha256 === role.procedure?.sha256) continue;
-        role.procedure = { version: (role.procedure?.version ?? 0) + 1, sha256: file.sha256, updatedAt: iso2() };
+      const parsed = JSON.parse(fs10.readFileSync(statePath(), "utf8"));
+      if (isPlainObject5(parsed)) {
+        return {
+          version: STATE_VERSION,
+          procedures: isPlainObject5(parsed.procedures) ? parsed.procedures : {},
+          deliveries: isPlainObject5(parsed.deliveries) ? parsed.deliveries : {}
+        };
       }
-    });
-    return read();
+    } catch {
+    }
+    return { version: STATE_VERSION, procedures: {}, deliveries: {} };
   }
-  function view(name, role, { includeProcedureText = false } = {}) {
-    const file = role.procedure ? readProcedureFile(name) : null;
-    const present2 = file !== null && file.sha256 === role.procedure?.sha256;
+  function updateState(mutate) {
+    ensureStateDir(pathOptions);
+    return withFileLockSync(`${statePath()}.lock`, () => {
+      const state = readState();
+      const result = mutate(state);
+      writeFileAtomicSync(statePath(), `${JSON.stringify(state, null, 2)}
+`);
+      return result;
+    }, lockOptions);
+  }
+  function procedureRecord(state, name) {
+    const p = state.procedures[name];
+    return isPlainObject5(p) && Number.isInteger(p.version) && p.version >= 1 && typeof p.sha256 === "string" ? { version: p.version, sha256: p.sha256, updatedAt: isoOrNull(p.updatedAt) ?? (/* @__PURE__ */ new Date(0)).toISOString() } : null;
+  }
+  function syncProcedure(name) {
+    const file = readProcedure(name);
+    if (!file || "error" in file) return;
+    if (procedureRecord(readState(), name)?.sha256 === file.sha256) return;
+    updateState((state) => {
+      const again = readProcedure(name);
+      if (!again || "error" in again) return;
+      const record2 = procedureRecord(state, name);
+      if (record2?.sha256 === again.sha256) return;
+      state.procedures[name] = { version: (record2?.version ?? 0) + 1, sha256: again.sha256, updatedAt: iso2() };
+    });
+  }
+  function procedureView(name, { includeText = false, state = readState() } = {}) {
+    const record2 = procedureRecord(state, name);
+    const file = readProcedure(name);
+    if (!record2 && !file) return null;
+    const usable = file && !("error" in file) ? file : null;
+    const present2 = Boolean(usable && record2 && usable.sha256 === record2.sha256);
+    return {
+      name,
+      version: record2?.version ?? null,
+      sha256: record2?.sha256 ?? null,
+      updatedAt: record2?.updatedAt ?? null,
+      present: present2,
+      pending: Boolean(usable && usable.sha256 !== record2?.sha256),
+      ...file && "error" in file ? { problem: file.error } : {},
+      ...includeText && present2 && usable ? { text: usable.text } : {}
+    };
+  }
+  function view(name, role, { includeProcedureText = false, state } = {}) {
     return {
       role: name,
       roleAddress: `role:${name}`,
       address: role.address,
       assignedAt: role.assignedAt,
-      procedure: role.procedure ? {
-        name,
-        version: role.procedure.version,
-        sha256: role.procedure.sha256,
-        updatedAt: role.procedure.updatedAt,
-        present: present2,
-        ...includeProcedureText && present2 && file ? { text: capProcedureText(file.text) } : {}
-      } : null
+      procedure: procedureView(name, { includeText: includeProcedureText, ...state ? { state } : {} })
     };
   }
-  function list({ sync: doSync = true } = {}) {
-    const first = read();
-    const result = doSync && !first.error ? sync(Object.keys(first.table.roles)) : first;
+  function list() {
+    const result = read();
+    const state = readState();
     return {
-      roles: Object.keys(result.table.roles).sort().map((name) => view(name, result.table.roles[name])),
+      roles: Object.keys(result.table.roles).sort().map((name) => view(name, result.table.roles[name], { state })),
       problems: result.problems,
       error: result.error,
       path: result.path,
@@ -26078,7 +26156,7 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
     };
   }
   function get(name, options = {}) {
-    const result = sync([name]);
+    const result = read();
     assertUsable(result);
     const role = result.table.roles[name];
     return role ? view(name, role, options) : null;
@@ -26087,36 +26165,39 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
     if (!ROLE_NAME_PATTERN.test(name)) throw new TypeError(`invalid role name ${name}`);
     if (!isAddress(address)) throw new TypeError(`invalid holder address ${address}`);
     let previous = null;
-    update((table) => {
-      previous = table.roles[name]?.address ?? null;
-      const role = table.roles[name] ?? { address: null, assignedAt: null, procedure: null };
-      if (role.address !== address) role.assignedAt = iso2();
-      role.address = address;
-      role.assignedAt ??= iso2();
-      if (typeof procedureText === "string") {
-        const hash = sha256(procedureText);
-        fs10.mkdirSync(proceduresDir(), { recursive: true, mode: DIR_MODE });
-        tightenMode(proceduresDir(), DIR_MODE);
-        writeFileAtomicSync(procedureFile(name), procedureText);
-        if (hash !== role.procedure?.sha256) {
-          role.procedure = { version: (role.procedure?.version ?? 0) + 1, sha256: hash, updatedAt: iso2() };
-        }
-      }
-      table.roles[name] = role;
+    update((raw, table) => {
+      const before = table.roles[name]?.address ?? null;
+      previous = typeof before === "string" ? before : null;
+      const entry = isPlainObject5(raw.roles[name]) ? raw.roles[name] : {};
+      if (entry.address !== address || !isoOrNull(entry.assignedAt)) entry.assignedAt = iso2();
+      entry.address = address;
+      raw.roles[name] = entry;
     });
-    const result = sync([name]);
+    if (typeof procedureText === "string") {
+      fs10.mkdirSync(proceduresDir(), { recursive: true, mode: DIR_MODE });
+      tightenMode(proceduresDir(), DIR_MODE);
+      const existing = fs10.lstatSync(procedureFile(name), { throwIfNoEntry: false });
+      if (existing && !existing.isFile()) {
+        throw new AgentLinkError("state_io_error", `The procedure file for ${name} is not a regular file; Agent Link will not replace it.`, {
+          details: { path: `roles/${name}.md`, errno: null }
+        });
+      }
+      writeFileAtomicSync(procedureFile(name), procedureText);
+    }
+    syncProcedure(name);
+    const result = read();
     return { previousAddress: previous, role: view(name, result.table.roles[name]) };
   }
   function clear(name) {
     let previous = null;
     let existed = false;
-    update((table) => {
-      const role2 = table.roles[name];
-      if (!role2) return;
+    update((raw, table) => {
+      if (!table.roles[name] || !isPlainObject5(raw.roles[name])) return;
       existed = true;
-      previous = role2.address;
-      role2.address = null;
-      role2.assignedAt = null;
+      const before = table.roles[name].address;
+      previous = typeof before === "string" ? before : null;
+      delete raw.roles[name].address;
+      delete raw.roles[name].assignedAt;
     });
     const result = read();
     const role = result.table.roles[name];
@@ -26124,25 +26205,19 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
   }
   function setPolicy(target, settings) {
     let entry = null;
-    update((table) => {
-      const next = { ...table.overridePolicy[target] ?? {} };
+    update((raw) => {
+      const next = isPlainObject5(raw.overridePolicy[target]) ? { ...raw.overridePolicy[target] } : {};
       for (const setting of POLICY_SETTINGS) {
         const senders = settings[
           /** @type {"model" | "effort" | "cwd"} */
           setting
         ];
         if (senders === void 0) continue;
-        next[
-          /** @type {"model" | "effort" | "cwd"} */
-          setting
-        ] = [...new Set(senders)];
+        next[setting] = [...new Set(senders)];
       }
-      const empty = POLICY_SETTINGS.every((setting) => !next[
-        /** @type {"model" | "effort" | "cwd"} */
-        setting
-      ]?.length);
-      if (empty) delete table.overridePolicy[target];
-      else table.overridePolicy[target] = next;
+      const empty = Object.values(next).every((senders) => !Array.isArray(senders) || senders.length === 0);
+      if (empty) delete raw.overridePolicy[target];
+      else raw.overridePolicy[target] = next;
       entry = empty ? null : next;
     });
     return entry;
@@ -26150,14 +26225,14 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
   function rolesOf(address, table = read().table) {
     return Object.entries(table.roles).filter(([, role]) => role.address === address || Array.isArray(role.address) && role.address.includes(address)).map(([name]) => name).sort();
   }
-  function resolve(roleAddress, { includeProcedureText = true } = {}) {
+  function resolve(roleAddress, { includeProcedureText = true, sync = true } = {}) {
     const name = parseRoleAddress(roleAddress);
     if (!name) {
       throw new AgentLinkError("invalid_arguments", `${JSON.stringify(String(roleAddress).slice(0, 60))} is not a role address; use role:<name> with 1 to 40 lowercase letters, digits, or hyphens.`, {
         details: { errors: [{ path: "role", rule: "pattern", expected: "role:[a-z0-9-]{1,40}" }] }
       });
     }
-    const result = sync([name]);
+    const result = read();
     assertUsable(result);
     const role = result.table.roles[name];
     if (!role || !role.address) {
@@ -26172,43 +26247,28 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
         hint: "A role has one holder. Ask the user to fix roles.json or reassign the role with set_agent_role."
       });
     }
-    const v = view(name, role, { includeProcedureText });
+    if (sync) syncProcedure(name);
+    const procedure = procedureView(name, { includeText: includeProcedureText });
     return {
       role: name,
       via: `role:${name}`,
       address: role.address,
-      procedure: v.procedure && v.procedure.present ? v.procedure : null
+      procedure: procedure && procedure.present && procedure.version !== null && procedure.sha256 !== null ? { name, version: procedure.version, sha256: procedure.sha256, ...procedure.text !== void 0 ? { text: procedure.text } : {} } : null
     };
   }
-  function claimProcedureDelivery({ role, version: version2, address }) {
-    ensureStateDir(pathOptions);
-    return withFileLockSync(lockPath(), () => {
-      const file = deliveriesPath();
-      let data = { version: 1, deliveries: {} };
-      try {
-        const parsed = JSON.parse(fs10.readFileSync(file, "utf8"));
-        if (isPlainObject5(parsed) && isPlainObject5(parsed.deliveries)) data = { version: 1, deliveries: parsed.deliveries };
-      } catch {
-      }
-      const seen = Number(data.deliveries[role]?.[address] ?? 0);
-      if (Number.isFinite(seen) && seen >= version2) return false;
-      data.deliveries[role] = { ...isPlainObject5(data.deliveries[role]) ? data.deliveries[role] : {}, [address]: version2 };
-      writeFileAtomicSync(file, `${JSON.stringify(data, null, 2)}
-`);
+  function claimProcedureDelivery({ role, sha256: hash, address }) {
+    return updateState((state) => {
+      const seen = isPlainObject5(state.deliveries[role]) ? state.deliveries[role] : {};
+      if (seen[address] === hash) return false;
+      state.deliveries[role] = { ...seen, [address]: hash };
       return true;
-    }, { now });
+    });
   }
-  function releaseProcedureDelivery({ role, version: version2, address }) {
+  function releaseProcedureDelivery({ role, sha256: hash, address }) {
     try {
-      withFileLockSync(lockPath(), () => {
-        const file = deliveriesPath();
-        const data = JSON.parse(fs10.readFileSync(file, "utf8"));
-        if (data?.deliveries?.[role]?.[address] === version2) {
-          delete data.deliveries[role][address];
-          writeFileAtomicSync(file, `${JSON.stringify(data, null, 2)}
-`);
-        }
-      }, { now });
+      updateState((state) => {
+        if (state.deliveries[role]?.[address] === hash) delete state.deliveries[role][address];
+      });
     } catch {
     }
   }
@@ -26219,6 +26279,7 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
       if (ENFORCEMENT_MODES.includes(fromEnv)) return { mode: fromEnv, source: "AGENT_LINK_ROLE_ENFORCEMENT", ignored };
       ignored.push({ source: "AGENT_LINK_ROLE_ENFORCEMENT", reason: `not one of ${ENFORCEMENT_MODES.join(", ")}` });
     }
+    if (tableRead.error) ignored.push({ source: "roles.json", reason: "unreadable; enforcement falls back to the default (fails open)" });
     if (tableRead.table.enforcement) return { mode: tableRead.table.enforcement, source: "roles.json", ignored };
     return { mode: DEFAULT_ENFORCEMENT, source: "default", ignored };
   }
@@ -26234,7 +26295,7 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
     claimProcedureDelivery,
     releaseProcedureDelivery,
     enforcement,
-    paths: { table: tablePath, procedures: proceduresDir, procedureFile }
+    paths: { table: tablePath, procedures: proceduresDir, procedureFile, state: statePath }
   };
 }
 
@@ -26558,7 +26619,7 @@ function makeClaudeSendHandler({
         });
         if (addressing.warning) toolContext.warn?.(addressing.warning);
         const procedure = role?.procedure ?? null;
-        const procedureClaim = procedure && targetAddress ? { role: procedure.name, version: procedure.version, address: targetAddress } : null;
+        const procedureClaim = procedure && targetAddress ? { role: procedure.name, sha256: procedure.sha256, address: targetAddress } : null;
         const withText = procedureClaim && roles ? roles.claimProcedureDelivery(procedureClaim) : false;
         const roleMetadata = role ? {
           via: role.via,
@@ -27696,7 +27757,7 @@ function makeAgentHandlers({ registry: registry2, host, resolveCurrentSession = 
     if (!roles) return { ...base, status: "not_found", best: null, candidates: [] };
     let role;
     try {
-      role = roles.resolve(query, { includeProcedureText: false });
+      role = roles.resolve(query, { includeProcedureText: false, sync: false });
     } catch (error2) {
       if (error2 instanceof AgentLinkError && (error2.errorCode === "not_found" || error2.errorCode === "ambiguous")) {
         const details = (
@@ -29734,6 +29795,7 @@ var SWITCH_KINDS = Object.freeze({
   effort: "effort-change",
   cwd: "cwd-change"
 });
+var ALLOW_TARGET_OVERRIDE_GRANTS_UNTIL = "0.7.0";
 var ALLOW_TARGET_OVERRIDE_REMOVAL = "0.8.0";
 function policyAllows(policy, setting, { senderAddress, senderRoles, targetAddress, targetRoles }) {
   if (!isAddress(senderAddress)) return null;
@@ -29792,16 +29854,22 @@ function decideTargetOverrides({ thread, args, steering = false, parties, policy
   const warnings = [];
   const conflicts = [];
   let workspace = null;
-  if (args.allowTargetOverride === true) {
+  const flagged = args.allowTargetOverride === true;
+  if (flagged) {
     warnings.push({
-      code: "ignored_argument",
-      message: `allowTargetOverride grants nothing since 0.7.0 and becomes invalid_arguments in ${ALLOW_TARGET_OVERRIDE_REMOVAL}. Changing an existing thread's model, effort, or cwd needs its launcher (effort only) or the target's override policy (set_agent_override_policy, by the user).`,
-      argument: "allowTargetOverride"
+      code: "deprecated_argument",
+      message: `allowTargetOverride is deprecated and stops granting overrides in ${ALLOW_TARGET_OVERRIDE_GRANTS_UNTIL} (it is rejected from ${ALLOW_TARGET_OVERRIDE_REMOVAL}). Instead: launch a new thread (later: fork it) for a different model, ask the thread's launcher to change effort, or ask the user for an override policy (set_agent_override_policy).`,
+      replacement: "a new thread or fork for model; the launcher for effort; set_agent_override_policy otherwise"
     });
   }
   for (const field of FIELD_ORDER) {
     const requested = text(args[field]);
     if (!requested) continue;
+    if (field === "cwd" && !path16.isAbsolute(requested)) {
+      throw new AgentLinkError("invalid_arguments", "cwd must be an absolute path.", {
+        details: { errors: [{ path: "cwd", rule: "absolute", expected: "an absolute directory path" }] }
+      });
+    }
     const setting = (
       /** @type {"model" | "effort" | "cwd"} */
       OVERRIDE_FIELDS2[field]
@@ -29829,6 +29897,7 @@ function decideTargetOverrides({ thread, args, steering = false, parties, policy
     } else {
       match = policyAllows(policy, setting, parties);
       if (match) grantedBy = "policy";
+      else if (flagged) grantedBy = "allowTargetOverride";
     }
     if (field === "cwd" && grantedBy && !own) {
       conflicts.push({ field, requested, threadValue: null, reason: "cwd_outside_workspace" });
@@ -30027,10 +30096,12 @@ function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries, 
       return null;
     }
     for (const receipt of data) {
-      if (isAddress(receipt.launchedBy)) return receipt.launchedBy;
-      const source = receipt.origin?.sources?.threadId;
-      if ((source === "runtime_context" || source === "environment") && codexAddress(receipt.origin?.threadId)) {
-        return codexAddress(receipt.origin.threadId);
+      if (Object.prototype.hasOwnProperty.call(receipt, "launchedBy")) {
+        return isAddress(receipt.launchedBy) ? receipt.launchedBy : null;
+      }
+      if (receipt.host === "codex" && receipt.origin?.sources?.threadId === "runtime_context") {
+        const origin = codexAddress(receipt.origin?.threadId);
+        if (origin) return origin;
       }
     }
     return null;
@@ -30129,7 +30200,7 @@ function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries, 
     }
     const steering = mode === "steer_active" || mode === "auto" && status.type === "active";
     const procedure = role?.procedure ?? null;
-    const procedureClaim = procedure ? { role: procedure.name, version: procedure.version, address: targetAddress } : null;
+    const procedureClaim = procedure ? { role: procedure.name, sha256: procedure.sha256, address: targetAddress } : null;
     const withText = procedureClaim && roles ? roles.claimProcedureDelivery(procedureClaim) : false;
     const roleFields = role ? { via: role.via, procedure: procedure ? { name: procedure.name, version: procedure.version, ...withText ? { text: procedure.text } : {} } : null } : null;
     const peer = buildPeerTurnInput({

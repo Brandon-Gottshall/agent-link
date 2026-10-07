@@ -46,7 +46,7 @@ export const messageThreadOut = {
   appServer: commonOut.appServer,
   via: out("string", "role:<name> when the target was addressed by role; the message went to the role's current holder."),
   roleProcedure: out(["object", "null"], "With a role target: {name, version, textIncluded} of the role's procedure, or null when the role has none. textIncluded is true on the first delivery of that version to the holder."),
-  switches: out("array", "In-place changes applied to the thread, one per setting: {setting, previous, current, grantedBy: launcher|policy, policy?, persists: true, expectedCost: {uncachedInputTokens, basis} | null}. A change persists; Agent Link never sends a revert."),
+  switches: out("array", "In-place changes applied to the thread, one per setting: {setting, previous, current, grantedBy: launcher|policy|allowTargetOverride, policy?, persists: true, expectedCost: {uncachedInputTokens, basis} | null}. A change persists; Agent Link never sends a revert."),
   switchReceipts: out("array", "Receipt write results for the model-switch, effort-change, and cwd-change receipts, one per entry in switches.")
 };
 
@@ -114,14 +114,14 @@ export const codexActionTools = [
   },
   {
     name: "message_codex_thread",
-    description: "Send a direct text message to a Codex thread, wrapped in the peer-message envelope. Resumes not-loaded threads through the app-server before starting a new turn when needed, or steers an active turn. Starting a second turn on a busy thread fails with active_turn_conflict unless allowParallelTurn is true; an existing thread keeps its cwd, model, and effort: a different value fails with permission_denied unless the thread's launcher changes effort or the target's override policy (set by the user) allows the change, which then persists. threadId also accepts role:<name>, which reaches the Codex thread holding that role.",
+    description: "Send a direct text message to a Codex thread, wrapped in the peer-message envelope. Resumes not-loaded threads through the app-server before starting a new turn when needed, or steers an active turn. Starting a second turn on a busy thread fails with active_turn_conflict unless allowParallelTurn is true; an existing thread keeps its cwd, model, and effort: a different value fails with permission_denied unless the thread's launcher changes effort, the target's override policy (set by the user) allows the change, or the deprecated allowTargetOverride is set (until 0.7.0); an allowed change persists. threadId also accepts role:<name>, which reaches the Codex thread holding that role.",
     inputSchema: {
       type: "object",
       required: ["threadId", "message"],
       properties: {
         threadId: str("Target Codex thread ID, codex:<id> address, or role:<name> (the Codex thread currently holding the role)."),
         message: str("Text to send to the target thread (at most 64 KiB)."),
-        cwd: str("Optional cwd for the target turn. It must match the thread's own cwd (compared by real path) unless the target's override policy allows you to change it; a change must stay inside the thread's workspace (git top level of its cwd) and persists."),
+        cwd: str("Optional absolute cwd for the target turn. It must match the thread's own cwd (compared by real path) unless the target's override policy (or the deprecated allowTargetOverride) allows you to change it; a change must stay inside the thread's workspace (git top level of its cwd, symlinks resolved) and persists."),
         ...turnOptions,
         receipt: receiptInput
       },

@@ -282,9 +282,13 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
   }
 
   /**
-   * The session that launched a thread through Agent Link (R9.9): the
-   * launch receipt's launchedBy, or for receipts written before it existed,
-   * an origin thread taken from runtime identity. Null when unknown.
+   * The session that launched a thread through Agent Link (R9.9), or null.
+   * A launch receipt that has a `launchedBy` key decides alone: an address
+   * is the launcher, null (an external caller) means none. Only launch
+   * receipts written before launchedBy existed fall back to their origin
+   * thread, and only when a Codex-host server took it from the runtime
+   * caller context; caller-supplied and environment origins, and receipts
+   * written by a Claude-host server, never make a launcher.
    * @param {string} threadId
    * @returns {Promise<string | null>}
    */
@@ -296,10 +300,12 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
       return null;
     }
     for (const receipt of data) {
-      if (isAddress(receipt.launchedBy)) return receipt.launchedBy;
-      const source = receipt.origin?.sources?.threadId;
-      if ((source === "runtime_context" || source === "environment") && codexAddress(receipt.origin?.threadId)) {
-        return codexAddress(receipt.origin.threadId);
+      if (Object.prototype.hasOwnProperty.call(receipt, "launchedBy")) {
+        return isAddress(receipt.launchedBy) ? receipt.launchedBy : null;
+      }
+      if (receipt.host === "codex" && receipt.origin?.sources?.threadId === "runtime_context") {
+        const origin = codexAddress(receipt.origin?.threadId);
+        if (origin) return origin;
       }
     }
     return null;
@@ -422,7 +428,7 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
     // R1.20: the procedure text goes with the first delivery of each version
     // to the holder; a failed send releases the claim.
     const procedure = role?.procedure ?? null;
-    const procedureClaim = procedure ? { role: procedure.name, version: procedure.version, address: targetAddress } : null;
+    const procedureClaim = procedure ? { role: procedure.name, sha256: procedure.sha256, address: targetAddress } : null;
     const withText = procedureClaim && roles ? roles.claimProcedureDelivery(procedureClaim) : false;
     const roleFields = role
       ? { via: role.via, procedure: procedure ? { name: procedure.name, version: procedure.version, ...(withText ? { text: procedure.text } : {}) } : null }

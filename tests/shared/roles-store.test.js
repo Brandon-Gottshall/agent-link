@@ -4,8 +4,8 @@
 // resolution errors, and the enforcement-mode precedence. Every test uses a
 // temp state directory; nothing touches the real ~/.agent-link.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -102,13 +102,16 @@ test("set writes the table atomically with 0600/0700 modes and no leftovers", ()
     assert.equal(statSync(state).mode & 0o777, 0o700);
     assert.equal(statSync(path.join(state, "roles")).mode & 0o777, 0o700);
     assert.equal(statSync(path.join(state, "roles", "router.md")).mode & 0o777, 0o600);
+    assert.equal(statSync(path.join(state, "role-state.json")).mode & 0o777, 0o600);
     assert.equal(readFileSync(path.join(state, "roles", "router.md"), "utf8"), "Route work.\n");
     const stored = JSON.parse(readFileSync(file, "utf8"));
     assert.equal(stored.version, 1);
     assert.equal(stored.roles.router.address, CODEX_A);
-    assert.match(stored.roles.router.procedure.sha256, /^[0-9a-f]{64}$/);
-    assert.deepEqual(stored.overridePolicy, {});
-    assert.deepEqual(readdirSync(state).filter((name) => name.endsWith(".tmp") || name.endsWith(".lock")), [], "no temp or lock files remain");
+    assert.equal(stored.roles.router.procedure, undefined, "procedure bookkeeping is not written into the user's roles.json");
+    const bookkeeping = JSON.parse(readFileSync(path.join(state, "role-state.json"), "utf8"));
+    assert.equal(bookkeeping.procedures.router.version, 1);
+    assert.match(bookkeeping.procedures.router.sha256, /^[0-9a-f]{64}$/);
+    assert.deepEqual(readdirSync(state).filter((name) => name.endsWith(".tmp") || name.includes(".lock")), [], "no temp or lock files remain");
     // Reassigning moves the pointer and keeps the procedure version.
     const moved = store.set({ role: "router", address: CODEX_B });
     assert.equal(moved.previousAddress, CODEX_A);
@@ -120,7 +123,66 @@ test("set writes the table atomically with 0600/0700 modes and no leftovers", ()
   }
 });
 
-test("T-1.9: procedure versions follow the file's SHA-256, once per change", () => {
+test("I3: writes keep entries Agent Link does not understand, and refuse a file whose version is not 1", () => {
+  const { store, state, cleanup } = tempStore();
+  try {
+    const file = path.join(state, "roles.json");
+    mkdirSync(state, { recursive: true, mode: 0o700 });
+    const handEdited = {
+      version: 1,
+      note: "kept",
+      roles: { "Bad Name": { address: CODEX_A }, broken: { address: "nope", extra: 1 }, planner: { address: CLAUDE_C, comment: "mine" } },
+      overridePolicy: { "not a target": { model: ["*"] }, "role:planner": { model: ["bogus", "*"], colour: ["*"] } }
+    };
+    writeFileSync(file, JSON.stringify(handEdited));
+    store.set({ role: "router", address: CODEX_A });
+    store.setPolicy("role:router", { effort: ["*"] });
+    const after = JSON.parse(readFileSync(file, "utf8"));
+    assert.equal(after.note, "kept");
+    assert.deepEqual(after.roles["Bad Name"], { address: CODEX_A });
+    assert.deepEqual(after.roles.broken, { address: "nope", extra: 1 });
+    assert.deepEqual(after.roles.planner, { address: CLAUDE_C, comment: "mine" });
+    assert.deepEqual(after.overridePolicy["not a target"], { model: ["*"] });
+    assert.deepEqual(after.overridePolicy["role:planner"], { model: ["bogus", "*"], colour: ["*"] });
+    assert.deepEqual(after.overridePolicy["role:router"], { effort: ["*"] });
+    assert.equal(after.roles.router.address, CODEX_A);
+
+    // A file with another (or no) version is read, never written.
+    for (const version of [2, undefined]) {
+      const text = JSON.stringify({ ...(version === undefined ? {} : { version }), roles: { router: { address: CODEX_A } }, future: true });
+      writeFileSync(file, text);
+      assert.equal(store.read().table.roles.router.address, CODEX_A);
+      assert.ok(store.read().problems.some((problem) => problem.path === "version"));
+      assert.throws(() => store.set({ role: "router", address: CODEX_B }), (error) => error.errorCode === "state_io_error");
+      assert.throws(() => store.setPolicy(CODEX_A, { model: ["*"] }), (error) => error.errorCode === "state_io_error");
+      assert.throws(() => store.clear("router"), (error) => error.errorCode === "state_io_error");
+      assert.equal(readFileSync(file, "utf8"), text, `version ${version}: untouched`);
+    }
+  } finally {
+    cleanup();
+  }
+});
+
+test("I3: read-only calls never write, even when a procedure file changed", () => {
+  const { store, state, cleanup } = tempStore();
+  try {
+    store.set({ role: "router", address: CODEX_A, procedureText: "v1 text" });
+    writeFileSync(path.join(state, "roles", "router.md"), "v2 text, edited by hand");
+    const files = ["roles.json", "role-state.json"].map((name) => path.join(state, name));
+    const before = files.map((file) => [readFileSync(file, "utf8"), statSync(file).mtimeMs]);
+    const listed = store.list().roles[0].procedure;
+    assert.deepEqual([listed.version, listed.present, listed.pending], [1, false, true]);
+    assert.equal(store.get("router").procedure.pending, true);
+    store.resolve("role:router", { sync: false });
+    store.enforcement();
+    store.read();
+    assert.deepEqual(files.map((file) => [readFileSync(file, "utf8"), statSync(file).mtimeMs]), before, "nothing was written");
+  } finally {
+    cleanup();
+  }
+});
+
+test("T-1.9: procedure versions follow the file's SHA-256, once per change, on send paths", () => {
   const { store, state, cleanup } = tempStore();
   try {
     store.set({ role: "router", address: CODEX_A, procedureText: "v1 text" });
@@ -128,13 +190,12 @@ test("T-1.9: procedure versions follow the file's SHA-256, once per change", () 
     // The same text is not a new version.
     store.set({ role: "router", address: CODEX_A, procedureText: "v1 text" });
     assert.equal(store.get("router").procedure.version, 1);
-    // A hand edit is picked up by the next syncing read, exactly once.
+    // A hand edit gets its version from the next send (resolve with sync), exactly once.
     writeFileSync(path.join(state, "roles", "router.md"), "v2 text, edited by hand");
-    assert.equal(store.get("router").procedure.version, 2);
-    assert.equal(store.get("router").procedure.version, 2);
-    assert.equal(store.list().roles[0].procedure.version, 2);
     const resolved = store.resolve("role:router");
     assert.deepEqual([resolved.address, resolved.via, resolved.procedure.version, resolved.procedure.text], [CODEX_A, "role:router", 2, "v2 text, edited by hand"]);
+    assert.equal(store.resolve("role:router").procedure.version, 2);
+    assert.equal(store.get("router").procedure.version, 2);
     // A missing file means no procedure is delivered; the record is kept.
     rmSync(path.join(state, "roles", "router.md"));
     assert.equal(store.get("router").procedure.present, false);
@@ -144,17 +205,68 @@ test("T-1.9: procedure versions follow the file's SHA-256, once per change", () 
   }
 });
 
-test("procedure text is delivered once per version per recipient", () => {
-  const { store, cleanup } = tempStore();
+test("S2: procedure files must be regular files of at most 64 KiB", () => {
+  const { store, state, dir, cleanup } = tempStore();
   try {
-    const claim = (version, address) => store.claimProcedureDelivery({ role: "router", version, address });
-    assert.equal(claim(1, CODEX_A), true, "first delivery of v1");
-    assert.equal(claim(1, CODEX_A), false, "v1 again");
-    assert.equal(claim(1, CODEX_B), true, "another holder gets v1 once");
-    assert.equal(claim(2, CODEX_A), true, "v2 is new");
-    assert.equal(claim(1, CODEX_A), false, "an older version never resends");
-    store.releaseProcedureDelivery({ role: "router", version: 2, address: CODEX_A });
-    assert.equal(claim(2, CODEX_A), true, "a released claim (failed send) is claimed again");
+    store.set({ role: "router", address: CODEX_A, procedureText: "ok" });
+    const file = path.join(state, "roles", "router.md");
+    // A symlink (even to a readable file) is refused.
+    const target = path.join(dir, "secret.txt");
+    writeFileSync(target, "outside text");
+    rmSync(file);
+    symlinkSync(target, file);
+    let view = store.get("router", { includeProcedureText: true }).procedure;
+    assert.match(view.problem, /not a regular file/);
+    assert.equal(view.text, undefined);
+    assert.equal(store.resolve("role:router").procedure, null);
+    // A FIFO is refused without blocking.
+    rmSync(file);
+    execFileSync("mkfifo", [file]);
+    view = store.get("router").procedure;
+    assert.match(view.problem, /not a regular file/);
+    assert.equal(store.resolve("role:router").procedure, null);
+    // Over 64 KiB is refused.
+    rmSync(file);
+    writeFileSync(file, "x".repeat(64 * 1024 + 1));
+    assert.match(store.get("router").procedure.problem, /larger than/);
+    assert.equal(store.resolve("role:router").procedure, null);
+    // Exactly 64 KiB is fine.
+    writeFileSync(file, "y".repeat(64 * 1024));
+    assert.equal(store.resolve("role:router").procedure.text.length, 64 * 1024);
+    // set_agent_role will not replace a non-regular file.
+    rmSync(file);
+    symlinkSync(target, file);
+    assert.throws(() => store.set({ role: "router", address: CODEX_A, procedureText: "new" }), (error) => error.errorCode === "state_io_error");
+    assert.equal(readFileSync(target, "utf8"), "outside text", "the link target is untouched");
+  } finally {
+    cleanup();
+  }
+});
+
+test("I4: procedure text is delivered once per distinct text per recipient, also after a role is recreated", () => {
+  const { store, state, cleanup } = tempStore();
+  try {
+    const claim = (hash, address) => store.claimProcedureDelivery({ role: "router", sha256: hash, address });
+    assert.equal(claim("a".repeat(64), CODEX_A), true, "first delivery");
+    assert.equal(claim("a".repeat(64), CODEX_A), false, "same text again");
+    assert.equal(claim("a".repeat(64), CODEX_B), true, "another holder gets it once");
+    assert.equal(claim("b".repeat(64), CODEX_A), true, "new text");
+    store.releaseProcedureDelivery({ role: "router", sha256: "b".repeat(64), address: CODEX_A });
+    assert.equal(claim("b".repeat(64), CODEX_A), true, "a released claim (failed send) is claimed again");
+
+    // Recreate: the role and its version records are removed by hand and the
+    // role comes back with new text at version 1 again. The holder still gets it.
+    store.set({ role: "planner", address: CODEX_A, procedureText: "first life" });
+    let resolved = store.resolve("role:planner");
+    assert.equal(store.claimProcedureDelivery({ role: "planner", sha256: resolved.procedure.sha256, address: CODEX_A }), true);
+    const bookkeeping = JSON.parse(readFileSync(path.join(state, "role-state.json"), "utf8"));
+    delete bookkeeping.procedures.planner;
+    writeFileSync(path.join(state, "role-state.json"), JSON.stringify(bookkeeping));
+    store.clear("planner");
+    store.set({ role: "planner", address: CODEX_A, procedureText: "second life" });
+    resolved = store.resolve("role:planner");
+    assert.equal(resolved.procedure.version, 1, "versions restarted");
+    assert.equal(store.claimProcedureDelivery({ role: "planner", sha256: resolved.procedure.sha256, address: CODEX_A }), true, "new text is delivered despite the same version number");
   } finally {
     cleanup();
   }
@@ -166,6 +278,7 @@ test("clear keeps the procedure; resolve reports not_found, ambiguous, and inval
     store.set({ role: "router", address: CODEX_A, procedureText: "p" });
     const cleared = store.clear("router");
     assert.deepEqual([cleared.existed, cleared.previousAddress, cleared.role.address, cleared.role.procedure.version], [true, CODEX_A, null, 1]);
+    assert.deepEqual(JSON.parse(readFileSync(path.join(state, "roles.json"), "utf8")).roles.router, {}, "the entry stays, without a holder");
     assert.equal(store.clear("never").existed, false);
     assert.throws(() => store.resolve("role:router"), (error) => error.errorCode === "not_found" && error.details.role === "router");
     throwsCode(() => store.resolve("role:Not_Valid"), "invalid_arguments");
@@ -242,7 +355,7 @@ test("concurrent writers in separate processes never lose an update", async () =
   try {
     const script = `
       import { createRoleStore } from ${JSON.stringify(path.join(root, "src", "registry", "roles.js"))};
-      const store = createRoleStore({ env: { HOME: ${JSON.stringify(dir)}, AGENT_LINK_STATE_DIR: ${JSON.stringify(state)} }, homedir: ${JSON.stringify(dir)} });
+      const store = createRoleStore({ env: { HOME: ${JSON.stringify(dir)}, AGENT_LINK_STATE_DIR: ${JSON.stringify(state)} }, homedir: ${JSON.stringify(dir)}, lockTimeoutMs: 30000 });
       const worker = Number(process.argv[1]);
       for (let i = 0; i < 10; i++) {
         store.set({ role: \`w\${worker}-\${i}\`, address: "codex:019d9000-0000-7000-8000-0000000000" + String(worker).padStart(2, "0") });
@@ -259,7 +372,7 @@ test("concurrent writers in separate processes never lose an update", async () =
     const table = JSON.parse(readFileSync(path.join(state, "roles.json"), "utf8"));
     assert.equal(Object.keys(table.roles).length, workers * 10, "every role written by every process is present");
     assert.equal(table.overridePolicy["role:shared"].effort.length, 1);
-    assert.deepEqual(readdirSync(state).filter((name) => name.endsWith(".tmp") || name.endsWith(".lock")), []);
+    assert.deepEqual(readdirSync(state).filter((name) => name.endsWith(".tmp") || name.includes(".lock")), []);
   } finally {
     cleanup();
   }

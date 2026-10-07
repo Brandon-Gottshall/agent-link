@@ -278,7 +278,7 @@ export function makeClaudeSendHandler({
         // R1.20: the procedure text rides along with the first delivery of
         // each version to the holder.
         const procedure = role?.procedure ?? null;
-        const procedureClaim = procedure && targetAddress ? { role: procedure.name, version: procedure.version, address: targetAddress } : null;
+        const procedureClaim = procedure && targetAddress ? { role: procedure.name, sha256: procedure.sha256, address: targetAddress } : null;
         const withText = procedureClaim && roles ? roles.claimProcedureDelivery(procedureClaim) : false;
         const roleMetadata = role
           ? {

@@ -144,18 +144,40 @@ test("unknown thread values: not applied without a grant, applied with one", () 
   assert.deepEqual(granted.switches.map((s) => [s.field, s.previous, s.current]), [["effort", null, "high"]]);
 });
 
-test("steering ignores overrides; allowTargetOverride grants nothing (R9.13)", () => {
+test("steering ignores overrides", () => {
   const steer = decide({ model: "gpt-b", cwd: outside }, { steering: true });
   assert.equal(steer.denied, null);
   assert.deepEqual(steer.switches, []);
   assert.deepEqual(steer.warnings.map((w) => w.code), ["target-override-ignored-steer", "target-override-ignored-steer"]);
-  const flagged = decide({ model: "gpt-b", allowTargetOverride: true });
-  assert.equal(flagged.denied.reason, "model_switch_requires_fork_or_opt_in");
-  assert.equal(flagged.warnings[0].code, "ignored_argument");
-  assert.match(flagged.warnings[0].message, /0\.8\.0/);
-  const flaggedOk = decide({ model: "gpt-a", allowTargetOverride: true });
-  assert.equal(flaggedOk.denied, null);
-  assert.equal(flaggedOk.warnings[0].code, "ignored_argument");
+});
+
+test("C1 (R9.13, 0.6.0): allowTargetOverride still grants, with a deprecation warning; cwd still needs the workspace", () => {
+  const flagged = decide({ model: "gpt-b", effort: "high", cwd: path.join(repo, "docs"), allowTargetOverride: true });
+  assert.equal(flagged.denied, null);
+  assert.deepEqual(flagged.switches.map((s) => [s.field, s.grantedBy, s.kind]), [["cwd", "allowTargetOverride", "cwd-change"], ["model", "allowTargetOverride", "model-switch"], ["effort", "allowTargetOverride", "effort-change"]]);
+  assert.deepEqual(flagged.forward, { cwd: path.join(repo, "docs"), model: "gpt-b", effort: "high" });
+  const warning = flagged.warnings.find((w) => w.code === "deprecated_argument");
+  assert.match(warning.message, /0\.7\.0/);
+  assert.match(warning.replacement, /set_agent_override_policy/);
+  // The launcher and the policy are checked first.
+  assert.equal(decide({ effort: "high", allowTargetOverride: true }, { sender: LAUNCHER }).switches[0].grantedBy, "launcher");
+  assert.equal(decide({ model: "gpt-b", allowTargetOverride: true }, { policy: { [TARGET]: { model: [PEER] } } }).switches[0].grantedBy, "policy");
+  // Unknown thread values are granted too, as in 0.4.0.
+  assert.deepEqual(decide({ effort: "high", allowTargetOverride: true }, { threadOverride: { ...thread, reasoningEffort: null } }).switches.map((s) => [s.previous, s.current]), [[null, "high"]]);
+  // cwd outside the workspace (or a thread without a cwd) is still refused.
+  assert.equal(decide({ cwd: outside, allowTargetOverride: true }).denied.reason, "cwd_outside_workspace");
+  assert.equal(decide({ cwd: path.join(repo, "escape"), allowTargetOverride: true }).denied.reason, "cwd_outside_workspace");
+  assert.equal(decide({ cwd: path.join(repo, "docs"), allowTargetOverride: true }, { threadOverride: { ...thread, cwd: null } }).denied.reason, "cwd_outside_workspace");
+  // Equal values: no switch, still the warning.
+  const same = decide({ model: "gpt-a", allowTargetOverride: true });
+  assert.deepEqual([same.denied, same.switches.length, same.warnings[0].code], [null, 0, "deprecated_argument"]);
+});
+
+test("S3: a relative cwd is invalid_arguments", () => {
+  for (const cwd of ["relative/dir", ".", "../up"]) {
+    assert.throws(() => decide({ cwd }), (error) => error.errorCode === "invalid_arguments" && error.details.errors[0].rule === "absolute", cwd);
+    assert.throws(() => decide({ cwd, allowTargetOverride: true }), (error) => error.errorCode === "invalid_arguments");
+  }
 });
 
 test("R9.6: Claude targets accept no overrides", () => {

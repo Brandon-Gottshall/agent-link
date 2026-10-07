@@ -49,6 +49,7 @@ const groups = {
     "tests/shared/override-policy.test.js",
     "tests/shared/paths.test.js",
     "tests/shared/process-handlers.test.js",
+    "tests/shared/role-lock-stress.test.js",
     "tests/shared/role-policy.test.js",
     "tests/shared/roles-store.test.js",
     "tests/shared/state-dir.test.js",
@@ -85,6 +86,7 @@ const groups = {
     "tests/server/tools-contract.test.js"
   ],
   manifest: [
+    "tests/approval-config-check.test.js",
     "tests/manifest.test.js"
   ]
 };

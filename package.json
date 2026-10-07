@@ -20,6 +20,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint .",
     "check:approval-config": "node ./scripts/approval-config-check.js",
+    "check:approval-config:real": "node ./scripts/approval-config-check.js --real-config",
     "test": "node ./scripts/run-offline-tests.js",
     "test:claude": "node ./scripts/run-offline-tests.js claude",
     "test:codex": "node ./scripts/run-offline-tests.js codex",

@@ -1641,7 +1641,7 @@
   },
   {
     "name": "message_codex_thread",
-    "description": "Send a direct text message to a Codex thread, wrapped in the peer-message envelope. Resumes not-loaded threads through the app-server before starting a new turn when needed, or steers an active turn. Starting a second turn on a busy thread fails with active_turn_conflict unless allowParallelTurn is true; an existing thread keeps its cwd, model, and effort: a different value fails with permission_denied unless the thread's launcher changes effort or the target's override policy (set by the user) allows the change, which then persists. threadId also accepts role:<name>, which reaches the Codex thread holding that role.",
+    "description": "Send a direct text message to a Codex thread, wrapped in the peer-message envelope. Resumes not-loaded threads through the app-server before starting a new turn when needed, or steers an active turn. Starting a second turn on a busy thread fails with active_turn_conflict unless allowParallelTurn is true; an existing thread keeps its cwd, model, and effort: a different value fails with permission_denied unless the thread's launcher changes effort, the target's override policy (set by the user) allows the change, or the deprecated allowTargetOverride is set (until 0.7.0); an allowed change persists. threadId also accepts role:<name>, which reaches the Codex thread holding that role.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1655,7 +1655,7 @@
         },
         "cwd": {
           "type": "string",
-          "description": "Optional cwd for the target turn. It must match the thread's own cwd (compared by real path) unless the target's override policy allows you to change it; a change must stay inside the thread's workspace (git top level of its cwd) and persists."
+          "description": "Optional absolute cwd for the target turn. It must match the thread's own cwd (compared by real path) unless the target's override policy (or the deprecated allowTargetOverride) allows you to change it; a change must stay inside the thread's workspace (git top level of its cwd, symlinks resolved) and persists."
         },
         "mode": {
           "type": "string",
@@ -1676,7 +1676,7 @@
         },
         "model": {
           "type": "string",
-          "description": "Optional model for the target turn. A model different from the thread's own is refused (permission_denied, model_switch_requires_fork_or_opt_in) unless the target's override policy allows you; an allowed switch persists and the next turn re-reads the thread uncached. Not applied (with a warning) when the thread reports no model and no policy allows it."
+          "description": "Optional model for the target turn. A model different from the thread's own is refused (permission_denied, model_switch_requires_fork_or_opt_in) unless the target's override policy allows you (or the deprecated allowTargetOverride is set); an allowed switch persists and the next turn re-reads the thread uncached. Not applied (with a warning) when the thread reports no model and nothing allows it."
         },
         "effort": {
           "type": "string",
@@ -1687,7 +1687,7 @@
             "high",
             "xhigh"
           ],
-          "description": "Optional reasoning effort for the target turn. The thread's launcher may change it; anyone else needs the target's override policy (permission_denied, effort_not_permitted). A change persists. Not applied (with a warning) when the thread reports none and you may not change it."
+          "description": "Optional reasoning effort for the target turn. The thread's launcher may change it; anyone else needs the target's override policy (or the deprecated allowTargetOverride), otherwise permission_denied (effort_not_permitted). A change persists. Not applied (with a warning) when the thread reports none and you may not change it."
         },
         "allowParallelTurn": {
           "type": "boolean",
@@ -1720,7 +1720,7 @@
         },
         "allowTargetOverride": {
           "type": "boolean",
-          "description": "Deprecated: grants nothing since 0.7.0 (an ignored_argument warning) and is rejected from 0.8.0. Whether cwd/model/effort of an existing thread may change is decided by its launcher (effort) and the target's override policy."
+          "description": "Deprecated (deprecated_argument warning). Until 0.7.0 it still lets you change an existing thread's cwd, model, and effort (the change persists; a cwd must stay inside the thread's workspace); from 0.7.0 it grants nothing and from 0.8.0 it is rejected. Prefer a new thread for another model, the thread's launcher for effort, or the target's override policy."
         },
         "receipt": {
           "type": "object",
@@ -1941,7 +1941,7 @@
         },
         "switches": {
           "type": "array",
-          "description": "In-place changes applied to the thread, one per setting: {setting, previous, current, grantedBy: launcher|policy, policy?, persists: true, expectedCost: {uncachedInputTokens, basis} | null}. A change persists; Agent Link never sends a revert."
+          "description": "In-place changes applied to the thread, one per setting: {setting, previous, current, grantedBy: launcher|policy|allowTargetOverride, policy?, persists: true, expectedCost: {uncachedInputTokens, basis} | null}. A change persists; Agent Link never sends a revert."
         },
         "switchReceipts": {
           "type": "array",
@@ -2432,7 +2432,7 @@
         },
         "model": {
           "type": "string",
-          "description": "Optional model for the target turn. A model different from the thread's own is refused (permission_denied, model_switch_requires_fork_or_opt_in) unless the target's override policy allows you; an allowed switch persists and the next turn re-reads the thread uncached. Not applied (with a warning) when the thread reports no model and no policy allows it."
+          "description": "Optional model for the target turn. A model different from the thread's own is refused (permission_denied, model_switch_requires_fork_or_opt_in) unless the target's override policy allows you (or the deprecated allowTargetOverride is set); an allowed switch persists and the next turn re-reads the thread uncached. Not applied (with a warning) when the thread reports no model and nothing allows it."
         },
         "effort": {
           "type": "string",
@@ -2443,7 +2443,7 @@
             "high",
             "xhigh"
           ],
-          "description": "Optional reasoning effort for the target turn. The thread's launcher may change it; anyone else needs the target's override policy (permission_denied, effort_not_permitted). A change persists. Not applied (with a warning) when the thread reports none and you may not change it."
+          "description": "Optional reasoning effort for the target turn. The thread's launcher may change it; anyone else needs the target's override policy (or the deprecated allowTargetOverride), otherwise permission_denied (effort_not_permitted). A change persists. Not applied (with a warning) when the thread reports none and you may not change it."
         },
         "allowParallelTurn": {
           "type": "boolean",
@@ -2476,7 +2476,7 @@
         },
         "allowTargetOverride": {
           "type": "boolean",
-          "description": "Deprecated: grants nothing since 0.7.0 (an ignored_argument warning) and is rejected from 0.8.0. Whether cwd/model/effort of an existing thread may change is decided by its launcher (effort) and the target's override policy."
+          "description": "Deprecated (deprecated_argument warning). Until 0.7.0 it still lets you change an existing thread's cwd, model, and effort (the change persists; a cwd must stay inside the thread's workspace); from 0.7.0 it grants nothing and from 0.8.0 it is rejected. Prefer a new thread for another model, the thread's launcher for effort, or the target's override policy."
         },
         "receipt": {
           "type": "object",
@@ -2996,7 +2996,7 @@
         },
         "model": {
           "type": "string",
-          "description": "Optional model for the target turn. A model different from the thread's own is refused (permission_denied, model_switch_requires_fork_or_opt_in) unless the target's override policy allows you; an allowed switch persists and the next turn re-reads the thread uncached. Not applied (with a warning) when the thread reports no model and no policy allows it."
+          "description": "Optional model for the target turn. A model different from the thread's own is refused (permission_denied, model_switch_requires_fork_or_opt_in) unless the target's override policy allows you (or the deprecated allowTargetOverride is set); an allowed switch persists and the next turn re-reads the thread uncached. Not applied (with a warning) when the thread reports no model and nothing allows it."
         },
         "effort": {
           "type": "string",
@@ -3007,7 +3007,7 @@
             "high",
             "xhigh"
           ],
-          "description": "Optional reasoning effort for the target turn. The thread's launcher may change it; anyone else needs the target's override policy (permission_denied, effort_not_permitted). A change persists. Not applied (with a warning) when the thread reports none and you may not change it."
+          "description": "Optional reasoning effort for the target turn. The thread's launcher may change it; anyone else needs the target's override policy (or the deprecated allowTargetOverride), otherwise permission_denied (effort_not_permitted). A change persists. Not applied (with a warning) when the thread reports none and you may not change it."
         },
         "allowParallelTurn": {
           "type": "boolean",
@@ -3040,7 +3040,7 @@
         },
         "allowTargetOverride": {
           "type": "boolean",
-          "description": "Deprecated: grants nothing since 0.7.0 (an ignored_argument warning) and is rejected from 0.8.0. Whether cwd/model/effort of an existing thread may change is decided by its launcher (effort) and the target's override policy."
+          "description": "Deprecated (deprecated_argument warning). Until 0.7.0 it still lets you change an existing thread's cwd, model, and effort (the change persists; a cwd must stay inside the thread's workspace); from 0.7.0 it grants nothing and from 0.8.0 it is rejected. Prefer a new thread for another model, the thread's launcher for effort, or the target's override policy."
         },
         "receipt": {
           "type": "object",
@@ -3303,7 +3303,7 @@
         },
         "model": {
           "type": "string",
-          "description": "Optional model for the target turn. A model different from the thread's own is refused (permission_denied, model_switch_requires_fork_or_opt_in) unless the target's override policy allows you; an allowed switch persists and the next turn re-reads the thread uncached. Not applied (with a warning) when the thread reports no model and no policy allows it."
+          "description": "Optional model for the target turn. A model different from the thread's own is refused (permission_denied, model_switch_requires_fork_or_opt_in) unless the target's override policy allows you (or the deprecated allowTargetOverride is set); an allowed switch persists and the next turn re-reads the thread uncached. Not applied (with a warning) when the thread reports no model and nothing allows it."
         },
         "effort": {
           "type": "string",
@@ -3314,7 +3314,7 @@
             "high",
             "xhigh"
           ],
-          "description": "Optional reasoning effort for the target turn. The thread's launcher may change it; anyone else needs the target's override policy (permission_denied, effort_not_permitted). A change persists. Not applied (with a warning) when the thread reports none and you may not change it."
+          "description": "Optional reasoning effort for the target turn. The thread's launcher may change it; anyone else needs the target's override policy (or the deprecated allowTargetOverride), otherwise permission_denied (effort_not_permitted). A change persists. Not applied (with a warning) when the thread reports none and you may not change it."
         },
         "allowParallelTurn": {
           "type": "boolean",
@@ -3347,7 +3347,7 @@
         },
         "allowTargetOverride": {
           "type": "boolean",
-          "description": "Deprecated: grants nothing since 0.7.0 (an ignored_argument warning) and is rejected from 0.8.0. Whether cwd/model/effort of an existing thread may change is decided by its launcher (effort) and the target's override policy."
+          "description": "Deprecated (deprecated_argument warning). Until 0.7.0 it still lets you change an existing thread's cwd, model, and effort (the change persists; a cwd must stay inside the thread's workspace); from 0.7.0 it grants nothing and from 0.8.0 it is rejected. Prefer a new thread for another model, the thread's launcher for effort, or the target's override policy."
         },
         "archiveScope": {
           "type": "string",

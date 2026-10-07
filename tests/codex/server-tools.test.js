@@ -155,15 +155,24 @@ try {
     assert.ok(received.some((msg) => msg.method === "turn/steer"));
     assert.equal(result.payload.warnings.find((warning) => warning.code === "target-override-ignored-steer").field, "cwd");
 
-    // B9 (R9.13): allowTargetOverride grants nothing any more.
+    // allowTargetOverride (deprecated, R9.13) still forwards everything in
+    // 0.6.0, with a warning; the change persists and is receipted.
     received.length = 0;
-    result = await call("message_codex_thread", { threadId, message: "hi", model: "other-model", allowTargetOverride: true });
-    assert.equal(result.isError, true);
-    assert.equal(result.payload.error.details.reason, "model_switch_requires_fork_or_opt_in");
+    result = await call("message_codex_thread", { threadId, message: "hi", cwd: path.join(projectDir, "sub"), model: "other-model", effort: "high", allowTargetOverride: true });
+    assert.equal(result.isError, false, JSON.stringify(result.payload));
+    assert.equal(startParams().cwd, path.join(projectDir, "sub"));
+    assert.equal(startParams().model, "other-model");
+    assert.equal(startParams().effort, "high");
+    assert.deepEqual(result.payload.switches.map((change) => [change.setting, change.grantedBy]), [["cwd", "allowTargetOverride"], ["model", "allowTargetOverride"], ["effort", "allowTargetOverride"]]);
+    assert.equal(result.payload.switchReceipts.length, 3);
+    assert.match(result.payload.warnings.find((warning) => warning.code === "deprecated_argument").message, /0\.7\.0/);
+    // ...but never outside the thread's workspace, and never a relative cwd.
+    received.length = 0;
+    result = await call("message_codex_thread", { threadId, message: "hi", cwd: "/tmp/elsewhere", allowTargetOverride: true });
+    assert.equal(result.payload.error.details.reason, "cwd_outside_workspace");
+    result = await call("message_codex_thread", { threadId, message: "hi", cwd: "sub", allowTargetOverride: true });
+    assert.equal(result.payload.error.code, "invalid_arguments");
     assert.ok(!received.some((msg) => msg.method === "turn/start"), "nothing was started");
-    result = await call("message_codex_thread", { threadId, message: "hi", model: "gpt-known", allowTargetOverride: true });
-    assert.equal(result.isError, false);
-    assert.equal(result.payload.warnings.find((warning) => warning.code === "ignored_argument").argument, "allowTargetOverride");
 
     // P2-04: message + waitForReply returns up to N recent items.
     result = await call("message_codex_thread", { threadId, message: "hi", waitForReply: true, timeoutMs: 2000, pollIntervalMs: 250, recentItems: 2 });
