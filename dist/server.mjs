@@ -24155,7 +24155,7 @@ function explicitReplies(mb, messageId, from, to) {
 var ROLE_VIA = /^role:([a-z0-9-]{1,40})$/;
 var HARNESS_PREFIX = /^(?:claude|codex):/;
 function roleRoute(row) {
-  if (!row || typeof row.metadata_json !== "string" || !row.metadata_json) return null;
+  if (!row || typeof row.metadata_json !== "string" || !row.metadata_json.includes('"role"')) return null;
   let meta2;
   try {
     meta2 = JSON.parse(row.metadata_json);
@@ -24170,6 +24170,7 @@ function roleRoute(row) {
 }
 function handedOverTo(row, table) {
   if (!row || !table || !table.roles) return null;
+  if (row.anticipation === "fyi" || row.anticipation === void 0) return null;
   if (row.anticipation !== "reply" && row.anticipation !== "action") return null;
   const route = roleRoute(row);
   if (!route || !route.sentTo) return null;
