@@ -105,7 +105,11 @@ test("hook commands point at files that exist", () => {
     entries.flatMap((entry) => entry.hooks.map((hook) => hook.command)));
   assert.ok(commands.length > 0, "hooks.json has commands");
   for (const command of commands) {
-    const refs = [...command.matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/([^"'\s;]+)/g)].map((m) => m[1]);
+    // The root comes from the exported CLAUDE_PLUGIN_ROOT variable, never
+    // from ${...} text substitution, which pastes the path into the shell
+    // string unescaped (a quote in it would be a syntax error, exit 2).
+    assert.ok(!command.includes("${"), `hook command uses $CLAUDE_PLUGIN_ROOT, not \${...}: ${command}`);
+    const refs = [...command.matchAll(/\$CLAUDE_PLUGIN_ROOT\/([^"'\s;]+)/g)].map((m) => m[1]);
     assert.ok(refs.length > 0, `hook command references the plugin root: ${command}`);
     for (const rel of refs) assert.ok(existsSync(path.join(root, rel)), `hook target exists: ${rel}`);
   }

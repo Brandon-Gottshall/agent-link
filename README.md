@@ -162,6 +162,8 @@ Limits of the hook:
 - `agent_link_health` can tell whether the hook is declared and trusted, but not whether a trusted hook actually ran (for example when `node` is missing it stays silent).
 - It cannot see a reply that a running wait in an Agent Link MCP server is holding, so it may count one message that `read_agent_link_inbox` does not show.
 - Codex on Windows is out of scope: the hook command assumes a POSIX shell.
+- With a non-POSIX login shell (csh, tcsh, nushell; fish is untested) the hook does nothing: those shells parse the command differently, so its output is discarded. It never blocks your prompt.
+- If your shell startup files turn on strict options (`set -u`, `set -e`), a missing `node` or an unset `PLUGIN_ROOT` shows up as a failed hook in Codex instead of being silent. The prompt still goes through.
 
 **Optional: skip approval prompts.** By default Codex asks before each tool call. To let agents call Agent Link tools without stopping, add this to `~/.codex/config.toml`:
 

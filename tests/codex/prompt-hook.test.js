@@ -414,3 +414,21 @@ test("execFileSync smoke: fixture payload through node", () => {
   const out = execFileSync(process.execPath, [HOOK], { input: JSON.stringify(PAYLOAD), env: hookEnv(sb), encoding: "utf8" });
   assert.equal(out, "", "empty mailbox: no output");
 });
+
+// Review r2 hardening: a payload naming a Claude session id must not surface
+// or remind that Claude session's mail; only Codex mail (or mail a role
+// handed over to this thread) counts.
+test("a payload naming a Claude session id gets nothing and claims nothing", () => {
+  const sb = sandbox();
+  const CLAUDE_ID = "7b000000-0000-4000-8000-0000000000c1";
+  const id = insert(sb.mailboxPath, { toSessionId: CLAUDE_ID, toSessionKind: "claude", anticipation: "action" });
+  deliver(sb.mailboxPath, id, `claude:${CLAUDE_ID}`);
+  const out = run(sb.mailboxPath, { ...PAYLOAD, session_id: CLAUDE_ID }, { now: T0 + 120_000 });
+  assert.equal(out, null);
+  const mb = openMailbox({ mailboxPath: sb.mailboxPath });
+  try {
+    assert.equal(mb.getMessage({ messageId: id }).reminders.length, 0, "no reminder claimed for the Claude session");
+  } finally {
+    mb.close();
+  }
+});

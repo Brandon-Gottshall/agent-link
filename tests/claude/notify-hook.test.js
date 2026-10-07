@@ -26,7 +26,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { openMailbox } from "../../src/claude/mailbox.js";
 import * as notifyHook from "../../src/claude/notify-hook.js";
@@ -276,6 +276,45 @@ function insert(mailboxPath, fields) {
   assert.match(ctx, /other AI agents/i);
   assert.match(ctx, /not from the user/i);
   cleanup(sb);
+}
+
+// The hooks.json commands read the root from the exported CLAUDE_PLUGIN_ROOT
+// variable. ${CLAUDE_PLUGIN_ROOT} text substitution pastes the path into the
+// shell string unescaped, so a quote in it was a syntax error (exit 2, which
+// blocks the prompt) and $(...) or a backtick in it ran.
+const HOSTILE_ROOTS = ["with space", "dq\"quote", "sq'quote", "sub$(touch PWNED-sub)", "tick`touch PWNED-tick`"];
+const SHELLS = ["/bin/sh", "/bin/zsh", "/bin/bash"].filter((sh) => fs.existsSync(sh));
+
+{
+  const hooksFile = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, "hooks/hooks.json"), "utf8"));
+  const commands = [...new Set(Object.values(hooksFile.hooks).flatMap((entries) => entries.flatMap((e) => e.hooks.map((h) => h.command))))];
+  const { tmp, mailboxPath } = makeSandbox();
+  const roots = path.join(tmp, "roots");
+  const cwd = path.join(tmp, "cwd");
+  fs.mkdirSync(roots, { recursive: true });
+  fs.mkdirSync(cwd, { recursive: true });
+  const env = hermeticEnv({ home: tmp, overrides: { AGENT_LINK_MAILBOX_PATH: mailboxPath, AGENT_LINK_STATE_DIR: path.join(tmp, "state") } });
+  const input = fs.readFileSync(USER_PROMPT_FIXTURE, "utf8");
+  try {
+    for (const command of commands) {
+      assert.ok(!command.includes("${"), `no \${...} substitution: ${command}`);
+      for (const name of HOSTILE_ROOTS) {
+        const pluginRoot = path.join(roots, name);
+        if (!fs.existsSync(pluginRoot)) fs.symlinkSync(REPO_ROOT, pluginRoot);
+        for (const shell of SHELLS) {
+          // As Claude Code does: paste ${CLAUDE_PLUGIN_ROOT} verbatim, and also export it.
+          const pasted = command.replaceAll("${CLAUDE_PLUGIN_ROOT}", pluginRoot);
+          const res = spawnSync(shell, ["-c", pasted], { input, env: { ...env, CLAUDE_PLUGIN_ROOT: pluginRoot }, cwd, encoding: "utf8" });
+          assert.equal(res.status, 0, `${shell} root ${name}: ${res.stderr}`);
+          assert.doesNotThrow(() => JSON.parse(res.stdout || "{}"), `${shell} root ${name} prints JSON`);
+        }
+      }
+    }
+    const marks = [cwd, roots, tmp, REPO_ROOT].flatMap((dir) => fs.readdirSync(dir).filter((f) => f.startsWith("PWNED")));
+    assert.deepEqual(marks, [], "nothing in the root ran");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 }
 
 console.log("notify-hook tests passed");

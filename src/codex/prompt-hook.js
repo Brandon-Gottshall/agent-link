@@ -39,7 +39,7 @@ import { fileURLToPath } from "node:url";
 import { openMailbox, readMailboxRows } from "../claude/mailbox.js";
 import { reminderSettings } from "../delivery/message-status.js";
 import { REMINDER_VIA, claimReminders, dueUnanswered, reminderNoticeFor } from "../delivery/reminders.js";
-import { readRoleTable, recipientView } from "../delivery/role-handover.js";
+import { handedOverTo, readRoleTable, recipientView } from "../delivery/role-handover.js";
 import { createRoleStore } from "../registry/roles.js";
 import { renderHookNotice } from "../shared/envelope.js";
 import { parseAddress } from "../shared/identity.js";
@@ -87,8 +87,14 @@ export function runCodexPromptHook(payload, {
   // One mailbox read: every later step filters this list.
   const all = readRows();
   if (!all.length) return null;
-  const inbox = recipientView({ aliases: [thread.threadId], address: thread.address, table: roleTable() });
-  const mine = all.filter((row) => inbox.isRecipient(row)).sort((a, b) => a.sent_at - b.sent_at);
+  const table = roleTable();
+  const inbox = recipientView({ aliases: [thread.threadId], address: thread.address, table });
+  // Only Codex mail: a row stored for a Claude session counts only when a
+  // role handed it over to this thread (a payload naming a Claude session id
+  // must not surface or remind that session's mail).
+  const isCodexMail = (/** @type {Record<string, any>} */ row) =>
+    row.to_session_kind !== "claude" || handedOverTo(row, table) === thread.address;
+  const mine = all.filter((row) => inbox.isRecipient(row) && isCodexMail(row)).sort((a, b) => a.sent_at - b.sent_at);
   if (!mine.length) return null;
   const pending = mine.filter((row) => inbox.isPending(row));
   const at = now();

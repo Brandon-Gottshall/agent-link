@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/src/claude/notify-hook.js\"; rc=$?; case $rc in 126|127) rc=0;; esac; exit $rc",
+            "command": "node \"$CLAUDE_PLUGIN_ROOT/src/claude/notify-hook.js\"; rc=$?; case $rc in 126|127) rc=0;; esac; exit $rc",
             "timeout": 5
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/src/claude/notify-hook.js\"; rc=$?; case $rc in 126|127) rc=0;; esac; exit $rc",
+            "command": "node \"$CLAUDE_PLUGIN_ROOT/src/claude/notify-hook.js\"; rc=$?; case $rc in 126|127) rc=0;; esac; exit $rc",
             "timeout": 5
           }
         ]
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/src/claude/notify-hook.js\"; rc=$?; case $rc in 126|127) rc=0;; esac; exit $rc",
+            "command": "node \"$CLAUDE_PLUGIN_ROOT/src/claude/notify-hook.js\"; rc=$?; case $rc in 126|127) rc=0;; esac; exit $rc",
             "timeout": 5
           }
         ]
