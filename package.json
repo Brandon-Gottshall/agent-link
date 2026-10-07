@@ -29,6 +29,7 @@
     "test:live:launch-thread-persistence": "CODEX_AGENT_LINK_AUTOSTART=1 node ./scripts/launch-thread-persistence.live.js",
     "test:live:launch-thread-gui": "CODEX_AGENT_LINK_AUTOSTART=1 CODEX_AGENT_LINK_SMOKE_OPEN_GUI=1 CODEX_AGENT_LINK_SMOKE_GUI_DRY_RUN=1 node ./scripts/launch-thread-smoke.live.js",
     "test:live:claude-receive": "node ./scripts/claude-receive-wf.live.js",
+    "test:live:cross-harness": "node ./scripts/cross-harness-e2e.live.js",
     "smoke": "node ./scripts/mcp-smoke-test.js",
     "wf:agent-link": "node ./scripts/agent-wf-runner.js --suite ./wf/agent-link/suite.json",
     "wf:agent-link:live": "node ./scripts/live-guard.js && CODEX_AGENT_LINK_WF_LIVE=1 CODEX_AGENT_LINK_AUTOSTART=1 node ./scripts/agent-wf-runner.js --suite ./wf/agent-link/suite.json --live",
