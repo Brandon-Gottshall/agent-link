@@ -12,6 +12,7 @@ import { registerActiveWait } from "../claude/active-waits.js";
 import { assertPeerBodyWithinLimit } from "../shared/envelope.js";
 import { isAnticipating, isLateResolution, messageStatus, reminderSettings, resolveLabels } from "../delivery/message-status.js";
 import { checkMessageWait, recordStatusTransition } from "../delivery/message-wait.js";
+import { claimResolution } from "../delivery/resolution.js";
 import { claudeAddress } from "../shared/identity.js";
 import { mailboxRowResult } from "../registry/addresses.js";
 import { buildReceipt, normalizeReceiptInput, safeAppendReceipt } from "../shared/receipt-index.js";
@@ -246,14 +247,18 @@ export function makeClaudeSendHandler({
         // An explicit reply sent back to the original sender resolves an
         // open reply/action message as replied (R7.5); fyi mail has no
         // status, and a resolved message stays as it was.
+        // Exactly once (R7.10): the resolve claim first; a lost claim means
+        // another resolver got there, and this send stays a plain message.
         if (answered && isAnticipating(answered) && !answered.resolution &&
-            claudeSessionAliases(target).includes(answered.from_session_id)) {
+            claudeSessionAliases(target).includes(answered.from_session_id) &&
+            claimResolution(mb, answered.id).ok) {
           const view = messageStatus(answered, { now: now(), settings: settingsFn() });
           mb.markAcknowledged({ messageId: answered.id });
           mb.recordResolution({
             messageId: answered.id,
             kind: "reply",
-            by: caller.id,
+            by: answered.to_session_id,
+            byAddress: claudeAddress(resolveCurrentSessionSafe(resolveCurrentSession)) ?? null,
             late: isLateResolution(view),
             replyMessageId: messageId
           });
@@ -444,6 +449,15 @@ async function pollForResolution(mb, { messageId, fromIds, toIds, timeoutMs, now
     }
     const remaining = deadline - now();
     await sleep(Math.min(DEFAULT_POLL_INTERVAL_MS, Math.max(remaining, 10)));
+  }
+}
+
+/** @param {(() => any) | null} resolve */
+function resolveCurrentSessionSafe(resolve) {
+  try {
+    return typeof resolve === "function" ? resolve() : null;
+  } catch {
+    return null;
   }
 }
 

@@ -2,15 +2,14 @@
 //
 // get_agent_link_message_status (design doc R7.18): the sender's (or the
 // recipient's) view of one message's labels, delivery state, and
-// resolution status. Read-only apart from the once-only receipt for an
-// observed transition to unresolved or expired (R7.17). Never returns a body.
+// resolution status. Read-only: it writes nothing (transition receipts come
+// from waits and the server's claim sweep, R7.17). Never returns a body.
 import { openMailbox } from "../claude/mailbox.js";
 import { resolveCallerIdentity } from "../claude/identity.js";
 import { addressAliases, mailboxRowAddresses, storedAddress } from "../registry/addresses.js";
 import { AgentLinkError } from "../shared/errors.js";
-import { safeAppendReceipt } from "../shared/receipt-index.js";
 import { ANTICIPATIONS, MESSAGE_STATUSES, deliveryState, labelFields, reminderSettings } from "../delivery/message-status.js";
-import { recordStatusTransition, settleImplicitReply } from "../delivery/message-wait.js";
+import { settleImplicitReply } from "../delivery/message-wait.js";
 import { enumOf, out, str } from "../server/schemas.js";
 
 /** @type {import("../server/registry.js").ToolDefinition} */
@@ -51,8 +50,7 @@ export const messageStatusTool = {
  *   resolveCurrentSession?: (() => any) | null,
  *   mailboxOpener?: () => any,
  *   now?: () => number,
- *   reminderSettings?: () => import("../delivery/message-status.js").ReminderSettings,
- *   appendReceipt?: (receipt: any) => Promise<any>
+ *   reminderSettings?: () => import("../delivery/message-status.js").ReminderSettings
  * }} [deps]
  */
 export function makeMessageStatusHandler({
@@ -60,8 +58,7 @@ export function makeMessageStatusHandler({
   resolveCurrentSession = null,
   mailboxOpener,
   now = () => Date.now(),
-  reminderSettings: settingsFn = () => reminderSettings(),
-  appendReceipt = safeAppendReceipt
+  reminderSettings: settingsFn = () => reminderSettings()
 } = {}) {
   const openMb = typeof mailboxOpener === "function" ? mailboxOpener : () => openMailbox();
   /**
@@ -98,14 +95,16 @@ export function makeMessageStatusHandler({
       }
       const at = now();
       const settings = settingsFn();
+      // Read-only: an older-style reply is reflected without being recorded
+      // (waits record it), and status receipts are written elsewhere.
       const settled = settleImplicitReply(mb, row, {
         fromIds: [row.to_session_id, ...addressAliases(toAddress)],
         toIds: [row.from_session_id, ...addressAliases(fromAddress)],
         now: at,
-        settings
+        settings,
+        write: false
       });
       const labels = labelFields(settled, { now: at, settings });
-      await recordStatusTransition(mb, settled, { now: at, settings, host, appendReceipt });
       return {
         messageId: row.id,
         from: fromAddress,

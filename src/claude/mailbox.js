@@ -137,7 +137,8 @@ export function openMailbox(options = {}) {
   const mailboxPath = resolveMailboxPath(options);
   const readPaths = mailboxReadPaths(options);
   ensurePrivateMailbox(mailboxPath);
-  const view = () => mergedView(readPaths);
+  const claimsDir = `${mailboxPath}.claims`;
+  const view = () => mergedView(readPaths, claimsDir);
 
   function appendEvent(event) {
     const line = JSON.stringify(event) + "\n";
@@ -200,14 +201,16 @@ export function openMailbox(options = {}) {
     return id;
   }
 
-  // Resolution of an anticipating message (R7.12). The first `resolved`
-  // event for a message wins when the view is built; callers check
-  // getMessage().resolution first and report already_resolved.
+  // Resolution of an anticipating message (R7.12). `by` is the message's
+  // stored recipient id (to_session_id): the view trusts only a `resolved`
+  // event whose `by` names the recipient, and the first trusted one wins.
+  // Writers take the `resolve-<messageId>` claim first (claimResolution in
+  // src/delivery/resolution.js), so concurrent resolvers cannot both write.
   /**
-   * @param {{messageId: string, kind: string, by: string, late?: boolean, replyMessageId?: string | null, at?: number}} event
+   * @param {{messageId: string, kind: string, by: string, byAddress?: string | null, late?: boolean, replyMessageId?: string | null, at?: number}} event
    */
-  function recordResolution({ messageId, kind, by, late = false, replyMessageId = null, at = Date.now() }) {
-    appendEvent({ type: "resolved", at, messageId, kind, by, late: late === true, replyMessageId });
+  function recordResolution({ messageId, kind, by, byAddress = null, late = false, replyMessageId = null, at = Date.now() }) {
+    appendEvent({ type: "resolved", at, messageId, kind, by, byAddress, late: late === true, replyMessageId });
   }
 
   // One reminder showing of an open message (R7.17).
@@ -221,17 +224,65 @@ export function openMailbox(options = {}) {
   // Exactly-once claims across processes (claim-before-notify, P4-10):
   // an exclusive create of a marker file beside the mailbox. True for the
   // one caller that created it; false if it existed or could not be made.
-  /** @param {string} key */
-  function claim(key) {
-    const dir = `${mailboxPath}.claims`;
-    const name = String(key).replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 200);
+  // `content` (optional, small) is written into the claim file, for example
+  // the clock reading the claim was taken at.
+  /**
+   * @param {string} key
+   * @param {string} [content]
+   */
+  function claim(key, content = "") {
     try {
-      fs.mkdirSync(dir, { recursive: true, mode: DIR_MODE });
-      fs.closeSync(fs.openSync(path.join(dir, name), "wx", FILE_MODE));
+      fs.mkdirSync(claimsDir, { recursive: true, mode: DIR_MODE });
+      // A directory created looser (another umask, an older copy) is
+      // tightened when it is ours.
+      tightenMode(claimsDir, DIR_MODE);
+      const fd = fs.openSync(path.join(claimsDir, claimName(key)), "wx", FILE_MODE);
+      try {
+        if (content) fs.writeSync(fd, String(content).slice(0, 200));
+      } finally {
+        fs.closeSync(fd);
+      }
       return true;
     } catch {
       // EEXIST: another process holds the claim. Any other failure: no claim,
       // so nothing is sent twice.
+      return false;
+    }
+  }
+
+  // When a claim was taken (epoch ms), or null when it does not exist.
+  /** @param {string} key */
+  function claimTakenAt(key) {
+    try {
+      return fs.statSync(path.join(claimsDir, claimName(key))).mtimeMs;
+    } catch {
+      return null;
+    }
+  }
+
+  // A claim's content, or null when it does not exist.
+  /** @param {string} key */
+  function claimContent(key) {
+    try {
+      return fs.readFileSync(path.join(claimsDir, claimName(key)), "utf8");
+    } catch {
+      return null;
+    }
+  }
+
+  // Every claim file name, or [] when there are none.
+  function listClaims() {
+    return listClaimNames(claimsDir);
+  }
+
+  // Removes one claim file (garbage collection); true when it was removed.
+  /** @param {string} name */
+  function removeClaim(name) {
+    try {
+      fs.unlinkSync(path.join(claimsDir, claimName(name)));
+      return true;
+    } catch {
+      // Already gone (another process collected it) or not ours.
       return false;
     }
   }
@@ -265,6 +316,10 @@ export function openMailbox(options = {}) {
     recordResolution,
     recordReminder,
     claim,
+    claimTakenAt,
+    claimContent,
+    listClaims,
+    removeClaim,
     markDelivered,
     markAcknowledged,
     releaseDelivery,
@@ -294,7 +349,7 @@ export function openMailbox(options = {}) {
           body,
           replyToMessageId: messageId
         });
-        if (original.anticipation !== "fyi" && !original.resolution) {
+        if (original.anticipation !== "fyi" && !original.resolution && claim(`resolve-${messageId}`)) {
           recordResolution({ messageId, kind: "reply", by: original.to_session_id, replyMessageId: replyId });
         }
         return replyId;
@@ -349,7 +404,28 @@ function idSet(single, many) {
 // each in its own order, and never re-sorted by `at` across files: clock skew
 // between writers must not change how one file reads after an unrelated write
 // to another.
-function mergedView(paths) {
+// Claim file names are restricted to a safe character set.
+/** @param {string} key */
+function claimName(key) {
+  return String(key).replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 200);
+}
+
+/** @param {string} dir */
+function listClaimNames(dir) {
+  try {
+    return fs.readdirSync(dir);
+  } catch {
+    return [];
+  }
+}
+
+const REMINDER_CLAIM = /^reminder-([0-9A-HJKMNP-TV-Z]{26})-(\d{1,3})$/;
+
+/**
+ * @param {string[]} paths
+ * @param {string | null} [claimsDir]
+ */
+function mergedView(paths, claimsDir = null) {
   const messages = new Map();
   const stateEvents = [];
   for (const file of paths) {
@@ -378,11 +454,13 @@ function mergedView(paths) {
       if (!message.reminders.length) message.first_delivered_at = null;
     } else if (event.type === "resolved" && event.messageId && messages.has(event.messageId)) {
       const message = messages.get(event.messageId);
-      // A message resolves once (R7.10): the first event wins.
-      if (!message.resolution && RESOLUTION_KINDS.has(event.kind)) {
+      // A message resolves once (R7.10): the first trusted event wins. Only
+      // the recipient may resolve (R7.7), so an event whose `by` is not the
+      // stored recipient id is ignored.
+      if (!message.resolution && RESOLUTION_KINDS.has(event.kind) && event.by === message.to_session_id) {
         message.resolution = {
           kind: event.kind,
-          by: typeof event.by === "string" ? event.by : null,
+          by: typeof event.byAddress === "string" && event.byAddress ? event.byAddress : event.by,
           at: normalizeTimestamp(event.at),
           late: event.late === true,
           replyMessageId: typeof event.replyMessageId === "string" ? event.replyMessageId : null
@@ -397,6 +475,25 @@ function mergedView(paths) {
           at: normalizeTimestamp(event.at)
         });
       }
+    }
+  }
+  // A reminder claim is the source of truth for its number (R7.17): a
+  // process that crashed after claiming and before appending `reminded`
+  // still advances the count, so the message moves toward `unresolved`.
+  if (claimsDir) {
+    for (const name of listClaimNames(claimsDir)) {
+      const match = REMINDER_CLAIM.exec(name);
+      const message = match ? messages.get(match[1]) : null;
+      if (!match || !message) continue;
+      const n = Number(match[2]);
+      if (n < 1 || message.reminders.some((r) => r.n === n)) continue;
+      let at = null;
+      try {
+        at = fs.statSync(path.join(claimsDir, name)).mtimeMs;
+      } catch {
+        continue;
+      }
+      message.reminders.push({ n, via: null, at });
     }
   }
   return [...messages.values()];

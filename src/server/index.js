@@ -46,7 +46,9 @@ import {
 } from "../codex/project-orchestrator.js";
 import { checkCoordinationObligations, registerDependencyHandoff } from "../codex/dependency-handoff.js";
 import { resolveCurrentClaudeSession } from "../claude/session-index.js";
-import { mailboxReadPaths, openMailbox } from "../claude/mailbox.js";
+import { mailboxReadPaths, openMailbox, resolveMailboxPath } from "../claude/mailbox.js";
+import { existsSync } from "node:fs";
+import { sweepClaims } from "../delivery/message-wait.js";
 import { extractRuntimeCallerContext } from "../shared/caller-context.js";
 import { optionalString } from "../shared/args.js";
 import { AgentLinkError } from "../shared/errors.js";
@@ -317,11 +319,42 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
     lifecycle.setChannelBridge(channel.bridge);
 
     if (config.codexReminders) startCodexReminders({ appServer: codexAppServer });
+    startClaimSweeper({ host: hostInfo.host });
 
     lifecycle.installSignalHandlers();
   }
 
   return { server, appServer: codexAppServer, registry, lifecycle, config, start };
+}
+
+const CLAIM_SWEEP_INTERVAL_MS = 3_600_000;
+
+/**
+ * Bounded claim-file collection and status-transition receipts (design
+ * R7.17): once shortly after start, then hourly. Only when a mailbox file
+ * already exists, so a server on a machine without mail never creates the
+ * state directory. The timer never keeps the process alive.
+ * @param {{host: string}} options
+ */
+function startClaimSweeper({ host }) {
+  const run = async () => {
+    let mailbox = null;
+    try {
+      const file = resolveMailboxPath();
+      if (!existsSync(file)) return;
+      mailbox = openMailbox();
+      const result = await sweepClaims(mailbox, { host });
+      if (result.removed || result.receipts) getLogger().info("claims.swept", result);
+    } catch (error) {
+      getLogger().warn("claims.sweep_failed", { message: error instanceof Error ? error.message : String(error) });
+    } finally {
+      mailbox?.close();
+    }
+  };
+  const first = setTimeout(run, 5_000);
+  first.unref?.();
+  const timer = setInterval(run, CLAIM_SWEEP_INTERVAL_MS);
+  timer.unref?.();
 }
 
 /**

@@ -163,3 +163,37 @@ export async function deliverCodexReminders({ appServer, mailbox, now = Date.now
   }
   return results;
 }
+
+/**
+ * The Stop hook's per-recipient gate (R7.14): at most one block per
+ * interval per recipient, also across concurrent hook processes.
+ *
+ * Each block takes a `stop-<recipient>-<bucket>` claim (bucket = now /
+ * interval) holding the clock reading. A block is allowed only when no
+ * earlier block (claim or stop-hook `reminded` event) is within one
+ * interval; two hooks that both claim neighbouring buckets resolve the tie
+ * in favour of the lower bucket. `stop_hook_active` (the turn is already a
+ * continuation forced by a Stop hook) is checked as a second guard.
+ * @param {ReturnType<import("../claude/mailbox.js").openMailbox>} mb
+ * @param {{recipientKey: string, open: Array<Record<string, any>>, now: number, settings: import("./message-status.js").ReminderSettings, stopHookActive?: boolean}} options
+ * @returns {boolean} true when this hook may block now
+ */
+export function takeStopSlot(mb, { recipientKey, open, now, settings, stopHookActive = false }) {
+  const prefix = `stop-${String(recipientKey).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 120)}-`;
+  /** @param {string} name */
+  const blockTime = (name) => Number(mb.claimContent(name));
+  const others = () => mb.listClaims()
+    .filter((name) => name.startsWith(prefix))
+    .map((name) => ({ name, bucket: Number(name.slice(prefix.length)), at: blockTime(name) }))
+    .filter((c) => Number.isFinite(c.at) && Number.isFinite(c.bucket));
+  const times = [...others().map((c) => c.at), lastStopBlockAt(open)].filter((t) => t !== null && Number.isFinite(t));
+  const last = times.length ? Math.max(.../** @type {number[]} */ (times)) : null;
+  const recent = last !== null && Math.abs(now - last) < settings.intervalMs;
+  if (stopHookActive && recent) return false;
+  if (recent) return false;
+  const bucket = Math.floor(now / settings.intervalMs);
+  const mine = `${prefix}${bucket}`;
+  if (!mb.claim(mine, String(now))) return false;
+  // A concurrent hook in a neighbouring bucket: the lower bucket blocks.
+  return !others().some((c) => c.name !== mine && Math.abs(now - c.at) < settings.intervalMs && c.bucket < bucket);
+}

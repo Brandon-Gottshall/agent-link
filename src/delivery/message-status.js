@@ -232,3 +232,20 @@ export function labelFields(row, options = {}) {
 export function isLateResolution(view) {
   return view.status === "unresolved" || view.status === "expired";
 }
+
+/**
+ * Replies to `messageId` from the recipient (`from`, its id forms) addressed
+ * to the sender (`to`, its id forms), oldest first. Explicit replies only:
+ * a turn's output never becomes a mailbox row.
+ * @param {{inspect: (filters: Record<string, any>) => Array<Record<string, any>>}} mb
+ * @param {string} messageId
+ * @param {Iterable<string>} from
+ * @param {Iterable<string>} to
+ */
+export function explicitReplies(mb, messageId, from, to) {
+  const fromSet = new Set(from);
+  const toSet = new Set(to);
+  return mb.inspect({ replyToMessageId: messageId, limit: Number.MAX_SAFE_INTEGER })
+    .filter((m) => fromSet.has(m.from_session_id) && toSet.has(m.to_session_id))
+    .sort((a, b) => a.sent_at - b.sent_at);
+}

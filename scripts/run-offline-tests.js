@@ -30,6 +30,7 @@ const groups = {
     "tests/claude/read-inbox.test.js",
     "tests/claude/reply.test.js",
     "tests/claude/reply-model.test.js",
+    "tests/claude/resolution-race.test.js",
     "tests/claude/send.test.js",
     "tests/claude/session-index.test.js",
     "tests/claude/session-resolver.test.js",

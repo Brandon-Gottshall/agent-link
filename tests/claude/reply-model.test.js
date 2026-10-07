@@ -21,7 +21,8 @@ const { makeMessageStatusHandler } = await import("../../src/tools/message-statu
 const { makeAgentLinkChannelBridge } = await import("../../src/claude/channel-bridge.js");
 const { runNotifyHook } = await import("../../src/claude/notify-hook.js");
 const { messageStatus, reminderSettings, resolveLabels } = await import("../../src/delivery/message-status.js");
-const { claimReminders, dueReminders } = await import("../../src/delivery/reminders.js");
+const { claimReminders, dueReminders, takeStopSlot } = await import("../../src/delivery/reminders.js");
+const { sweepClaims } = await import("../../src/delivery/message-wait.js");
 const { healthExtras } = await import("../../src/tools/health.js");
 const { listReceipts } = await import("../../src/shared/receipt-index.js");
 const { AgentLinkError } = await import("../../src/shared/errors.js");
@@ -358,7 +359,12 @@ test("Stop blocks at most once per interval per recipient, never for fyi or unde
   const resolved = newMailbox();
   const id = deliveredMessage(resolved, { at: T0 });
   const rmb = openMailbox({ mailboxPath: resolved });
-  rmb.recordResolution({ messageId: id, kind: "done", by: addr(RECEIVER), at: T0 + 1 });
+  // Item 8: a resolution not written by the recipient is ignored.
+  rmb.recordResolution({ messageId: id, kind: "done", by: THIRD.sessionId, at: T0 + 1 });
+  assert.equal(rmb.getMessage({ messageId: id }).resolution, null);
+  rmb.recordResolution({ messageId: id, kind: "done", by: RECEIVER.sessionId, byAddress: addr(RECEIVER), at: T0 + 2 });
+  assert.equal(rmb.getMessage({ messageId: id }).resolution.kind, "done");
+  assert.equal(rmb.getMessage({ messageId: id }).resolution.by, addr(RECEIVER));
   rmb.close();
   assert.deepEqual(hook(resolved, "Stop", T0 + 60_000), {});
 });
@@ -496,4 +502,115 @@ test("send with replyToMessageId resolves the original as replied", async () => 
   assert.equal(r.resolution.kind, "reply");
   assert.equal(r.resolution.replyMessageId, answer.messageId);
   assert.equal((await asSender.status({ messageId: sent.messageId })).status, "replied");
+});
+
+// Review item I2: a crash between taking a reminder claim and appending the
+// `reminded` event must not pin the message at pending forever.
+test("orphaned reminder claims still count toward the cap", () => {
+  const mailboxPath = newMailbox();
+  const deliveredAt = Date.now() - 200_000;
+  const id = deliveredMessage(mailboxPath, { at: deliveredAt });
+  const mb = openMailbox({ mailboxPath });
+  // Claims taken, events never written.
+  for (const n of [1, 2, 3]) assert.ok(mb.claim(`reminder-${id}-${n}`));
+  const r = mb.getMessage({ messageId: id });
+  mb.close();
+  assert.deepEqual(r.reminders.map((x) => [x.n, x.via]), [[1, null], [2, null], [3, null]]);
+  const now = Date.now();
+  assert.equal(messageStatus(r, { now, settings: SETTINGS }).status, "pending");
+  assert.equal(messageStatus(r, { now, settings: SETTINGS }).due, false, "the cap is reached: no fourth reminder");
+  assert.equal(messageStatus(r, { now: now + 31_000, settings: SETTINGS }).status, "unresolved");
+
+  // One orphan: the next reminder is number 2, not a second number 1.
+  const one = newMailbox();
+  const id1 = deliveredMessage(one, { at: deliveredAt });
+  const mb1 = openMailbox({ mailboxPath: one });
+  assert.ok(mb1.claim(`reminder-${id1}-1`));
+  const due = dueReminders([mb1.getMessage({ messageId: id1 })], { now: Date.now() + 31_000, settings: SETTINGS });
+  const claimed = claimReminders(mb1, due, { via: "claude-prompt-hook", now: Date.now() + 31_000, settings: SETTINGS });
+  assert.deepEqual(claimed.map((c) => c.n), [2]);
+  mb1.close();
+});
+
+// Review items 3 and 5: the Stop slot is per recipient, across processes.
+test("Stop slot: one block per interval per recipient across mailbox handles", () => {
+  const mailboxPath = newMailbox();
+  deliveredMessage(mailboxPath, { at: T0 });
+  deliveredMessage(mailboxPath, { at: T0 });
+  const a = openMailbox({ mailboxPath });
+  const b = openMailbox({ mailboxPath });
+  const open = a.inspect({ limit: 100 });
+  const slot = (mb, now, stopHookActive = false) => takeStopSlot(mb, { recipientKey: RECEIVER.cliSessionId, open, now, settings: SETTINGS, stopHookActive });
+  assert.equal(slot(a, T0 + 59_999), true);
+  assert.equal(slot(b, T0 + 59_999), false, "same instant, other process");
+  assert.equal(slot(b, T0 + 60_001), false, "neighbouring bucket inside the interval");
+  assert.equal(slot(b, T0 + 70_000, true), false, "stop_hook_active inside the window");
+  assert.equal(slot(b, T0 + 90_000, true), true, "a later window may block again");
+  assert.equal(slot(a, T0 + 90_000), false);
+  a.close();
+  b.close();
+});
+
+// Review item 4: an older-style reply (a reply row, no resolution event)
+// stops reminders.
+test("no reminder after the recipient replied the older way", () => {
+  const mailboxPath = newMailbox();
+  const id = deliveredMessage(mailboxPath);
+  const mb = openMailbox({ mailboxPath });
+  mb.insertMessage({ fromSessionId: RECEIVER.cliSessionId, fromSessionKind: "claude", toSessionId: SENDER.sessionId, toSessionKind: "claude", body: "done", replyToMessageId: id });
+  mb.close();
+  assert.deepEqual(hook(mailboxPath, "Stop", T0 + 30_000), {});
+  assert.deepEqual(hook(mailboxPath, "UserPromptSubmit", T0 + 30_000), {});
+});
+
+// Review item 7: the status tool writes nothing.
+test("get_agent_link_message_status is read-only", async () => {
+  const mailboxPath = newMailbox();
+  const asSender = tools(mailboxPath, SENDER);
+  const expired = deliveredMessage(mailboxPath, { replyBy: Date.now() - 1000 });
+  const answered = deliveredMessage(mailboxPath);
+  const mb = openMailbox({ mailboxPath });
+  mb.insertMessage({ fromSessionId: RECEIVER.sessionId, fromSessionKind: "claude", toSessionId: SENDER.sessionId, toSessionKind: "claude", body: "ok", replyToMessageId: answered });
+  mb.close();
+  const before = fs.readFileSync(mailboxPath, "utf8");
+  const claimsBefore = fs.existsSync(`${mailboxPath}.claims`) ? fs.readdirSync(`${mailboxPath}.claims`) : [];
+  assert.equal((await asSender.status({ messageId: answered })).status, "replied");
+  assert.equal((await asSender.status({ messageId: expired })).status, "expired");
+  assert.equal(fs.readFileSync(mailboxPath, "utf8"), before, "no mailbox write");
+  assert.deepEqual(fs.existsSync(`${mailboxPath}.claims`) ? fs.readdirSync(`${mailboxPath}.claims`) : [], claimsBefore, "no claim");
+});
+
+// Review item 6: bounded claim collection and the claims directory mode.
+test("claim sweep removes claims nothing needs and keeps the rest", async () => {
+  const mailboxPath = newMailbox();
+  const resolvedId = deliveredMessage(mailboxPath);
+  const openId = deliveredMessage(mailboxPath, { at: Date.now() - 1000 });
+  const expiredId = deliveredMessage(mailboxPath, { replyBy: Date.now() - 1000 });
+  const mb = openMailbox({ mailboxPath });
+  const dir = `${mailboxPath}.claims`;
+  fs.mkdirSync(dir, { mode: 0o755 });
+  fs.chmodSync(dir, 0o755);
+  // Resolved: its resolve and reminder claims go.
+  assert.ok(mb.claim(`reminder-${resolvedId}-1`));
+  mb.recordReminder({ messageId: resolvedId, n: 1, via: "claude-prompt-hook" });
+  assert.equal(fs.statSync(dir).mode & 0o777, 0o700, "a looser claims dir is tightened");
+  assert.ok(mb.claim(`resolve-${resolvedId}`));
+  mb.recordResolution({ messageId: resolvedId, kind: "done", by: RECEIVER.sessionId });
+  // Open: a recorded reminder's claim goes; an orphan claim stays (it is the count).
+  assert.ok(mb.claim(`reminder-${openId}-1`));
+  mb.recordReminder({ messageId: openId, n: 1, via: "claude-stop-hook" });
+  assert.ok(mb.claim(`reminder-${openId}-2`));
+  const receipts = [];
+  const result = await sweepClaims(mb, { appendReceipt: async (r) => { receipts.push(r); return { ok: true }; }, settings: SETTINGS });
+  const left = fs.readdirSync(dir).sort();
+  assert.ok(left.includes(`reminder-${openId}-2`));
+  assert.ok(!left.some((n) => n.includes(resolvedId)));
+  assert.ok(!left.includes(`reminder-${openId}-1`));
+  assert.ok(left.includes(`status-${expiredId}-expired`), "the transition is claimed once");
+  assert.equal(receipts.filter((r) => r.resolution?.messageId === expiredId).length, 1, "the sweep writes the expired receipt");
+  assert.equal(result.receipts, 1);
+  assert.ok(result.removed >= 3);
+  await sweepClaims(mb, { appendReceipt: async (r) => { receipts.push(r); return { ok: true }; }, settings: SETTINGS });
+  assert.equal(receipts.length, 1, "a second pass writes no second receipt");
+  mb.close();
 });

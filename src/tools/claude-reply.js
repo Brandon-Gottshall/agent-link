@@ -17,6 +17,8 @@ import {
   resolveLabels
 } from "../delivery/message-status.js";
 
+import { claimResolution } from "../delivery/resolution.js";
+
 const RESOLVED_STATUS = Object.freeze({ reply: "replied", decline: "declined", done: "done" });
 
 /** @type {import("../server/registry.js").ToolDefinition} */
@@ -140,13 +142,16 @@ export function makeReplyAgentLinkMessageHandler({
             details: { errors: [{ path: "resolution", rule: "conflict", expected: "reply for an fyi message" }] }
           });
         }
-        const view = messageStatus(original, { now: at, settings: settingsFn() });
-        if (anticipating && original.resolution) {
-          // R7.10: a message resolves once.
-          throw new AgentLinkError("already_resolved", `Message ${messageId} is already ${view.status}.`, {
-            details: { messageId, status: view.status, resolvedAt: view.resolution?.at ?? null },
-            hint: "Send a new message with message_claude_session if there is more to say."
-          });
+        const settings = settingsFn();
+        const view = messageStatus(original, { now: at, settings });
+        if (anticipating && original.resolution) throw alreadyResolved(messageId, view);
+        // R7.10 under concurrency: take the resolve claim before writing
+        // anything, so of two racing resolvers exactly one succeeds.
+        if (anticipating) {
+          const claimed = claimResolution(mb, messageId);
+          if (!claimed.ok) {
+            throw alreadyResolved(messageId, claimed.row ? messageStatus(claimed.row, { now: at, settings }) : view);
+          }
         }
         mb.markAcknowledged({ messageId });
         if (hasBody) {
@@ -170,7 +175,9 @@ export function makeReplyAgentLinkMessageHandler({
           mb.recordResolution({
             messageId,
             kind: resolution,
-            by: resolverAddress,
+            // The stored recipient id: the view trusts only the recipient.
+            by: original.to_session_id,
+            byAddress: resolverAddress,
             late: resolved.late,
             replyMessageId: replyId,
             at
@@ -222,6 +229,18 @@ export function makeReplyAgentLinkMessageHandler({
       };
     }
   };
+}
+
+/**
+ * @param {string} messageId
+ * @param {ReturnType<typeof messageStatus>} view
+ */
+function alreadyResolved(messageId, view) {
+  const status = view.status === "pending" ? "resolving" : view.status;
+  return new AgentLinkError("already_resolved", `Message ${messageId} is already ${status}.`, {
+    details: { messageId, status: view.status, resolvedAt: view.resolution?.at ?? null },
+    hint: "Send a new message with message_claude_session if there is more to say."
+  });
 }
 
 /**

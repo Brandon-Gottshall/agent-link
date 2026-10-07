@@ -20784,7 +20784,8 @@ function openMailbox(options = {}) {
   const mailboxPath2 = resolveMailboxPath(options);
   const readPaths = mailboxReadPaths(options);
   ensurePrivateMailbox(mailboxPath2);
-  const view = () => mergedView(readPaths);
+  const claimsDir = `${mailboxPath2}.claims`;
+  const view = () => mergedView(readPaths, claimsDir);
   function appendEvent(event) {
     const line = JSON.stringify(event) + "\n";
     const bytes = Buffer.byteLength(line, "utf8");
@@ -20834,18 +20835,47 @@ function openMailbox(options = {}) {
     });
     return id;
   }
-  function recordResolution({ messageId, kind, by, late = false, replyMessageId = null, at = Date.now() }) {
-    appendEvent({ type: "resolved", at, messageId, kind, by, late: late === true, replyMessageId });
+  function recordResolution({ messageId, kind, by, byAddress = null, late = false, replyMessageId = null, at = Date.now() }) {
+    appendEvent({ type: "resolved", at, messageId, kind, by, byAddress, late: late === true, replyMessageId });
   }
   function recordReminder({ messageId, n, via, at = Date.now() }) {
     appendEvent({ type: "reminded", at, messageId, n, via });
   }
-  function claim(key) {
-    const dir = `${mailboxPath2}.claims`;
-    const name = String(key).replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 200);
+  function claim(key, content = "") {
     try {
-      fs5.mkdirSync(dir, { recursive: true, mode: DIR_MODE2 });
-      fs5.closeSync(fs5.openSync(path7.join(dir, name), "wx", FILE_MODE2));
+      fs5.mkdirSync(claimsDir, { recursive: true, mode: DIR_MODE2 });
+      tightenMode(claimsDir, DIR_MODE2);
+      const fd = fs5.openSync(path7.join(claimsDir, claimName(key)), "wx", FILE_MODE2);
+      try {
+        if (content) fs5.writeSync(fd, String(content).slice(0, 200));
+      } finally {
+        fs5.closeSync(fd);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  function claimTakenAt(key) {
+    try {
+      return fs5.statSync(path7.join(claimsDir, claimName(key))).mtimeMs;
+    } catch {
+      return null;
+    }
+  }
+  function claimContent(key) {
+    try {
+      return fs5.readFileSync(path7.join(claimsDir, claimName(key)), "utf8");
+    } catch {
+      return null;
+    }
+  }
+  function listClaims() {
+    return listClaimNames(claimsDir);
+  }
+  function removeClaim(name) {
+    try {
+      fs5.unlinkSync(path7.join(claimsDir, claimName(name)));
       return true;
     } catch {
       return false;
@@ -20869,6 +20899,10 @@ function openMailbox(options = {}) {
     recordResolution,
     recordReminder,
     claim,
+    claimTakenAt,
+    claimContent,
+    listClaims,
+    removeClaim,
     markDelivered,
     markAcknowledged,
     releaseDelivery,
@@ -20898,7 +20932,7 @@ function openMailbox(options = {}) {
           body,
           replyToMessageId: messageId
         });
-        if (original.anticipation !== "fyi" && !original.resolution) {
+        if (original.anticipation !== "fyi" && !original.resolution && claim(`resolve-${messageId}`)) {
           recordResolution({ messageId, kind: "reply", by: original.to_session_id, replyMessageId: replyId });
         }
         return replyId;
@@ -20943,7 +20977,18 @@ function idSet(single, many) {
   }
   return out2;
 }
-function mergedView(paths) {
+function claimName(key) {
+  return String(key).replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 200);
+}
+function listClaimNames(dir) {
+  try {
+    return fs5.readdirSync(dir);
+  } catch {
+    return [];
+  }
+}
+var REMINDER_CLAIM = /^reminder-([0-9A-HJKMNP-TV-Z]{26})-(\d{1,3})$/;
+function mergedView(paths, claimsDir = null) {
   const messages = /* @__PURE__ */ new Map();
   const stateEvents = [];
   for (const file of paths) {
@@ -20970,10 +21015,10 @@ function mergedView(paths) {
       if (!message.reminders.length) message.first_delivered_at = null;
     } else if (event.type === "resolved" && event.messageId && messages.has(event.messageId)) {
       const message = messages.get(event.messageId);
-      if (!message.resolution && RESOLUTION_KINDS.has(event.kind)) {
+      if (!message.resolution && RESOLUTION_KINDS.has(event.kind) && event.by === message.to_session_id) {
         message.resolution = {
           kind: event.kind,
-          by: typeof event.by === "string" ? event.by : null,
+          by: typeof event.byAddress === "string" && event.byAddress ? event.byAddress : event.by,
           at: normalizeTimestamp(event.at),
           late: event.late === true,
           replyMessageId: typeof event.replyMessageId === "string" ? event.replyMessageId : null
@@ -20988,6 +21033,22 @@ function mergedView(paths) {
           at: normalizeTimestamp(event.at)
         });
       }
+    }
+  }
+  if (claimsDir) {
+    for (const name of listClaimNames(claimsDir)) {
+      const match = REMINDER_CLAIM.exec(name);
+      const message = match ? messages.get(match[1]) : null;
+      if (!match || !message) continue;
+      const n = Number(match[2]);
+      if (n < 1 || message.reminders.some((r) => r.n === n)) continue;
+      let at = null;
+      try {
+        at = fs5.statSync(path7.join(claimsDir, name)).mtimeMs;
+      } catch {
+        continue;
+      }
+      message.reminders.push({ n, via: null, at });
     }
   }
   return [...messages.values()];
@@ -24047,6 +24108,11 @@ function labelFields(row, options = {}) {
 function isLateResolution(view) {
   return view.status === "unresolved" || view.status === "expired";
 }
+function explicitReplies(mb, messageId, from, to) {
+  const fromSet = new Set(from);
+  const toSet = new Set(to);
+  return mb.inspect({ replyToMessageId: messageId, limit: Number.MAX_SAFE_INTEGER }).filter((m) => fromSet.has(m.from_session_id) && toSet.has(m.to_session_id)).sort((a, b) => a.sent_at - b.sent_at);
+}
 
 // src/delivery/reminders.js
 var REMINDER_VIA = Object.freeze({
@@ -25403,6 +25469,24 @@ function claudeListingEntries() {
   }));
 }
 
+// src/delivery/resolution.js
+var STALE_RESOLUTION_CLAIM_MS = 1e4;
+var MAX_GENERATIONS = 5;
+function claimResolution(mb, messageId, { staleMs = STALE_RESOLUTION_CLAIM_MS } = {}) {
+  for (let gen = 0; gen < MAX_GENERATIONS; gen++) {
+    const key = gen === 0 ? `resolve-${messageId}` : `resolve-${messageId}.${gen}`;
+    if (mb.claim(key, String(Date.now()))) {
+      const row2 = mb.getMessage({ messageId });
+      return row2?.resolution ? { ok: false, row: row2 } : { ok: true, row: null };
+    }
+    const row = mb.getMessage({ messageId });
+    if (row?.resolution) return { ok: false, row };
+    const takenAt = mb.claimTakenAt(key);
+    if (takenAt === null || Date.now() - takenAt < staleMs) return { ok: false, row };
+  }
+  return { ok: false, row: mb.getMessage({ messageId }) };
+}
+
 // src/delivery/message-wait.js
 var OUTCOME_FOR_STATUS = Object.freeze({
   replied: "reply",
@@ -25436,27 +25520,29 @@ function checkMessageWait(mb, { messageId, fromIds, toIds, now = Date.now(), set
       replyRow
     };
   }
-  const replies = explicitReplies(mb, messageId, from, to);
+  const replies = explicitReplies(mb, messageId, fromIds, toIds);
   if (!replies.length) return null;
   const ownStatus = original && to.has(original.from_session_id) ? messageStatus(original, { now, settings }).status : null;
   return { outcome: "reply", messageStatus: ownStatus, replyRow: replies[0] };
 }
-function settleImplicitReply(mb, row, { fromIds, toIds, now = Date.now(), settings = reminderSettings() }) {
+function settleImplicitReply(mb, row, { fromIds, toIds, now = Date.now(), settings = reminderSettings(), write = true }) {
   if (!row || !isAnticipating(row) || row.resolution) return row;
-  const reply = explicitReplies(mb, row.id, new Set(fromIds), new Set(toIds))[0];
+  const reply = explicitReplies(mb, row.id, fromIds, toIds)[0];
   if (!reply) return row;
-  mb.recordResolution({
-    messageId: row.id,
+  const resolution = {
     kind: "reply",
-    by: reply.from_session_id,
+    by: row.to_session_id,
+    byAddress: canonicalAddress(row.to_session_id, row.to_session_kind),
     late: isLateResolution(messageStatus(row, { now, settings })),
-    replyMessageId: reply.id,
-    at: now
-  });
+    replyMessageId: reply.id
+  };
+  if (!write) {
+    return { ...row, resolution: { ...resolution, by: resolution.byAddress, at: now } };
+  }
+  const claimed = claimResolution(mb, row.id);
+  if (!claimed.ok) return claimed.row ?? mb.getMessage({ messageId: row.id }) ?? row;
+  mb.recordResolution({ messageId: row.id, ...resolution, at: now });
   return mb.getMessage({ messageId: row.id }) ?? row;
-}
-function explicitReplies(mb, messageId, from, to) {
-  return mb.inspect({ replyToMessageId: messageId, limit: Number.MAX_SAFE_INTEGER }).filter((m) => from.has(m.from_session_id) && to.has(m.to_session_id)).sort((a, b) => a.sent_at - b.sent_at);
 }
 async function recordStatusTransition(mb, row, { now = Date.now(), settings = reminderSettings(), host, appendReceipt: appendReceipt2 = safeAppendReceipt } = {}) {
   try {
@@ -25484,6 +25570,53 @@ async function recordStatusTransition(mb, row, { now = Date.now(), settings = re
   } catch {
     return false;
   }
+}
+var CLAIM_PATTERN = /^(reminder|resolve|status)-([0-9A-HJKMNP-TV-Z]{26})(?:[-.](.+))?$/;
+var ORPHAN_CLAIM_MAX_AGE_MS = 7 * 864e5;
+var STOP_CLAIM_MAX_AGE_MS = 864e5;
+async function sweepClaims(mb, { now = Date.now(), settings = reminderSettings(), maxFiles = 500, host, appendReceipt: appendReceipt2 = safeAppendReceipt } = {}) {
+  const result = { scanned: 0, removed: 0, receipts: 0 };
+  try {
+    const names = mb.listClaims().slice(0, maxFiles);
+    const rows = new Map(mb.inspect({ limit: Number.MAX_SAFE_INTEGER }).map((row) => [row.id, row]));
+    const wallNow = Date.now();
+    const transitioned = /* @__PURE__ */ new Set();
+    for (const name of names) {
+      result.scanned += 1;
+      const takenAt = mb.claimTakenAt(name);
+      const age = takenAt === null ? 0 : wallNow - takenAt;
+      if (name.startsWith("stop-")) {
+        if (age > STOP_CLAIM_MAX_AGE_MS && mb.removeClaim(name)) result.removed += 1;
+        continue;
+      }
+      const match = CLAIM_PATTERN.exec(name);
+      if (!match) continue;
+      const [, kind, messageId, rest] = match;
+      const row = rows.get(messageId);
+      let remove = false;
+      if (!row) {
+        remove = age > ORPHAN_CLAIM_MAX_AGE_MS;
+      } else if (row.resolution) {
+        remove = true;
+      } else if (kind === "reminder") {
+        const n = Number(rest);
+        remove = (row.reminders ?? []).some((r) => r.n === n && r.via !== null);
+      }
+      if (remove && mb.removeClaim(name)) result.removed += 1;
+    }
+    let checked = 0;
+    for (const row of rows.values()) {
+      if (checked >= maxFiles) break;
+      if (!isAnticipating(row) || row.resolution || transitioned.has(row.id)) continue;
+      const status = messageStatus(row, { now, settings }).status;
+      if (status !== "unresolved" && status !== "expired") continue;
+      checked += 1;
+      transitioned.add(row.id);
+      if (await recordStatusTransition(mb, row, { now, settings, host, appendReceipt: appendReceipt2 })) result.receipts += 1;
+    }
+  } catch {
+  }
+  return result;
 }
 
 // src/registry/addresses.js
@@ -25736,13 +25869,14 @@ function makeClaudeSendHandler({
           anticipation: labels.anticipation,
           replyBy: labels.replyBy
         });
-        if (answered && isAnticipating(answered) && !answered.resolution && claudeSessionAliases(target).includes(answered.from_session_id)) {
+        if (answered && isAnticipating(answered) && !answered.resolution && claudeSessionAliases(target).includes(answered.from_session_id) && claimResolution(mb, answered.id).ok) {
           const view = messageStatus(answered, { now: now(), settings: settingsFn() });
           mb.markAcknowledged({ messageId: answered.id });
           mb.recordResolution({
             messageId: answered.id,
             kind: "reply",
-            by: caller.id,
+            by: answered.to_session_id,
+            byAddress: claudeAddress(resolveCurrentSessionSafe(resolveCurrentSession)) ?? null,
             late: isLateResolution(view),
             replyMessageId: messageId
           });
@@ -25896,6 +26030,13 @@ async function pollForResolution(mb, { messageId, fromIds, toIds, timeoutMs: tim
     }
     const remaining = deadline - now();
     await sleep2(Math.min(DEFAULT_POLL_INTERVAL_MS2, Math.max(remaining, 10)));
+  }
+}
+function resolveCurrentSessionSafe(resolve) {
+  try {
+    return typeof resolve === "function" ? resolve() : null;
+  } catch {
+    return null;
   }
 }
 function messageStatusOf(mb, messageId, at, settings) {
@@ -26407,12 +26548,14 @@ function makeReplyAgentLinkMessageHandler({
             details: { errors: [{ path: "resolution", rule: "conflict", expected: "reply for an fyi message" }] }
           });
         }
-        const view = messageStatus(original, { now: at, settings: settingsFn() });
-        if (anticipating && original.resolution) {
-          throw new AgentLinkError("already_resolved", `Message ${messageId} is already ${view.status}.`, {
-            details: { messageId, status: view.status, resolvedAt: view.resolution?.at ?? null },
-            hint: "Send a new message with message_claude_session if there is more to say."
-          });
+        const settings = settingsFn();
+        const view = messageStatus(original, { now: at, settings });
+        if (anticipating && original.resolution) throw alreadyResolved(messageId, view);
+        if (anticipating) {
+          const claimed = claimResolution(mb, messageId);
+          if (!claimed.ok) {
+            throw alreadyResolved(messageId, claimed.row ? messageStatus(claimed.row, { now: at, settings }) : view);
+          }
         }
         mb.markAcknowledged({ messageId });
         if (hasBody) {
@@ -26434,7 +26577,9 @@ function makeReplyAgentLinkMessageHandler({
           mb.recordResolution({
             messageId,
             kind: resolution,
-            by: resolverAddress,
+            // The stored recipient id: the view trusts only the recipient.
+            by: original.to_session_id,
+            byAddress: resolverAddress,
             late: resolved.late,
             replyMessageId: replyId,
             at
@@ -26484,6 +26629,13 @@ function makeReplyAgentLinkMessageHandler({
     }
   };
 }
+function alreadyResolved(messageId, view) {
+  const status = view.status === "pending" ? "resolving" : view.status;
+  return new AgentLinkError("already_resolved", `Message ${messageId} is already ${status}.`, {
+    details: { messageId, status: view.status, resolvedAt: view.resolution?.at ?? null },
+    hint: "Send a new message with message_claude_session if there is more to say."
+  });
+}
 function invalid2(path17, message) {
   return new AgentLinkError("invalid_arguments", message, {
     details: { errors: [{ path: path17, rule: "required", expected: "non-empty string" }] }
@@ -26528,8 +26680,7 @@ function makeMessageStatusHandler({
   resolveCurrentSession = null,
   mailboxOpener,
   now = () => Date.now(),
-  reminderSettings: settingsFn = () => reminderSettings(),
-  appendReceipt: appendReceipt2 = safeAppendReceipt
+  reminderSettings: settingsFn = () => reminderSettings()
 } = {}) {
   const openMb = typeof mailboxOpener === "function" ? mailboxOpener : () => openMailbox();
   return async function getMessageStatus(args = {}, toolContext = {}) {
@@ -26566,10 +26717,10 @@ function makeMessageStatusHandler({
         fromIds: [row.to_session_id, ...addressAliases(toAddress)],
         toIds: [row.from_session_id, ...addressAliases(fromAddress)],
         now: at,
-        settings
+        settings,
+        write: false
       });
       const labels = labelFields(settled, { now: at, settings });
-      await recordStatusTransition(mb, settled, { now: at, settings, host, appendReceipt: appendReceipt2 });
       return {
         messageId: row.id,
         from: fromAddress,
@@ -30344,6 +30495,7 @@ function isPlainObject5(value) {
 }
 
 // src/server/index.js
+import { existsSync as existsSync2 } from "node:fs";
 var CURRENT_SESSION_RECHECK_MS = 3e4;
 var CURRENT_SESSION_MISS_RETRY_MS = 5e3;
 function makeCurrentClaudeSession({
@@ -30527,9 +30679,31 @@ function createAgentLinkServer({ config: config2 = loadConfig(), appServer, setF
     if (channel.error !== null) channelError = channel.error;
     lifecycle.setChannelBridge(channel.bridge);
     if (config2.codexReminders) startCodexReminders({ appServer: codexAppServer });
+    startClaimSweeper({ host: hostInfo.host });
     lifecycle.installSignalHandlers();
   }
   return { server, appServer: codexAppServer, registry: registry2, lifecycle, config: config2, start };
+}
+var CLAIM_SWEEP_INTERVAL_MS = 36e5;
+function startClaimSweeper({ host }) {
+  const run = async () => {
+    let mailbox = null;
+    try {
+      const file = resolveMailboxPath();
+      if (!existsSync2(file)) return;
+      mailbox = openMailbox();
+      const result = await sweepClaims(mailbox, { host });
+      if (result.removed || result.receipts) getLogger().info("claims.swept", result);
+    } catch (error2) {
+      getLogger().warn("claims.sweep_failed", { message: error2 instanceof Error ? error2.message : String(error2) });
+    } finally {
+      mailbox?.close();
+    }
+  };
+  const first = setTimeout(run, 5e3);
+  first.unref?.();
+  const timer = setInterval(run, CLAIM_SWEEP_INTERVAL_MS);
+  timer.unref?.();
 }
 function startCodexReminders({ appServer }) {
   const settings = reminderSettings();

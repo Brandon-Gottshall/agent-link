@@ -44,8 +44,8 @@ import {
 } from "./session-index.js";
 import { claudeSessionAliases } from "./identity.js";
 import { renderHookNotice } from "../shared/envelope.js";
-import { isAnticipating, reminderSettings } from "../delivery/message-status.js";
-import { REMINDER_VIA, claimReminders, dueReminders, lastStopBlockAt, reminderNoticeFor } from "../delivery/reminders.js";
+import { explicitReplies, isAnticipating, reminderSettings } from "../delivery/message-status.js";
+import { REMINDER_VIA, claimReminders, dueReminders, reminderNoticeFor, takeStopSlot } from "../delivery/reminders.js";
 import { createLogger } from "../shared/log.js";
 
 // Hook failures go to stderr (Claude Code shows it in its hook log) and, when
@@ -119,7 +119,14 @@ export function runNotifyHook(payload, {
       const mine = mailForSession(mb, session, { cliSessionId, findSidecarById });
       if (!isStop) pending = mine.filter((m) => !m.delivered_at);
       if (remind) {
-        reminder = remindersFor(mb, mine, { isStop, now: at, settings: reminderConfig });
+        reminder = remindersFor(mb, mine, {
+          isStop,
+          now: at,
+          settings: reminderConfig,
+          recipientIds: [...claudeSessionAliases(session), cliSessionId],
+          recipientKey: cliSessionId,
+          stopHookActive: payload?.stop_hook_active === true
+        });
       }
     } finally {
       mb.close();
@@ -148,15 +155,15 @@ export function runNotifyHook(payload, {
 // The reminder notice for this session's due reminders, claimed and
 // recorded, or null. The Stop hook blocks at most once per interval per
 // recipient however many messages are due (R7.14).
-function remindersFor(mb, mine, { isStop, now, settings }) {
+function remindersFor(mb, mine, { isStop, now, settings, recipientIds, recipientKey, stopHookActive }) {
   const open = mine.filter((m) => isAnticipating(m));
   if (!open.length) return null;
-  if (isStop) {
-    const last = lastStopBlockAt(open);
-    if (last !== null && now - last < settings.intervalMs) return null;
-  }
-  const due = dueReminders(open, { now, settings });
+  // A message the recipient already answered the older way (a reply row
+  // without a resolution event) is not open any more: no reminder.
+  const due = dueReminders(open, { now, settings })
+    .filter((m) => !explicitReplies(mb, m.id, recipientIds, [m.from_session_id]).length);
   if (!due.length) return null;
+  if (isStop && !takeStopSlot(mb, { recipientKey, open, now, settings, stopHookActive })) return null;
   const claimed = claimReminders(mb, due, {
     via: isStop ? REMINDER_VIA.stop : REMINDER_VIA.prompt,
     now,
