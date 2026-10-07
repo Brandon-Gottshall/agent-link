@@ -24211,7 +24211,13 @@ function deliveredTo(row, ids) {
   return (Array.isArray(row.deliveries) ? row.deliveries : []).some((d) => typeof d?.to === "string" && addressNames(d.to, ids));
 }
 function isPendingFor(row, table, ids) {
-  return handedOverTo(row, table) ? !deliveredTo(row, ids) : !row.delivered_at;
+  if (handedOverTo(row, table)) return !deliveredTo(row, ids);
+  const deliveries = Array.isArray(row.deliveries) ? row.deliveries : [];
+  if (deliveries.some((d) => typeof d?.to === "string") && roleRoute(row)) {
+    const untaggedToStored = ids.has(row.to_session_id) && deliveries.some((d) => typeof d?.to !== "string");
+    return !(deliveredTo(row, ids) || untaggedToStored);
+  }
+  return !row.delivered_at;
 }
 function recipientView({ aliases, address = null, table = null }) {
   const ids = new Set([...aliases].filter((id) => typeof id === "string" && id));

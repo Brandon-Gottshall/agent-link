@@ -114,14 +114,25 @@ export function deliveredTo(row, ids) {
 /**
  * Whether a row the caller receives is still new to it. A handed-over row
  * is a fresh delivery for the role's new holder (the owner's rule: role
- * coordination is never missed), whatever the previous holder saw; any other
- * row is new until delivered.
+ * coordination is never missed), whatever the previous holder saw. So is a
+ * role-addressed row handed back to a holder that never saw it (A to B to
+ * A): once any delivery is tagged with a recipient (`to`), the row is new
+ * to the caller until a delivery to the caller exists, where an untagged
+ * delivery counts for the stored recipient. A row with no tagged delivery
+ * (written before deliveries carried `to`) is new until delivered, as
+ * before, so nothing is re-announced.
  * @param {Record<string, any>} row
  * @param {RoleTable | null} table
  * @param {Set<string>} ids  the caller's ids and address
  */
 export function isPendingFor(row, table, ids) {
-  return handedOverTo(row, table) ? !deliveredTo(row, ids) : !row.delivered_at;
+  if (handedOverTo(row, table)) return !deliveredTo(row, ids);
+  const deliveries = Array.isArray(row.deliveries) ? row.deliveries : [];
+  if (deliveries.some((d) => typeof d?.to === "string") && roleRoute(row)) {
+    const untaggedToStored = ids.has(row.to_session_id) && deliveries.some((d) => typeof d?.to !== "string");
+    return !(deliveredTo(row, ids) || untaggedToStored);
+  }
+  return !row.delivered_at;
 }
 
 /**

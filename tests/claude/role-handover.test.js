@@ -364,4 +364,31 @@ test("a message capped (unresolved) under the previous holder is fresh mail, the
   assert.deepEqual(open.messages.map((m) => [m.id, m.open, m.status]), [[id, true, "unresolved"]]);
 });
 
+// Follow-up a3, item A: a role moved back to a holder that never saw the
+// message (A to B to A) gets it as new mail; an untagged (older) delivery
+// still counts for the stored recipient, so nothing is re-announced.
+test("A to B to A: the original holder that never saw the message gets it as new mail", async () => {
+  const fx = fixture();
+  const id = roleMessage(fx.mailboxPath, { delivered: false });
+  fx.roles.set({ role: "lead", address: addr(SECOND) });
+  assert.deepEqual((await tools(fx, SECOND).inbox({})).messages.map((m) => [m.id, m.open]), [[id, false]]);
+  fx.roles.set({ role: "lead", address: addr(FIRST) });
+  assert.match(reminderText(hook(fx, FIRST, "UserPromptSubmit", T0)), /1 pending peer message/);
+  assert.match(reminderText(hook(fx, FIRST, "UserPromptSubmit", T0 + 1)), /1 pending peer message/, "repeats until the inbox is read");
+  assert.deepEqual((await tools(fx, FIRST).inbox({})).messages.map((m) => [m.id, m.open]), [[id, false]]);
+  assert.doesNotMatch(reminderText(hook(fx, FIRST, "UserPromptSubmit", T0 + 2)) ?? "", /pending peer message/);
+  assert.deepEqual(hook(fx, SECOND, "UserPromptSubmit", T0 + 2), {}, "the role moved away from the second holder");
+});
+
+test("A to B to A: an untagged delivery to the stored recipient still counts (no re-announcement)", async () => {
+  const fx = fixture();
+  const id = roleMessage(fx.mailboxPath); // delivered at T0 without `to`, as before deliveries were tagged
+  fx.roles.set({ role: "lead", address: addr(SECOND) });
+  await tools(fx, SECOND).inbox({});
+  fx.roles.set({ role: "lead", address: addr(FIRST) });
+  assert.doesNotMatch(reminderText(hook(fx, FIRST, "UserPromptSubmit", T0 + 1_000)) ?? "", /pending peer message/);
+  const inbox = await tools(fx, FIRST).inbox({ markAsDelivered: false });
+  assert.deepEqual(inbox.messages.map((m) => [m.id, m.open]), [[id, true]], "open mail, not new");
+});
+
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
