@@ -35,7 +35,8 @@ const HARNESS_PREFIX = /^(?:claude|codex):/;
  * @returns {{name: string, via: string, sentTo: string | null} | null}
  */
 export function roleRoute(row) {
-  if (!row || typeof row.metadata_json !== "string" || !row.metadata_json) return null;
+  // Cheap test first: hooks scan every row, and most carry no role.
+  if (!row || typeof row.metadata_json !== "string" || !row.metadata_json.includes("\"role\"")) return null;
   let meta;
   try {
     meta = JSON.parse(row.metadata_json);
@@ -60,6 +61,7 @@ export function roleRoute(row) {
  */
 export function handedOverTo(row, table) {
   if (!row || !table || !table.roles) return null;
+  if (row.anticipation === "fyi" || row.anticipation === undefined) return null;
   if (row.anticipation !== "reply" && row.anticipation !== "action") return null;
   const route = roleRoute(row);
   if (!route || !route.sentTo) return null;
