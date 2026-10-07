@@ -170,10 +170,15 @@ export async function deliverCodexReminders({ appServer, mailbox, now = Date.now
  *
  * Each block takes a `stop-<recipient>-<bucket>` claim (bucket = now /
  * interval) holding the clock reading. A block is allowed only when no
- * earlier block (claim or stop-hook `reminded` event) is within one
- * interval; two hooks that both claim neighbouring buckets resolve the tie
- * in favour of the lower bucket. `stop_hook_active` (the turn is already a
- * continuation forced by a Stop hook) is checked as a second guard.
+ * earlier block (a slot claim or a stop-hook `reminded` event) is within
+ * one interval; two hooks that both claim neighbouring buckets resolve the
+ * tie in favour of the lower bucket.
+ *
+ * `stop_hook_active` means this turn is already a continuation forced by a
+ * Stop hook. It is the second guard: such a turn is never blocked when the
+ * forcing block cannot be found (a slot claim lost or collected, or another
+ * hook's block), so a forced continuation is blocked again only when this
+ * recipient's last recorded block is a full interval old.
  * @param {ReturnType<import("../claude/mailbox.js").openMailbox>} mb
  * @param {{recipientKey: string, open: Array<Record<string, any>>, now: number, settings: import("./message-status.js").ReminderSettings, stopHookActive?: boolean}} options
  * @returns {boolean} true when this hook may block now
@@ -188,9 +193,8 @@ export function takeStopSlot(mb, { recipientKey, open, now, settings, stopHookAc
     .filter((c) => Number.isFinite(c.at) && Number.isFinite(c.bucket));
   const times = [...others().map((c) => c.at), lastStopBlockAt(open)].filter((t) => t !== null && Number.isFinite(t));
   const last = times.length ? Math.max(.../** @type {number[]} */ (times)) : null;
-  const recent = last !== null && Math.abs(now - last) < settings.intervalMs;
-  if (stopHookActive && recent) return false;
-  if (recent) return false;
+  if (last !== null && Math.abs(now - last) < settings.intervalMs) return false;
+  if (stopHookActive && last === null) return false;
   const bucket = Math.floor(now / settings.intervalMs);
   const mine = `${prefix}${bucket}`;
   if (!mb.claim(mine, String(now))) return false;

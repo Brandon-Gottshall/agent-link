@@ -25574,10 +25574,13 @@ async function recordStatusTransition(mb, row, { now = Date.now(), settings = re
 var CLAIM_PATTERN = /^(reminder|resolve|status)-([0-9A-HJKMNP-TV-Z]{26})(?:[-.](.+))?$/;
 var ORPHAN_CLAIM_MAX_AGE_MS = 7 * 864e5;
 var STOP_CLAIM_MAX_AGE_MS = 864e5;
-async function sweepClaims(mb, { now = Date.now(), settings = reminderSettings(), maxFiles = 500, host, appendReceipt: appendReceipt2 = safeAppendReceipt } = {}) {
-  const result = { scanned: 0, removed: 0, receipts: 0 };
+async function sweepClaims(mb, { now = Date.now(), settings = reminderSettings(), maxFiles = 500, offset = 0, host, appendReceipt: appendReceipt2 = safeAppendReceipt } = {}) {
+  const result = { scanned: 0, removed: 0, receipts: 0, nextOffset: 0 };
   try {
-    const names = mb.listClaims().slice(0, maxFiles);
+    const every = mb.listClaims().sort();
+    const start = every.length ? Math.abs(Math.floor(offset)) % every.length : 0;
+    const names = [...every.slice(start), ...every.slice(0, start)].slice(0, maxFiles);
+    const kept = () => result.scanned - result.removed;
     const rows = new Map(mb.inspect({ limit: Number.MAX_SAFE_INTEGER }).map((row) => [row.id, row]));
     const wallNow = Date.now();
     const transitioned = /* @__PURE__ */ new Set();
@@ -25604,6 +25607,7 @@ async function sweepClaims(mb, { now = Date.now(), settings = reminderSettings()
       }
       if (remove && mb.removeClaim(name)) result.removed += 1;
     }
+    result.nextOffset = every.length ? start + kept() : 0;
     let checked = 0;
     for (const row of rows.values()) {
       if (checked >= maxFiles) break;
@@ -30686,13 +30690,15 @@ function createAgentLinkServer({ config: config2 = loadConfig(), appServer, setF
 }
 var CLAIM_SWEEP_INTERVAL_MS = 36e5;
 function startClaimSweeper({ host }) {
+  let offset = Math.floor(Math.random() * 1e6);
   const run = async () => {
     let mailbox = null;
     try {
       const file = resolveMailboxPath();
       if (!existsSync2(file)) return;
       mailbox = openMailbox();
-      const result = await sweepClaims(mailbox, { host });
+      const result = await sweepClaims(mailbox, { host, offset });
+      offset = result.nextOffset;
       if (result.removed || result.receipts) getLogger().info("claims.swept", result);
     } catch (error2) {
       getLogger().warn("claims.sweep_failed", { message: error2 instanceof Error ? error2.message : String(error2) });

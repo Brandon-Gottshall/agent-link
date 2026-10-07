@@ -167,13 +167,21 @@ const STOP_CLAIM_MAX_AGE_MS = 86_400_000;
  *     after they age out.
  * Never throws.
  * @param {ReturnType<import("../claude/mailbox.js").openMailbox>} mb
- * @param {{now?: number, settings?: import("./message-status.js").ReminderSettings, maxFiles?: number, host?: string, appendReceipt?: (receipt: any) => Promise<any>}} [options]
- * @returns {Promise<{scanned: number, removed: number, receipts: number}>}
+ *
+ * Each pass scans at most `maxFiles` claims, starting at `offset` in name
+ * order and wrapping around; the result's `nextOffset` is where the next
+ * pass starts, so claims that cannot be removed yet never starve the rest.
+ * @param {{now?: number, settings?: import("./message-status.js").ReminderSettings, maxFiles?: number, offset?: number, host?: string, appendReceipt?: (receipt: any) => Promise<any>}} [options]
+ * @returns {Promise<{scanned: number, removed: number, receipts: number, nextOffset: number}>}
  */
-export async function sweepClaims(mb, { now = Date.now(), settings = reminderSettings(), maxFiles = 500, host, appendReceipt = safeAppendReceipt } = {}) {
-  const result = { scanned: 0, removed: 0, receipts: 0 };
+export async function sweepClaims(mb, { now = Date.now(), settings = reminderSettings(), maxFiles = 500, offset = 0, host, appendReceipt = safeAppendReceipt } = {}) {
+  const result = { scanned: 0, removed: 0, receipts: 0, nextOffset: 0 };
   try {
-    const names = mb.listClaims().slice(0, maxFiles);
+    const every = mb.listClaims().sort();
+    const start = every.length ? Math.abs(Math.floor(offset)) % every.length : 0;
+    const names = [...every.slice(start), ...every.slice(0, start)].slice(0, maxFiles);
+    // Removed names leave the list, so the next pass starts after the kept ones.
+    const kept = () => result.scanned - result.removed;
     const rows = new Map(mb.inspect({ limit: Number.MAX_SAFE_INTEGER }).map((row) => [row.id, row]));
     const wallNow = Date.now();
     const transitioned = new Set();
@@ -200,6 +208,7 @@ export async function sweepClaims(mb, { now = Date.now(), settings = reminderSet
       }
       if (remove && mb.removeClaim(name)) result.removed += 1;
     }
+    result.nextOffset = every.length ? start + kept() : 0;
     // Messages that became unresolved or expired since the last pass.
     let checked = 0;
     for (const row of rows.values()) {

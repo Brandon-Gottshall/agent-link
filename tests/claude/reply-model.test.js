@@ -614,3 +614,65 @@ test("claim sweep removes claims nothing needs and keeps the rest", async () => 
   assert.equal(receipts.length, 1, "a second pass writes no second receipt");
   mb.close();
 });
+
+// Re-review perf item: the hook reads the mailbox once, whatever the number
+// of due messages (it was one full read per due message: O(due x rows)).
+test("hook latency with a large mailbox: 20k rows, 2,000 due", () => {
+  const mailboxPath = newMailbox();
+  const ulid = (i) => `01K${String(i).padStart(23, "0")}`.replace(/[ILOU]/g, "0");
+  const lines = [];
+  const other = `local_${uuid(9)}`;
+  for (let i = 0; i < 20_000; i++) {
+    const due = i < 2_000;
+    const id = ulid(i);
+    lines.push(JSON.stringify({ type: "message", at: T0, message: {
+      id,
+      from_session_id: due ? SENDER.sessionId : other,
+      from_session_kind: "claude",
+      to_session_id: due ? RECEIVER.sessionId : SENDER.sessionId,
+      to_session_kind: "claude",
+      body: `row ${i}`,
+      sent_at: T0 - 100_000 + i,
+      anticipation: due ? "reply" : (i % 3 ? "fyi" : "action"),
+      reply_to_message_id: !due && i % 5 === 0 ? ulid(i - 1) : null
+    } }));
+    if (due) lines.push(JSON.stringify({ type: "delivered", at: T0, messageId: id }));
+  }
+  fs.writeFileSync(mailboxPath, `${lines.join("\n")}\n`);
+  for (const [event, check] of [
+    ["Stop", (out) => assert.equal(out.decision, "block")],
+    ["UserPromptSubmit", (out) => assert.deepEqual(out, {}, "inside the window after the Stop reminders")]
+  ]) {
+    const started = process.hrtime.bigint();
+    const out = hook(mailboxPath, event, T0 + 30_000);
+    const ms = Number(process.hrtime.bigint() - started) / 1e6;
+    check(out);
+    if (process.env.AGENT_LINK_PERF_LOG) console.log(event, Math.round(ms));
+    assert.ok(ms < 2_000, `${event} hook took ${Math.round(ms)} ms with 20k rows and 2,000 due`);
+  }
+  const mb = openMailbox({ mailboxPath });
+  assert.equal(mb.getMessage({ messageId: ulid(0) }).reminders.length, 1);
+  mb.close();
+});
+
+test("claim sweep rotates so kept claims cannot starve later ones", async () => {
+  const mailboxPath = newMailbox();
+  const mb = openMailbox({ mailboxPath });
+  const open = deliveredMessage(mailboxPath);
+  const done = deliveredMessage(mailboxPath);
+  // Orphan reminder claims of an open message are kept (they are the count)
+  // and sort first; the resolved message's claims sort last.
+  for (const n of [1, 2, 3]) assert.ok(mb.claim(`reminder-${open}-${n}`));
+  assert.ok(mb.claim(`status-${done}-unresolved`));
+  assert.ok(mb.claim(`resolve-${done}`));
+  mb.recordResolution({ messageId: done, kind: "done", by: RECEIVER.sessionId });
+  const names = () => mb.listClaims().sort();
+  const quiet = { appendReceipt: async () => ({ ok: true }), settings: SETTINGS, maxFiles: 2 };
+  let result = await sweepClaims(mb, { ...quiet, offset: 0 });
+  assert.equal(result.removed, 0, "the first window holds only kept claims");
+  result = await sweepClaims(mb, { ...quiet, offset: result.nextOffset });
+  result = await sweepClaims(mb, { ...quiet, offset: result.nextOffset });
+  assert.ok(!names().some((n) => n.includes(done)), "later passes reach the removable claims");
+  assert.deepEqual(names(), [1, 2, 3].map((n) => `reminder-${open}-${n}`));
+  mb.close();
+});

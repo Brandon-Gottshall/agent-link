@@ -337,13 +337,17 @@ const CLAIM_SWEEP_INTERVAL_MS = 3_600_000;
  * @param {{host: string}} options
  */
 function startClaimSweeper({ host }) {
+  // Where the next bounded pass starts; random per process so restarts do
+  // not always rescan the same first entries.
+  let offset = Math.floor(Math.random() * 1_000_000);
   const run = async () => {
     let mailbox = null;
     try {
       const file = resolveMailboxPath();
       if (!existsSync(file)) return;
       mailbox = openMailbox();
-      const result = await sweepClaims(mailbox, { host });
+      const result = await sweepClaims(mailbox, { host, offset });
+      offset = result.nextOffset;
       if (result.removed || result.receipts) getLogger().info("claims.swept", result);
     } catch (error) {
       getLogger().warn("claims.sweep_failed", { message: error instanceof Error ? error.message : String(error) });

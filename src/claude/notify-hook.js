@@ -44,7 +44,7 @@ import {
 } from "./session-index.js";
 import { claudeSessionAliases } from "./identity.js";
 import { renderHookNotice } from "../shared/envelope.js";
-import { explicitReplies, isAnticipating, reminderSettings } from "../delivery/message-status.js";
+import { isAnticipating, reminderSettings } from "../delivery/message-status.js";
 import { REMINDER_VIA, claimReminders, dueReminders, reminderNoticeFor, takeStopSlot } from "../delivery/reminders.js";
 import { createLogger } from "../shared/log.js";
 
@@ -116,10 +116,12 @@ export function runNotifyHook(payload, {
     const at = now();
     const mb = mailboxOpener();
     try {
-      const mine = mailForSession(mb, session, { cliSessionId, findSidecarById });
+      // One mailbox read per hook run: every later step filters this list.
+      const all = mb.inspect({ limit: Number.MAX_SAFE_INTEGER });
+      const mine = mailForSession(all, session, { cliSessionId, findSidecarById });
       if (!isStop) pending = mine.filter((m) => !m.delivered_at);
       if (remind) {
-        reminder = remindersFor(mb, mine, {
+        reminder = remindersFor(mb, all, mine, {
           isStop,
           now: at,
           settings: reminderConfig,
@@ -155,13 +157,23 @@ export function runNotifyHook(payload, {
 // The reminder notice for this session's due reminders, claimed and
 // recorded, or null. The Stop hook blocks at most once per interval per
 // recipient however many messages are due (R7.14).
-function remindersFor(mb, mine, { isStop, now, settings, recipientIds, recipientKey, stopHookActive }) {
+function remindersFor(mb, all, mine, { isStop, now, settings, recipientIds, recipientKey, stopHookActive }) {
   const open = mine.filter((m) => isAnticipating(m));
   if (!open.length) return null;
+  const due0 = dueReminders(open, { now, settings });
+  if (!due0.length) return null;
   // A message the recipient already answered the older way (a reply row
-  // without a resolution event) is not open any more: no reminder.
-  const due = dueReminders(open, { now, settings })
-    .filter((m) => !explicitReplies(mb, m.id, recipientIds, [m.from_session_id]).length);
+  // without a resolution event) is not open any more: no reminder. The
+  // replies are indexed once from the rows already read (one pass, not one
+  // mailbox read per due message).
+  const recipient = new Set(recipientIds);
+  const repliedTo = new Map();
+  for (const row of all) {
+    if (!row.reply_to_message_id || !recipient.has(row.from_session_id)) continue;
+    if (!repliedTo.has(row.reply_to_message_id)) repliedTo.set(row.reply_to_message_id, new Set());
+    repliedTo.get(row.reply_to_message_id).add(row.to_session_id);
+  }
+  const due = due0.filter((m) => !repliedTo.get(m.id)?.has(m.from_session_id));
   if (!due.length) return null;
   if (isStop && !takeStopSlot(mb, { recipientKey, open, now, settings, stopHookActive })) return null;
   const claimed = claimReminders(mb, due, {
@@ -197,9 +209,8 @@ export function resolveHookSession(cliSessionId, { transcriptPath, ...roots } = 
 // from its transcript alone does not know its Desktop sidecar id, so mail
 // addressed to some other `local_` id is checked against that one sidecar
 // file directly (no walk over every sidecar).
-function mailForSession(mb, session, { cliSessionId, findSidecarById }) {
+function mailForSession(all, session, { cliSessionId, findSidecarById }) {
   const aliases = new Set(claudeSessionAliases(session));
-  const all = mb.inspect({ limit: Number.MAX_SAFE_INTEGER });
   const checked = new Map();
   const isOurs = (toId) => {
     if (aliases.has(toId)) return true;
