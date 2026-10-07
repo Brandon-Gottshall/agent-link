@@ -198,8 +198,8 @@ export function envelopeReplyConfirmation(confirmation, { threadId, sent }) {
   return out;
 }
 
-// replyConfirmation in the section 3.4 wait shape. The 0.4 key stays beside
-// it until 0.6.0.
+// The reply confirmation in the section 3.4 wait shape (the 0.4
+// `replyConfirmation` result key was removed in 0.6.0).
 /**
  * @param {Record<string, any>} confirmation  from envelopeReplyConfirmation
  * @param {{threadId: string, turnId: string, waitedMs?: number | null}} options
@@ -515,7 +515,6 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
           turnId: response.turnId,
           appServer: appServerSummary
         }),
-        replyConfirmation,
         appServer: appServerSummary
       };
       result.receipt = await recordActionReceipt({
@@ -599,7 +598,6 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
         turn: summarizedTurn,
         appServer: appServerSummary
       }),
-      replyConfirmation,
       appServer: appServerSummary
     };
     result.receipt = await recordActionReceipt({

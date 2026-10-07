@@ -369,7 +369,7 @@ Hints are fixed per code and context. The current single hint ("leave CODEX_AGEN
 | Recent history | `recentItems` (kept in 0.5.0; it now counts items, section 5.3) | — |
 | Time inputs | `timeoutMs`, `pollIntervalMs` (integers); `since` as ISO string | `since` as epoch ms |
 
-- R3.6 Using an alias adds a `deprecated_argument` warning. If both the alias and the canonical name are given with different values, the call fails with `invalid_arguments`.
+- R3.6 Using an alias adds a `deprecated_argument` warning. If both the alias and the canonical name are given with different values, the call fails with `invalid_arguments`. From 0.6.0 the aliases are gone: an old name is an unknown property (`invalid_arguments`), and the error `hint` and `details.removed` name the replacement.
 - R3.7 Output keys are camelCase. Timestamps in outputs are ISO 8601 UTC strings named `*At`. Codex Unix-second values and mailbox epoch-ms values are converted. Durations are `*Ms` integers.
 - R3.8 Mailbox message objects in outputs are `{id, from, to, fromHarness, toHarness, message, sentAt, deliveredAt, deliveredVia, acknowledgedAt, replyToMessageId, replyKind}`, with `message` enveloped per R2.11. Through 0.5.x they also carry the old snake_case keys (`from_session_id`, `sent_at`, …) with their old values, except raw body fields, which B2 removed (section 5.3).
 

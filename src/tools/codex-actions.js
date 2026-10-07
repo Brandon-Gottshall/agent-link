@@ -42,7 +42,6 @@ export const messageThreadOut = {
   runtimeState: out("object", "Runtime state contract for the target."),
   archiveState: out("object", "Archive state contract for the target."),
   desktopVisibility: out("object", "Whether Codex Desktop shows the change."),
-  replyConfirmation: out("object", "Deprecated duplicate of wait in the 0.4 shape; removed in 0.6.0."),
   appServer: commonOut.appServer,
   via: out("string", "role:<name> when the target was addressed by role; the message went to the role's current holder."),
   roleProcedure: out(["object", "null"], "With a role target: {name, version, textIncluded} of the role's procedure, or null when the role has none. textIncluded is true on the first delivery of that version to the holder."),

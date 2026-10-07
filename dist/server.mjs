@@ -20035,11 +20035,18 @@ function hostIdentity({ host = "unknown", callerContext = null, currentSession =
 }
 
 // src/server/registry.js
-function deprecationWarning(alias, canonical) {
+function removedArgumentHint(definition, problems) {
+  const removed = [];
+  for (const entry of definition.removedArguments ?? []) {
+    const rule = entry.rule ?? "additionalProperties";
+    if (problems.some((problem) => problem.path === entry.name && problem.rule === rule)) {
+      removed.push({ argument: entry.name, replacement: entry.replacement, hint: entry.hint ?? `${entry.name} was removed in ${ALIAS_REMOVAL_VERSION}; use ${entry.replacement}.` });
+    }
+  }
+  if (removed.length === 0) return null;
   return {
-    code: "deprecated_argument",
-    message: `${alias} is deprecated and will be removed in ${ALIAS_REMOVAL_VERSION}; use ${canonical}.`,
-    replacement: canonical
+    hint: removed.map((entry) => entry.hint).join(" "),
+    removed: removed.map(({ argument, replacement }) => ({ argument, replacement }))
   };
 }
 function toMcpTool(definition) {
@@ -20048,21 +20055,6 @@ function toMcpTool(definition) {
     structuredClone(definition.inputSchema)
   );
   input.properties ??= {};
-  for (const alias of definition.aliases ?? []) {
-    const canonicalSchema = input.properties[alias.canonical];
-    if (!canonicalSchema) {
-      throw new Error(`${definition.name}: alias target ${alias.canonical} is not an input property`);
-    }
-    for (const name of alias.aliases) {
-      if (input.properties[name]) continue;
-      const { description: _description, default: _default2, ...rest } = canonicalSchema;
-      input.properties[name] = {
-        ...rest,
-        description: `Deprecated alias of ${alias.canonical}; removed in ${ALIAS_REMOVAL_VERSION}.`,
-        deprecated: true
-      };
-    }
-  }
   return {
     name: definition.name,
     description: definition.description,
@@ -20096,16 +20088,17 @@ function createRegistry(entries, options = {}) {
       const args = normalizeArguments(found.tool.inputSchema, rawArgs === void 0 || rawArgs === null ? {} : rawArgs, warnings);
       const problems = validateSchema(found.tool.inputSchema, args);
       if (problems.length > 0) {
+        const removed = removedArgumentHint(found.entry.definition, problems);
         throw new AgentLinkError("invalid_arguments", `Invalid arguments for ${name}: ${problems.map((p) => `${p.path} (${p.rule}: expected ${p.expected})`).join("; ")}.`, {
-          details: { errors: problems }
+          details: { errors: problems, ...removed ? { removed: removed.removed } : {} },
+          ...removed ? { hint: removed.hint } : {}
         });
       }
-      const resolved = normalizeThreadIdArguments(found.entry.definition, applyAliases(
+      const resolved = normalizeThreadIdArguments(
         found.entry.definition,
         /** @type {Record<string, any>} */
-        args,
-        warnings
-      ));
+        args
+      );
       const payload = await found.entry.handler(resolved, {
         callerContext: context.callerContext ?? null,
         warn: (warning) => warnings.push(warning)
@@ -20193,33 +20186,6 @@ function normalizeThreadIdArguments(definition, args) {
     throw new AgentLinkError("invalid_arguments", `Invalid arguments for ${definition.name}: ${problems.map((p) => `${p.path} names a Claude session; it takes a Codex thread id or codex:<id>`).join("; ")}.`, {
       details: { errors: problems },
       hint: "Use message_claude_session (or the other *_claude_session tools) for claude: addresses."
-    });
-  }
-  return out2;
-}
-function applyAliases(definition, args, warnings) {
-  const out2 = { ...args };
-  const problems = [];
-  for (const { canonical, aliases, required: required2 } of definition.aliases ?? []) {
-    let source = out2[canonical] !== void 0 ? canonical : null;
-    for (const alias of aliases) {
-      if (out2[alias] === void 0) continue;
-      warnings.push(deprecationWarning(alias, canonical));
-      if (source === null) {
-        out2[canonical] = out2[alias];
-        source = alias;
-      } else if (JSON.stringify(out2[alias]) !== JSON.stringify(out2[canonical])) {
-        problems.push({ path: alias, rule: "alias_conflict", expected: `the same value as ${source}, or only ${canonical}` });
-      }
-      delete out2[alias];
-    }
-    if (required2 && out2[canonical] === void 0) {
-      problems.push({ path: canonical, rule: "required", expected: `${canonical} (or its deprecated alias ${aliases.join(", ")})` });
-    }
-  }
-  if (problems.length > 0) {
-    throw new AgentLinkError("invalid_arguments", `Invalid arguments for ${definition.name}: ${problems.map((p) => `${p.path} (${p.rule})`).join("; ")}.`, {
-      details: { errors: problems }
     });
   }
   return out2;
@@ -24904,7 +24870,7 @@ var codexThreadTools = [
       },
       additionalProperties: false
     },
-    aliases: [{ canonical: "query", aliases: ["searchTerm"] }],
+    removedArguments: [{ name: "searchTerm", replacement: "query" }],
     output: threadListOut,
     annotations: READ_ONLY
   },
@@ -25062,7 +25028,6 @@ var messageThreadOut = {
   runtimeState: out("object", "Runtime state contract for the target."),
   archiveState: out("object", "Archive state contract for the target."),
   desktopVisibility: out("object", "Whether Codex Desktop shows the change."),
-  replyConfirmation: out("object", "Deprecated duplicate of wait in the 0.4 shape; removed in 0.6.0."),
   appServer: commonOut.appServer,
   via: out("string", "role:<name> when the target was addressed by role; the message went to the role's current holder."),
   roleProcedure: out(["object", "null"], "With a role target: {name, version, textIncluded} of the role's procedure, or null when the role has none. textIncluded is true on the first delivery of that version to the holder."),
@@ -25260,9 +25225,10 @@ var orchestrationTools = [
         ...turnOptions,
         receipt: receiptInput
       },
+      required: ["resultStatus"],
       additionalProperties: false
     },
-    aliases: [{ canonical: "resultStatus", aliases: ["status"], required: true }],
+    removedArguments: [{ name: "status", replacement: "resultStatus" }],
     output: {
       ...wrapperOut,
       message: out("string", "The result message sent (inside the peer-message envelope)."),
@@ -25366,7 +25332,7 @@ var listReceiptsTool = {
     },
     additionalProperties: false
   },
-  aliases: [{ canonical: "query", aliases: ["searchTerm"] }],
+  removedArguments: [{ name: "searchTerm", replacement: "query" }],
   output: {
     path: out("string", "The receipt log new receipts are written to."),
     data: out("array", "Receipt summaries; each target carries its address (claude:<id> or codex:<id>, or null)."),
@@ -26444,11 +26410,6 @@ var claudeSendTool = {
     properties: {
       sessionId: str("Exact target session: sessionId (local_<uuid>), cliSessionId, local_<cli>, a claude:<id> address, or role:<name> (the Claude session currently holding the role). Archived sessions are reachable by exact id."),
       query: str("Fuzzy target lookup over title, cwd, and partial id. Archived sessions are skipped. Ambiguous matches fail with ambiguous."),
-      to: {
-        type: "string",
-        description: "Deprecated (removed in 0.6.0): an exact id or a fuzzy query. Use sessionId or query.",
-        deprecated: true
-      },
       message: str("Message text to deliver (at most 64 KiB)."),
       surface: enumOf(["desktop", "code"], "Optional target surface filter. Defaults to either Desktop or Code."),
       deliveryPreference: enumOf(["auto", "channel", "mailbox"], "Delivery preference. Defaults to auto: channel for loaded Claude Code sessions, mailbox otherwise."),
@@ -26459,9 +26420,13 @@ var claudeSendTool = {
       timeoutMs: timeoutMs("Maximum wait when waitForReply=true, in milliseconds."),
       receipt: receiptInput
     },
+    required: ["message"],
     additionalProperties: false
   },
-  aliases: [{ canonical: "message", aliases: ["body"], required: true }],
+  removedArguments: [
+    { name: "body", replacement: "message" },
+    { name: "to", replacement: "sessionId (exact id; archived sessions included) or query (fuzzy; archived sessions skipped)" }
+  ],
   output: {
     messageId: out("string", "Id of the queued message."),
     delivery: out("string", "queued-channel, queued-online, queued-offline, or queued-mailbox."),
@@ -26472,28 +26437,25 @@ var claudeSendTool = {
     replyBy: out(["string", "null"], "The message's deadline (ISO 8601), or null."),
     messageStatus: out(["string", "null"], "pending for a reply/action message, null for fyi."),
     wait: out("object", "With waitForReply: {outcome: reply|declined|done|unresolved|expired|timeout, messageStatus, waitedMs, target: {sessionId, address}, reply?} (sections 3.4, 7.6). reply is the explicit reply, decline reason, or done note, enveloped."),
-    replyConfirmation: out("object", "Deprecated duplicate of wait in the 0.4 shape ({received, replyMessageId?, reply?, error?}); removed in 0.6.0."),
     via: out("string", "role:<name> when the target was addressed by role; the message went to the role's current holder."),
     roleProcedure: out(["object", "null"], "With a role target: {name, version, textIncluded} of the role's procedure, or null when the role has none.")
   },
   annotations: { readOnlyHint: false, destructiveHint: false }
 };
-function targetArgument(args, warn) {
-  const given = ["sessionId", "query", "to"].filter((key2) => typeof args[key2] === "string" && args[key2].trim());
-  if (args.to !== void 0) warn?.(deprecationWarning("to", "sessionId or query"));
+function targetArgument(args) {
+  const given = ["sessionId", "query"].filter((key2) => typeof args[key2] === "string" && args[key2].trim());
   if (given.length === 0) {
     throw new AgentLinkError("invalid_arguments", "Pass sessionId (exact id) or query (fuzzy lookup).", {
       details: { errors: [{ path: "sessionId", rule: "required", expected: "sessionId or query" }] }
     });
   }
-  const values = new Set(given.map((key2) => args[key2]));
-  if (given.length > 1 && (values.size > 1 || given.includes("sessionId") && given.includes("query"))) {
-    throw new AgentLinkError("invalid_arguments", `Pass only one of ${given.join(", ")}.`, {
-      details: { errors: given.slice(1).map((key2) => ({ path: key2, rule: "alias_conflict", expected: `only ${given[0]}` })) }
+  if (given.length > 1) {
+    throw new AgentLinkError("invalid_arguments", "Pass only one of sessionId, query.", {
+      details: { errors: [{ path: "query", rule: "conflict", expected: "only sessionId" }] }
     });
   }
   const key = given[0];
-  return { value: args[key], mode: key === "sessionId" ? "exact" : key === "query" ? "fuzzy" : "either" };
+  return { value: args[key], mode: key === "sessionId" ? "exact" : "fuzzy" };
 }
 function makeClaudeSendHandler({
   host,
@@ -26514,9 +26476,7 @@ function makeClaudeSendHandler({
      * @param {{runtimeCallerContext?: unknown, warn?: (w: any) => void}} [toolContext]
      */
     message_claude_session: async (rawArgs = {}, toolContext = {}) => {
-      const aliasWarnings = [];
-      const args = applyAliases(claudeSendTool, rawArgs, aliasWarnings);
-      for (const warning of aliasWarnings) toolContext.warn?.(warning);
+      const args = rawArgs ?? {};
       const {
         message: body,
         replyToMessageId,
@@ -26533,7 +26493,7 @@ function makeClaudeSendHandler({
         waitForReply: waitForReply === true,
         now: now()
       });
-      const targetArg = targetArgument(args, toolContext.warn);
+      const targetArg = targetArgument(args);
       const { mode } = targetArg;
       let to = targetArg.value;
       let role = null;
@@ -26743,7 +26703,6 @@ function makeClaudeSendHandler({
             ...confirmation.reply ? { reply: confirmation.reply } : {}
           };
           result.messageStatus = confirmation.messageStatus;
-          result.replyConfirmation = confirmation.received ? { received: true, replyMessageId: confirmation.reply?.id ?? null, reply: confirmation.reply ?? null } : { received: false, error: confirmation.outcome };
         }
         return result;
       } finally {
@@ -26869,16 +26828,13 @@ var claudeWaitTool = {
     required: ["sessionId"],
     additionalProperties: false
   },
-  aliases: [{ canonical: "replyToMessageId", aliases: ["latestMessageId"] }],
+  removedArguments: [{ name: "latestMessageId", replacement: "replyToMessageId" }],
   output: {
     outcome: enumOf(["reply", "declined", "done", "unresolved", "expired", "idle", "timeout"], "How the wait ended (sections 3.4, 7.6)."),
     messageStatus: out(["string", "null"], "With replyToMessageId: the message's status (pending, replied, declined, done, unresolved, expired), or null for an fyi message."),
     waitedMs: out("integer", "How long the wait lasted."),
     target: out("object", "{sessionId, address, lastLoaded?} of the session waited on."),
-    reply: out("object", "The explicit reply, decline reason, or done note: the message's validated fields plus its envelope."),
-    result: out("string", "Deprecated duplicate of outcome; removed in 0.6.0."),
-    message: out("object", "Deprecated duplicate of reply; removed in 0.6.0."),
-    sessionId: out("string", "Deprecated duplicate of target.sessionId; removed in 0.6.0.")
+    reply: out("object", "The explicit reply, decline reason, or done note: the message's validated fields plus its envelope.")
   },
   annotations: { readOnlyHint: true }
 };
@@ -26904,10 +26860,8 @@ function makeWaitHandler({
      * @param {{runtimeCallerContext?: unknown, warn?: (w: any) => void}} [toolContext]
      */
     wait_for_claude_session: async (rawArgs = {}, toolContext = {}) => {
-      const aliasWarnings = [];
-      const args = applyAliases(claudeWaitTool, rawArgs, aliasWarnings);
-      for (const warning of aliasWarnings) toolContext.warn?.(warning);
-      const { sessionId, replyToMessageId: latestMessageId } = args;
+      const args = rawArgs ?? {};
+      const { sessionId, replyToMessageId } = args;
       const timeoutMs2 = typeof args.timeoutMs === "number" && args.timeoutMs >= 0 ? args.timeoutMs : DEFAULT_TIMEOUT_MS;
       if (typeof sessionId !== "string" || !sessionId.trim()) {
         throw new AgentLinkError("invalid_arguments", "`sessionId` must be a non-empty string.", {
@@ -26945,21 +26899,21 @@ function makeWaitHandler({
       const deadline = waitStartedAt + timeoutMs2;
       let nextLivenessCheckAt = waitStartedAt + livenessIntervalMs;
       const releaseWait = registerActiveWait({
-        replyToMessageId: latestMessageId || null,
+        replyToMessageId: replyToMessageId || null,
         fromIds,
         toIds: caller.aliases,
-        since: latestMessageId ? null : waitStartedAt
+        since: replyToMessageId ? null : waitStartedAt
       });
       try {
         while (true) {
           const mb = openMb();
           try {
-            if (latestMessageId) {
+            if (replyToMessageId) {
               const settings = settingsFn();
-              const done = checkMessageWait(mb, { messageId: latestMessageId, fromIds, toIds: caller.aliases, now: now(), settings });
+              const done = checkMessageWait(mb, { messageId: replyToMessageId, fromIds, toIds: caller.aliases, now: now(), settings });
               if (done) {
                 if (done.messageStatus === "unresolved" || done.messageStatus === "expired") {
-                  await recordStatusTransition(mb, mb.getMessage({ messageId: latestMessageId }), { now: now(), settings, host, ...appendReceipt2 ? { appendReceipt: appendReceipt2 } : {} });
+                  await recordStatusTransition(mb, mb.getMessage({ messageId: replyToMessageId }), { now: now(), settings, host, ...appendReceipt2 ? { appendReceipt: appendReceipt2 } : {} });
                 }
                 if (done.replyRow) consumeReply(mb, done.replyRow);
                 const reply = done.replyRow ? mailboxRowResult(done.replyRow) : null;
@@ -26968,9 +26922,7 @@ function makeWaitHandler({
                   waitedMs: waited(),
                   target: { sessionId: storedId, address },
                   messageStatus: done.messageStatus,
-                  ...reply ? { reply, message: reply } : {},
-                  result: done.outcome,
-                  sessionId: storedId
+                  ...reply ? { reply } : {}
                 };
               }
             }
@@ -26980,7 +26932,7 @@ function makeWaitHandler({
               limit: Number.MAX_SAFE_INTEGER,
               since: waitStartedAt
             };
-            const messages = latestMessageId ? [] : mb.inspect(filters).sort((a, b) => a.sent_at - b.sent_at);
+            const messages = replyToMessageId ? [] : mb.inspect(filters).sort((a, b) => a.sent_at - b.sent_at);
             if (messages.length > 0) {
               consumeReply(mb, messages[0]);
               const reply = mailboxRowResult(messages[0]);
@@ -26988,10 +26940,7 @@ function makeWaitHandler({
                 outcome: "reply",
                 waitedMs: waited(),
                 target: { sessionId: storedId, address },
-                reply,
-                result: "reply",
-                message: reply,
-                sessionId: storedId
+                reply
               };
             }
           } finally {
@@ -27003,9 +26952,7 @@ function makeWaitHandler({
               return {
                 outcome: "idle",
                 waitedMs: waited(),
-                target: { sessionId: storedId, address, lastLoaded: false },
-                result: "idle",
-                sessionId: storedId
+                target: { sessionId: storedId, address, lastLoaded: false }
               };
             }
           }
@@ -27014,9 +26961,7 @@ function makeWaitHandler({
               outcome: "timeout",
               waitedMs: waited(),
               target: { sessionId: storedId, address },
-              ...latestMessageId ? { messageStatus: currentStatus(latestMessageId) } : {},
-              result: "timeout",
-              sessionId: storedId
+              ...replyToMessageId ? { messageStatus: currentStatus(replyToMessageId) } : {}
             };
           }
           const remaining = deadline - now();
@@ -27051,16 +26996,19 @@ var mailboxInspectTool = {
       replyToMessageId: str("Only replies to this message id."),
       undelivered: bool("Only messages not yet delivered."),
       pendingAck: bool("Only messages not yet acknowledged."),
-      since: {
-        type: ["string", "integer"],
-        description: "Only messages sent at or after this ISO 8601 timestamp. An epoch-milliseconds integer is still accepted but deprecated (removed in 0.6.0)."
-      },
+      since: str("Only messages sent at or after this ISO 8601 timestamp."),
       limit: limit("receipts", "messages"),
       scope: enumOf(["caller", "all"], "'caller' (default): only mail sent by or addressed to the calling session. 'all': every session's mail; requires AGENT_LINK_INSPECT_ALL=1."),
       includeBodies: bool("If true, each row adds `envelope`: the body inside the peer-message envelope. Defaults to false.")
     },
     additionalProperties: false
   },
+  removedArguments: [{
+    name: "since",
+    rule: "type",
+    replacement: "since as an ISO 8601 string",
+    hint: "since as epoch milliseconds was removed in 0.6.0; pass an ISO 8601 timestamp, for example new Date(ms).toISOString()."
+  }],
   output: {
     scope: out("string", "caller or all."),
     callerSessionId: out(["string", "null"], "The caller's session id (scope caller)."),
@@ -27083,16 +27031,8 @@ function inspectRow(row, includeBodies) {
     bodyBytes: Buffer.byteLength(String(row.body ?? ""), "utf8")
   };
 }
-function sinceMs(since, warn) {
+function sinceMs(since) {
   if (since === void 0 || since === null) return void 0;
-  if (typeof since === "number") {
-    warn?.({
-      code: "deprecated_argument",
-      message: "since as epoch milliseconds is deprecated and will be removed in 0.6.0; pass an ISO 8601 timestamp.",
-      replacement: "since (ISO 8601 string)"
-    });
-    return since;
-  }
   const ms = Date.parse(String(since));
   if (!Number.isFinite(ms)) {
     throw new AgentLinkError("invalid_arguments", `since must be an ISO 8601 timestamp, got ${JSON.stringify(String(since)).slice(0, 80)}.`, {
@@ -27120,7 +27060,7 @@ function makeMailboxInspectHandler({ host, mailboxOpener, resolveCurrentSession 
       }
       const filters = {
         ...rest,
-        since: sinceMs(since, toolContext.warn),
+        since: sinceMs(since),
         limit: typeof rowLimit === "number" ? rowLimit : LIMITS.receipts.def
       };
       const caller = all ? null : resolveCallerIdentity({
@@ -27268,7 +27208,7 @@ var replyAgentLinkMessageTool = {
     required: ["messageId"],
     additionalProperties: false
   },
-  aliases: [{ canonical: "message", aliases: ["body"] }],
+  removedArguments: [{ name: "body", replacement: "message" }],
   output: {
     messageId: out(["string", "null"], "Id of the reply message, or null for done without a note."),
     replyToMessageId: out("string", "The message replied to or resolved."),
@@ -27297,9 +27237,7 @@ function makeReplyAgentLinkMessageHandler({
      * @param {{runtimeCallerContext?: unknown, warn?: (w: any) => void}} [toolContext]
      */
     reply_agent_link_message: async (rawArgs = {}, toolContext = {}) => {
-      const aliasWarnings = [];
-      const { messageId, message: body, resolution = "reply", anticipation, replyBy } = applyAliases(replyAgentLinkMessageTool, rawArgs, aliasWarnings);
-      for (const warning of aliasWarnings) toolContext.warn?.(warning);
+      const { messageId, message: body, resolution = "reply", anticipation, replyBy } = rawArgs ?? {};
       if (typeof messageId !== "string" || !messageId.trim()) {
         throw invalid2("messageId", "`messageId` must be a non-empty string.");
       }
@@ -30290,7 +30228,6 @@ function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries, 
           turnId: response2.turnId,
           appServer: appServerSummary2
         }),
-        replyConfirmation: replyConfirmation2,
         appServer: appServerSummary2
       };
       result2.receipt = await recordActionReceipt({
@@ -30367,7 +30304,6 @@ function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries, 
         turn: summarizedTurn,
         appServer: appServerSummary
       }),
-      replyConfirmation,
       appServer: appServerSummary
     };
     result.receipt = await recordActionReceipt({

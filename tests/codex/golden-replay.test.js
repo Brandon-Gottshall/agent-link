@@ -379,7 +379,7 @@ const SCRIPT = [
   ["message_project_orchestrator", { orchestratorThreadId: ORCH, message: "status please" }, { meta: true }],
   ["launch_project_worker", { orchestratorThreadId: ORCH, task: "write the tests", workerRole: "tester", projectId: "demo" }, { meta: true }],
   ["return_project_work_result", { orchestratorThreadId: ORCH, resultStatus: "done", summary: "tests written", changedPaths: ["a.js"], testsRun: ["npm test"] }, { meta: true }],
-  ["return_project_work_result", { orchestratorThreadId: ORCH, status: "blocked", summary: "need creds", blockers: ["no access"] }],
+  ["return_project_work_result", { orchestratorThreadId: ORCH, resultStatus: "blocked", summary: "need creds", blockers: ["no access"] }],
   ["register_dependency_handoff", { targetThreadId: ALPHA, dependencyName: "schema v2", readinessContract: "schema merged on main", evidenceRequirements: ["PR link"] }, { meta: true }],
   ["register_dependency_handoff", { targetQuery: "Alpha", dependencyName: "api", readinessContract: "api ready", callbackThreadId: GAMMA }],
   ["check_coordination_obligations", { text: `I'll resume once ${ALPHA} reports the schema is ready.` }, { meta: true }],

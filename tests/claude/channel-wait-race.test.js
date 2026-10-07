@@ -138,8 +138,8 @@ function waitHandler(mailboxPath, { mailboxOpener, now, pollIntervalMs } = {}) {
   const bridge = startBridge(mailboxPath, notifications);
   try {
     const pending = sendHandler(mailboxPath).message_claude_session({
-      to: TARGET.sessionId,
-      body: "question?",
+      sessionId: TARGET.sessionId,
+      message: "question?",
       waitForReply: true,
       timeoutMs: 30_000
     });
@@ -153,8 +153,8 @@ function waitHandler(mailboxPath, { mailboxOpener, now, pollIntervalMs } = {}) {
       replyToMessageId: outbound.id
     });
     const result = await pending;
-    assert.equal(result.replyConfirmation.received, true);
-    assert.equal(result.replyConfirmation.replyMessageId, replyId);
+    assert.equal(result.wait.outcome, "reply");
+    assert.equal(result.wait.reply.id, replyId);
     await bridgePolls(bridge);
     assert.equal(notifications.length, 0, "reply must not also arrive as a channel message");
     const stored = readMessage(mailboxPath, replyId);
@@ -174,7 +174,7 @@ function waitHandler(mailboxPath, { mailboxOpener, now, pollIntervalMs } = {}) {
     const outboundId = insert(mailboxPath, { from: ME.sessionId, to: TARGET.sessionId, body: "q" });
     const pending = waitHandler(mailboxPath).wait_for_claude_session({
       sessionId: TARGET.sessionId,
-      latestMessageId: outboundId,
+      replyToMessageId: outboundId,
       timeoutMs: 30_000
     });
     await sleep(30);
@@ -185,8 +185,8 @@ function waitHandler(mailboxPath, { mailboxOpener, now, pollIntervalMs } = {}) {
       replyToMessageId: outboundId
     });
     const result = await pending;
-    assert.equal(result.result, "reply");
-    assert.equal(result.message.id, replyId);
+    assert.equal(result.outcome, "reply");
+    assert.equal(result.reply.id, replyId);
     await bridgePolls(bridge);
     assert.equal(notifications.length, 0, "reply must not also arrive as a channel message");
     assert.equal(activeWaitCount(), 0);
@@ -211,8 +211,8 @@ function waitHandler(mailboxPath, { mailboxOpener, now, pollIntervalMs } = {}) {
     const otherId = insert(mailboxPath, { from: "local_other", to: ME.sessionId, body: "unrelated" });
     const replyId = insert(mailboxPath, { from: TARGET.sessionId, to: ME.sessionId, body: "news" });
     const result = await pending;
-    assert.equal(result.result, "reply");
-    assert.equal(result.message.id, replyId);
+    assert.equal(result.outcome, "reply");
+    assert.equal(result.reply.id, replyId);
     assert.ok(await waitUntil(() => notifications.length >= 1), "unrelated message delivered");
     await bridgePolls(bridge);
     assert.deepEqual(notifications.map((n) => n.params.meta.message_id), [otherId]);
@@ -246,7 +246,7 @@ function waitHandler(mailboxPath, { mailboxOpener, now, pollIntervalMs } = {}) {
       pollIntervalMs: 20
     }).wait_for_claude_session({
       sessionId: TARGET.sessionId,
-      latestMessageId: outboundId,
+      replyToMessageId: outboundId,
       timeoutMs: 400
     });
     // The handler registers its wait synchronously before its first await.
@@ -265,7 +265,7 @@ function waitHandler(mailboxPath, { mailboxOpener, now, pollIntervalMs } = {}) {
     assert.equal(activeWaitCount(), 1, "wait still active");
     clock += 1_000; // past the wait's deadline: its next poll times out
     const result = await pending;
-    assert.equal(result.result, "timeout");
+    assert.equal(result.outcome, "timeout");
     assert.equal(activeWaitCount(), 0);
     assert.ok(await waitUntil(() => notifications.length === 1), "delivered after the wait timed out");
     assert.equal(notifications[0].params.meta.message_id, replyId);
@@ -283,12 +283,12 @@ function waitHandler(mailboxPath, { mailboxOpener, now, pollIntervalMs } = {}) {
   const bridge = startBridge(mailboxPath, notifications);
   try {
     const result = await sendHandler(mailboxPath).message_claude_session({
-      to: TARGET.sessionId,
-      body: "anyone?",
+      sessionId: TARGET.sessionId,
+      message: "anyone?",
       waitForReply: true,
       timeoutMs: 100
     });
-    assert.equal(result.replyConfirmation.received, false);
+    assert.equal(result.wait.outcome, "timeout");
     assert.equal(activeWaitCount(), 0);
     const replyId = insert(mailboxPath, {
       from: TARGET.sessionId,

@@ -1,9 +1,10 @@
 // Registry unit tests (design doc section 3): one list drives tools/list and
 // tools/call, schema validation rejects unknown and out-of-range arguments,
-// deprecated aliases warn, and every result is the section 3.1 envelope.
+// arguments removed in 0.6.0 are rejected with a hint naming their
+// replacement, and every result is the section 3.1 envelope.
 import assert from "node:assert/strict";
 import { AgentLinkError } from "../../src/shared/errors.js";
-import { applyAliases, createRegistry, toMcpTool } from "../../src/server/registry.js";
+import { createRegistry, removedArgumentHint, toMcpTool } from "../../src/server/registry.js";
 import { validateSchema } from "../../src/server/validate.js";
 import { intRange, limit, receiptInput, str } from "../../src/server/schemas.js";
 import { createLogger, setLogger } from "../../src/shared/log.js";
@@ -23,9 +24,13 @@ const echo = {
         count: intRange({ min: 0, max: 5, def: 1, description: "A count." }),
         receipt: receiptInput
       },
+      required: ["message"],
       additionalProperties: false
     },
-    aliases: [{ canonical: "message", aliases: ["body"], required: true }],
+    removedArguments: [
+      { name: "body", replacement: "message" },
+      { name: "count", rule: "type", replacement: "count as an integer", hint: "count as a word was removed in 0.6.0; pass an integer." }
+    ],
     output: { echoed: { type: "object", description: "The arguments." } },
     annotations: { readOnlyHint: true }
   },
@@ -55,21 +60,21 @@ const failing = {
 
 const registry = createRegistry([echo, failing], { hintFor: () => "fallback hint" });
 
-// tools/list: derived from the same entries, with alias properties, the
-// envelope output schema, and openWorldHint:false by default.
+// tools/list: derived from the same entries, with the envelope output schema
+// and openWorldHint:false by default. Removed arguments are not listed.
 {
   const tools = registry.listTools();
   assert.deepEqual(tools.map((tool) => tool.name), ["echo", "fail"]);
   const tool = tools[0];
-  assert.equal(tool.inputSchema.properties.body.deprecated, true);
-  assert.match(tool.inputSchema.properties.body.description, /Deprecated alias of message; removed in 0\.6\.0/);
+  assert.equal(tool.inputSchema.properties.body, undefined, "a removed argument is not an input property");
+  assert.equal(Object.values(tool.inputSchema.properties).some((p) => p.deprecated), false);
   assert.deepEqual(tool.annotations, { openWorldHint: false, readOnlyHint: true });
   assert.equal(tool.outputSchema.additionalProperties, false);
   assert.deepEqual(Object.keys(tool.outputSchema.properties), ["ok", "error", "warnings", "echoed"]);
   assert.deepEqual(registry.names(), ["echo", "fail"]);
   assert.ok(registry.has("echo") && !registry.has("nope"));
   assert.throws(() => createRegistry([echo, echo]), /Duplicate tool definition: echo/);
-  assert.throws(() => toMcpTool({ ...echo.definition, aliases: [{ canonical: "missing", aliases: ["x"] }] }), /alias target missing/);
+  assert.equal(toMcpTool(echo.definition).inputSchema.properties.body, undefined);
 }
 
 // Success envelope: ok:true, payload keys, the handler's own `ok` ignored,
@@ -81,30 +86,37 @@ const registry = createRegistry([echo, failing], { hintFor: () => "fallback hint
   assert.deepEqual(JSON.parse(result.content[0].text), result.structuredContent);
 }
 
-// Handler warnings and alias warnings both land in warnings[].
+// Handler warnings land in warnings[].
 {
-  const envelope = await registry.invoke("echo", { body: "warn" });
+  const envelope = await registry.invoke("echo", { message: "warn" });
   assert.equal(envelope.ok, true);
-  assert.deepEqual(envelope.echoed, { message: "warn" }, "the alias is renamed to the canonical argument");
-  assert.deepEqual(envelope.warnings.map((w) => w.code).sort(), ["custom", "deprecated_argument"]);
-  const deprecation = envelope.warnings.find((w) => w.code === "deprecated_argument");
-  assert.equal(deprecation.replacement, "message");
+  assert.deepEqual(envelope.warnings.map((w) => w.code), ["custom"]);
 }
 
-// T-3.4: an alias and its canonical name that differ are invalid_arguments;
-// the same value twice is accepted with a warning.
+// 0.6.0 (R6.1-R6.4): a removed alias is an unknown property, rejected with
+// invalid_arguments and a hint naming the replacement; it is never renamed.
 {
-  let envelope = await registry.invoke("echo", { body: "a", message: "b" });
+  let envelope = await registry.invoke("echo", { body: "a" });
   assert.equal(envelope.ok, false);
   assert.equal(envelope.error.code, "invalid_arguments");
-  assert.equal(envelope.error.details.errors[0].rule, "alias_conflict");
+  assert.deepEqual(envelope.error.details.errors.map((e) => [e.path, e.rule]).sort(), [["body", "additionalProperties"], ["message", "required"]]);
+  assert.equal(envelope.error.hint, "body was removed in 0.6.0; use message.");
+  assert.deepEqual(envelope.error.details.removed, [{ argument: "body", replacement: "message" }]);
   envelope = await registry.invoke("echo", { body: "same", message: "same" });
-  assert.equal(envelope.ok, true);
-  assert.equal(envelope.warnings.length, 1);
-  // A required canonical argument missing (and no alias) is invalid_arguments.
+  assert.equal(envelope.error.code, "invalid_arguments", "a removed alias is rejected even beside its replacement");
+  assert.equal(envelope.error.hint, "body was removed in 0.6.0; use message.");
+  // A rule-scoped entry (a removed value form) uses its own hint text.
+  envelope = await registry.invoke("echo", { message: "x", count: "three" });
+  assert.equal(envelope.error.hint, "count as a word was removed in 0.6.0; pass an integer.");
+  // A failure that matches no entry keeps the generic error (the fallback hint).
+  envelope = await registry.invoke("echo", { message: "x", bogus: 1 });
+  assert.equal(envelope.error.hint, "fallback hint");
+  assert.equal(envelope.error.details.removed, undefined);
+  // A required argument missing is invalid_arguments.
   envelope = await registry.invoke("echo", {});
   assert.equal(envelope.error.code, "invalid_arguments");
   assert.deepEqual(envelope.error.details.errors.map((e) => [e.path, e.rule]), [["message", "required"]]);
+  assert.equal(removedArgumentHint(echo.definition, [{ path: "message", rule: "required", expected: "" }]), null);
 }
 
 // T-3.1 / R3.12: unknown properties, wrong types, and out-of-range numbers
@@ -169,14 +181,6 @@ const registry = createRegistry([echo, failing], { hintFor: () => "fallback hint
   await assert.rejects(strict.callTool("fail", { kind: "undeclared" }), /undeclared output keys: surprise/);
 }
 
-// applyAliases is usable by handlers called directly (tests, other modules).
-{
-  const warnings = [];
-  assert.deepEqual(applyAliases(echo.definition, { body: "x" }, warnings), { message: "x" });
-  assert.equal(warnings.length, 1);
-  assert.deepEqual(applyAliases(echo.definition, { message: "y" }, []), { message: "y" });
-}
-
 // Review I1: null for an optional property is dropped before validation and
 // before the handler; exact-format scalar strings are coerced with a
 // coerced_argument warning; everything else of the wrong type is rejected.
@@ -197,8 +201,7 @@ const registry = createRegistry([echo, failing], { hintFor: () => "fallback hint
     assert.equal(envelope.error?.code, "invalid_arguments", JSON.stringify(bad));
   }
   // A required argument given as null is not dropped.
-  const required = createRegistry([{ ...echo, definition: { ...echo.definition, aliases: [], inputSchema: { ...echo.definition.inputSchema, required: ["message"] } } }]);
-  envelope = await required.invoke("echo", { message: null });
+  envelope = await registry.invoke("echo", { message: null });
   assert.equal(envelope.error.code, "invalid_arguments");
   // A string property is never coerced.
   envelope = await registry.invoke("echo", { message: "5" });

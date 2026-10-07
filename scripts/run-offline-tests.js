@@ -80,6 +80,7 @@ const groups = {
   ],
   server: [
     "tests/server/registry.test.js",
+    "tests/server/removed-arguments.test.js",
     "tests/server/roles-e2e.test.js",
     "tests/server/server-modules.test.js",
     "tests/server/session-registry.test.js",

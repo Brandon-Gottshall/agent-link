@@ -23,16 +23,19 @@ export const mailboxInspectTool = {
       replyToMessageId: str("Only replies to this message id."),
       undelivered: bool("Only messages not yet delivered."),
       pendingAck: bool("Only messages not yet acknowledged."),
-      since: {
-        type: ["string", "integer"],
-        description: "Only messages sent at or after this ISO 8601 timestamp. An epoch-milliseconds integer is still accepted but deprecated (removed in 0.6.0)."
-      },
+      since: str("Only messages sent at or after this ISO 8601 timestamp."),
       limit: limit("receipts", "messages"),
       scope: enumOf(["caller", "all"], "'caller' (default): only mail sent by or addressed to the calling session. 'all': every session's mail; requires AGENT_LINK_INSPECT_ALL=1."),
       includeBodies: bool("If true, each row adds `envelope`: the body inside the peer-message envelope. Defaults to false.")
     },
     additionalProperties: false
   },
+  removedArguments: [{
+    name: "since",
+    rule: "type",
+    replacement: "since as an ISO 8601 string",
+    hint: "since as epoch milliseconds was removed in 0.6.0; pass an ISO 8601 timestamp, for example new Date(ms).toISOString()."
+  }],
   output: {
     scope: out("string", "caller or all."),
     callerSessionId: out(["string", "null"], "The caller's session id (scope caller)."),
@@ -68,21 +71,12 @@ function inspectRow(row, includeBodies) {
 }
 
 /**
- * `since` as an ISO string (canonical) or epoch milliseconds (deprecated).
+ * `since` as an ISO 8601 string (epoch milliseconds were removed in 0.6.0).
  * @param {unknown} since
- * @param {((warning: {code: string, message: string, replacement?: string}) => void) | undefined} warn
  * @returns {number | undefined}
  */
-function sinceMs(since, warn) {
+function sinceMs(since) {
   if (since === undefined || since === null) return undefined;
-  if (typeof since === "number") {
-    warn?.({
-      code: "deprecated_argument",
-      message: "since as epoch milliseconds is deprecated and will be removed in 0.6.0; pass an ISO 8601 timestamp.",
-      replacement: "since (ISO 8601 string)"
-    });
-    return since;
-  }
   const ms = Date.parse(String(since));
   if (!Number.isFinite(ms)) {
     throw new AgentLinkError("invalid_arguments", `since must be an ISO 8601 timestamp, got ${JSON.stringify(String(since)).slice(0, 80)}.`, {
@@ -114,7 +108,7 @@ export function makeMailboxInspectHandler({ host, mailboxOpener, resolveCurrentS
       }
       const filters = {
         ...rest,
-        since: sinceMs(since, toolContext.warn),
+        since: sinceMs(since),
         limit: typeof rowLimit === "number" ? rowLimit : LIMITS.receipts.def
       };
       const caller = all

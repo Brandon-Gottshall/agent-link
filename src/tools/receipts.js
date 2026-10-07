@@ -24,7 +24,7 @@ export const listReceiptsTool = {
     },
     additionalProperties: false
   },
-  aliases: [{ canonical: "query", aliases: ["searchTerm"] }],
+  removedArguments: [{ name: "searchTerm", replacement: "query" }],
   output: {
     path: out("string", "The receipt log new receipts are written to."),
     data: out("array", "Receipt summaries; each target carries its address (claude:<id> or codex:<id>, or null)."),

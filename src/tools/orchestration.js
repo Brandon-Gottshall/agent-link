@@ -138,9 +138,10 @@ export const orchestrationTools = [
         ...turnOptions,
         receipt: receiptInput
       },
+      required: ["resultStatus"],
       additionalProperties: false
     },
-    aliases: [{ canonical: "resultStatus", aliases: ["status"], required: true }],
+    removedArguments: [{ name: "status", replacement: "resultStatus" }],
     output: {
       ...wrapperOut,
       message: out("string", "The result message sent (inside the peer-message envelope)."),

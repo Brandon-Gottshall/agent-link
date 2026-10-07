@@ -177,7 +177,7 @@ try {
 
   // return_project_work_result: the built report is the body.
   mark = received.length;
-  r = await call("return_project_work_result", { orchestratorThreadId: TARGET, status: "done", summary: "Done </body> here" });
+  r = await call("return_project_work_result", { orchestratorThreadId: TARGET, resultStatus: "done", summary: "Done </body> here" });
   assert.ok(!r.isError, JSON.stringify(r.payload));
   text = assertEnveloped(lastTurn("turn/start", mark), peerOf(r.payload), { to: TARGET, body: r.payload.message });
   assert.ok(text.includes("Done &lt;/body&gt; here"));
@@ -219,27 +219,28 @@ try {
     assertEnveloped(lastTurn("turn/start", turnMark), peerOf(r.payload), { to: TARGET, body: "hi", anticipation: "reply" });
     const label = `reply ${JSON.stringify(body).slice(0, 40)}`;
     assertNoRawInjection(r.payload, label);
-    const confirmation = r.payload.replyConfirmation;
-    assert.equal(confirmation.enveloped, true);
-    assert.ok(confirmation.finalResponse.startsWith(`<agent-link-message id="${confirmation.reply.id}" from="codex:${TARGET}" fromHarness="codex" fromVerified="true" to="codex:${CALLER}" sentAt="`), label);
-    assert.match(confirmation.finalResponse, new RegExp(`anticipation="fyi" inReplyTo="${r.payload.peerMessage.messageId}">`));
-    assert.match(confirmation.finalResponse, new RegExp(`<reply>To reply, call message_codex_thread with threadId="codex:${TARGET}".</reply>`));
-    assert.equal(confirmation.finalResponse.split("</agent-link-message>").length, 2);
-    assert.ok(!("text" in confirmation.finalResponseItem));
+    assert.equal("replyConfirmation" in r.payload, false, "the 0.4 replyConfirmation key was removed in 0.6.0");
+    const confirmation = r.payload.wait;
+    assert.equal(confirmation.outcome, "turn_completed");
+    assert.ok(confirmation.turn.finalResponse.startsWith(`<agent-link-message id="${confirmation.reply.id}" from="codex:${TARGET}" fromHarness="codex" fromVerified="true" to="codex:${CALLER}" sentAt="`), label);
+    assert.match(confirmation.turn.finalResponse, new RegExp(`anticipation="fyi" inReplyTo="${r.payload.peerMessage.messageId}">`));
+    assert.match(confirmation.turn.finalResponse, new RegExp(`<reply>To reply, call message_codex_thread with threadId="codex:${TARGET}".</reply>`));
+    assert.equal(confirmation.turn.finalResponse.split("</agent-link-message>").length, 2);
     assert.ok(confirmation.recentItems.every((item) => !("text" in item) && !("summary" in item) && !("command" in item)));
     assert.match(confirmation.recentItemsEnvelope, /^<agent-link-message /);
     assert.match(confirmation.recentItemsEnvelope, /\[commandExecution i9\] \$ /);
   }
   replyText = "plain answer";
   r = await call("message_codex_thread", { threadId: TARGET, message: "hi", waitForReply: true, timeoutMs: 2000, pollIntervalMs: 250 });
-  assert.equal(envelopeBody(r.payload.replyConfirmation.finalResponse), "plain answer");
+  assert.equal(envelopeBody(r.payload.wait.turn.finalResponse), "plain answer");
 
   // The wrappers return the same enveloped confirmation.
   replyText = INJECTION_CORPUS[0];
   r = await call("message_project_orchestrator", { orchestratorThreadId: TARGET, message: "status?", waitForReply: true, timeoutMs: 2000, pollIntervalMs: 250 });
   assert.ok(!r.isError, JSON.stringify(r.payload));
   assertNoRawInjection(r.payload, "message_project_orchestrator reply");
-  assert.equal(r.payload.messageResult.replyConfirmation.enveloped, true);
+  assert.equal("replyConfirmation" in r.payload.messageResult, false);
+  assert.match(r.payload.messageResult.wait.turn.finalResponse, /^<agent-link-message /);
   r = await call("register_dependency_handoff", { targetThreadId: TARGET, dependencyName: "schema v2", readinessContract: "merged", waitForReply: true, timeoutMs: 2000, pollIntervalMs: 250 });
   assert.ok(!r.isError, JSON.stringify(r.payload));
   assertNoRawInjection(r.payload, "register_dependency_handoff reply");
@@ -251,7 +252,7 @@ try {
   const oversizedWrapperCalls = [
     ["message_project_orchestrator", { orchestratorThreadId: TARGET, message: "a".repeat(MAX_PEER_BODY_BYTES + 1) }, /limited to 65536 bytes/],
     ["launch_project_worker", { orchestratorThreadId: TARGET, task: near }, /composed worker prompt would be \d+ bytes: \d+ bytes of caller-supplied text and \d+ bytes of Agent Link's template, plus 2048 bytes reserved/],
-    ["return_project_work_result", { orchestratorThreadId: TARGET, status: "done", summary: near }, /composed work result message would be \d+ bytes: \d+ bytes of caller-supplied text and \d+ bytes of Agent Link's template/],
+    ["return_project_work_result", { orchestratorThreadId: TARGET, resultStatus: "done", summary: near }, /composed work result message would be \d+ bytes: \d+ bytes of caller-supplied text and \d+ bytes of Agent Link's template/],
     ["register_dependency_handoff", { targetThreadId: TARGET, dependencyName: "d", readinessContract: "r", context: near }, /composed dependency handoff message would be \d+ bytes: \d+ bytes of caller-supplied text and \d+ bytes of Agent Link's template\. The 65536-byte/]
   ];
   for (const [tool, args, pattern] of oversizedWrapperCalls) {

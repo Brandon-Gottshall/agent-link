@@ -16,7 +16,7 @@ Every tool returns one JSON envelope (also in `structuredContent`):
 - Verdicts are not failures. Resolve tools put theirs in `status` (`resolved`, `ambiguous`, `not_found`); `archive_codex_thread` in `status` (`archived`, `already_archived`); `check_coordination_obligations` in `status` (`not_applicable`, `satisfied`, `needs_handoff`, `blocked`).
 - Waits put how they ended in `outcome` (`reply`, `turn_completed`, `idle`, `timeout`). A timeout is `ok: true`. Message tools with `waitForReply: true` return the same shape in `wait`; there `outcome` can also be `unavailable` (the reply could not be checked, for example on an ephemeral thread; the message was still delivered).
 - Arguments are validated: unknown properties and out-of-range numbers fail with `invalid_arguments` instead of being ignored or clamped. `null` for an optional argument means "not set".
-- Use the canonical argument names in this skill. A `deprecated_argument` or `coerced_argument` warning means the call used an old name or a quoted scalar; fix the call rather than relying on it.
+- Use the argument names in this skill. Old names (`searchTerm`, `body`, `to`, `latestMessageId`, `status` on `return_project_work_result`, epoch-millisecond `since`) were removed in 0.6.0 and fail with `invalid_arguments`; the error `hint` names the replacement. A `deprecated_argument` or `coerced_argument` warning means the call used a deprecated argument or a quoted scalar; fix the call rather than relying on it.
 
 ## Check reachability
 

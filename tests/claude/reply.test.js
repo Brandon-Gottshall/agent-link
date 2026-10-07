@@ -31,7 +31,7 @@ assert.equal(replyAgentLinkMessageTool.name, "reply_agent_link_message");
 
   const result = await handler.reply_agent_link_message({
     messageId: originalId,
-    body: "acknowledged"
+    message: "acknowledged"
   });
 
   assert.equal(result.error, undefined);
@@ -55,19 +55,7 @@ assert.equal(replyAgentLinkMessageTool.name, "reply_agent_link_message");
     resolveCurrentSession: () => ({ sessionId: "local_receiver", surface: "code" })
   });
   await assert.rejects(handler.reply_agent_link_message({ messageId: "missing", message: "nope" }), { errorCode: "not_found" });
-  // The deprecated `body` alias still works, with a warning; body and message
-  // that differ are invalid_arguments.
-  const warnings = [];
-  await assert.rejects(
-    handler.reply_agent_link_message({ messageId: "missing", body: "nope" }, { warn: (w) => warnings.push(w) }),
-    { errorCode: "not_found" }
-  );
-  assert.equal(warnings[0].code, "deprecated_argument");
-  assert.equal(warnings[0].replacement, "message");
-  await assert.rejects(
-    handler.reply_agent_link_message({ messageId: "missing", body: "a", message: "b" }),
-    { errorCode: "invalid_arguments" }
-  );
+  // The removed `body` alias is rejected by the registry (tests/server/removed-arguments.test.js).
 }
 
 // P1-15 / W2B-15: a reply writes a reply_message receipt and reports the
@@ -93,7 +81,7 @@ assert.equal(replyAgentLinkMessageTool.name, "reply_agent_link_message");
     mailboxOpener: () => openMailbox({ mailboxPath }),
     resolveCurrentSession: () => ({ sessionId: "local_receiver", surface: "code" })
   });
-  const result = await handler.reply_agent_link_message({ messageId: id, body: "with receipt" });
+  const result = await handler.reply_agent_link_message({ messageId: id, message: "with receipt" });
   assert.equal(result.receipt?.ok, true);
   assert.equal(result.receipt.recorded, true);
   assert.equal(result.receipt.path, process.env.CODEX_AGENT_LINK_RECEIPT_LOG);
@@ -116,7 +104,7 @@ assert.equal(replyAgentLinkMessageTool.name, "reply_agent_link_message");
     mailboxOpener: () => openMailbox({ mailboxPath }),
     resolveCurrentSession: () => ({ sessionId: "local_receiver", cliSessionId: "cli-uuid-receiver", surface: "code" })
   });
-  const result = await handler.reply_agent_link_message({ messageId: legacyId, body: "reply to legacy" });
+  const result = await handler.reply_agent_link_message({ messageId: legacyId, message: "reply to legacy" });
   assert.equal(result.error, undefined, `legacy-addressed mail must be repliable (got ${result.error})`);
   const check = openMailbox({ mailboxPath });
   const reply = check.getMessage({ messageId: result.messageId });

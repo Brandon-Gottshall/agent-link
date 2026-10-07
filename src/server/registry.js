@@ -8,10 +8,10 @@
 // tools/call goes through one wrapper:
 //   1. unknown name            -> unknown_tool
 //   2. lenient pass            -> optional nulls dropped; "5"/"true" read as 5/true (coerced_argument)
-//   3. schema validation       -> invalid_arguments with details.errors (R3.12)
-//   4. deprecated aliases      -> canonical argument + deprecated_argument warning (R3.6)
-//   5. handler                 -> payload, or a thrown AgentLinkError
-//   6. envelope               -> {ok:true, ...payload, warnings?} or {ok:false, error} (R3.1)
+//   3. schema validation       -> invalid_arguments with details.errors (R3.12);
+//                                 an argument removed in 0.6.0 gets a hint naming its replacement
+//   4. handler                 -> payload, or a thrown AgentLinkError
+//   5. envelope               -> {ok:true, ...payload, warnings?} or {ok:false, error} (R3.1)
 // and the MCP result carries the JSON in content[0].text and structuredContent,
 // with isError exactly when ok is false (R3.2).
 
@@ -32,11 +32,14 @@ import { parseAddress } from "../shared/identity.js";
  */
 
 /**
- * A deprecated argument name kept for one minor version (R6.1).
- * @typedef {object} ArgumentAlias
- * @property {string} canonical     the argument name handlers read
- * @property {string[]} aliases     deprecated names accepted in its place
- * @property {boolean} [required]   the canonical value must be present after aliases are applied
+ * An argument form that was deprecated and then removed (R6.1-R6.4). It is
+ * rejected by schema validation like any unknown or mistyped argument; this
+ * entry only adds a hint naming the replacement. It is not an alias.
+ * @typedef {object} RemovedArgument
+ * @property {string} name          the removed argument name (top level)
+ * @property {string} replacement   what to pass instead
+ * @property {string} [rule]        the validation rule that reports it (default "additionalProperties": the name is gone)
+ * @property {string} [hint]        hint text, when "<name> was removed in 0.6.0; use <replacement>." does not fit
  */
 
 /**
@@ -51,10 +54,10 @@ import { parseAddress } from "../shared/identity.js";
  * @typedef {object} ToolDefinition
  * @property {string} name
  * @property {string} description
- * @property {JsonSchema} inputSchema    canonical arguments only; alias properties are added by the registry
+ * @property {JsonSchema} inputSchema
  * @property {Record<string, JsonSchema>} output   success payload keys (the envelope keys are added)
  * @property {ToolAnnotations} annotations
- * @property {ArgumentAlias[]} [aliases]
+ * @property {RemovedArgument[]} [removedArguments]   hint table for arguments removed in 0.6.0
  */
 
 /**
@@ -97,43 +100,37 @@ import { parseAddress } from "../shared/identity.js";
  */
 
 /**
- * @param {string} alias
- * @param {string} canonical
- * @returns {Warning}
+ * The hint for a validation failure caused by an argument removed in 0.6.0,
+ * or null when no problem matches the definition's removedArguments.
+ * @param {ToolDefinition} definition
+ * @param {import("./validate.js").SchemaProblem[]} problems
+ * @returns {{hint: string, removed: {argument: string, replacement: string}[]} | null}
  */
-export function deprecationWarning(alias, canonical) {
+export function removedArgumentHint(definition, problems) {
+  const removed = [];
+  for (const entry of definition.removedArguments ?? []) {
+    const rule = entry.rule ?? "additionalProperties";
+    if (problems.some((problem) => problem.path === entry.name && problem.rule === rule)) {
+      removed.push({ argument: entry.name, replacement: entry.replacement, hint: entry.hint ?? `${entry.name} was removed in ${ALIAS_REMOVAL_VERSION}; use ${entry.replacement}.` });
+    }
+  }
+  if (removed.length === 0) return null;
   return {
-    code: "deprecated_argument",
-    message: `${alias} is deprecated and will be removed in ${ALIAS_REMOVAL_VERSION}; use ${canonical}.`,
-    replacement: canonical
+    hint: removed.map((entry) => entry.hint).join(" "),
+    removed: removed.map(({ argument, replacement }) => ({ argument, replacement }))
   };
 }
 
 /**
- * The MCP tools/list entry for a definition: alias properties are added to
- * the input schema (marked deprecated), the output schema is the envelope,
- * and openWorldHint defaults to false (local machine only, section 3.6).
+ * The MCP tools/list entry for a definition: the output schema is the
+ * envelope, and openWorldHint defaults to false (local machine only,
+ * section 3.6).
  * @param {ToolDefinition} definition
  * @returns {McpTool}
  */
 export function toMcpTool(definition) {
   const input = /** @type {JsonSchema} */ (structuredClone(definition.inputSchema));
   input.properties ??= {};
-  for (const alias of definition.aliases ?? []) {
-    const canonicalSchema = input.properties[alias.canonical];
-    if (!canonicalSchema) {
-      throw new Error(`${definition.name}: alias target ${alias.canonical} is not an input property`);
-    }
-    for (const name of alias.aliases) {
-      if (input.properties[name]) continue;
-      const { description: _description, default: _default, ...rest } = canonicalSchema;
-      input.properties[name] = {
-        ...rest,
-        description: `Deprecated alias of ${alias.canonical}; removed in ${ALIAS_REMOVAL_VERSION}.`,
-        deprecated: true
-      };
-    }
-  }
   return {
     name: definition.name,
     description: definition.description,
@@ -186,11 +183,13 @@ export function createRegistry(entries, options = {}) {
       const args = normalizeArguments(found.tool.inputSchema, rawArgs === undefined || rawArgs === null ? {} : rawArgs, warnings);
       const problems = validateSchema(found.tool.inputSchema, args);
       if (problems.length > 0) {
+        const removed = removedArgumentHint(found.entry.definition, problems);
         throw new AgentLinkError("invalid_arguments", `Invalid arguments for ${name}: ${problems.map((p) => `${p.path} (${p.rule}: expected ${p.expected})`).join("; ")}.`, {
-          details: { errors: problems }
+          details: { errors: problems, ...(removed ? { removed: removed.removed } : {}) },
+          ...(removed ? { hint: removed.hint } : {})
         });
       }
-      const resolved = normalizeThreadIdArguments(found.entry.definition, applyAliases(found.entry.definition, /** @type {Record<string, any>} */ (args), warnings));
+      const resolved = normalizeThreadIdArguments(found.entry.definition, /** @type {Record<string, any>} */ (args));
       const payload = await found.entry.handler(resolved, {
         callerContext: context.callerContext ?? null,
         warn: (warning) => warnings.push(warning)
@@ -326,45 +325,6 @@ export function normalizeThreadIdArguments(definition, args) {
     throw new AgentLinkError("invalid_arguments", `Invalid arguments for ${definition.name}: ${problems.map((p) => `${p.path} names a Claude session; it takes a Codex thread id or codex:<id>`).join("; ")}.`, {
       details: { errors: problems },
       hint: "Use message_claude_session (or the other *_claude_session tools) for claude: addresses."
-    });
-  }
-  return out;
-}
-
-/**
- * Applies a definition's deprecated aliases (R3.6): the canonical name gets
- * the value, the alias is removed, and each alias used adds a warning. An
- * alias that disagrees with the canonical value (or another alias) is
- * invalid_arguments.
- * @param {ToolDefinition} definition
- * @param {Record<string, any>} args
- * @param {Warning[]} warnings
- * @returns {Record<string, any>}
- */
-export function applyAliases(definition, args, warnings) {
-  const out = { ...args };
-  /** @type {import("./validate.js").SchemaProblem[]} */
-  const problems = [];
-  for (const { canonical, aliases, required } of definition.aliases ?? []) {
-    let source = out[canonical] !== undefined ? canonical : null;
-    for (const alias of aliases) {
-      if (out[alias] === undefined) continue;
-      warnings.push(deprecationWarning(alias, canonical));
-      if (source === null) {
-        out[canonical] = out[alias];
-        source = alias;
-      } else if (JSON.stringify(out[alias]) !== JSON.stringify(out[canonical])) {
-        problems.push({ path: alias, rule: "alias_conflict", expected: `the same value as ${source}, or only ${canonical}` });
-      }
-      delete out[alias];
-    }
-    if (required && out[canonical] === undefined) {
-      problems.push({ path: canonical, rule: "required", expected: `${canonical} (or its deprecated alias ${aliases.join(", ")})` });
-    }
-  }
-  if (problems.length > 0) {
-    throw new AgentLinkError("invalid_arguments", `Invalid arguments for ${definition.name}: ${problems.map((p) => `${p.path} (${p.rule})`).join("; ")}.`, {
-      details: { errors: problems }
     });
   }
   return out;

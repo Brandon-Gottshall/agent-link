@@ -207,11 +207,10 @@ const mailboxPath = path.join(tmp, "mailbox.jsonl");
   });
   const all = await allowed.agent_link_mailbox_inspect({ scope: "all" });
   assert.equal(all.messages.length, 3);
-  // since: ISO string is canonical; epoch milliseconds still works with a warning.
-  const warnings = [];
-  const sinceMs = await allowed.agent_link_mailbox_inspect({ scope: "all", since: 0 }, { warn: (w) => warnings.push(w) });
-  assert.equal(sinceMs.messages.length, 3);
-  assert.equal(warnings[0].code, "deprecated_argument");
+  // since is an ISO 8601 string; epoch milliseconds were removed in 0.6.0
+  // (the registry rejects a number: tests/server/removed-arguments.test.js).
+  const sinceEpoch = await allowed.agent_link_mailbox_inspect({ scope: "all", since: "1970-01-01T00:00:00.000Z" });
+  assert.equal(sinceEpoch.messages.length, 3);
   const sinceIso = await allowed.agent_link_mailbox_inspect({ scope: "all", since: "2999-01-01T00:00:00.000Z" });
   assert.equal(sinceIso.messages.length, 0);
   await assert.rejects(allowed.agent_link_mailbox_inspect({ since: "yesterday" }), { errorCode: "invalid_arguments" });

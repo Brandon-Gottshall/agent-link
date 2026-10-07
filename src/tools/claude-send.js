@@ -19,7 +19,6 @@ import { checkRoleAddressing } from "../delivery/role-policy.js";
 import { mailboxRowResult } from "../registry/addresses.js";
 import { buildReceipt, normalizeReceiptInput, safeAppendReceipt } from "../shared/receipt-index.js";
 import { AgentLinkError } from "../shared/errors.js";
-import { applyAliases, deprecationWarning } from "../server/registry.js";
 import { LIMITS, bool, commonOut, enumOf, out, receiptInput, str, timeoutMs as timeoutMsSchema } from "../server/schemas.js";
 
 const DEFAULT_WAIT_TIMEOUT_MS = LIMITS.timeoutMs.def;
@@ -45,11 +44,6 @@ export const claudeSendTool = {
     properties: {
       sessionId: str("Exact target session: sessionId (local_<uuid>), cliSessionId, local_<cli>, a claude:<id> address, or role:<name> (the Claude session currently holding the role). Archived sessions are reachable by exact id."),
       query: str("Fuzzy target lookup over title, cwd, and partial id. Archived sessions are skipped. Ambiguous matches fail with ambiguous."),
-      to: {
-        type: "string",
-        description: "Deprecated (removed in 0.6.0): an exact id or a fuzzy query. Use sessionId or query.",
-        deprecated: true
-      },
       message: str("Message text to deliver (at most 64 KiB)."),
       surface: enumOf(["desktop", "code"], "Optional target surface filter. Defaults to either Desktop or Code."),
       deliveryPreference: enumOf(["auto", "channel", "mailbox"], "Delivery preference. Defaults to auto: channel for loaded Claude Code sessions, mailbox otherwise."),
@@ -60,9 +54,13 @@ export const claudeSendTool = {
       timeoutMs: timeoutMsSchema("Maximum wait when waitForReply=true, in milliseconds."),
       receipt: receiptInput
     },
+    required: ["message"],
     additionalProperties: false
   },
-  aliases: [{ canonical: "message", aliases: ["body"], required: true }],
+  removedArguments: [
+    { name: "body", replacement: "message" },
+    { name: "to", replacement: "sessionId (exact id; archived sessions included) or query (fuzzy; archived sessions skipped)" }
+  ],
   output: {
     messageId: out("string", "Id of the queued message."),
     delivery: out("string", "queued-channel, queued-online, queued-offline, or queued-mailbox."),
@@ -73,7 +71,6 @@ export const claudeSendTool = {
     replyBy: out(["string", "null"], "The message's deadline (ISO 8601), or null."),
     messageStatus: out(["string", "null"], "pending for a reply/action message, null for fyi."),
     wait: out("object", "With waitForReply: {outcome: reply|declined|done|unresolved|expired|timeout, messageStatus, waitedMs, target: {sessionId, address}, reply?} (sections 3.4, 7.6). reply is the explicit reply, decline reason, or done note, enveloped."),
-    replyConfirmation: out("object", "Deprecated duplicate of wait in the 0.4 shape ({received, replyMessageId?, reply?, error?}); removed in 0.6.0."),
     via: out("string", "role:<name> when the target was addressed by role; the message went to the role's current holder."),
     roleProcedure: out(["object", "null"], "With a role target: {name, version, textIncluded} of the role's procedure, or null when the role has none.")
   },
@@ -81,28 +78,24 @@ export const claudeSendTool = {
 };
 
 /**
- * The target argument: sessionId (exact), query (fuzzy), or the deprecated
- * `to` (exact first, then fuzzy, as before).
+ * The target argument: sessionId (exact) or query (fuzzy).
  * @param {Record<string, any>} args
- * @param {((w: any) => void) | undefined} warn
- * @returns {{value: string, mode: "exact" | "fuzzy" | "either"}}
+ * @returns {{value: string, mode: "exact" | "fuzzy"}}
  */
-function targetArgument(args, warn) {
-  const given = ["sessionId", "query", "to"].filter((key) => typeof args[key] === "string" && args[key].trim());
-  if (args.to !== undefined) warn?.(deprecationWarning("to", "sessionId or query"));
+function targetArgument(args) {
+  const given = ["sessionId", "query"].filter((key) => typeof args[key] === "string" && args[key].trim());
   if (given.length === 0) {
     throw new AgentLinkError("invalid_arguments", "Pass sessionId (exact id) or query (fuzzy lookup).", {
       details: { errors: [{ path: "sessionId", rule: "required", expected: "sessionId or query" }] }
     });
   }
-  const values = new Set(given.map((key) => args[key]));
-  if (given.length > 1 && (values.size > 1 || (given.includes("sessionId") && given.includes("query")))) {
-    throw new AgentLinkError("invalid_arguments", `Pass only one of ${given.join(", ")}.`, {
-      details: { errors: given.slice(1).map((key) => ({ path: key, rule: "alias_conflict", expected: `only ${given[0]}` })) }
+  if (given.length > 1) {
+    throw new AgentLinkError("invalid_arguments", "Pass only one of sessionId, query.", {
+      details: { errors: [{ path: "query", rule: "conflict", expected: "only sessionId" }] }
     });
   }
   const key = given[0];
-  return { value: args[key], mode: key === "sessionId" ? "exact" : key === "query" ? "fuzzy" : "either" };
+  return { value: args[key], mode: key === "sessionId" ? "exact" : "fuzzy" };
 }
 
 /**
@@ -145,10 +138,7 @@ export function makeClaudeSendHandler({
      * @param {{runtimeCallerContext?: unknown, warn?: (w: any) => void}} [toolContext]
      */
     message_claude_session: async (rawArgs = {}, toolContext = {}) => {
-      /** @type {any[]} */
-      const aliasWarnings = [];
-      const args = applyAliases(claudeSendTool, rawArgs, aliasWarnings);
-      for (const warning of aliasWarnings) toolContext.warn?.(warning);
+      const args = rawArgs ?? {};
       const {
         message: body,
         replyToMessageId,
@@ -166,7 +156,7 @@ export function makeClaudeSendHandler({
         now: now()
       });
 
-      const targetArg = targetArgument(args, toolContext.warn);
+      const targetArg = targetArgument(args);
       const { mode } = targetArg;
       let to = targetArg.value;
       // role:<name> resolves to the role's current holder at send time (R1.19).
@@ -412,9 +402,6 @@ export function makeClaudeSendHandler({
             ...(confirmation.reply ? { reply: confirmation.reply } : {})
           };
           result.messageStatus = confirmation.messageStatus;
-          result.replyConfirmation = confirmation.received
-            ? { received: true, replyMessageId: confirmation.reply?.id ?? null, reply: confirmation.reply ?? null }
-            : { received: false, error: confirmation.outcome };
         }
 
         return result;

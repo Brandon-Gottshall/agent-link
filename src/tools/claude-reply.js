@@ -5,7 +5,6 @@ import { buildReceipt, safeAppendReceipt } from "../shared/receipt-index.js";
 import { assertPeerBodyWithinLimit } from "../shared/envelope.js";
 import { claudeAddress } from "../shared/identity.js";
 import { AgentLinkError } from "../shared/errors.js";
-import { applyAliases } from "../server/registry.js";
 import { commonOut, enumOf, out, str } from "../server/schemas.js";
 import {
   ANTICIPATIONS,
@@ -44,7 +43,7 @@ export const replyAgentLinkMessageTool = {
     required: ["messageId"],
     additionalProperties: false
   },
-  aliases: [{ canonical: "message", aliases: ["body"] }],
+  removedArguments: [{ name: "body", replacement: "message" }],
   output: {
     messageId: out(["string", "null"], "Id of the reply message, or null for done without a note."),
     replyToMessageId: out("string", "The message replied to or resolved."),
@@ -88,10 +87,7 @@ export function makeReplyAgentLinkMessageHandler({
      * @param {{runtimeCallerContext?: unknown, warn?: (w: any) => void}} [toolContext]
      */
     reply_agent_link_message: async (rawArgs = {}, toolContext = {}) => {
-      /** @type {any[]} */
-      const aliasWarnings = [];
-      const { messageId, message: body, resolution = "reply", anticipation, replyBy } = applyAliases(replyAgentLinkMessageTool, rawArgs, aliasWarnings);
-      for (const warning of aliasWarnings) toolContext.warn?.(warning);
+      const { messageId, message: body, resolution = "reply", anticipation, replyBy } = rawArgs ?? {};
       if (typeof messageId !== "string" || !messageId.trim()) {
         throw invalid("messageId", "`messageId` must be a non-empty string.");
       }

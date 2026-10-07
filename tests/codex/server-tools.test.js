@@ -177,14 +177,13 @@ try {
     // P2-04: message + waitForReply returns up to N recent items.
     result = await call("message_codex_thread", { threadId, message: "hi", waitForReply: true, timeoutMs: 2000, pollIntervalMs: 250, recentItems: 2 });
     assert.equal(result.isError, false);
-    assert.equal(envelopeBody(result.payload.replyConfirmation.finalResponse), "second answer");
-    assert.match(result.payload.replyConfirmation.recentItemsEnvelope, /\[agentMessage i5\] second answer/);
-    assert.deepEqual(result.payload.replyConfirmation.recentItems.map((entry) => [entry.turnId, entry.id]), [["turn-2", "i4"], ["turn-2", "i5"]]);
-    // Section 3.4: the same wait as `wait`, plus the top-level message fields.
+    assert.equal("replyConfirmation" in result.payload, false, "the 0.4 replyConfirmation key was removed in 0.6.0");
+    assert.match(result.payload.wait.recentItemsEnvelope, /\[agentMessage i5\] second answer/);
+    assert.deepEqual(result.payload.wait.recentItems.map((entry) => [entry.turnId, entry.id]), [["turn-2", "i4"], ["turn-2", "i5"]]);
+    // Section 3.4: the wait, plus the top-level message fields.
     assert.equal(result.payload.wait.outcome, "turn_completed");
     assert.equal(result.payload.wait.turn.status, "completed");
     assert.equal(envelopeBody(result.payload.wait.turn.finalResponse), "second answer");
-    assert.deepEqual(result.payload.wait.recentItems, result.payload.replyConfirmation.recentItems);
     assert.equal(result.payload.deliveredVia, "turn/start");
     assert.equal(result.payload.messageId, result.payload.peerMessage.messageId);
     assert.deepEqual(result.payload.target, { threadId, address: `codex:${threadId}` });
@@ -248,18 +247,16 @@ try {
     assert.equal(result.payload.thread.status.type, "idle");
 
     // W3-01: the local fallback keeps its label.
-    result = await call("list_codex_threads", { searchTerm: "Fallback Search Target", archiveScope: "all" });
+    result = await call("list_codex_threads", { query: "Fallback Search Target", archiveScope: "all" });
     assert.equal(result.isError, false);
     assert.equal(result.payload.source, "local-jsonl-fallback");
     assert.equal(result.payload.data[0].id, localOnlyId);
-    // searchTerm is a deprecated alias of query (R3.6).
-    assert.deepEqual(result.payload.warnings.map((warning) => [warning.code, warning.replacement]), [["deprecated_argument", "query"]]);
-    result = await call("list_codex_threads", { query: "Fallback Search Target", archiveScope: "all" });
-    assert.equal(result.payload.data[0].id, localOnlyId);
-    assert.equal(result.payload.warnings, undefined, "no warnings without an alias");
-    result = await call("list_codex_threads", { query: "a", searchTerm: "b" });
+    assert.equal(result.payload.warnings, undefined);
+    // searchTerm was removed in 0.6.0: an unknown property, with a hint naming query.
+    result = await call("list_codex_threads", { searchTerm: "Fallback Search Target", archiveScope: "all" });
     assert.equal(result.payload.error.code, "invalid_arguments");
-    assert.equal(result.payload.error.details.errors[0].rule, "alias_conflict");
+    assert.equal(result.payload.error.details.errors[0].rule, "additionalProperties");
+    assert.equal(result.payload.error.hint, "searchTerm was removed in 0.6.0; use query.");
 
     // resolve: the verdict is a status, not an error (R3.4).
     result = await call("resolve_codex_thread", { query: "zzzz-no-such-thread-zzzz" });

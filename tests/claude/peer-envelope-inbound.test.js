@@ -80,7 +80,7 @@ function rows(mailboxPath) {
 
 test("channel event content equals renderPeerEnvelope(message); verified sender", async () => {
   const mailboxPath = mailbox();
-  const sent = await sendAs(mailboxPath, SENDER)({ to: RECEIVER.sessionId, body: "hello over the channel" });
+  const sent = await sendAs(mailboxPath, SENDER)({ sessionId: RECEIVER.sessionId, message: "hello over the channel" });
   assert.ok(sent.messageId, JSON.stringify(sent));
   const [row] = rows(mailboxPath);
   const notifications = [];
@@ -95,12 +95,12 @@ test("channel event content equals renderPeerEnvelope(message); verified sender"
 
 test("inbox block wraps the same envelopes; replies are verified too", async () => {
   const mailboxPath = mailbox();
-  const sent = await sendAs(mailboxPath, SENDER)({ to: RECEIVER.sessionId, body: "question?" });
+  const sent = await sendAs(mailboxPath, SENDER)({ sessionId: RECEIVER.sessionId, message: "question?" });
   // The receiver answers; the reply lands in the sender's inbox.
   const reply = await makeReplyAgentLinkMessageHandler({
     resolveCurrentSession: () => RECEIVER,
     mailboxOpener: () => openMailbox({ mailboxPath })
-  }).reply_agent_link_message({ messageId: sent.messageId, body: "answer." });
+  }).reply_agent_link_message({ messageId: sent.messageId, message: "answer." });
   assert.ok(reply.messageId, JSON.stringify(reply));
   const before = rows(mailboxPath).filter((r) => r.to_session_id === SENDER.sessionId);
   const result = await inbox(mailboxPath, SENDER)({});
@@ -140,7 +140,7 @@ test("injection corpus: whole results on every Claude receive path", async () =>
 
     // Channel event (the whole notification).
     let mailboxPath = mailbox();
-    assert.ok((await sendAs(mailboxPath, SENDER)({ to: RECEIVER.sessionId, body })).messageId);
+    assert.ok((await sendAs(mailboxPath, SENDER)({ sessionId: RECEIVER.sessionId, message: body })).messageId);
     const notifications = [];
     await bridge(mailboxPath, notifications).pollOnce();
     assert.equal(notifications.length, 1);
@@ -149,7 +149,7 @@ test("injection corpus: whole results on every Claude receive path", async () =>
 
     // read_agent_link_inbox (the whole tool result).
     mailboxPath = mailbox();
-    assert.ok((await sendAs(mailboxPath, SENDER)({ to: RECEIVER.sessionId, body })).messageId);
+    assert.ok((await sendAs(mailboxPath, SENDER)({ sessionId: RECEIVER.sessionId, message: body })).messageId);
     const peek = await inbox(mailboxPath)({ markAsDelivered: false });
     assertNoRawInjection(peek, `inbox peek ${label}`);
     const result = await inbox(mailboxPath)({});
@@ -167,33 +167,33 @@ test("injection corpus: whole results on every Claude receive path", async () =>
 
     // wait_for_claude_session: the reply is the corpus.
     mailboxPath = mailbox();
-    const question = await sendAs(mailboxPath, SENDER)({ to: RECEIVER.sessionId, body: "question" });
-    assert.ok((await replyAs(mailboxPath, RECEIVER)({ messageId: question.messageId, body })).messageId);
+    const question = await sendAs(mailboxPath, SENDER)({ sessionId: RECEIVER.sessionId, message: "question" });
+    assert.ok((await replyAs(mailboxPath, RECEIVER)({ messageId: question.messageId, message: body })).messageId);
     const waited = await makeWaitHandler({
       host: "claude",
       listSessions: () => [RECEIVER, SENDER],
       resolveCurrentSession: () => SENDER,
       mailboxOpener: () => openMailbox({ mailboxPath })
-    }).wait_for_claude_session({ sessionId: RECEIVER.sessionId, latestMessageId: question.messageId, timeoutMs: 2000 });
-    assert.equal(waited.result, "reply");
+    }).wait_for_claude_session({ sessionId: RECEIVER.sessionId, replyToMessageId: question.messageId, timeoutMs: 2000 });
+    assert.equal(waited.outcome, "reply");
     assertNoRawInjection(waited, `wait ${label}`);
-    assertOneEnvelope(waited.message.envelope, `wait ${label}`);
-    assert.equal(waited.message.fromVerified, true);
+    assertOneEnvelope(waited.reply.envelope, `wait ${label}`);
+    assert.equal(waited.reply.fromVerified, true);
 
     // message_claude_session with waitForReply: the reply is the corpus.
     mailboxPath = mailbox();
-    const pending = sendAs(mailboxPath, SENDER)({ to: RECEIVER.sessionId, body: "question", waitForReply: true, timeoutMs: 3000 });
+    const pending = sendAs(mailboxPath, SENDER)({ sessionId: RECEIVER.sessionId, message: "question", waitForReply: true, timeoutMs: 3000 });
     let asked = null;
     for (let i = 0; i < 100 && !asked; i++) {
       asked = rows(mailboxPath).find((r) => r.body === "question") ?? null;
       if (!asked) await new Promise((resolve) => setTimeout(resolve, 10));
     }
     assert.ok(asked, "question was written");
-    assert.ok((await replyAs(mailboxPath, RECEIVER)({ messageId: asked.id, body })).messageId);
+    assert.ok((await replyAs(mailboxPath, RECEIVER)({ messageId: asked.id, message: body })).messageId);
     const sent = await pending;
-    assert.equal(sent.replyConfirmation.received, true);
+    assert.equal(sent.wait.outcome, "reply");
     assertNoRawInjection(sent, `send+wait ${label}`);
-    assertOneEnvelope(sent.replyConfirmation.reply.envelope, `send+wait ${label}`);
+    assertOneEnvelope(sent.wait.reply.envelope, `send+wait ${label}`);
   }
 });
 
@@ -247,7 +247,7 @@ test("hook notice: 5 senders list 3 plus (+2 more), never a body", async () => {
     const uuid = `00000000-0000-4000-8000-00000000000${i}`;
     return { sessionId: `local_${uuid}`, cliSessionId: uuid, surface: "code", loaded: true, title: `S${i}` };
   });
-  for (const s of senders) await sendAs(mailboxPath, s)({ to: RECEIVER.sessionId, body: `secret body ${s.title}` });
+  for (const s of senders) await sendAs(mailboxPath, s)({ sessionId: RECEIVER.sessionId, message: `secret body ${s.title}` });
   const ctx = runNotifyHook(
     { session_id: RECEIVER.cliSessionId, hook_event_name: "SessionStart" },
     { resolveSession: () => RECEIVER, mailboxOpener: () => openMailbox({ mailboxPath }), log: () => {} }
@@ -263,7 +263,7 @@ test("read_agent_link_inbox leaves a reply held by an active wait for that wait"
   const mailboxPath = mailbox();
   const other = { sessionId: "local_00000000-0000-4000-8000-0000000000ff", cliSessionId: "00000000-0000-4000-8000-0000000000ff", surface: "code" };
   // RECEIVER asked SENDER something and is blocked waiting for the reply.
-  const question = await sendAs(mailboxPath, RECEIVER, SENDER)({ to: SENDER.sessionId, body: "q" });
+  const question = await sendAs(mailboxPath, RECEIVER, SENDER)({ sessionId: SENDER.sessionId, message: "q" });
   const release = registerActiveWait({
     replyToMessageId: question.messageId,
     fromIds: [SENDER.sessionId, SENDER.cliSessionId],
@@ -273,9 +273,9 @@ test("read_agent_link_inbox leaves a reply held by an active wait for that wait"
     await makeReplyAgentLinkMessageHandler({
       resolveCurrentSession: () => SENDER,
       mailboxOpener: () => openMailbox({ mailboxPath })
-    }).reply_agent_link_message({ messageId: question.messageId, body: "held reply" });
+    }).reply_agent_link_message({ messageId: question.messageId, message: "held reply" });
     // Unrelated mail is still delivered normally.
-    await sendAs(mailboxPath, other)({ to: RECEIVER.sessionId, body: "unrelated" });
+    await sendAs(mailboxPath, other)({ sessionId: RECEIVER.sessionId, message: "unrelated" });
 
     const peek = await inbox(mailboxPath)({ markAsDelivered: false });
     assert.deepEqual(envelopeBodies(peek.renderedBlock), ["unrelated"]);

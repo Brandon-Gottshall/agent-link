@@ -339,11 +339,11 @@ These tools work on both hosts: a Codex thread can list and read Claude sessions
 
 Every tool returns one JSON object, in the text content and in `structuredContent`, and declares its `outputSchema`:
 
-- Success: `{"ok": true, ...}`, with `warnings` when there is something to note (for example `deprecated_argument` for an old argument name).
+- Success: `{"ok": true, ...}`, with `warnings` when there is something to note (for example `deprecated_argument` for a deprecated argument such as `allowTargetOverride`).
 - Failure: `{"ok": false, "error": {"code", "message", "details", "hint"}}`, with `isError: true`. Codes: `invalid_arguments`, `unknown_tool`, `not_found`, `ambiguous`, `archived`, `wrong_recipient`, `already_resolved`, `no_current_session`, `body_too_large`, `permission_denied`, `active_turn_conflict`, `codex_unavailable`, `claude_unavailable`, `upstream_error`, `unsupported`, `state_io_error`, `internal_error`.
 - A search that finds nothing is a verdict, not an error: resolve tools report `status`. Waits report `outcome` (`reply`, `turn_completed`, `idle`, `timeout`; a wait on one message also `declined`, `done`, `unresolved`, `expired`, with `messageStatus`), and a timeout is `ok: true`.
 - Arguments are checked against the schema. Unknown properties and out-of-range numbers fail with `invalid_arguments`; `details.errors` names each field. `null` for an optional argument counts as not set, and a number or boolean sent as an exact string (`"20"`, `"true"`) is read as that value with a `coerced_argument` warning.
-- Renamed arguments keep working until 0.6.0 with a warning: `searchTerm` is now `query`, `body` is `message`, `latestMessageId` is `replyToMessageId`, `message_claude_session`'s `to` is `sessionId` (exact) or `query` (fuzzy), and `return_project_work_result`'s `status` is `resultStatus`.
+- Argument names renamed in 0.5.0 were removed in 0.6.0 and now fail with `invalid_arguments` (as unknown properties); the error `hint` and `details.removed` name the replacement: `searchTerm` is `query`, `body` is `message`, `latestMessageId` is `replyToMessageId`, `message_claude_session`'s `to` is `sessionId` (exact) or `query` (fuzzy), `return_project_work_result`'s `status` is `resultStatus`, and `agent_link_mailbox_inspect`'s `since` takes an ISO 8601 string only (no epoch milliseconds).
 
 ## How it works
 
@@ -452,7 +452,7 @@ What each tool does to real state, and what its results do and don't prove.
 - `message_codex_thread` starts or steers a real turn. Read the target first and check its preview, working directory, and status.
 - A `resumed+started_turn` result means the app-server accepted the message. It doesn't prove the thread is visible, loaded, selected, or unarchived in the GUI.
 - Results separate these facts into `delivery`, `runtimeState`, `archiveState`, `desktopVisibility`, `warnings`, and `wait`.
-- `waitForReply: true` adds `wait` (`outcome`, `waitedMs`, `target`, and `turn` with the final response) once the target answers. The 0.4 `replyConfirmation` key is kept beside it until 0.6.0.
+- `waitForReply: true` adds `wait` (`outcome`, `waitedMs`, `target`, and `turn` with the final response) once the target answers. The 0.4 `replyConfirmation` key was removed in 0.6.0.
 - If a turn has finished but the thread still reports `active`, the wait completes with a `stale-top-level-active-status` warning.
 - Ephemeral threads may reject reply confirmation. The message still counts as delivered, and `wait.outcome` is `unavailable` with the error. For tests that need the final response, use a non-ephemeral thread with `openInGui: false`.
 

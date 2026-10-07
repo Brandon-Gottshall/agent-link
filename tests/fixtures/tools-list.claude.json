@@ -249,11 +249,6 @@
         "includeSubagents": {
           "type": "boolean",
           "description": "Also include thread-spawn subagent sessions. Defaults to false so ordinary thread listings stay focused on interactive threads."
-        },
-        "searchTerm": {
-          "type": "string",
-          "description": "Deprecated alias of query; removed in 0.6.0.",
-          "deprecated": true
         }
       },
       "additionalProperties": false
@@ -1917,10 +1912,6 @@
           "type": "object",
           "description": "Whether Codex Desktop shows the change."
         },
-        "replyConfirmation": {
-          "type": "object",
-          "description": "Deprecated duplicate of wait in the 0.4 shape; removed in 0.6.0."
-        },
         "appServer": {
           "type": [
             "object",
@@ -2022,11 +2013,6 @@
           "maximum": 500,
           "default": 50,
           "description": "Maximum receipts to return. Integer 1..500; defaults to 50."
-        },
-        "searchTerm": {
-          "type": "string",
-          "description": "Deprecated alias of query; removed in 0.6.0.",
-          "deprecated": true
         }
       },
       "additionalProperties": false
@@ -3084,18 +3070,11 @@
             }
           },
           "additionalProperties": false
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "done",
-            "done_with_concerns",
-            "blocked"
-          ],
-          "description": "Deprecated alias of resultStatus; removed in 0.6.0.",
-          "deprecated": true
         }
       },
+      "required": [
+        "resultStatus"
+      ],
       "additionalProperties": false
     },
     "outputSchema": {
@@ -3746,11 +3725,8 @@
           "description": "Only messages not yet acknowledged."
         },
         "since": {
-          "type": [
-            "string",
-            "integer"
-          ],
-          "description": "Only messages sent at or after this ISO 8601 timestamp. An epoch-milliseconds integer is still accepted but deprecated (removed in 0.6.0)."
+          "type": "string",
+          "description": "Only messages sent at or after this ISO 8601 timestamp."
         },
         "limit": {
           "type": "integer",
@@ -3900,11 +3876,6 @@
           "type": "string",
           "description": "Fuzzy target lookup over title, cwd, and partial id. Archived sessions are skipped. Ambiguous matches fail with ambiguous."
         },
-        "to": {
-          "type": "string",
-          "description": "Deprecated (removed in 0.6.0): an exact id or a fuzzy query. Use sessionId or query.",
-          "deprecated": true
-        },
         "message": {
           "type": "string",
           "description": "Message text to deliver (at most 64 KiB)."
@@ -3996,13 +3967,11 @@
             }
           },
           "additionalProperties": false
-        },
-        "body": {
-          "type": "string",
-          "description": "Deprecated alias of message; removed in 0.6.0.",
-          "deprecated": true
         }
       },
+      "required": [
+        "message"
+      ],
       "additionalProperties": false
     },
     "outputSchema": {
@@ -4127,10 +4096,6 @@
           "type": "object",
           "description": "With waitForReply: {outcome: reply|declined|done|unresolved|expired|timeout, messageStatus, waitedMs, target: {sessionId, address}, reply?} (sections 3.4, 7.6). reply is the explicit reply, decline reason, or done note, enveloped."
         },
-        "replyConfirmation": {
-          "type": "object",
-          "description": "Deprecated duplicate of wait in the 0.4 shape ({received, replyMessageId?, reply?, error?}); removed in 0.6.0."
-        },
         "via": {
           "type": "string",
           "description": "role:<name> when the target was addressed by role; the message went to the role's current holder."
@@ -4174,11 +4139,6 @@
           "maximum": 600000,
           "default": 60000,
           "description": "Polling timeout in milliseconds. Integer 0..600000; defaults to 60000."
-        },
-        "latestMessageId": {
-          "type": "string",
-          "description": "Deprecated alias of replyToMessageId; removed in 0.6.0.",
-          "deprecated": true
         }
       },
       "required": [
@@ -4292,18 +4252,6 @@
         "reply": {
           "type": "object",
           "description": "The explicit reply, decline reason, or done note: the message's validated fields plus its envelope."
-        },
-        "result": {
-          "type": "string",
-          "description": "Deprecated duplicate of outcome; removed in 0.6.0."
-        },
-        "message": {
-          "type": "object",
-          "description": "Deprecated duplicate of reply; removed in 0.6.0."
-        },
-        "sessionId": {
-          "type": "string",
-          "description": "Deprecated duplicate of target.sessionId; removed in 0.6.0."
         }
       },
       "required": [
@@ -4497,11 +4445,6 @@
         "replyBy": {
           "type": "string",
           "description": "Optional deadline for this reply's own anticipation, ISO 8601 with a time zone, at least 30 s ahead. Not allowed with fyi."
-        },
-        "body": {
-          "type": "string",
-          "description": "Deprecated alias of message; removed in 0.6.0.",
-          "deprecated": true
         }
       },
       "required": [

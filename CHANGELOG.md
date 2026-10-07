@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Breaking
+
+The argument aliases and duplicated output keys that 0.5.0 deprecated (with a `deprecated_argument` warning) are removed, as announced (design doc sections 3.3 and 6.1 to 6.3, R6.1 to R6.4; PR B8). A removed argument is now an unknown property: the call fails with `invalid_arguments`, nothing runs, and the error's `hint` and `details.removed` (`[{argument, replacement}]`) name the replacement. Use the replacement names below. `allowTargetOverride` is not affected (it keeps working with a warning until 0.7.0).
+
+- Removed argument aliases:
+  - `list_codex_threads`: `searchTerm`. Use `query`.
+  - `list_agent_link_receipts`: `searchTerm`. Use `query`.
+  - `message_claude_session`: `body`. Use `message` (now `required` in the input schema).
+  - `message_claude_session`: `to`. Use `sessionId` (exact id, archived sessions included) or `query` (fuzzy, archived sessions skipped). The exact-then-fuzzy fallback that `to` had is gone. Passing both `sessionId` and `query` is still `invalid_arguments`; its `details.errors[0].rule` is now `conflict` (was `alias_conflict`).
+  - `reply_agent_link_message`: `body`. Use `message`.
+  - `wait_for_claude_session`: `latestMessageId`. Use `replyToMessageId`.
+  - `return_project_work_result`: `status`. Use `resultStatus` (now `required` in the input schema).
+  - `agent_link_mailbox_inspect`: `since` as epoch milliseconds. `since` is now a string (ISO 8601) only; a number is `invalid_arguments` with a hint to pass an ISO timestamp.
+- Removed duplicated output keys:
+  - `wait_for_claude_session`: `result` (use `outcome`), `message` (use `reply`), and `sessionId` (use `target.sessionId`).
+  - `message_claude_session` with `waitForReply`: `replyConfirmation`. Use `wait` (`wait.outcome`, `wait.reply`, `wait.reply.id`).
+  - `message_codex_thread` with `waitForReply`, and the same result nested as `messageResult` in `message_project_orchestrator`, `return_project_work_result`, and `register_dependency_handoff`: `replyConfirmation`. Use `wait` (`wait.turn.finalResponse`, `wait.reply`, `wait.recentItems`, `wait.recentItemsEnvelope`). The 0.4-only `replyConfirmation` fields `enveloped` and `finalResponseItem` have no replacement. Receipts still record their `replyConfirmation` block.
+- `tools/list`: the deprecated alias properties are no longer listed; `message_claude_session` lists `required: ["message"]` and `return_project_work_result` `required: ["resultStatus"]`. Internal: the registry no longer applies aliases (`applyAliases` and `deprecationWarning` are removed); a tool definition's `removedArguments` table only supplies the hint. The `tools/list` snapshots and the Codex golden replay are re-recorded (alias properties and `replyConfirmation` removed; the golden step that used `status` on `return_project_work_result` now passes `resultStatus`). New test `tests/server/removed-arguments.test.js`. The README, the `agent-link` skill, and `docs/testing.md` describe the removal.
+
+### Other changes
+
 - Message labels, explicit replies, and resolution (design doc section 7, PR B7a). Codex receive, fork and reconcile, and switching on Codex reminder turns follow in B7b.
   - Labels: every message is labeled To, From, and Anticipation. `message_claude_session` and `reply_agent_link_message` take `anticipation` (`reply`, `action`, or `fyi`) and an optional `replyBy` (ISO 8601 with a time zone, at least 30 s ahead). The default is `fyi`, and `waitForReply: true` implies `reply`. An unknown anticipation, a malformed or too-early `replyBy`, `replyBy` with `fyi`, and `fyi` with `waitForReply` are `invalid_arguments`. Mail stored by earlier versions has no label and reads as `fyi`.
   - **Envelope change.** `<agent-link-message>` now always carries `anticipation`, plus `replyBy` and `inReplyTo` when set. The B2 attribute `replyTo` is renamed `inReplyTo`. `from` and `to` are addresses (`claude:<cliSessionId>`, `codex:<threadId>`, `external`, or `invalid`). The `<reply>` line is fixed text per anticipation (for example "A reply is expected. Call reply_agent_link_message with messageId=... and resolution "reply", or "decline" with a reason."). Codex turn envelopes keep their direct reply line until B7b and are labeled `reply` when the sender waits for a reply, `fyi` otherwise. The `<notice>` text is unchanged. Hook notices and the channel event meta (`from_session_id`) show addresses too.

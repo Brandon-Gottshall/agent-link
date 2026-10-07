@@ -8,10 +8,9 @@
 // target session goes idle.
 //
 // Resolution semantics (the result is the design doc section 3.4 shape,
-// {outcome, waitedMs, target, reply?}; result/message/sessionId are the 0.4
-// keys, kept until 0.6.0):
-//   - With replyToMessageId (deprecated alias latestMessageId), a message
-//     wait (design R7.19): for a reply/action message it ends when the
+// {outcome, waitedMs, target, reply?}; the 0.4 keys result, message, and
+// sessionId were removed in 0.6.0):
+//   - With replyToMessageId, a message wait (design R7.19): for a reply/action message it ends when the
 //     message's status leaves pending (outcome reply, declined, done,
 //     unresolved, expired), with `messageStatus`; for an fyi message, on an
 //     explicit reply from the target to the caller (which may predate the
@@ -37,7 +36,6 @@ import { consumeReply } from "./claude-send.js";
 import { messageStatus, reminderSettings } from "../delivery/message-status.js";
 import { checkMessageWait, recordStatusTransition } from "../delivery/message-wait.js";
 import { AgentLinkError } from "../shared/errors.js";
-import { applyAliases } from "../server/registry.js";
 import { LIMITS, enumOf, out, str, timeoutMs as timeoutMsSchema } from "../server/schemas.js";
 
 const DEFAULT_TIMEOUT_MS = LIMITS.timeoutMs.def;
@@ -67,16 +65,13 @@ export const claudeWaitTool = {
     required: ["sessionId"],
     additionalProperties: false
   },
-  aliases: [{ canonical: "replyToMessageId", aliases: ["latestMessageId"] }],
+  removedArguments: [{ name: "latestMessageId", replacement: "replyToMessageId" }],
   output: {
     outcome: enumOf(["reply", "declined", "done", "unresolved", "expired", "idle", "timeout"], "How the wait ended (sections 3.4, 7.6)."),
     messageStatus: out(["string", "null"], "With replyToMessageId: the message's status (pending, replied, declined, done, unresolved, expired), or null for an fyi message."),
     waitedMs: out("integer", "How long the wait lasted."),
     target: out("object", "{sessionId, address, lastLoaded?} of the session waited on."),
-    reply: out("object", "The explicit reply, decline reason, or done note: the message's validated fields plus its envelope."),
-    result: out("string", "Deprecated duplicate of outcome; removed in 0.6.0."),
-    message: out("object", "Deprecated duplicate of reply; removed in 0.6.0."),
-    sessionId: out("string", "Deprecated duplicate of target.sessionId; removed in 0.6.0.")
+    reply: out("object", "The explicit reply, decline reason, or done note: the message's validated fields plus its envelope.")
   },
   annotations: { readOnlyHint: true }
 };
@@ -126,11 +121,8 @@ export function makeWaitHandler({
      * @param {{runtimeCallerContext?: unknown, warn?: (w: any) => void}} [toolContext]
      */
     wait_for_claude_session: async (rawArgs = {}, toolContext = {}) => {
-      /** @type {any[]} */
-      const aliasWarnings = [];
-      const args = applyAliases(claudeWaitTool, rawArgs, aliasWarnings);
-      for (const warning of aliasWarnings) toolContext.warn?.(warning);
-      const { sessionId, replyToMessageId: latestMessageId } = args;
+      const args = rawArgs ?? {};
+      const { sessionId, replyToMessageId } = args;
       const timeoutMs = typeof args.timeoutMs === "number" && args.timeoutMs >= 0
         ? args.timeoutMs
         : DEFAULT_TIMEOUT_MS;
@@ -183,10 +175,10 @@ export function makeWaitHandler({
       // wait is about to return; released however the wait ends, so the
       // bridge delivers anything left over (timeout, idle) normally.
       const releaseWait = registerActiveWait({
-        replyToMessageId: latestMessageId || null,
+        replyToMessageId: replyToMessageId || null,
         fromIds,
         toIds: caller.aliases,
-        since: latestMessageId ? null : waitStartedAt
+        since: replyToMessageId ? null : waitStartedAt
       });
       try {
         while (true) {
@@ -195,12 +187,12 @@ export function makeWaitHandler({
           //    and never hold a mailbox object across an await boundary.
           const mb = openMb();
           try {
-            if (latestMessageId) {
+            if (replyToMessageId) {
               const settings = settingsFn();
-              const done = checkMessageWait(mb, { messageId: latestMessageId, fromIds, toIds: caller.aliases, now: now(), settings });
+              const done = checkMessageWait(mb, { messageId: replyToMessageId, fromIds, toIds: caller.aliases, now: now(), settings });
               if (done) {
                 if (done.messageStatus === "unresolved" || done.messageStatus === "expired") {
-                  await recordStatusTransition(mb, mb.getMessage({ messageId: latestMessageId }), { now: now(), settings, host, ...(appendReceipt ? { appendReceipt } : {}) });
+                  await recordStatusTransition(mb, mb.getMessage({ messageId: replyToMessageId }), { now: now(), settings, host, ...(appendReceipt ? { appendReceipt } : {}) });
                 }
                 if (done.replyRow) consumeReply(mb, done.replyRow);
                 const reply = done.replyRow ? mailboxRowResult(done.replyRow) : null;
@@ -209,9 +201,7 @@ export function makeWaitHandler({
                   waitedMs: waited(),
                   target: { sessionId: storedId, address },
                   messageStatus: done.messageStatus,
-                  ...(reply ? { reply, message: reply } : {}),
-                  result: done.outcome,
-                  sessionId: storedId
+                  ...(reply ? { reply } : {})
                 };
               }
             }
@@ -222,7 +212,7 @@ export function makeWaitHandler({
               since: waitStartedAt
             };
             // A message wait ends only through checkMessageWait above.
-            const messages = latestMessageId ? [] : mb.inspect(filters).sort((a, b) => a.sent_at - b.sent_at);
+            const messages = replyToMessageId ? [] : mb.inspect(filters).sort((a, b) => a.sent_at - b.sent_at);
             if (messages.length > 0) {
               // A reply consumed by a wait counts as delivered (and
               // acknowledged); the caller's inbox and channel skip it.
@@ -234,10 +224,7 @@ export function makeWaitHandler({
                 outcome: "reply",
                 waitedMs: waited(),
                 target: { sessionId: storedId, address },
-                reply,
-                result: "reply",
-                message: reply,
-                sessionId: storedId
+                reply
               };
             }
           } finally {
@@ -253,9 +240,7 @@ export function makeWaitHandler({
               return {
                 outcome: "idle",
                 waitedMs: waited(),
-                target: { sessionId: storedId, address, lastLoaded: false },
-                result: "idle",
-                sessionId: storedId
+                target: { sessionId: storedId, address, lastLoaded: false }
               };
             }
           }
@@ -266,9 +251,7 @@ export function makeWaitHandler({
               outcome: "timeout",
               waitedMs: waited(),
               target: { sessionId: storedId, address },
-              ...(latestMessageId ? { messageStatus: currentStatus(latestMessageId) } : {}),
-              result: "timeout",
-              sessionId: storedId
+              ...(replyToMessageId ? { messageStatus: currentStatus(replyToMessageId) } : {})
             };
           }
           const remaining = deadline - now();

@@ -64,7 +64,7 @@ export const codexThreadTools = [
       },
       additionalProperties: false
     },
-    aliases: [{ canonical: "query", aliases: ["searchTerm"] }],
+    removedArguments: [{ name: "searchTerm", replacement: "query" }],
     output: threadListOut,
     annotations: READ_ONLY
   },

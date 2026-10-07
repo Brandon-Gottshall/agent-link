@@ -98,8 +98,8 @@ function withCleanEnv(fn) {
 
     const result = await handlers.message_claude_session(
       {
-        to: "local_target_claude",
-        body: "cross-host hello",
+        sessionId: "local_target_claude",
+        message: "cross-host hello",
         receipt: { purpose: "cross-host codex->claude" }
       },
       { runtimeCallerContext }
@@ -158,8 +158,8 @@ function withCleanEnv(fn) {
     });
 
     const result = await handlers.message_claude_session({
-      to: "local_target_claude",
-      body: "env fallback hello"
+      sessionId: "local_target_claude",
+      message: "env fallback hello"
     });
 
     assert.equal(result.error, undefined);
@@ -191,8 +191,8 @@ function withCleanEnv(fn) {
     });
 
     const result = await handlers.message_claude_session({
-      to: "local_target_claude",
-      body: "external fallback"
+      sessionId: "local_target_claude",
+      message: "external fallback"
     });
 
     assert.equal(result.error, undefined);
@@ -221,8 +221,8 @@ function withCleanEnv(fn) {
     });
 
     const result = await handlers.message_claude_session({
-      to: "local_target_claude",
-      body: "claude->claude"
+      sessionId: "local_target_claude",
+      message: "claude->claude"
     });
 
     assert.equal(result.error, undefined);

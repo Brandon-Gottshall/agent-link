@@ -501,7 +501,7 @@ try {
       name: "list_codex_threads",
       arguments: {
         archiveScope: "all",
-        searchTerm: "Pulse Cliff Notes Builder",
+        query: "Pulse Cliff Notes Builder",
         limit: 5
       }
     });
