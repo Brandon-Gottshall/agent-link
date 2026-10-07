@@ -642,6 +642,10 @@ test("hook latency with a large mailbox: 20k rows, 2,000 due", () => {
     if (due) lines.push(JSON.stringify({ type: "delivered", at: T0, messageId: id }));
   }
   fs.writeFileSync(mailboxPath, `${lines.join("\n")}\n`);
+  // About 0.2 s locally; shared CI runners run this about 10x slower. The
+  // regression it guards against (one mailbox read per due message) took
+  // minutes, so the CI limit still catches it.
+  const limitMs = process.env.CI ? 8_000 : 2_000;
   for (const [event, check] of [
     ["Stop", (out) => assert.equal(out.decision, "block")],
     ["UserPromptSubmit", (out) => assert.deepEqual(out, {}, "inside the window after the Stop reminders")]
@@ -651,7 +655,7 @@ test("hook latency with a large mailbox: 20k rows, 2,000 due", () => {
     const ms = Number(process.hrtime.bigint() - started) / 1e6;
     check(out);
     if (process.env.AGENT_LINK_PERF_LOG) console.log(event, Math.round(ms));
-    assert.ok(ms < 2_000, `${event} hook took ${Math.round(ms)} ms with 20k rows and 2,000 due`);
+    assert.ok(ms < limitMs, `${event} hook took ${Math.round(ms)} ms with 20k rows and 2,000 due (limit ${limitMs} ms)`);
   }
   const mb = openMailbox({ mailboxPath });
   assert.equal(mb.getMessage({ messageId: ulid(0) }).reminders.length, 1);

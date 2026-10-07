@@ -24,6 +24,7 @@ import {
   pushClaimKey,
   pushCodexMessage,
   pushQueuedCodexMail,
+  pushWhenIdle,
   sweepStalePushClaims
 } from "../../src/delivery/codex-push.js";
 import { codexRecipientOf, confirmDelivery, makeCodexDelivery } from "../../src/delivery/codex-delivery.js";
@@ -436,4 +437,33 @@ test("shutdown stops background Codex delivery: timers cleared, listeners remove
   await lifecycle.shutdown(0);
   assert.deepEqual(listeners, { notification: 0, connection: 0 });
   assert.equal(forkSweepStopped, 1);
+});
+
+test("pushWhenIdle never pushes a message already delivered or resolved, even with caller-supplied text", async () => {
+  const box = tempMailbox();
+  try {
+    const mb = box.open();
+    const delivered = queue(mb, T, { anticipation: "reply" });
+    mb.markDelivered({ messageId: delivered, to: `codex:${T}`, via: "codex-turn" });
+    const resolved = queue(mb, T, { anticipation: "reply" });
+    mb.recordResolution({ messageId: resolved, kind: "done", by: T });
+    const fresh = queue(mb, T, { anticipation: "reply" });
+    const app = fakeAppServer({ [T]: { status: "idle" } });
+    const tracker = idle(T);
+
+    const again = await pushWhenIdle({ appServer: app, mailbox: mb, messageId: delivered, threadId: T, tracker, text: "envelope" });
+    assert.equal(again.delivery, "delivered");
+    assert.equal(again.deliveredVia, "codex-turn");
+    const done = await pushWhenIdle({ appServer: app, mailbox: mb, messageId: resolved, threadId: T, tracker, text: "envelope" });
+    assert.equal(done.delivery, "queued");
+    const missing = await pushWhenIdle({ appServer: app, mailbox: mb, messageId: "01NOPE00000000000000000000", threadId: T, tracker, text: "envelope" });
+    assert.equal(missing.delivery, "queued");
+    assert.equal(app.requests.length, 0, "no app-server request for a delivered, resolved, or unknown message");
+
+    const pushed = await pushWhenIdle({ appServer: app, mailbox: mb, messageId: fresh, threadId: T, tracker, text: "envelope" });
+    assert.equal(pushed.delivery, "delivered");
+    assert.equal(starts(app).length, 1);
+  } finally {
+    box.cleanup();
+  }
 });

@@ -397,6 +397,8 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
     lifecycle.onShutdown(() => codexDelivery.stop());
     startClaimSweeper({ host: hostInfo.host });
     lifecycle.onShutdown(startForkSweep(forks));
+    // Pending token-usage waits resolve at shutdown instead of running out their grace.
+    lifecycle.onShutdown(() => tokenUsage.close());
 
     lifecycle.installSignalHandlers();
   }

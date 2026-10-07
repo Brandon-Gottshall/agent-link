@@ -28299,6 +28299,9 @@ async function sweepStalePushClaims({ appServer, mailbox, staleMs = 18e4, max = 
   return results;
 }
 async function pushWhenIdle({ appServer, mailbox, messageId, threadId, policy = desktopPushPolicy(), tracker = null, rolloutCheck = null, text: text2 = null, turnTrigger = CODEX_PUSH_TURN_TRIGGER }) {
+  const row = mailbox.getMessage({ messageId });
+  if (!row || row.resolution) return { delivery: "queued", deliveredVia: null, turnId: null, warnings: [] };
+  if (row.delivered_at) return { delivery: "delivered", deliveredVia: row.delivered_via ?? null, turnId: null, warnings: [] };
   let thread;
   try {
     thread = (await appServer.request("thread/read", { threadId, includeTurns: false }))?.thread ?? null;
@@ -28314,17 +28317,12 @@ async function pushWhenIdle({ appServer, mailbox, messageId, threadId, policy = 
   if (policy.isHeld(status)) return { delivery: "queued", deliveredVia: null, turnId: null, warnings: [heldWarning(threadId)] };
   const type = statusType(status);
   if (type !== "idle" && type !== "notLoaded") return { delivery: "queued", deliveredVia: null, turnId: null, warnings: [] };
-  const row = text2 ? null : mailbox.getMessage({ messageId });
-  if (!text2 && !row) return { delivery: "queued", deliveredVia: null, turnId: null, warnings: [] };
   const push = await pushCodexMessage({
     appServer,
     mailbox,
     messageId,
     threadId,
-    text: text2 ?? codexTurnText(
-      /** @type {Record<string, any>} */
-      row
-    ),
+    text: text2 ?? codexTurnText(row),
     plan: "start",
     resume: type === "notLoaded" ? { threadId, excludeTurns: true, persistExtendedHistory: true } : null,
     turnTrigger,
@@ -34891,6 +34889,7 @@ function createAgentLinkServer({ config: config2 = loadConfig(), appServer, setF
     lifecycle.onShutdown(() => codexDelivery.stop());
     startClaimSweeper({ host: hostInfo.host });
     lifecycle.onShutdown(startForkSweep(forks));
+    lifecycle.onShutdown(() => tokenUsage.close());
     lifecycle.installSignalHandlers();
   }
   return { server, appServer: codexAppServer, registry: registry2, lifecycle, config: config2, start, forks, tokenUsage };

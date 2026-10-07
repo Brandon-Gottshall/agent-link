@@ -723,6 +723,11 @@ export async function sweepStalePushClaims({ appServer, mailbox, staleMs = 180_0
  * @returns {Promise<{delivery: "delivered" | "queued", deliveredVia: "codex-turn" | null, turnId: string | null, warnings: Array<Record<string, any>>}>}
  */
 export async function pushWhenIdle({ appServer, mailbox, messageId, threadId, policy = desktopPushPolicy(), tracker = null, rolloutCheck = null, text = null, turnTrigger = CODEX_PUSH_TURN_TRIGGER }) {
+  // The stored row decides, even when the caller supplies the turn text: a
+  // message already delivered or resolved is never pushed again.
+  const row = mailbox.getMessage({ messageId });
+  if (!row || row.resolution) return { delivery: "queued", deliveredVia: null, turnId: null, warnings: [] };
+  if (row.delivered_at) return { delivery: "delivered", deliveredVia: row.delivered_via ?? null, turnId: null, warnings: [] };
   /** @type {any} */
   let thread;
   try {
@@ -739,14 +744,12 @@ export async function pushWhenIdle({ appServer, mailbox, messageId, threadId, po
   if (policy.isHeld(status)) return { delivery: "queued", deliveredVia: null, turnId: null, warnings: [heldWarning(threadId)] };
   const type = statusType(status);
   if (type !== "idle" && type !== "notLoaded") return { delivery: "queued", deliveredVia: null, turnId: null, warnings: [] };
-  const row = text ? null : mailbox.getMessage({ messageId });
-  if (!text && !row) return { delivery: "queued", deliveredVia: null, turnId: null, warnings: [] };
   const push = await pushCodexMessage({
     appServer,
     mailbox,
     messageId,
     threadId,
-    text: text ?? codexTurnText(/** @type {Record<string, any>} */ (row)),
+    text: text ?? codexTurnText(row),
     plan: "start",
     resume: type === "notLoaded" ? { threadId, excludeTurns: true, persistExtendedHistory: true } : null,
     turnTrigger,
