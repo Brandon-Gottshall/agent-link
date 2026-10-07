@@ -9,6 +9,8 @@ import fs from "node:fs";
 import { envReport } from "../shared/env.js";
 import { getLogger } from "../shared/log.js";
 import { legacyStateReport } from "../shared/legacy-state.js";
+import { reminderSettings } from "../delivery/message-status.js";
+import { codexRemindersEnabled } from "../delivery/reminders.js";
 import { claudeConfigDir, claudeProjectsRoot } from "../shared/host-detect.js";
 import { isConfigured, stateDir } from "../shared/paths.js";
 import { bool, commonOut, out, outAny } from "../server/schemas.js";
@@ -34,6 +36,7 @@ export const healthTool = {
     stateDir: out("object", "{path, source, exists}: where Agent Link keeps its files."),
     env: out("object", "{deprecated: [{name, canonical}], conflicts: [{canonical, winner, ignored}]}: legacy environment variable names in use (names only, never values)."),
     legacyState: out("object", "{files: [{kind, path, modifiedAt, writtenAfterMigration}], migration, stillWritten, warning}: pre-0.5 state files still present."),
+    reminders: out("object", "{limit, intervalMs, codexTurns, warnings}: re-surfacing of open reply/action messages (AGENT_LINK_REMINDER_LIMIT, AGENT_LINK_REMINDER_INTERVAL_MS, AGENT_LINK_CODEX_REMINDERS). warnings lists settings that were ignored."),
     recentEvents: out("array", "Recent log events (most recent last). Stack traces and process output are redacted."),
     codex: out("object", "Codex install: {available, path, source, version, versionProbed, searched, reason, usedForManagedAppServer}."),
     appServer: commonOut.appServer,
@@ -108,6 +111,20 @@ function messageOf(error) {
 }
 
 /**
+ * Reminder settings (design 7.5) and any that were ignored (R7.13).
+ * @param {Record<string, string | undefined>} source
+ */
+function remindersReport(source) {
+  const settings = reminderSettings(source);
+  return {
+    limit: settings.limit,
+    intervalMs: settings.intervalMs,
+    codexTurns: codexRemindersEnabled(source),
+    warnings: settings.warnings
+  };
+}
+
+/**
  * The app-server-independent part of the health report.
  * @param {{codex?: {available?: boolean, reason?: string | null, searched?: string[]}, source?: Record<string, string | undefined>}} [options]
  */
@@ -149,6 +166,7 @@ export function healthExtras({ codex = {}, source = process.env } = {}) {
     stateDir: state,
     env: envReport(source),
     legacyState,
+    reminders: remindersReport(source),
     recentEvents: redactEvents(getLogger().recentEvents(RECENT_EVENT_LIMIT))
   };
 }

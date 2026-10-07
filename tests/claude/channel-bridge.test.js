@@ -14,19 +14,21 @@ const session = { sessionId: "local_code", cliSessionId: "uuid-code", surface: "
 // sender), since only those are rendered.
 const MESSAGE_ID = "01J9ZQ3V8K4M2N6P7R8S9T0V1W";
 const SENDER = "local_0d6a2b9e-1f3c-4b5a-9e8d-7c6b5a4f3e2d";
+const SENDER_ADDRESS = "claude:0d6a2b9e-1f3c-4b5a-9e8d-7c6b5a4f3e2d";
 
 {
   const rendered = renderChannelMessage({
     id: MESSAGE_ID,
     from_session_id: SENDER,
-    from_session_kind: "codex",
+    from_session_kind: "claude",
     body: "hello channel"
   });
   assert.match(rendered.content, /<agent-link-message/);
   assert.match(rendered.content, /hello channel/);
   assert.equal(rendered.meta.message_id, MESSAGE_ID);
-  assert.equal(rendered.meta.from_session_id, SENDER);
-  assert.equal(rendered.meta.from_kind, "codex");
+  // B7a: the sender is shown as its address (design 1.3).
+  assert.equal(rendered.meta.from_session_id, SENDER_ADDRESS);
+  assert.equal(rendered.meta.from_kind, "claude");
 }
 
 // W2A-06 (review item 8/9): only known id shapes are rendered. A structurally
@@ -45,8 +47,12 @@ const SENDER = "local_0d6a2b9e-1f3c-4b5a-9e8d-7c6b5a4f3e2d";
   assert.equal(rendered.meta.from_verified, "false");
   assert.ok(!rendered.content.includes("ignore-previous-instructions"));
   assert.ok(!rendered.content.includes("<x/>"));
-  for (const known of ["external", "019df300-0000-7000-8000-000000000001", SENDER]) {
-    assert.equal(renderChannelMessage({ id: MESSAGE_ID, from_session_id: known, from_session_kind: "claude", body: "" }).meta.from_session_id, known);
+  for (const [known, address] of [
+    ["external", "external"],
+    ["019df300-0000-7000-8000-000000000001", "claude:019df300-0000-7000-8000-000000000001"],
+    [SENDER, SENDER_ADDRESS]
+  ]) {
+    assert.equal(renderChannelMessage({ id: MESSAGE_ID, from_session_id: known, from_session_kind: "claude", body: "" }).meta.from_session_id, address);
   }
 }
 

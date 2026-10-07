@@ -631,6 +631,17 @@ Logger placement (W3-03..08): B1 adds `shared/log.js`, the process handlers, and
 
 B5 (PR #15) is merged on `main`: `src/server.js` split into handler modules, no behavior change, `tools/list` snapshot identical. It was planned as 0.5.1 and instead ships in 0.6.0 with B6–B8. A golden replay of the Codex tools against a stateful fake app-server landed just before it and guards the split.
 
+B7 is split. **B7a** (branch `feat/reply-model`) is the part of section 7 that does not depend on the B7 spike; **B7b** keeps the spike, Codex receive (mailbox-first Codex sends, Codex inbox and reply), fork and reconcile, and the Codex reminder-turn switch-on. B7a differs from or narrows the plan above in these ways:
+
+- Labels (R7.1) are accepted by `message_claude_session` and `reply_agent_link_message`. The Codex send tools (`message_codex_thread`, `launch_codex_thread`, `message_project_orchestrator`, `register_dependency_handoff`) take no `anticipation` / `replyBy` arguments until their sends get mailbox records in B7b. Their turn envelopes carry the R7.2 default label (`reply` with `waitForReply`, else `fyi`) and keep the direct reply line (R2.6a).
+- `message_codex_thread` `waitForReply` still ends on turn completion and returns the turn's final response (enveloped). R7.19 for Codex targets needs an explicit Codex reply path, so it moves to B7b (T-1.6, T-7.3 Codex half).
+- Envelope `from` / `to`, hook notices, and channel meta show addresses (`claude:` / `codex:`), so section 2.2 is now fully in effect. A legacy stored id is turned into an address only when it is a shape Agent Link produces and its harness is known; otherwise it is `invalid` (R2.8).
+- `read_agent_link_inbox` also shows delivered `reply` / `action` messages still `pending`, after the new ones (`includeOpen`, default true), so the reminder's "call read_agent_link_inbox to see them" works for mail that was already delivered.
+- A reply row from the recipient to the sender that has no `resolved` event (written by a 0.5.x `reply_agent_link_message`, or a send with `replyToMessageId`) resolves the message as `replied` the first time a wait or the status tool sees it. It is still an explicit reply, so R7.5 holds.
+- Exactly-once (R7.17, T-7.10) uses exclusive-create marker files in `<mailbox>.claims/`, one per reminder number and per status transition. Status receipts are written by the server (waits and `get_agent_link_message_status`); the hooks record reminders but write no receipts.
+- Codex reminder turns (R7.14) are built and tested against the stub app-server behind `AGENT_LINK_CODEX_REMINDERS` (default off): only an idle thread gets a turn; an active thread waits; a not-loaded thread is skipped until R1.12a is decided.
+- T-7.9 (role handover) waits for B9 roles.
+
 ---
 
 ## 6. Compatibility and versions

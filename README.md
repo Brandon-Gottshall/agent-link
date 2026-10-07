@@ -161,6 +161,9 @@ approval_mode = "approve"
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.check_coordination_obligations]
 approval_mode = "approve"
 
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.get_agent_link_message_status]
+approval_mode = "approve"
+
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.get_claude_session]
 approval_mode = "approve"
 
@@ -274,9 +277,10 @@ Claude Desktop can change a session's CLI id over time (it keeps the earlier one
 | `list_agents` | List Claude sessions and Codex threads together, newest first, with each one's address. Also returns the caller's own address. |
 | `resolve_agent` | Find one Claude session or Codex thread by address, bare id, or fuzzy query (title, cwd, partial id). |
 | `agent_link_health` | Report the app-server endpoint, autostart state, the caller's address, and caller context. |
-| `message_claude_session` | Send a message to a Claude Desktop or Claude Code session by exact `sessionId` (or `claude:` address) or fuzzy `query`. |
-| `reply_agent_link_message` | Reply to an incoming Agent Link message by its message ID. Claude sessions only until a later release. |
-| `read_agent_link_inbox` | Show pending messages for this Claude session as a visible tool result. Codex threads have no inbox until a later release. |
+| `message_claude_session` | Send a message to a Claude Desktop or Claude Code session by exact `sessionId` (or `claude:` address) or fuzzy `query`. Label it with `anticipation` (`reply`, `action`, or `fyi`, the default) and an optional `replyBy` deadline. |
+| `reply_agent_link_message` | Reply to or resolve an incoming Agent Link message by its message ID: `resolution` `reply` (default), `decline` (with a reason), or `done`. Claude sessions only until a later release. |
+| `get_agent_link_message_status` | The sender's (or recipient's) view of one message: labels, delivery, and status (`pending`, `replied`, `declined`, `done`, `unresolved`, `expired`; none for `fyi`). Never a body. |
+| `read_agent_link_inbox` | Show pending messages for this Claude session as a visible tool result, then open `reply`/`action` messages that still await resolution. Codex threads have no inbox until a later release. |
 | `wait_for_claude_session` | Wait for the next message delivered to a session. |
 | `list_agent_link_receipts` | Search receipts by host, target, origin, action, or text. |
 | `agent_link_mailbox_inspect` | Read-only view of the mailbox: envelopes, deliveries, and hook state. |
@@ -317,8 +321,8 @@ These tools work on both hosts: a Codex thread can list and read Claude sessions
 Every tool returns one JSON object, in the text content and in `structuredContent`, and declares its `outputSchema`:
 
 - Success: `{"ok": true, ...}`, with `warnings` when there is something to note (for example `deprecated_argument` for an old argument name).
-- Failure: `{"ok": false, "error": {"code", "message", "details", "hint"}}`, with `isError: true`. Codes: `invalid_arguments`, `unknown_tool`, `not_found`, `ambiguous`, `archived`, `wrong_recipient`, `no_current_session`, `body_too_large`, `permission_denied`, `active_turn_conflict`, `codex_unavailable`, `claude_unavailable`, `upstream_error`, `unsupported`, `state_io_error`, `internal_error`.
-- A search that finds nothing is a verdict, not an error: resolve tools report `status`. Waits report `outcome` (`reply`, `turn_completed`, `idle`, `timeout`), and a timeout is `ok: true`.
+- Failure: `{"ok": false, "error": {"code", "message", "details", "hint"}}`, with `isError: true`. Codes: `invalid_arguments`, `unknown_tool`, `not_found`, `ambiguous`, `archived`, `wrong_recipient`, `already_resolved`, `no_current_session`, `body_too_large`, `permission_denied`, `active_turn_conflict`, `codex_unavailable`, `claude_unavailable`, `upstream_error`, `unsupported`, `state_io_error`, `internal_error`.
+- A search that finds nothing is a verdict, not an error: resolve tools report `status`. Waits report `outcome` (`reply`, `turn_completed`, `idle`, `timeout`; a wait on one message also `declined`, `done`, `unresolved`, `expired`, with `messageStatus`), and a timeout is `ok: true`.
 - Arguments are checked against the schema. Unknown properties and out-of-range numbers fail with `invalid_arguments`; `details.errors` names each field. `null` for an optional argument counts as not set, and a number or boolean sent as an exact string (`"20"`, `"true"`) is read as that value with a `coerced_argument` warning.
 - Renamed arguments keep working until 0.6.0 with a warning: `searchTerm` is now `query`, `body` is `message`, `latestMessageId` is `replyToMessageId`, `message_claude_session`'s `to` is `sessionId` (exact) or `query` (fuzzy), and `return_project_work_result`'s `status` is `resultStatus`.
 
@@ -339,6 +343,7 @@ Agent Link only reads Claude's own session state. All writes go to a mailbox tha
 - **Session registry (read-only).** Desktop sidecars under `~/Library/Application Support/Claude/local-agent-mode-sessions/`, Code sidecars under `~/Library/Application Support/Claude/claude-code-sessions/`, and transcript metadata under `~/.claude/projects/`.
 - **Mailbox.** An append-only JSONL file at `~/.agent-link/mailbox.jsonl` (see [State directory](#state-directory)). Nothing leaves the machine.
 - **Receiving in Claude Desktop.** The `SessionStart` and `UserPromptSubmit` hooks add a short "you have mail" note to the session's context. Message bodies appear only when the agent calls `read_agent_link_inbox`, so the user sees the same thing the agent does.
+- **Labels, explicit replies, and reminders.** Every message is labeled To, From, and Anticipation (`reply`, `action`, or `fyi`, default `fyi`; `waitForReply` implies `reply`), with an optional `replyBy`. A turn's final response is never a reply: a `reply` or `action` message stays `pending` until the recipient calls `reply_agent_link_message` with `resolution` `reply`, `decline` (with a reason), or `done`. While it is open and delivered, the recipient is reminded only between turns, at most every 30 s: the `UserPromptSubmit` hook adds a reminder note, and the `Stop` hook blocks the end of a turn once per interval with the same note. After the cap (3 by default) and one more interval the status is `unresolved`; after `replyBy` it is `expired`. Both still accept a late resolution. Senders check with `get_agent_link_message_status` or a wait.
 - **Receiving in Claude Code.** When loaded as a channel, Agent Link polls the mailbox and emits `<agent-link-message>` events. The agent answers with `reply_agent_link_message`.
 - **Peer-message envelope.** Every message from another agent reaches the receiving model wrapped in one `<agent-link-message>` envelope: the channel event, each message in the `read_agent_link_inbox` result, and the text of every Codex turn Agent Link starts or steers for another agent (`message_codex_thread`, `launch_codex_thread` with a message, and the project-orchestrator and dependency-handoff tools). Tool results that return another agent's reply (`message_claude_session` and `message_codex_thread` with `waitForReply`, `wait_for_claude_session`, and `agent_link_mailbox_inspect` with `includeBodies`) carry it only in the same envelope. The envelope names the validated sender, says whether that identity came from the runtime (`fromVerified`), and carries a fixed notice that the content is not from the user. Bodies are limited to 64 KiB, and markup, control, bidi, and other invisible characters in them are escaped.
 - **What `fromVerified` means.** `fromVerified="true"` says the sender id was attested by whoever wrote the local mailbox line: an Agent Link server that took it from the sending session's runtime identity. For a Codex turn or reply, it is the identity the runtime or app-server reported. It is not cryptographic authentication. Any process that can write the user's mailbox file can claim it, so treat it as a provenance hint, not proof.
@@ -403,6 +408,9 @@ After upgrading, **restart every Claude and Codex session** so no old plugin cop
 | `AGENT_LINK_DEBUG=1` | Debug logging to stderr and to `<state>/logs/agent-link.log`. |
 | `AGENT_LINK_LOG_LEVEL` | `error`, `warn` (default), `info`, or `debug`. Overrides `AGENT_LINK_DEBUG`. |
 | `AGENT_LINK_INSPECT_ALL=1` | Lets `agent_link_mailbox_inspect` use `scope: "all"` (every session's mail). Off by default. |
+| `AGENT_LINK_REMINDER_LIMIT` | Reminders per open `reply`/`action` message before its status becomes `unresolved`. Integer 0..20, default 3; `0` turns reminders off. |
+| `AGENT_LINK_REMINDER_INTERVAL_MS` | Minimum time between showings of an open message. Default and minimum 30000; a lower value is ignored and reported by `agent_link_health`. |
+| `AGENT_LINK_CODEX_REMINDERS=1` | Experimental: reminder turns for idle Codex threads. Off by default until the Codex turn-completion signal is verified. |
 | `AGENT_LINK_LOG_FILE` | Log file path. Setting it also turns the file on at the current level. |
 
 Agent Link also reads, but never renames, variables its hosts set: `HOME`, `CODEX_HOME`, `CODEX_THREAD_ID`, `CODEX_TURN_ID`, `CLAUDE_SESSION_ID`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_PROJECT_DIR`, `CLAUDE_PLUGIN_ROOT`, and `CLAUDE_CONFIG_DIR`.

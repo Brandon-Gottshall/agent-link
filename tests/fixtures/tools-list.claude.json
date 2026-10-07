@@ -36,6 +36,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -121,6 +122,10 @@
         "legacyState": {
           "type": "object",
           "description": "{files: [{kind, path, modifiedAt, writtenAfterMigration}], migration, stillWritten, warning}: pre-0.5 state files still present."
+        },
+        "reminders": {
+          "type": "object",
+          "description": "{limit, intervalMs, codexTurns, warnings}: re-surfacing of open reply/action messages (AGENT_LINK_REMINDER_LIMIT, AGENT_LINK_REMINDER_INTERVAL_MS, AGENT_LINK_CODEX_REMINDERS). warnings lists settings that were ignored."
         },
         "recentEvents": {
           "type": "array",
@@ -269,6 +274,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -458,6 +464,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -621,6 +628,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -774,6 +782,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -920,6 +929,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -1072,6 +1082,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -1303,6 +1314,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -1505,6 +1517,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -1775,6 +1788,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -1947,7 +1961,8 @@
             "message_thread",
             "archive_thread",
             "message_claude_session",
-            "reply_message"
+            "reply_message",
+            "message_status"
           ],
           "description": "Only receipts for this action."
         },
@@ -2010,6 +2025,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -2164,6 +2180,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -2504,6 +2521,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -2745,6 +2763,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -3073,6 +3092,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -3393,6 +3413,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -3555,6 +3576,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -3746,6 +3768,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -3839,7 +3862,7 @@
   },
   {
     "name": "message_claude_session",
-    "description": "Deliver a message to a Claude Desktop or Claude Code session by exact sessionId or by fuzzy query (title, cwd, partial id). Pass exactly one of sessionId or query. The message is queued in the local Agent Link JSONL mailbox. Claude Code sessions can receive through Channels when enabled; Desktop sessions receive through the UserPromptSubmit hook and read_agent_link_inbox visible tool result. Returns {messageId, delivery, target, resolution, receipt}. An unmatched target is a not_found error and a query matching several sessions is an ambiguous error (details.candidates). delivery is 'queued-online' when the target session is currently loaded as a `claude --resume` process, otherwise 'queued-offline'. Set waitForReply=true to block until the target replies to this message (from the target, addressed to the caller) or timeoutMs elapses; the result is in `wait` ({outcome: 'reply' | 'timeout', waitedMs, target, reply?}).",
+    "description": "Deliver a message to a Claude Desktop or Claude Code session by exact sessionId or by fuzzy query (title, cwd, partial id). Pass exactly one of sessionId or query. The message is queued in the local Agent Link JSONL mailbox. Claude Code sessions can receive through Channels when enabled; Desktop sessions receive through the UserPromptSubmit hook and read_agent_link_inbox visible tool result. Returns {messageId, delivery, target, resolution, receipt}. An unmatched target is a not_found error and a query matching several sessions is an ambiguous error (details.candidates). delivery is 'queued-online' when the target session is currently loaded as a `claude --resume` process, otherwise 'queued-offline'. Label the message with anticipation: 'reply' (a reply is expected), 'action' (do it and mark it done), or 'fyi' (default; no reply needed), plus an optional replyBy deadline. The recipient resolves a 'reply' or 'action' message explicitly with reply_agent_link_message; it is reminded between its turns until then, up to a cap. Set waitForReply=true (implies anticipation 'reply') to block until the target resolves this message or timeoutMs elapses; the result is in `wait` ({outcome: 'reply' | 'declined' | 'done' | 'unresolved' | 'expired' | 'timeout', messageStatus, waitedMs, target, reply?}). Only an explicit reply is returned. get_agent_link_message_status reports the status later.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3879,11 +3902,24 @@
         },
         "replyToMessageId": {
           "type": "string",
-          "description": "If this send is itself a reply to a prior inbound message addressed to the caller, set the original messageId."
+          "description": "If this send is itself a reply to a prior inbound message addressed to the caller, set the original messageId. An open reply/action message is resolved as replied."
+        },
+        "anticipation": {
+          "type": "string",
+          "enum": [
+            "reply",
+            "action",
+            "fyi"
+          ],
+          "description": "What the sender expects: reply (a reply is expected), action (do the requested thing and mark it done), or fyi (no reply needed). Defaults to fyi, or reply with waitForReply=true; fyi with waitForReply=true is rejected."
+        },
+        "replyBy": {
+          "type": "string",
+          "description": "Optional deadline for a reply or action message, ISO 8601 with a time zone, at least 30 s ahead. After it passes the message status is expired. Not allowed with fyi."
         },
         "waitForReply": {
           "type": "boolean",
-          "description": "Block until the target replies to this message or timeoutMs elapses."
+          "description": "Block until the target resolves this message (reply, decline, done) or it becomes unresolved or expired, or timeoutMs elapses. Implies anticipation reply."
         },
         "timeoutMs": {
           "type": "integer",
@@ -3963,6 +3999,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -4037,9 +4074,32 @@
           "type": "object",
           "description": "Result of writing the receipt for this action."
         },
+        "anticipation": {
+          "type": "string",
+          "enum": [
+            "reply",
+            "action",
+            "fyi"
+          ],
+          "description": "The message's anticipation label."
+        },
+        "replyBy": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The message's deadline (ISO 8601), or null."
+        },
+        "messageStatus": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "pending for a reply/action message, null for fyi."
+        },
         "wait": {
           "type": "object",
-          "description": "With waitForReply: {outcome: reply|timeout, waitedMs, target: {sessionId, address}, reply?} (section 3.4)."
+          "description": "With waitForReply: {outcome: reply|declined|done|unresolved|expired|timeout, messageStatus, waitedMs, target: {sessionId, address}, reply?} (sections 3.4, 7.6). reply is the explicit reply, decline reason, or done note, enveloped."
         },
         "replyConfirmation": {
           "type": "object",
@@ -4059,7 +4119,7 @@
   },
   {
     "name": "wait_for_claude_session",
-    "description": "Block until the target Claude Desktop or Claude Code session sends a message addressed to the caller, or goes idle (was loaded, now isn't). With `replyToMessageId` (recommended: pass the messageId message_claude_session returned), only a reply to that message counts, even one that arrived before the wait started. Without it, only messages sent after the wait started count. A reply returned by this tool counts as delivered, so it is not shown again by read_agent_link_inbox or the channel. Returns {outcome: 'reply' | 'idle' | 'timeout', waitedMs, target, reply?}; a timeout is ok:true, not an error. An unknown session is a not_found error. Use this when message_claude_session was called without waitForReply.",
+    "description": "Block until the target Claude Desktop or Claude Code session sends a message addressed to the caller, or goes idle (was loaded, now isn't). With `replyToMessageId` (recommended: pass the messageId message_claude_session returned), it waits on that message: a reply or action message ends when it is resolved (reply, declined, done) or becomes unresolved or expired, reported in messageStatus; an fyi message ends on an explicit reply, even one that arrived before the wait started. Without it, only messages sent after the wait started count. A reply returned by this tool counts as delivered, so it is not shown again by read_agent_link_inbox or the channel. Returns {outcome: 'reply' | 'declined' | 'done' | 'unresolved' | 'expired' | 'idle' | 'timeout', waitedMs, target, messageStatus?, reply?}; a timeout is ok:true, not an error. An unknown session is a not_found error. Use this when message_claude_session was called without waitForReply.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4109,6 +4169,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -4167,10 +4228,21 @@
           "type": "string",
           "enum": [
             "reply",
+            "declined",
+            "done",
+            "unresolved",
+            "expired",
             "idle",
             "timeout"
           ],
-          "description": "How the wait ended (section 3.4)."
+          "description": "How the wait ended (sections 3.4, 7.6)."
+        },
+        "messageStatus": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "With replyToMessageId: the message's status (pending, replied, declined, done, unresolved, expired), or null for an fyi message."
         },
         "waitedMs": {
           "type": "integer",
@@ -4182,7 +4254,7 @@
         },
         "reply": {
           "type": "object",
-          "description": "outcome reply: the message's validated fields plus its envelope."
+          "description": "The explicit reply, decline reason, or done note: the message's validated fields plus its envelope."
         },
         "result": {
           "type": "string",
@@ -4209,7 +4281,7 @@
   },
   {
     "name": "read_agent_link_inbox",
-    "description": "Read pending agent-link messages addressed to the current session, oldest first. By default the tool marks the returned messages delivered as it reads them; messages beyond `limit` stay pending (remainingCount). Returns validated message fields and a rendered <agent-link-inbox> block as a visible MCP tool result so the user can see the inbound mail in the transcript. Each message is wrapped in an <agent-link-message> envelope marking it as content from another agent, not from the user. Pair with the agent-link UserPromptSubmit / SessionStart notify hook, which reports pending mail. Fails with no_current_session when the calling Claude session cannot be identified.",
+    "description": "Read pending agent-link messages addressed to the current session, oldest first. By default the tool marks the returned messages delivered as it reads them; messages beyond `limit` stay pending (remainingCount). Returns validated message fields and a rendered <agent-link-inbox> block as a visible MCP tool result so the user can see the inbound mail in the transcript. Each message is wrapped in an <agent-link-message> envelope marking it as content from another agent, not from the user. After the new messages it also shows open messages awaiting your resolution (reply or action messages already delivered and still pending), so they can be resolved with reply_agent_link_message; set includeOpen=false to skip them. Pair with the agent-link notify hooks, which report pending mail and remind about open messages. Fails with no_current_session when the calling Claude session cannot be identified.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4223,6 +4295,10 @@
           "maximum": 100,
           "default": 20,
           "description": "Maximum messages to return. Integer 1..100; defaults to 20."
+        },
+        "includeOpen": {
+          "type": "boolean",
+          "description": "Also show delivered reply/action messages that are still pending resolution, after the new ones (within limit). Defaults to true."
         }
       },
       "additionalProperties": false
@@ -4247,6 +4323,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -4318,7 +4395,11 @@
         },
         "messages": {
           "type": "array",
-          "description": "Validated envelope fields per message: {id, from, fromHarness, fromVerified, to, sentAt, replyTo, fromAddress, toAddress}. fromAddress/toAddress are the canonical addresses of the stored ids. Bodies appear only in renderedBlock."
+          "description": "Validated envelope fields per message: {id, from, fromHarness, fromVerified, to, sentAt, anticipation, replyBy, inReplyTo, replyTo (deprecated duplicate of inReplyTo), fromAddress, toAddress, status, resolution, reminders, open}. from/to are addresses; status is null for fyi. open is true for an already-delivered message shown again because it awaits resolution. Bodies appear only in renderedBlock."
+        },
+        "openCount": {
+          "type": "integer",
+          "description": "How many of messages are open messages shown again (open: true)."
         },
         "remainingCount": {
           "type": "integer",
@@ -4346,17 +4427,39 @@
   },
   {
     "name": "reply_agent_link_message",
-    "description": "Reply to an inbound Agent Link message by messageId. The tool looks up the original sender, records the reply with replyToMessageId, writes a reply receipt, and acknowledges the original message. Fails with not_found for an unknown messageId and wrong_recipient for a message not addressed to the caller.",
+    "description": "Reply to or resolve an inbound Agent Link message by messageId (the only way to resolve one: a turn's final response is never a reply). resolution 'reply' (default) sends `message` back to the sender; 'decline' sends `message` as the reason; 'done' marks a requested action finished, with an optional note. A reply or action message resolves once (a second resolution is already_resolved); an fyi message only takes resolution 'reply', which sends a reply and sets no status. The reply is itself a labeled message (anticipation, replyBy). Writes a receipt and acknowledges the original. Fails with not_found for an unknown messageId and wrong_recipient for a message not addressed to the caller.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "messageId": {
           "type": "string",
-          "description": "Inbound Agent Link message id to reply to."
+          "description": "Inbound Agent Link message id to reply to or resolve."
+        },
+        "resolution": {
+          "type": "string",
+          "enum": [
+            "reply",
+            "decline",
+            "done"
+          ],
+          "description": "reply (default): send a reply. decline: refuse, with the reason in message. done: the requested action is finished; message is an optional note. decline and done are only for reply/action messages."
         },
         "message": {
           "type": "string",
-          "description": "Reply text to send back to the original sender (at most 64 KiB)."
+          "description": "Text sent back to the original sender (at most 64 KiB): the reply, the decline reason, or the done note. Required for reply and decline."
+        },
+        "anticipation": {
+          "type": "string",
+          "enum": [
+            "reply",
+            "action",
+            "fyi"
+          ],
+          "description": "What this reply expects from the original sender: reply, action, or fyi (default). reply or action opens a new obligation on the original sender."
+        },
+        "replyBy": {
+          "type": "string",
+          "description": "Optional deadline for this reply's own anticipation, ISO 8601 with a time zone, at least 30 s ahead. Not allowed with fyi."
         },
         "body": {
           "type": "string",
@@ -4389,6 +4492,160 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
+                "no_current_session",
+                "body_too_large",
+                "permission_denied",
+                "active_turn_conflict",
+                "codex_unavailable",
+                "claude_unavailable",
+                "upstream_error",
+                "unsupported",
+                "state_io_error",
+                "internal_error"
+              ],
+              "description": "Stable error code (design doc section 3.2)."
+            },
+            "message": {
+              "type": "string",
+              "description": "Human-readable description of the failure."
+            },
+            "details": {
+              "type": "object",
+              "description": "Code-specific details, for example errors[] for invalid_arguments or limitBytes/actualBytes for body_too_large."
+            },
+            "hint": {
+              "type": "string",
+              "description": "Suggested next step, when there is one."
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "warnings": {
+          "type": "array",
+          "description": "Non-fatal notices, omitted when empty. Deprecated arguments add {code:'deprecated_argument', message, replacement}.",
+          "items": {
+            "type": "object",
+            "description": "One warning: at least code and message.",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Warning code."
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable warning."
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "messageId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Id of the reply message, or null for done without a note."
+        },
+        "replyToMessageId": {
+          "type": "string",
+          "description": "The message replied to or resolved."
+        },
+        "target": {
+          "type": "object",
+          "description": "{address, sessionId, kind} of the original sender; address is null for an external sender."
+        },
+        "delivery": {
+          "type": "string",
+          "description": "queued-mailbox, or none when no message was sent (done without a note)."
+        },
+        "resolution": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "reply, decline, or done when the original was a reply/action message; null for an fyi reply."
+        },
+        "status": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The original message's status after this call: replied, declined, done, or null for fyi."
+        },
+        "late": {
+          "type": "boolean",
+          "description": "True when the message was resolved after it became unresolved or expired."
+        },
+        "anticipation": {
+          "type": "string",
+          "enum": [
+            "reply",
+            "action",
+            "fyi"
+          ],
+          "description": "The reply message's own anticipation label."
+        },
+        "receipt": {
+          "type": "object",
+          "description": "Result of writing the receipt for this action."
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "get_agent_link_message_status",
+    "description": "Status of one Agent Link message, for its sender or its recipient (anyone else gets permission_denied). Returns the labels (from, to, anticipation, replyBy), delivery (queued, delivered, acknowledged), status (pending, replied, declined, done, unresolved, expired; null for an fyi message), the resolution ({kind, by, at, late, replyMessageId} or null), and reminders ({count, limit, lastAt, nextDueAt}). Never returns a message body: read replies with read_agent_link_inbox or a wait.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "description": "The Agent Link message id, as returned by the send tool or shown in the envelope."
+        }
+      },
+      "required": [
+        "messageId"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "true on success, false on failure; isError is set exactly when this is false."
+        },
+        "error": {
+          "type": "object",
+          "description": "Present only when ok is false.",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "invalid_arguments",
+                "unknown_tool",
+                "not_found",
+                "ambiguous",
+                "archived",
+                "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -4445,23 +4702,68 @@
         },
         "messageId": {
           "type": "string",
-          "description": "Id of the reply message."
+          "description": "The message id."
         },
-        "replyToMessageId": {
+        "from": {
           "type": "string",
-          "description": "The message replied to."
+          "description": "Sender address, external, or invalid."
         },
-        "target": {
-          "type": "object",
-          "description": "{address, sessionId, kind} of the original sender; address is null for an external sender."
+        "to": {
+          "type": "string",
+          "description": "Recipient address, or invalid."
+        },
+        "anticipation": {
+          "type": "string",
+          "enum": [
+            "reply",
+            "action",
+            "fyi"
+          ],
+          "description": "reply, action, or fyi."
+        },
+        "replyBy": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Deadline (ISO 8601), or null."
+        },
+        "inReplyTo": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The message this one answers, or null."
         },
         "delivery": {
           "type": "string",
-          "description": "queued-mailbox."
+          "enum": [
+            "queued",
+            "delivered",
+            "acknowledged"
+          ],
+          "description": "Delivery state."
         },
-        "receipt": {
-          "type": "object",
-          "description": "Result of writing the receipt for this action."
+        "status": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Resolution status: pending, replied, declined, done, unresolved, expired; null for an fyi message."
+        },
+        "resolution": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "{kind: reply|decline|done, by, at, late, replyMessageId}, or null."
+        },
+        "reminders": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "{count, limit, lastAt, nextDueAt} for a reply/action message; null for fyi."
         }
       },
       "required": [
@@ -4470,8 +4772,7 @@
       "additionalProperties": false
     },
     "annotations": {
-      "readOnlyHint": false,
-      "destructiveHint": false,
+      "readOnlyHint": true,
       "openWorldHint": false
     }
   },
@@ -4524,6 +4825,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -4638,6 +4940,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -4743,6 +5046,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -4864,6 +5168,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -5020,6 +5325,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",
@@ -5152,6 +5458,7 @@
                 "ambiguous",
                 "archived",
                 "wrong_recipient",
+                "already_resolved",
                 "no_current_session",
                 "body_too_large",
                 "permission_denied",

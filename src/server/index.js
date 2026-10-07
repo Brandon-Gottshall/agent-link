@@ -25,6 +25,9 @@ import { claudeWaitEntries } from "../tools/claude-wait.js";
 import { mailboxInspectEntries } from "../tools/mailbox-inspect.js";
 import { readInboxEntries } from "../tools/read-inbox.js";
 import { replyAgentLinkMessageEntries } from "../tools/claude-reply.js";
+import { messageStatusEntries } from "../tools/message-status.js";
+import { deliverCodexReminders } from "../delivery/reminders.js";
+import { reminderSettings } from "../delivery/message-status.js";
 import { agentEntries } from "../tools/agents.js";
 import { createSessionRegistry } from "../registry/index.js";
 import { makeClaudeProvider } from "../registry/claude.js";
@@ -43,13 +46,14 @@ import {
 } from "../codex/project-orchestrator.js";
 import { checkCoordinationObligations, registerDependencyHandoff } from "../codex/dependency-handoff.js";
 import { resolveCurrentClaudeSession } from "../claude/session-index.js";
-import { mailboxReadPaths } from "../claude/mailbox.js";
+import { mailboxReadPaths, openMailbox } from "../claude/mailbox.js";
 import { extractRuntimeCallerContext } from "../shared/caller-context.js";
 import { optionalString } from "../shared/args.js";
 import { AgentLinkError } from "../shared/errors.js";
 import { currentClaudeSessionId } from "../shared/host-detect.js";
 import { listReceipts, setReceiptAddressResolver } from "../shared/receipt-index.js";
-import { receiptAddressResolver } from "../registry/addresses.js";
+import { envelopeAddressResolver, receiptAddressResolver } from "../registry/addresses.js";
+import { setEnvelopeAddressResolver } from "../shared/envelope.js";
 import { getLogger } from "../shared/log.js";
 
 /** @typedef {ReturnType<typeof loadConfig>} AgentLinkConfig */
@@ -135,6 +139,8 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
   // target recorded under a sidecar id or a rotated Claude CLI id shows (and
   // matches) the session's current address (R1.6, R1.7).
   setReceiptAddressResolver(receiptAddressResolver);
+  // Envelopes render the same current addresses (design 1.3, R7.3).
+  setEnvelopeAddressResolver(envelopeAddressResolver);
 
   const server = new Server(
     {
@@ -276,6 +282,7 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
     ...claudeWaitEntries(claudeDeps),
     ...readInboxEntries({ resolveCurrentSession: currentClaudeSession, host: hostInfo.host }),
     ...replyAgentLinkMessageEntries(claudeDeps),
+    ...messageStatusEntries(claudeDeps),
     // Every tool on every host (R1.16): the Claude listing tools are no
     // longer limited to the Claude host.
     ...claudeListingEntries(),
@@ -309,10 +316,41 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
     if (channel.error !== null) channelError = channel.error;
     lifecycle.setChannelBridge(channel.bridge);
 
+    if (config.codexReminders) startCodexReminders({ appServer: codexAppServer });
+
     lifecycle.installSignalHandlers();
   }
 
   return { server, appServer: codexAppServer, registry, lifecycle, config, start };
+}
+
+/**
+ * Codex reminder turns (design R7.14), only with AGENT_LINK_CODEX_REMINDERS=1.
+ * Off by default until the B7 spike confirms the turn-completion signal
+ * (B7b). One pass per reminder interval; the timer never keeps the process
+ * alive, and a failed pass is logged and retried on the next tick.
+ * @param {{appServer: CodexAppServerClient}} options
+ */
+function startCodexReminders({ appServer }) {
+  const settings = reminderSettings();
+  let running = false;
+  const timer = setInterval(async () => {
+    if (running) return;
+    running = true;
+    let mailbox = null;
+    try {
+      mailbox = openMailbox();
+      const results = await deliverCodexReminders({ appServer, mailbox, settings });
+      if (results.length) getLogger().info("codex_reminders.pass", { results });
+    } catch (error) {
+      getLogger().warn("codex_reminders.failed", { message: error instanceof Error ? error.message : String(error) });
+    } finally {
+      mailbox?.close();
+      running = false;
+    }
+  }, settings.intervalMs);
+  timer.unref?.();
+  return timer;
 }
 
 /**

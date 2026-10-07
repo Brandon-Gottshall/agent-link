@@ -112,13 +112,13 @@ test("envelopeReplyConfirmation envelopes the reply and strips raw text", () => 
   const out = envelopeReplyConfirmation(raw, { threadId: THREAD, sent });
   assert.equal(out.enveloped, true);
   assert.equal(envelopeBody(out.finalResponse), "the answer");
-  assert.match(out.finalResponse, new RegExp(`from="${THREAD}"`));
-  assert.match(out.finalResponse, /replyTo="01ARZ3NDEKTSV4RRFFQ69G5FAV"/);
+  assert.match(out.finalResponse, new RegExp(`from="codex:${THREAD}"`));
+  assert.match(out.finalResponse, /anticipation="fyi" inReplyTo="01ARZ3NDEKTSV4RRFFQ69G5FAV"/);
   assert.equal(out.finalResponseItem.text, undefined);
   assert.equal(out.waitState.finalResponse.text, undefined);
   assert.ok(out.recentItems.every((item) => item.text === undefined && item.command === undefined));
   assert.match(out.recentItemsEnvelope, /\[commandExecution c9\] \$ ls/);
-  assert.equal(out.reply.from, THREAD);
+  assert.equal(out.reply.from, `codex:${THREAD}`);
   assert.deepEqual(envelopeReplyConfirmation({ waited: false }, { threadId: THREAD, sent }), { waited: false });
   assert.equal(recentItemLine({ type: "reasoning", id: "r", summary: ["a", "b"] }), "[reasoning r] a / b");
   assert.equal(recentItemLine({ type: "x", id: "y" }), "");

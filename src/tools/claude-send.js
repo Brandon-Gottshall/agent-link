@@ -10,6 +10,8 @@ import {
 } from "../claude/identity.js";
 import { registerActiveWait } from "../claude/active-waits.js";
 import { assertPeerBodyWithinLimit } from "../shared/envelope.js";
+import { isAnticipating, isLateResolution, messageStatus, reminderSettings, resolveLabels } from "../delivery/message-status.js";
+import { checkMessageWait, recordStatusTransition } from "../delivery/message-wait.js";
 import { claudeAddress } from "../shared/identity.js";
 import { mailboxRowResult } from "../registry/addresses.js";
 import { buildReceipt, normalizeReceiptInput, safeAppendReceipt } from "../shared/receipt-index.js";
@@ -29,8 +31,12 @@ export const claudeSendTool = {
     "Desktop sessions receive through the UserPromptSubmit hook and read_agent_link_inbox visible tool result. " +
     "Returns {messageId, delivery, target, resolution, receipt}. An unmatched target is a not_found error and a query matching several " +
     "sessions is an ambiguous error (details.candidates). delivery is 'queued-online' when the target session is currently loaded as a `claude --resume` " +
-    "process, otherwise 'queued-offline'. Set waitForReply=true to block until the target replies to this message (from the target, " +
-    "addressed to the caller) or timeoutMs elapses; the result is in `wait` ({outcome: 'reply' | 'timeout', waitedMs, target, reply?}).",
+    "process, otherwise 'queued-offline'. Label the message with anticipation: 'reply' (a reply is expected), 'action' (do it and " +
+    "mark it done), or 'fyi' (default; no reply needed), plus an optional replyBy deadline. The recipient resolves a 'reply' or " +
+    "'action' message explicitly with reply_agent_link_message; it is reminded between its turns until then, up to a cap. " +
+    "Set waitForReply=true (implies anticipation 'reply') to block until the target resolves this message or timeoutMs elapses; " +
+    "the result is in `wait` ({outcome: 'reply' | 'declined' | 'done' | 'unresolved' | 'expired' | 'timeout', messageStatus, waitedMs, " +
+    "target, reply?}). Only an explicit reply is returned. get_agent_link_message_status reports the status later.",
   inputSchema: {
     type: "object",
     properties: {
@@ -44,8 +50,10 @@ export const claudeSendTool = {
       message: str("Message text to deliver (at most 64 KiB)."),
       surface: enumOf(["desktop", "code"], "Optional target surface filter. Defaults to either Desktop or Code."),
       deliveryPreference: enumOf(["auto", "channel", "mailbox"], "Delivery preference. Defaults to auto: channel for loaded Claude Code sessions, mailbox otherwise."),
-      replyToMessageId: str("If this send is itself a reply to a prior inbound message addressed to the caller, set the original messageId."),
-      waitForReply: bool("Block until the target replies to this message or timeoutMs elapses."),
+      replyToMessageId: str("If this send is itself a reply to a prior inbound message addressed to the caller, set the original messageId. An open reply/action message is resolved as replied."),
+      anticipation: enumOf(["reply", "action", "fyi"], "What the sender expects: reply (a reply is expected), action (do the requested thing and mark it done), or fyi (no reply needed). Defaults to fyi, or reply with waitForReply=true; fyi with waitForReply=true is rejected."),
+      replyBy: str("Optional deadline for a reply or action message, ISO 8601 with a time zone, at least 30 s ahead. After it passes the message status is expired. Not allowed with fyi."),
+      waitForReply: bool("Block until the target resolves this message (reply, decline, done) or it becomes unresolved or expired, or timeoutMs elapses. Implies anticipation reply."),
       timeoutMs: timeoutMsSchema("Maximum wait when waitForReply=true, in milliseconds."),
       receipt: receiptInput
     },
@@ -58,7 +66,10 @@ export const claudeSendTool = {
     target: out("object", "{address, sessionId, title, loaded, surface} of the target session."),
     resolution: out("object", "How the target was found: {via: exact|fuzzy, query, matchReasons, candidates?}."),
     receipt: commonOut.receipt,
-    wait: out("object", "With waitForReply: {outcome: reply|timeout, waitedMs, target: {sessionId, address}, reply?} (section 3.4)."),
+    anticipation: enumOf(["reply", "action", "fyi"], "The message's anticipation label."),
+    replyBy: out(["string", "null"], "The message's deadline (ISO 8601), or null."),
+    messageStatus: out(["string", "null"], "pending for a reply/action message, null for fyi."),
+    wait: out("object", "With waitForReply: {outcome: reply|declined|done|unresolved|expired|timeout, messageStatus, waitedMs, target: {sessionId, address}, reply?} (sections 3.4, 7.6). reply is the explicit reply, decline reason, or done note, enveloped."),
     replyConfirmation: out("object", "Deprecated duplicate of wait in the 0.4 shape ({received, replyMessageId?, reply?, error?}); removed in 0.6.0.")
   },
   annotations: { readOnlyHint: false, destructiveHint: false }
@@ -97,6 +108,8 @@ function targetArgument(args, warn) {
  * @property {() => any} [mailboxOpener]             opens the mailbox (tests inject one)
  * @property {(() => any) | null} [resolveCurrentSession]
  * @property {(receipt: any) => Promise<any>} [appendReceipt]
+ * @property {() => number} [now]                    clock (tests inject one)
+ * @property {() => import("../delivery/message-status.js").ReminderSettings} [reminderSettings]
  */
 
 /** @param {ClaudeSendDeps} [deps] */
@@ -106,7 +119,9 @@ export function makeClaudeSendHandler({
   listOptions = {},
   mailboxOpener,
   resolveCurrentSession = null,
-  appendReceipt = safeAppendReceipt
+  appendReceipt = safeAppendReceipt,
+  now = () => Date.now(),
+  reminderSettings: settingsFn = () => reminderSettings()
 } = {}) {
   // Archived sessions are listed so an exact id can still address them;
   // fuzzy matching below skips them.
@@ -137,6 +152,12 @@ export function makeClaudeSendHandler({
         receipt
       } = args;
       const runtimeCallerContext = toolContext.runtimeCallerContext ?? null;
+      const labels = resolveLabels({
+        anticipation: args.anticipation,
+        replyBy: args.replyBy,
+        waitForReply: waitForReply === true,
+        now: now()
+      });
 
       const { value: to, mode } = targetArgument(args, toolContext.warn);
       if (typeof body !== "string" || !body.length) {
@@ -200,6 +221,7 @@ export function makeClaudeSendHandler({
       let messageId;
       let releaseWait = null;
       try {
+        let answered = null;
         if (replyToMessageId !== undefined && replyToMessageId !== null) {
           const original = typeof replyToMessageId === "string" ? mb.getMessage({ messageId: replyToMessageId }) : null;
           if (!original || !caller.aliases.includes(original.to_session_id)) {
@@ -207,6 +229,7 @@ export function makeClaudeSendHandler({
               details: { errors: [{ path: "replyToMessageId", rule: "reference", expected: "a message addressed to the caller" }] }
             });
           }
+          answered = original;
         }
 
         messageId = mb.insertMessage({
@@ -216,8 +239,25 @@ export function makeClaudeSendHandler({
           toSessionKind: "claude",
           body,
           metadata: mailboxMetadata({ receipt, resolution, senderSource: caller.source }),
-          replyToMessageId: replyToMessageId ?? null
+          replyToMessageId: replyToMessageId ?? null,
+          anticipation: labels.anticipation,
+          replyBy: labels.replyBy
         });
+        // An explicit reply sent back to the original sender resolves an
+        // open reply/action message as replied (R7.5); fyi mail has no
+        // status, and a resolved message stays as it was.
+        if (answered && isAnticipating(answered) && !answered.resolution &&
+            claudeSessionAliases(target).includes(answered.from_session_id)) {
+          const view = messageStatus(answered, { now: now(), settings: settingsFn() });
+          mb.markAcknowledged({ messageId: answered.id });
+          mb.recordResolution({
+            messageId: answered.id,
+            kind: "reply",
+            by: caller.id,
+            late: isLateResolution(view),
+            replyMessageId: messageId
+          });
+        }
         // Register the reply wait before the receipt write yields, so this
         // process's channel bridge never pushes the reply pollForReply will
         // return. Released in the finally below however the call ends.
@@ -264,30 +304,42 @@ export function makeClaudeSendHandler({
           receiptResult = { recorded: true, ...await appendReceipt(built) };
         }
 
+        /** @type {Record<string, any>} */
         const result = {
           messageId,
           delivery,
           target: targetSummary,
           resolution,
+          anticipation: labels.anticipation,
+          replyBy: labels.replyBy === null ? null : new Date(labels.replyBy).toISOString(),
+          messageStatus: labels.anticipation === "fyi" ? null : "pending",
           receipt: receiptResult
         };
 
-        // 4. Optionally wait for a reply
+        // 4. Optionally wait for the message to be resolved
         if (waitForReply) {
-          const startedAt = Date.now();
-          const confirmation = await pollForReply(mb, {
+          const startedAt = now();
+          const confirmation = await pollForResolution(mb, {
             messageId,
             fromIds: claudeSessionAliases(target),
             toIds: caller.aliases,
-            timeoutMs: typeof timeoutMs === "number" && timeoutMs >= 0 ? timeoutMs : DEFAULT_WAIT_TIMEOUT_MS
+            timeoutMs: typeof timeoutMs === "number" && timeoutMs >= 0 ? timeoutMs : DEFAULT_WAIT_TIMEOUT_MS,
+            now,
+            settings: settingsFn(),
+            host,
+            appendReceipt
           });
           result.wait = {
-            outcome: confirmation.received ? "reply" : "timeout",
-            waitedMs: Date.now() - startedAt,
+            outcome: confirmation.outcome,
+            messageStatus: confirmation.messageStatus,
+            waitedMs: now() - startedAt,
             target: { sessionId: target.sessionId, address: claudeAddress(target) },
-            ...(confirmation.received ? { reply: confirmation.reply } : {})
+            ...(confirmation.reply ? { reply: confirmation.reply } : {})
           };
-          result.replyConfirmation = confirmation;
+          result.messageStatus = confirmation.messageStatus;
+          result.replyConfirmation = confirmation.received
+            ? { received: true, replyMessageId: confirmation.reply?.id ?? null, reply: confirmation.reply ?? null }
+            : { received: false, error: confirmation.outcome };
         }
 
         return result;
@@ -358,38 +410,46 @@ function classifyDelivery({ target, deliveryPreference }) {
   return target.loaded ? "queued-online" : "queued-offline";
 }
 
-// A reply only counts when it comes from the target session (any of its id
-// forms) and is addressed to this caller. Anyone can append to the mailbox,
-// so a reply_to_message_id match alone would let a third party forge the
-// answer the caller is blocked on.
-async function pollForReply(mb, { messageId, fromIds, toIds, timeoutMs }) {
-  const deadline = Date.now() + timeoutMs;
-  const from = new Set(fromIds);
-  const to = new Set(toIds);
+// Polls until the message leaves `pending` (design R7.19) or the timeout.
+// Only an explicit reply from the target session (any of its id forms)
+// addressed to this caller is returned: anyone can append to the mailbox, so
+// a reply_to_message_id match alone would let a third party forge the answer
+// the caller is blocked on. A turn's final response never ends the wait.
+async function pollForResolution(mb, { messageId, fromIds, toIds, timeoutMs, now, settings, host, appendReceipt }) {
+  const deadline = now() + timeoutMs;
   // First check immediately in case a reply arrived synchronously.
   while (true) {
-    const replies = mb.inspect({ replyToMessageId: messageId, limit: Number.MAX_SAFE_INTEGER })
-      .filter((m) => from.has(m.from_session_id) && to.has(m.to_session_id))
-      .sort((a, b) => a.sent_at - b.sent_at);
-    if (replies.length) {
-      // The wait consumed this reply: it counts as delivered (and
-      // acknowledged), so the sender's channel, hook and inbox do not
-      // deliver it a second time.
-      consumeReply(mb, replies[0]);
-      // The reply is another agent's text: it reaches the caller only inside
-      // the peer envelope, never as a raw body.
+    const done = checkMessageWait(mb, { messageId, fromIds, toIds, now: now(), settings });
+    if (done) {
+      if (done.messageStatus === "unresolved" || done.messageStatus === "expired") {
+        await recordStatusTransition(mb, mb.getMessage({ messageId }), { now: now(), settings, host, appendReceipt });
+      }
+      if (done.replyRow) {
+        // The wait consumed this reply: it counts as delivered (and
+        // acknowledged), so the sender's channel, hook and inbox do not
+        // deliver it a second time.
+        consumeReply(mb, done.replyRow);
+      }
       return {
-        received: true,
-        replyMessageId: replies[0].id,
-        reply: mailboxRowResult(replies[0])
+        received: Boolean(done.replyRow),
+        outcome: done.outcome,
+        messageStatus: done.messageStatus,
+        // The reply is another agent's text: it reaches the caller only
+        // inside the peer envelope, never as a raw body.
+        reply: done.replyRow ? mailboxRowResult(done.replyRow) : null
       };
     }
-    if (Date.now() >= deadline) {
-      return { received: false, error: "timeout" };
+    if (now() >= deadline) {
+      return { received: false, outcome: "timeout", messageStatus: messageStatusOf(mb, messageId, now(), settings), reply: null };
     }
-    const remaining = deadline - Date.now();
+    const remaining = deadline - now();
     await sleep(Math.min(DEFAULT_POLL_INTERVAL_MS, Math.max(remaining, 10)));
   }
+}
+
+function messageStatusOf(mb, messageId, at, settings) {
+  const row = mb.getMessage({ messageId });
+  return row ? messageStatus(row, { now: at, settings }).status : null;
 }
 
 export function consumeReply(mb, message) {

@@ -5,7 +5,7 @@ import { AppServerError } from "../../src/codex/app-server-client.js";
 
 test("ERROR_CODES is the section 3.2 list", () => {
   assert.deepEqual([...ERROR_CODES], [
-    "invalid_arguments", "unknown_tool", "not_found", "ambiguous", "archived", "wrong_recipient",
+    "invalid_arguments", "unknown_tool", "not_found", "ambiguous", "archived", "wrong_recipient", "already_resolved",
     "no_current_session", "body_too_large", "permission_denied", "active_turn_conflict",
     "codex_unavailable", "claude_unavailable", "upstream_error", "unsupported", "state_io_error",
     "internal_error"

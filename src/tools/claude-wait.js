@@ -10,13 +10,17 @@
 // Resolution semantics (the result is the design doc section 3.4 shape,
 // {outcome, waitedMs, target, reply?}; result/message/sessionId are the 0.4
 // keys, kept until 0.6.0):
-//   - "reply": A message from the target session (any of its id forms) that
-//     is addressed to the caller (any of its id forms). With replyToMessageId
-//     (deprecated alias latestMessageId) it must be a reply to that message
-//     (and may predate the wait). Without it, only messages sent since the
-//     wait started count, so an old message never resolves a new wait. The
-//     returned message is marked delivered and acknowledged, so the caller's
-//     inbox, hook and channel do not deliver it again.
+//   - With replyToMessageId (deprecated alias latestMessageId), a message
+//     wait (design R7.19): for a reply/action message it ends when the
+//     message's status leaves pending (outcome reply, declined, done,
+//     unresolved, expired), with `messageStatus`; for an fyi message, on an
+//     explicit reply from the target to the caller (which may predate the
+//     wait). Only an explicit reply is returned, never a turn's output.
+//   - "reply" without replyToMessageId: a message from the target session
+//     (any of its id forms) addressed to the caller (any of its id forms),
+//     sent since the wait started, so an old message never resolves a new
+//     wait. A returned message is marked delivered and acknowledged, so the
+//     caller's inbox, hook and channel do not deliver it again.
 //   - "idle": The target session was loaded (running) at the start, and a
 //     later liveness check shows it is no longer loaded. Liveness is checked
 //     for that one session only, at most every 2 s.
@@ -30,6 +34,8 @@ import { registerActiveWait } from "../claude/active-waits.js";
 import { claudeAddress } from "../shared/identity.js";
 import { mailboxRowResult } from "../registry/addresses.js";
 import { consumeReply } from "./claude-send.js";
+import { messageStatus, reminderSettings } from "../delivery/message-status.js";
+import { checkMessageWait, recordStatusTransition } from "../delivery/message-wait.js";
 import { AgentLinkError } from "../shared/errors.js";
 import { applyAliases } from "../server/registry.js";
 import { LIMITS, enumOf, out, str, timeoutMs as timeoutMsSchema } from "../server/schemas.js";
@@ -44,9 +50,11 @@ export const claudeWaitTool = {
   description:
     "Block until the target Claude Desktop or Claude Code session sends a message addressed to the caller, or goes idle " +
     "(was loaded, now isn't). With `replyToMessageId` (recommended: pass the messageId message_claude_session returned), " +
-    "only a reply to that message counts, even one that arrived before the wait started. Without it, only messages sent " +
+    "it waits on that message: a reply or action message ends when it is resolved (reply, declined, done) or becomes " +
+    "unresolved or expired, reported in messageStatus; an fyi message ends on an explicit reply, even one that arrived " +
+    "before the wait started. Without it, only messages sent " +
     "after the wait started count. A reply returned by this tool counts as delivered, so it is not shown again by " +
-    "read_agent_link_inbox or the channel. Returns {outcome: 'reply' | 'idle' | 'timeout', waitedMs, target, reply?}; " +
+    "read_agent_link_inbox or the channel. Returns {outcome: 'reply' | 'declined' | 'done' | 'unresolved' | 'expired' | 'idle' | 'timeout', waitedMs, target, messageStatus?, reply?}; " +
     "a timeout is ok:true, not an error. An unknown session is a not_found error. Use this when message_claude_session was " +
     "called without waitForReply.",
   inputSchema: {
@@ -61,10 +69,11 @@ export const claudeWaitTool = {
   },
   aliases: [{ canonical: "replyToMessageId", aliases: ["latestMessageId"] }],
   output: {
-    outcome: enumOf(["reply", "idle", "timeout"], "How the wait ended (section 3.4)."),
+    outcome: enumOf(["reply", "declined", "done", "unresolved", "expired", "idle", "timeout"], "How the wait ended (sections 3.4, 7.6)."),
+    messageStatus: out(["string", "null"], "With replyToMessageId: the message's status (pending, replied, declined, done, unresolved, expired), or null for an fyi message."),
     waitedMs: out("integer", "How long the wait lasted."),
     target: out("object", "{sessionId, address, lastLoaded?} of the session waited on."),
-    reply: out("object", "outcome reply: the message's validated fields plus its envelope."),
+    reply: out("object", "The explicit reply, decline reason, or done note: the message's validated fields plus its envelope."),
     result: out("string", "Deprecated duplicate of outcome; removed in 0.6.0."),
     message: out("object", "Deprecated duplicate of reply; removed in 0.6.0."),
     sessionId: out("string", "Deprecated duplicate of target.sessionId; removed in 0.6.0.")
@@ -83,6 +92,8 @@ export const claudeWaitTool = {
  * @property {number} [livenessIntervalMs]
  * @property {number} [pollIntervalMs]
  * @property {() => number} [now]
+ * @property {() => import("../delivery/message-status.js").ReminderSettings} [reminderSettings]
+ * @property {(receipt: any) => Promise<any>} [appendReceipt]
  */
 
 /** @param {ClaudeWaitDeps} [deps] */
@@ -95,7 +106,9 @@ export function makeWaitHandler({
   isSessionLoaded,
   livenessIntervalMs = DEFAULT_LIVENESS_INTERVAL_MS,
   pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
-  now = () => Date.now()
+  now = () => Date.now(),
+  reminderSettings: settingsFn = () => reminderSettings(),
+  appendReceipt = undefined
 } = {}) {
   const sessionsFn = typeof listSessions === "function"
     ? listSessions
@@ -139,6 +152,19 @@ export function makeWaitHandler({
         });
       }
       const waited = () => Math.max(0, now() - waitStartedAt);
+      /** @param {string} id */
+      const currentStatus = (id) => {
+        const mb = openMb();
+        try {
+          const row = mb.getMessage({ messageId: id });
+          // Only the sender sees the status of its own message here.
+          return row && caller.aliases.includes(row.from_session_id)
+            ? messageStatus(row, { now: now(), settings: settingsFn() }).status
+            : null;
+        } finally {
+          mb.close();
+        }
+      };
 
       const fromIds = claudeSessionAliases(target0);
       const caller = resolveCallerIdentity({
@@ -169,17 +195,34 @@ export function makeWaitHandler({
           //    and never hold a mailbox object across an await boundary.
           const mb = openMb();
           try {
+            if (latestMessageId) {
+              const settings = settingsFn();
+              const done = checkMessageWait(mb, { messageId: latestMessageId, fromIds, toIds: caller.aliases, now: now(), settings });
+              if (done) {
+                if (done.messageStatus === "unresolved" || done.messageStatus === "expired") {
+                  await recordStatusTransition(mb, mb.getMessage({ messageId: latestMessageId }), { now: now(), settings, host, ...(appendReceipt ? { appendReceipt } : {}) });
+                }
+                if (done.replyRow) consumeReply(mb, done.replyRow);
+                const reply = done.replyRow ? mailboxRowResult(done.replyRow) : null;
+                return {
+                  outcome: done.outcome,
+                  waitedMs: waited(),
+                  target: { sessionId: storedId, address },
+                  messageStatus: done.messageStatus,
+                  ...(reply ? { reply, message: reply } : {}),
+                  result: done.outcome,
+                  sessionId: storedId
+                };
+              }
+            }
             const filters = {
               fromSessionIds: fromIds,
               toSessionIds: caller.aliases,
-              limit: Number.MAX_SAFE_INTEGER
+              limit: Number.MAX_SAFE_INTEGER,
+              since: waitStartedAt
             };
-            if (latestMessageId) {
-              filters.replyToMessageId = latestMessageId;
-            } else {
-              filters.since = waitStartedAt;
-            }
-            const messages = mb.inspect(filters).sort((a, b) => a.sent_at - b.sent_at);
+            // A message wait ends only through checkMessageWait above.
+            const messages = latestMessageId ? [] : mb.inspect(filters).sort((a, b) => a.sent_at - b.sent_at);
             if (messages.length > 0) {
               // A reply consumed by a wait counts as delivered (and
               // acknowledged); the caller's inbox and channel skip it.
@@ -219,7 +262,14 @@ export function makeWaitHandler({
 
           // 3. Sleep until the next poll, or break out on timeout.
           if (now() >= deadline) {
-            return { outcome: "timeout", waitedMs: waited(), target: { sessionId: storedId, address }, result: "timeout", sessionId: storedId };
+            return {
+              outcome: "timeout",
+              waitedMs: waited(),
+              target: { sessionId: storedId, address },
+              ...(latestMessageId ? { messageStatus: currentStatus(latestMessageId) } : {}),
+              result: "timeout",
+              sessionId: storedId
+            };
           }
           const remaining = deadline - now();
           await sleep(Math.min(pollIntervalMs, Math.max(remaining, 10)));

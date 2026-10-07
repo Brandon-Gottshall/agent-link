@@ -117,12 +117,15 @@ function peerOf(payload) {
 }
 
 // Asserts the turn text is exactly the envelope for this message.
-function assertEnveloped(params, peer, { to, body, overrides = null, from = CALLER, fromHarness = "codex", fromVerified = true }) {
+// B7a: from/to are addresses; a Codex turn is labeled fyi unless the sender
+// waits for a reply (R7.2).
+function assertEnveloped(params, peer, { to, body, overrides = null, from = `codex:${CALLER}`, fromHarness = "codex", fromVerified = true, anticipation = "fyi" }) {
   assert.ok(peer?.enveloped, "result reports the envelope");
   assert.equal(peer.from, from);
   assert.equal(peer.fromVerified, fromVerified);
   assert.match(peer.messageId, /^[0-9A-HJKMNP-TV-Z]{26}$/);
-  const expected = renderPeerEnvelope({ id: peer.messageId, from, fromHarness, fromVerified, to, sentAt: peer.sentAt, body, overrides, reply: "direct" });
+  const expected = renderPeerEnvelope({ id: peer.messageId, from, fromHarness, fromVerified, to, toHarness: "codex", sentAt: peer.sentAt, anticipation, body, overrides, reply: "direct" });
+  assert.match(expected, new RegExp(` to="codex:[^"]+" sentAt="[^"]+" anticipation="${anticipation}"`));
   assert.equal(params.input[0].text, expected);
   return expected;
 }
@@ -135,7 +138,7 @@ try {
   let r = await call("message_codex_thread", { threadId: TARGET, message: BODY });
   assert.ok(!r.isError, JSON.stringify(r.payload));
   let text = assertEnveloped(lastTurn("turn/start", mark), peerOf(r.payload), { to: TARGET, body: BODY });
-  assert.match(text, new RegExp(`<reply>To reply, call message_codex_thread with threadId="${CALLER}".</reply>`));
+  assert.match(text, new RegExp(`<reply>To reply, call message_codex_thread with threadId="codex:${CALLER}".</reply>`));
   assert.ok(!text.includes("<overrides"), "no overrides were requested");
 
   // message_codex_thread, turn/steer on an active thread: same envelope, and
@@ -201,15 +204,18 @@ try {
   // the whole tool result (receipt included) holds nothing raw.
   for (const body of INJECTION_CORPUS) {
     replyText = body;
+    const turnMark = received.length;
     r = await call("message_codex_thread", { threadId: TARGET, message: "hi", waitForReply: true, timeoutMs: 2000, pollIntervalMs: 250 });
     assert.ok(!r.isError, JSON.stringify(r.payload));
+    // R7.2: waitForReply labels the sent turn anticipation="reply".
+    assertEnveloped(lastTurn("turn/start", turnMark), peerOf(r.payload), { to: TARGET, body: "hi", anticipation: "reply" });
     const label = `reply ${JSON.stringify(body).slice(0, 40)}`;
     assertNoRawInjection(r.payload, label);
     const confirmation = r.payload.replyConfirmation;
     assert.equal(confirmation.enveloped, true);
-    assert.ok(confirmation.finalResponse.startsWith(`<agent-link-message id="${confirmation.reply.id}" from="${TARGET}" fromHarness="codex" fromVerified="true" to="${CALLER}" sentAt="`), label);
-    assert.match(confirmation.finalResponse, new RegExp(`replyTo="${r.payload.peerMessage.messageId}">`));
-    assert.match(confirmation.finalResponse, new RegExp(`<reply>To reply, call message_codex_thread with threadId="${TARGET}".</reply>`));
+    assert.ok(confirmation.finalResponse.startsWith(`<agent-link-message id="${confirmation.reply.id}" from="codex:${TARGET}" fromHarness="codex" fromVerified="true" to="codex:${CALLER}" sentAt="`), label);
+    assert.match(confirmation.finalResponse, new RegExp(`anticipation="fyi" inReplyTo="${r.payload.peerMessage.messageId}">`));
+    assert.match(confirmation.finalResponse, new RegExp(`<reply>To reply, call message_codex_thread with threadId="codex:${TARGET}".</reply>`));
     assert.equal(confirmation.finalResponse.split("</agent-link-message>").length, 2);
     assert.ok(!("text" in confirmation.finalResponseItem));
     assert.ok(confirmation.recentItems.every((item) => !("text" in item) && !("summary" in item) && !("command" in item)));

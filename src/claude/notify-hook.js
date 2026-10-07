@@ -1,18 +1,28 @@
 #!/usr/bin/env node
 // src/claude/notify-hook.js
 //
-// Invoked by Claude Code's UserPromptSubmit and SessionStart hooks. Reads the
-// hook stdin payload, looks up the local Claude session whose cliSessionId
-// matches, COUNTS pending mailbox messages addressed to that
-// session (does not drain), and emits the wrapped hookSpecificOutput
-// notification on stdout if any are pending. The actual messages are returned
-// by the read_agent_link_inbox MCP tool which the model is told to call.
+// Invoked by Claude Code's UserPromptSubmit, SessionStart and Stop hooks.
+// Reads the hook stdin payload and looks up the local Claude session whose
+// cliSessionId matches.
 //
-// Phase 0 verified that:
-//   - Stop does NOT accept additionalContext (hence this pivot).
-//   - UserPromptSubmit + SessionStart DO accept additionalContext.
-//   - The wrapped form `{hookSpecificOutput: {hookEventName, additionalContext}}`
-//     is the form Claude Code actually injects into the model prompt.
+// UserPromptSubmit / SessionStart: COUNTS pending mailbox messages addressed
+// to that session (does not drain) and emits the wrapped hookSpecificOutput
+// notification on stdout if any are pending. On UserPromptSubmit it also
+// adds the reminder notice (design R7.15) for open anticipating messages
+// whose reminder is due. The actual messages are returned by the
+// read_agent_link_inbox MCP tool which the model is told to call.
+//
+// Stop (design R7.14): when a reminder is due as the turn ends, returns
+// `{"decision": "block", "reason": <reminder notice>}` so the agent sees it
+// before stopping. It blocks at most once per reminder interval per
+// recipient, and never when nothing is due, so a turn can always end.
+// Protocol (Claude Code hooks reference): Stop takes top-level `decision`
+// and `reason`; exit 0 with JSON on stdout; plain-text stdout would be added
+// as context, so the hook always prints a JSON object.
+//
+// The wrapped form `{hookSpecificOutput: {hookEventName, additionalContext}}`
+// is the form Claude Code injects into the model prompt for UserPromptSubmit
+// and SessionStart.
 //
 // IMPORTANT: this hook MUST NOT include the message body in the notification —
 // additionalContext is hidden from the user, so leaking the body here would
@@ -34,6 +44,8 @@ import {
 } from "./session-index.js";
 import { claudeSessionAliases } from "./identity.js";
 import { renderHookNotice } from "../shared/envelope.js";
+import { isAnticipating, reminderSettings } from "../delivery/message-status.js";
+import { REMINDER_VIA, claimReminders, dueReminders, lastStopBlockAt, reminderNoticeFor } from "../delivery/reminders.js";
 import { createLogger } from "../shared/log.js";
 
 // Hook failures go to stderr (Claude Code shows it in its hook log) and, when
@@ -58,11 +70,24 @@ function logHookFailure(line) {
 // Pure entry point: payload in, hook output object out. Tests inject
 // `resolveSession`, `findSidecarById` and `mailboxOpener` instead of the
 // production code reading any test-only environment variable.
+/**
+ * @param {any} payload
+ * @param {{
+ *   resolveSession?: (cliSessionId: string, options: {transcriptPath?: string | null}) => any,
+ *   findSidecarById?: (id: string) => any,
+ *   mailboxOpener?: () => any,
+ *   log?: (line: string) => void,
+ *   now?: () => number,
+ *   settings?: import("../delivery/message-status.js").ReminderSettings
+ * }} [options]
+ */
 export function runNotifyHook(payload, {
   resolveSession = resolveHookSession,
   findSidecarById = (id) => findSidecarSessionById(id),
   mailboxOpener = () => openMailbox(),
-  log = logHookFailure
+  log = logHookFailure,
+  now = () => Date.now(),
+  settings = undefined
 } = {}) {
   const cliSessionId = typeof payload?.session_id === "string" ? payload.session_id : null;
   const hookEvent = typeof payload?.hook_event_name === "string" ? payload.hook_event_name : null;
@@ -82,11 +107,20 @@ export function runNotifyHook(payload, {
   // Receiver is unknown (or this is a foreign session): no injection.
   if (!session) return {};
 
-  let pending;
+  const isStop = hookEvent === "Stop";
+  const remind = isStop || hookEvent === "UserPromptSubmit";
+  let pending = [];
+  let reminder = null;
   try {
+    const reminderConfig = settings ?? reminderSettings();
+    const at = now();
     const mb = mailboxOpener();
     try {
-      pending = pendingForSession(mb, session, { cliSessionId, findSidecarById });
+      const mine = mailForSession(mb, session, { cliSessionId, findSidecarById });
+      if (!isStop) pending = mine.filter((m) => !m.delivered_at);
+      if (remind) {
+        reminder = remindersFor(mb, mine, { isStop, now: at, settings: reminderConfig });
+      }
     } finally {
       mb.close();
     }
@@ -94,14 +128,41 @@ export function runNotifyHook(payload, {
     log(`notify-hook: mailbox error: ${err.message}\n`);
     return {};
   }
-  if (!pending.length) return {};
 
+  if (isStop) {
+    // Never block without something due: a turn can always end.
+    return reminder ? { decision: "block", reason: reminder } : {};
+  }
+  const parts = [];
+  if (pending.length) parts.push(renderNotice(pending));
+  if (reminder) parts.push(reminder);
+  if (!parts.length) return {};
   return {
     hookSpecificOutput: {
       hookEventName: hookEvent,
-      additionalContext: renderNotice(pending)
+      additionalContext: parts.join("\n")
     }
   };
+}
+
+// The reminder notice for this session's due reminders, claimed and
+// recorded, or null. The Stop hook blocks at most once per interval per
+// recipient however many messages are due (R7.14).
+function remindersFor(mb, mine, { isStop, now, settings }) {
+  const open = mine.filter((m) => isAnticipating(m));
+  if (!open.length) return null;
+  if (isStop) {
+    const last = lastStopBlockAt(open);
+    if (last !== null && now - last < settings.intervalMs) return null;
+  }
+  const due = dueReminders(open, { now, settings });
+  if (!due.length) return null;
+  const claimed = claimReminders(mb, due, {
+    via: isStop ? REMINDER_VIA.stop : REMINDER_VIA.prompt,
+    now,
+    settings
+  });
+  return reminderNoticeFor(claimed, { settings });
 }
 
 // The section 2.4 notice: count and at most 3 validated sender ids, never a
@@ -125,13 +186,13 @@ export function resolveHookSession(cliSessionId, { transcriptPath, ...roots } = 
   return findClaudeSessionById(cliSessionId, roots);
 }
 
-// Pending mail for every id form of this session. A session resolved from
-// its transcript alone does not know its Desktop sidecar id, so pending mail
+// Mail for every id form of this session, oldest first. A session resolved
+// from its transcript alone does not know its Desktop sidecar id, so mail
 // addressed to some other `local_` id is checked against that one sidecar
 // file directly (no walk over every sidecar).
-function pendingForSession(mb, session, { cliSessionId, findSidecarById }) {
+function mailForSession(mb, session, { cliSessionId, findSidecarById }) {
   const aliases = new Set(claudeSessionAliases(session));
-  const all = mb.inspect({ undelivered: true, limit: Number.MAX_SAFE_INTEGER });
+  const all = mb.inspect({ limit: Number.MAX_SAFE_INTEGER });
   const checked = new Map();
   const isOurs = (toId) => {
     if (aliases.has(toId)) return true;

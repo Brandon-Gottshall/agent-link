@@ -11,6 +11,9 @@
 //     thread/loaded/list, send those server->client requests and include the
 //     client's answers (in order) as serverRequestAnswers
 //   AGENT_LINK_STUB_ARGS_LOG      append the full argv (JSON) for transport assertions
+//   AGENT_LINK_STUB_THREAD_STATUS JSON {threadId: statusType} answered by thread/read
+//     (default "notLoaded" for an unlisted thread)
+//   AGENT_LINK_STUB_TURN_LOG      append "<method> <params JSON>" for turn/start and turn/steer
 import { spawn } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
 import http from "node:http";
@@ -112,6 +115,24 @@ wss.on("connection", (socket) => {
       }
       case "thread/list":
         reply({ result: { data: [], nextCursor: null, backwardsCursor: null } });
+        break;
+      case "thread/read": {
+        let statuses = {};
+        try {
+          statuses = JSON.parse(process.env.AGENT_LINK_STUB_THREAD_STATUS || "{}");
+        } catch {
+          statuses = {};
+        }
+        const threadId = msg.params?.threadId;
+        reply({ result: { thread: { id: threadId, status: { type: statuses[threadId] ?? "notLoaded" }, turns: [] } } });
+        break;
+      }
+      case "turn/start":
+      case "turn/steer":
+        if (process.env.AGENT_LINK_STUB_TURN_LOG) {
+          appendFileSync(process.env.AGENT_LINK_STUB_TURN_LOG, `${msg.method} ${JSON.stringify(msg.params ?? {})}\n`);
+        }
+        reply({ result: { turn: { id: `stub-turn-${msg.id}`, status: "inProgress", items: [] } } });
         break;
       default:
         reply({ error: { code: -32601, message: `stub: method not found: ${msg.method}` } });

@@ -159,7 +159,7 @@ export function envelopeReplyConfirmation(confirmation, { threadId, sent }) {
     fromHarness: "codex",
     fromVerified: true,
     to: sent?.from,
-    replyTo: sent?.messageId,
+    inReplyTo: sent?.messageId,
     reply: "direct"
   };
   /** @type {Record<string, any>} */
@@ -397,7 +397,15 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
 
     const steering = mode === "steer_active" || (mode === "auto" && status.type === "active");
     // turn/steer ignores cwd/model/effort, so only a new turn shows overrides.
-    const peer = buildPeerTurnInput({ toolContext, threadId, message, overrides: steering ? null : overrides });
+    const peer = buildPeerTurnInput({
+      toolContext,
+      threadId,
+      message,
+      overrides: steering ? null : overrides,
+      // R7.2 default label. Codex sends get anticipation/replyBy arguments
+      // and mailbox records in B7b; until then the reply line stays direct.
+      anticipation: args.waitForReply === true ? "reply" : "fyi"
+    });
     const input = peer.input;
     if (steering) {
       const expectedTurnId = args.expectedTurnId || await inferActiveTurnId(threadId);
@@ -557,9 +565,9 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
   // is always wrapped in the peer envelope. The sender comes from runtime
   // identity (caller _meta, then host env), never from tool arguments.
   /**
-   * @param {{toolContext?: ToolContext, threadId: string, message: string, overrides?: Record<string, any> | null}} options
+   * @param {{toolContext?: ToolContext, threadId: string, message: string, overrides?: Record<string, any> | null, anticipation?: string}} options
    */
-  function buildPeerTurnInput({ toolContext = {}, threadId, message, overrides = null }) {
+  function buildPeerTurnInput({ toolContext = {}, threadId, message, overrides = null, anticipation = "fyi" }) {
     const caller = resolveCallerIdentity({
       host,
       runtimeCallerContext: toolContext.callerContext ?? null,
@@ -571,7 +579,9 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
       fromHarness: caller.kind,
       fromVerified: isRuntimeIdentitySource(caller.source),
       to: threadId,
+      toHarness: "codex",
       sentAt: Date.now(),
+      anticipation,
       body: message,
       overrides,
       reply: "direct"

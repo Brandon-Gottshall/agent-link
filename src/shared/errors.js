@@ -6,7 +6,7 @@
 
 /**
  * @typedef {"invalid_arguments" | "unknown_tool" | "not_found" | "ambiguous"
- *   | "archived" | "wrong_recipient" | "no_current_session" | "body_too_large"
+ *   | "archived" | "wrong_recipient" | "already_resolved" | "no_current_session" | "body_too_large"
  *   | "permission_denied" | "active_turn_conflict" | "codex_unavailable"
  *   | "claude_unavailable" | "upstream_error" | "unsupported" | "state_io_error"
  *   | "internal_error"} AgentLinkErrorCode
@@ -35,6 +35,7 @@ export const ERROR_CODES = Object.freeze([
   "ambiguous",
   "archived",
   "wrong_recipient",
+  "already_resolved",
   "no_current_session",
   "body_too_large",
   "permission_denied",

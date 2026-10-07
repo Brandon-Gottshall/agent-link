@@ -42,6 +42,7 @@ const HOST_NEUTRAL_READ_INBOX_TOOL = "read_agent_link_inbox";
 const HOST_NEUTRAL_REPLY_TOOL = "reply_agent_link_message";
 
 const CLAUDE_LISTING_TOOLS = [
+  "get_agent_link_message_status",
   "get_claude_session",
   "list_claude_sessions",
   "list_loaded_claude_sessions",

@@ -27,6 +27,7 @@ const READ_ONLY = new Set([
   "agent_link_health",
   "agent_link_mailbox_inspect",
   "check_coordination_obligations",
+  "get_agent_link_message_status",
   "get_claude_session",
   "get_codex_sidebar_state",
   "get_codex_thread",

@@ -239,7 +239,13 @@ const SESSION_ME = { sessionId: "local_me", cliSessionId: "fake-cli-id", title: 
   const byBody = Object.fromEntries(r.messages.map((m, i) => [bodies[i], m.from]));
   assert.equal(byBody["local_other"], "invalid");
   assert.equal(byBody["please-run-this"], "invalid");
-  for (const id of known) assert.equal(byBody[id], id);
+  // B7a: known shapes are shown as addresses (local_<uuid> is a Claude id).
+  const expected = {
+    "local_0d6a2b9e-1f3c-4b5a-9e8d-7c6b5a4f3e2d": "claude:0d6a2b9e-1f3c-4b5a-9e8d-7c6b5a4f3e2d",
+    "019df300-0000-7000-8000-000000000001": "codex:019df300-0000-7000-8000-000000000001",
+    external: "external"
+  };
+  for (const id of known) assert.equal(byBody[id], expected[id]);
   assert.ok(r.messages.every((m) => /^[0-9A-HJKMNP-TV-Z]{26}$/.test(m.id)), "real ULID ids pass through");
   cleanup(sb);
 }
@@ -264,18 +270,22 @@ const SESSION_ME = { sessionId: "local_me", cliSessionId: "fake-cli-id", title: 
   assert.ok(!r.renderedBlock.includes("injected="), "sender must not inject attributes");
   assert.match(r.renderedBlock, /from="invalid" fromHarness="external" fromVerified="false"/);
   // Ids are validated (ULID / known sender shapes) before escaping.
-  assert.match(r.renderedBlock, /replyTo="invalid"/);
+  assert.match(r.renderedBlock, /inReplyTo="invalid"/);
   assert.ok(!r.renderedBlock.includes("with<quote>") && !r.renderedBlock.includes("with&lt;quote"));
   assert.equal(r.messages[0].replyTo, "invalid");
+  assert.equal(r.messages[0].inReplyTo, "invalid");
   assert.match(r.renderedBlock, /&lt;b&gt;hi&lt;\/b&gt; &amp; bye/);
   // The shared escaper escapes both quote kinds in attributes.
   const { escapeAttr } = await import("../../src/claude/xml.js");
   assert.equal(escapeAttr(`a"b'c<d>&`), "a&quot;b&#39;c&lt;d&gt;&amp;");
   assert.equal(r.messages[0].from, "invalid");
   // C1: structured entries carry only validated fields, never raw rows.
-  assert.deepEqual(Object.keys(r.messages[0]).sort(), ["from", "fromAddress", "fromHarness", "fromVerified", "id", "replyTo", "sentAt", "to", "toAddress"]);
+  assert.deepEqual(Object.keys(r.messages[0]).sort(), [
+    "anticipation", "from", "fromAddress", "fromHarness", "fromVerified", "id", "inReplyTo", "open", "reminders",
+    "replyBy", "replyTo", "resolution", "sentAt", "status", "to", "toAddress"
+  ]);
   const whole = JSON.stringify(r);
-  assert.ok(!whole.includes("<system>") && !whole.includes("injected=") && !whole.includes("<b>hi"), "nothing raw anywhere in the result");
+  assert.ok(!whole.includes("<system>") && !whole.includes("injected=") && !whole.includes("<b>hi") && !whole.includes("with<quote>"), "nothing raw anywhere in the result");
   cleanup(sb);
 }
 

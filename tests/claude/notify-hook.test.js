@@ -45,6 +45,8 @@ const SENDER = "local_1a2b3c4d-0000-4000-8000-00000000000b";
 const SENDER_A = "local_1a2b3c4d-0000-4000-8000-0000000000a1";
 const SENDER_B = "local_1a2b3c4d-0000-4000-8000-0000000000b2";
 const SENDER_C = "local_1a2b3c4d-0000-4000-8000-0000000000c3";
+// Notices show addresses (B7a): local_<uuid> is claude:<uuid>.
+const addr = (id) => `claude:${id.slice("local_".length)}`;
 
 function makeSandbox() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "agent-link-notify-"));
@@ -108,7 +110,7 @@ function insert(mailboxPath, fields) {
   assert.match(ctx, /pending/i, "additionalContext should mention pending messages");
   assert.match(ctx, /1\b/, "additionalContext should include the count");
   assert.match(ctx, /read_agent_link_inbox/, "additionalContext must instruct calling the read_agent_link_inbox tool");
-  assert.match(ctx, new RegExp(OTHER), "additionalContext should mention the sender id");
+  assert.match(ctx, new RegExp(addr(OTHER)), "additionalContext should mention the sender id");
   assert.ok(!ctx.includes("hello receiver"),
     "notify hook leaked the message body — body must stay in the mailbox until the tool reads it");
   cleanup(sb);
@@ -179,7 +181,7 @@ function insert(mailboxPath, fields) {
   );
   assert.ok(parsed.hookSpecificOutput, "transcript-only session must still get the nudge");
   assert.match(parsed.hookSpecificOutput.additionalContext, /read_agent_link_inbox/);
-  assert.match(parsed.hookSpecificOutput.additionalContext, new RegExp(SENDER));
+  assert.match(parsed.hookSpecificOutput.additionalContext, new RegExp(addr(SENDER)));
   assert.ok(!parsed.hookSpecificOutput.additionalContext.includes("transcript-only receiver body"),
     "notify hook leaked the body for a transcript-only session");
   cleanup(sb);
@@ -246,9 +248,9 @@ function insert(mailboxPath, fields) {
   );
   assert.ok(parsed.hookSpecificOutput);
   assert.match(parsed.hookSpecificOutput.additionalContext, /\b2 pending peer messages\b/);
-  assert.match(parsed.hookSpecificOutput.additionalContext, new RegExp(SENDER_A));
-  assert.match(parsed.hookSpecificOutput.additionalContext, new RegExp(SENDER_B));
-  assert.ok(!parsed.hookSpecificOutput.additionalContext.includes(SENDER_C));
+  assert.match(parsed.hookSpecificOutput.additionalContext, new RegExp(addr(SENDER_A)));
+  assert.match(parsed.hookSpecificOutput.additionalContext, new RegExp(addr(SENDER_B)));
+  assert.ok(!parsed.hookSpecificOutput.additionalContext.includes(addr(SENDER_C)));
   cleanup(sb);
 }
 

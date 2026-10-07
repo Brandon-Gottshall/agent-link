@@ -27,6 +27,9 @@ export const MAX_EVENT_LINE_BYTES = 512 * 1024;
 const DIR_MODE = 0o700;
 const FILE_MODE = 0o600;
 
+const ANTICIPATION_VALUES = new Set(["reply", "action", "fyi"]);
+const RESOLUTION_KINDS = new Set(["reply", "decline", "done"]);
+
 // Returns a tool error object when `body` exceeds the cap, otherwise null.
 export function messageBodyTooLarge(body) {
   const bytes = Buffer.byteLength(String(body ?? ""), "utf8");
@@ -153,7 +156,9 @@ export function openMailbox(options = {}) {
    *   toSessionKind: string,
    *   body: string,
    *   metadata?: object | null,
-   *   replyToMessageId?: string | null
+   *   replyToMessageId?: string | null,
+   *   anticipation?: string | null,
+   *   replyBy?: number | null
    * }} message
    */
   function insertMessage({
@@ -163,7 +168,9 @@ export function openMailbox(options = {}) {
     toSessionKind,
     body,
     metadata,
-    replyToMessageId = null
+    replyToMessageId = null,
+    anticipation = null,
+    replyBy = null
   }) {
     const tooLarge = messageBodyTooLarge(body);
     if (tooLarge) throw new Error(tooLarge.message);
@@ -183,10 +190,50 @@ export function openMailbox(options = {}) {
         sent_at: now,
         delivered_at: null,
         acknowledged_at: null,
-        reply_to_message_id: replyToMessageId
+        reply_to_message_id: replyToMessageId,
+        // Labels (design section 7.2). Messages written before 0.6.0 have
+        // none and read as fyi.
+        anticipation: ANTICIPATION_VALUES.has(/** @type {string} */ (anticipation)) ? anticipation : "fyi",
+        reply_by: Number.isFinite(replyBy) ? replyBy : null
       }
     });
     return id;
+  }
+
+  // Resolution of an anticipating message (R7.12). The first `resolved`
+  // event for a message wins when the view is built; callers check
+  // getMessage().resolution first and report already_resolved.
+  /**
+   * @param {{messageId: string, kind: string, by: string, late?: boolean, replyMessageId?: string | null, at?: number}} event
+   */
+  function recordResolution({ messageId, kind, by, late = false, replyMessageId = null, at = Date.now() }) {
+    appendEvent({ type: "resolved", at, messageId, kind, by, late: late === true, replyMessageId });
+  }
+
+  // One reminder showing of an open message (R7.17).
+  /**
+   * @param {{messageId: string, n: number, via: string, at?: number}} event
+   */
+  function recordReminder({ messageId, n, via, at = Date.now() }) {
+    appendEvent({ type: "reminded", at, messageId, n, via });
+  }
+
+  // Exactly-once claims across processes (claim-before-notify, P4-10):
+  // an exclusive create of a marker file beside the mailbox. True for the
+  // one caller that created it; false if it existed or could not be made.
+  /** @param {string} key */
+  function claim(key) {
+    const dir = `${mailboxPath}.claims`;
+    const name = String(key).replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 200);
+    try {
+      fs.mkdirSync(dir, { recursive: true, mode: DIR_MODE });
+      fs.closeSync(fs.openSync(path.join(dir, name), "wx", FILE_MODE));
+      return true;
+    } catch {
+      // EEXIST: another process holds the claim. Any other failure: no claim,
+      // so nothing is sent twice.
+      return false;
+    }
   }
 
   function markDelivered({ messageId, deliveredAt = Date.now() }) {
@@ -215,6 +262,9 @@ export function openMailbox(options = {}) {
 
   return {
     insertMessage,
+    recordResolution,
+    recordReminder,
+    claim,
     markDelivered,
     markAcknowledged,
     releaseDelivery,
@@ -228,12 +278,15 @@ export function openMailbox(options = {}) {
       for (const row of rows) markDelivered({ messageId: row.id });
       return rows;
     },
-    // Returns the reply message id, or null when no reply was written.
+    // Low-level explicit reply from the recipient (no identity checks; the
+    // reply_agent_link_message tool is the checked path). Returns the reply
+    // message id, or null when no reply was written. A reply to an open
+    // anticipating message also resolves it as "reply".
     ackMessage({ messageId, body }) {
       const original = view().find((m) => m.id === messageId);
       markAcknowledged({ messageId });
       if (body && original) {
-        return insertMessage({
+        const replyId = insertMessage({
           fromSessionId: original.to_session_id,
           fromSessionKind: original.to_session_kind,
           toSessionId: original.from_session_id,
@@ -241,6 +294,10 @@ export function openMailbox(options = {}) {
           body,
           replyToMessageId: messageId
         });
+        if (original.anticipation !== "fyi" && !original.resolution) {
+          recordResolution({ messageId, kind: "reply", by: original.to_session_id, replyMessageId: replyId });
+        }
+        return replyId;
       }
       return null;
     },
@@ -309,11 +366,37 @@ function mergedView(paths) {
     if (event.type === "delivered" && event.messageId && messages.has(event.messageId)) {
       const message = messages.get(event.messageId);
       message.delivered_at = event.at ?? Date.now();
+      // First surfacing, for the reminder interval (R7.13).
+      message.first_delivered_at ??= message.delivered_at;
     } else if (event.type === "acknowledged" && event.messageId && messages.has(event.messageId)) {
       const message = messages.get(event.messageId);
       message.acknowledged_at = event.at ?? Date.now();
     } else if (event.type === "released" && event.messageId && messages.has(event.messageId)) {
-      messages.get(event.messageId).delivered_at = null;
+      const message = messages.get(event.messageId);
+      message.delivered_at = null;
+      // An undone claim was never surfaced (unless a reminder showed it).
+      if (!message.reminders.length) message.first_delivered_at = null;
+    } else if (event.type === "resolved" && event.messageId && messages.has(event.messageId)) {
+      const message = messages.get(event.messageId);
+      // A message resolves once (R7.10): the first event wins.
+      if (!message.resolution && RESOLUTION_KINDS.has(event.kind)) {
+        message.resolution = {
+          kind: event.kind,
+          by: typeof event.by === "string" ? event.by : null,
+          at: normalizeTimestamp(event.at),
+          late: event.late === true,
+          replyMessageId: typeof event.replyMessageId === "string" ? event.replyMessageId : null
+        };
+      }
+    } else if (event.type === "reminded" && event.messageId && messages.has(event.messageId)) {
+      const n = Number(event.n);
+      if (Number.isInteger(n) && n > 0) {
+        messages.get(event.messageId).reminders.push({
+          n,
+          via: typeof event.via === "string" ? event.via : null,
+          at: normalizeTimestamp(event.at)
+        });
+      }
     }
   }
   return [...messages.values()];
@@ -359,7 +442,12 @@ function normalizeMessage(message, eventAt) {
     sent_at: normalizeTimestamp(message.sent_at, eventAt),
     delivered_at: message.delivered_at ?? null,
     acknowledged_at: message.acknowledged_at ?? null,
-    reply_to_message_id: message.reply_to_message_id ?? null
+    reply_to_message_id: message.reply_to_message_id ?? null,
+    anticipation: ANTICIPATION_VALUES.has(message.anticipation) ? message.anticipation : "fyi",
+    reply_by: Number.isFinite(message.reply_by) ? message.reply_by : null,
+    first_delivered_at: message.delivered_at ?? null,
+    resolution: null,
+    reminders: []
   };
 }
 

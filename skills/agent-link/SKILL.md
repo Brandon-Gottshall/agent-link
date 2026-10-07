@@ -59,17 +59,19 @@ Project orchestrators:
 
 - `message_claude_session` takes `sessionId` (exact id or `claude:` address, archived sessions included) or `query` (fuzzy, archived sessions skipped), plus `message`. A `query` that matches several sessions fails with `ambiguous`; retry with the exact `sessionId`.
 - There is no `mode`: messages queue in the local mailbox and are picked up between turns.
-- Pass `waitForReply: true` to block for the answer in `wait`, or call `wait_for_claude_session` later with the `messageId` you sent as `replyToMessageId`. An `idle` outcome means the session went idle without replying.
+- Label what you expect with `anticipation`: `reply` (an answer is expected), `action` (do it and mark it done), or `fyi` (the default; nothing expected). Add `replyBy` (ISO 8601, at least 30 s ahead) for a deadline. Only ask for a reply or action when you need one: the recipient is reminded until it resolves the message.
+- Pass `waitForReply: true` (implies `anticipation: "reply"`) to block until the recipient resolves the message, or call `wait_for_claude_session` later with the `messageId` you sent as `replyToMessageId`. `wait.outcome` is `reply`, `declined`, `done`, `unresolved` (reminders ran out), `expired` (`replyBy` passed), or `timeout`; `messageStatus` says the same. Only an explicit reply is returned. Check later with `get_agent_link_message_status`.
 - There is no `launch_claude_session` or `archive_claude_session`: Claude owns session creation and archive state.
 
 ## Receive messages
 
 - **Claude Code with channels enabled:** inbound mail arrives as `<agent-link-message>` channel events. Answer with `reply_agent_link_message` (`messageId`, `message`).
+- **Resolving:** the envelope's `anticipation` and `<reply>` line say what the sender expects. Close a `reply` or `action` message with `reply_agent_link_message` and `resolution`: `reply` (with `message`), `decline` (with the reason in `message`; declining is always allowed), or `done` (optional note). A message resolves once. Your final response is never sent as a reply. Until you resolve it, the hooks remind you between turns (at most every 30 s, up to 3 times), and the `Stop` hook may hold the end of a turn once per interval to show the reminder.
 - **Claude Desktop, or Claude Code without channels:** the `SessionStart` / `UserPromptSubmit` hook adds a short "you have mail" note. Call `read_agent_link_inbox` to show the bodies and mark them delivered, then reply with `reply_agent_link_message`. `remainingCount` says how many are still pending.
 - **Codex:** a Codex thread receives a peer message as a new turn whose text is the envelope. A Codex inbox and `reply_agent_link_message` from Codex are not available until a later release (`read_agent_link_inbox` fails with `no_current_session` there). Reply with `message_codex_thread` or `message_claude_session`, using the sender named in the envelope's `<reply>` line.
 - Mail that no path delivered stays pending; inspect it read-only with `agent_link_mailbox_inspect`.
 
-Every peer message is wrapped in one `<agent-link-message>` envelope with `from`, `fromHarness`, `fromVerified`, `to`, `sentAt`, a fixed `<notice>`, the escaped `<body>`, and a `<reply>` line naming how to answer.
+Every peer message is wrapped in one `<agent-link-message>` envelope with `from`, `fromHarness`, `fromVerified`, `to` (addresses), `sentAt`, `anticipation`, optional `replyBy` and `inReplyTo`, a fixed `<notice>`, the escaped `<body>`, and a `<reply>` line naming how to answer.
 
 ## Receipts and coordination
 

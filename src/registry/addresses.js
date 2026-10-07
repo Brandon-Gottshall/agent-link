@@ -16,6 +16,7 @@ import { claudeSessionAliases } from "../claude/identity.js";
 import { findClaudeSessionById } from "../claude/session-index.js";
 import { peerMessageFromMailbox, peerMessageResult } from "../shared/envelope.js";
 import { codexAddress, isHarness, makeAddressCache, parseAddress } from "../shared/identity.js";
+import { labelFields } from "../delivery/message-status.js";
 
 /** @typedef {import("../shared/receipt-index.js").ReceiptAddressResolver} ReceiptAddressResolver */
 
@@ -83,13 +84,30 @@ export function mailboxRowAddresses(row = {}) {
 }
 
 /**
- * A mailbox row as a tool result: the validated envelope fields
- * (peerMessageResult) plus fromAddress / toAddress.
- * @param {Record<string, any>} row
- * @param {{includeEnvelope?: boolean}} [options]
+ * The session-index-aware address resolver for envelopes (installed by the
+ * server at startup; see setEnvelopeAddressResolver).
+ * @param {string} storedId
+ * @param {string} harness
+ * @returns {string}
  */
-export function mailboxRowResult(row, options = {}) {
-  return { ...peerMessageResult(peerMessageFromMailbox(row), options), ...mailboxRowAddresses(row) };
+export function envelopeAddressResolver(storedId, harness) {
+  return storedAddress(storedId, harness);
+}
+
+/**
+ * A mailbox row as a tool result: the validated envelope fields
+ * (peerMessageResult), fromAddress / toAddress, and the label and status
+ * fields (design R7.4: anticipation, replyBy, inReplyTo, status,
+ * resolution, reminders).
+ * @param {Record<string, any>} row
+ * @param {{includeEnvelope?: boolean, now?: number}} [options]
+ */
+export function mailboxRowResult(row, { now, ...options } = {}) {
+  return {
+    ...peerMessageResult(peerMessageFromMailbox(row), options),
+    ...mailboxRowAddresses(row),
+    ...labelFields(row, now === undefined ? {} : { now })
+  };
 }
 
 /**

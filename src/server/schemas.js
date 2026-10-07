@@ -21,7 +21,8 @@ export const RECEIPT_ACTIONS = Object.freeze([
   "message_thread",
   "archive_thread",
   "message_claude_session",
-  "reply_message"
+  "reply_message",
+  "message_status"
 ]);
 
 /**

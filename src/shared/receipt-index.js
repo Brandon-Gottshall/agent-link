@@ -150,7 +150,8 @@ export function normalizeReceiptInput(value = {}, options = {}) {
  *   evidence?: any,
  *   runtimeCallerContext?: any,
  *   appServer?: any,
- *   host?: string | null
+ *   host?: string | null,
+ *   resolution?: Record<string, any> | null
  * }} input
  */
 export function buildReceipt({
@@ -164,7 +165,8 @@ export function buildReceipt({
   evidence,
   runtimeCallerContext,
   appServer,
-  host
+  host,
+  resolution = null
 }) {
   const input = normalizeReceiptInput(receipt, { runtimeCallerContext });
   const createdAt = new Date().toISOString();
@@ -206,7 +208,25 @@ export function buildReceipt({
     delivery: delivery ?? null,
     evidence: summarizeEvidence(evidence),
     replyConfirmation: summarizeReplyConfirmation(replyConfirmation),
-    appServer: summarizeAppServer(appServer)
+    appServer: summarizeAppServer(appServer),
+    // Design R7.12 / R7.17: a resolution, or an observed transition to
+    // unresolved or expired. Omitted from every other receipt.
+    ...(resolution ? { resolution: summarizeResolution(resolution) } : {})
+  };
+}
+
+/**
+ * @param {Record<string, any>} resolution
+ */
+function summarizeResolution(resolution) {
+  return {
+    kind: resolution.kind === "status" ? "status" : "resolution",
+    messageId: cleanText(resolution.messageId, 80),
+    resolution: cleanText(resolution.resolution, 20),
+    status: cleanText(resolution.status, 20),
+    by: cleanText(resolution.by, 200),
+    at: cleanText(resolution.at, 40),
+    late: resolution.late === true
   };
 }
 
@@ -365,7 +385,9 @@ export function receiptSummary(receipt) {
     finalResponse: receipt.finalResponse ?? null,
     delivery: receipt.delivery ?? null,
     evidence: receipt.evidence ?? null,
-    replyConfirmation: receipt.replyConfirmation ?? null
+    replyConfirmation: receipt.replyConfirmation ?? null,
+    // Resolution and status receipts (design R7.12, R7.17) only.
+    ...(receipt.resolution ? { resolution: receipt.resolution } : {})
   };
 }
 

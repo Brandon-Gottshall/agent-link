@@ -310,8 +310,9 @@ test("T-4.2 the hook (another cwd) and the server resolve the same mailbox, lega
     const parsed = spawnHook(env, otherCwd, { session_id: RECEIVER, transcript_path: transcriptPath, hook_event_name: "UserPromptSubmit" });
     const context = parsed.hookSpecificOutput?.additionalContext ?? "";
     assert.match(context, /2 pending (peer )?messages/, "the hook sees both the server's mailbox and the legacy one");
-    assert.match(context, new RegExp(SENDER));
-    assert.match(context, new RegExp(OTHER_SENDER));
+    // Notices show addresses (B7a): local_<uuid> is claude:<uuid>.
+    assert.match(context, new RegExp(SENDER.replace(/^local_/, "claude:")));
+    assert.match(context, new RegExp(OTHER_SENDER.replace(/^local_/, "claude:")));
 
     // Same env with a relative override: the hook stays silent and names the
     // misconfigured variable on stderr (it must never fail the prompt).
