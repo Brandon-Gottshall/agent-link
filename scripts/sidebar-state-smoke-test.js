@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../tests/helpers/guard.js";
 import assert from "node:assert/strict";
 import http from "node:http";
 import path from "node:path";

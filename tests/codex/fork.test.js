@@ -4,6 +4,8 @@
 // thread/archive and emits thread/tokenUsage/updated and
 // thread/settings/updated. HOME, CODEX_HOME and the state directory are
 // temp; nothing spawns Codex or touches ~/.codex, ~/.claude or ~/.agent-link.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync } from "node:fs";
 import os from "node:os";
@@ -195,7 +197,7 @@ function makeServer(fake, { mailboxPath, store, deliver, wait, host = "codex", g
   const tracker = createTokenUsageTracker({ appServer: fake });
   const tokenUsage = { ...tracker, awaitTurnUsage: (threadId, turnId, options) => tracker.awaitTurnUsage(threadId, turnId, { graceMs: options?.graceMs ?? graceMs }) };
   const queries = makeThreadQueries({ appServer: fake, wait: (ms) => new Promise((r) => setTimeout(r, Math.min(ms, 5))) });
-  const messaging = makeThreadMessaging({ appServer: fake, host, resolveCurrentSession: () => null, queries, tokenUsage });
+  const messaging = makeThreadMessaging({ appServer: fake, host, resolveCurrentSession: () => null, queries, tokenUsage, mailboxOpener: () => openMailbox({ mailboxPath }) });
   const forks = makeForkJobs({
     appServer: fake,
     host,
@@ -645,7 +647,12 @@ test("T-9.7 switch receipts: tokenUsage.next equals the first turn's last breakd
   await recordLaunch(thread, `codex:${CALLER}`);
   fake.behavior.autoComplete.add(thread);
   fake.behavior.requestsFor = () => [LAST(4321, 4000)];
-  const result = await messaging.messageThread({ threadId: thread, message: "harder", effort: "high", waitForReply: true, timeoutMs: 5000 }, asCaller());
+  // B7b receive (R7.19): the message wait ends on an explicit reply or the
+  // timeout, never on the turn, so the first turn's usage comes from
+  // tokenUsage.awaitTurnUsage directly; timeoutMs 0 shows it does not
+  // depend on the wait.
+  const result = await messaging.messageThread({ threadId: thread, message: "harder", effort: "high", waitForReply: true, timeoutMs: 0 }, asCaller());
+  assert.equal(result.wait.outcome, "timeout");
   assert.equal(result.switches[0].grantedBy, "launcher");
   const stored = result.switchReceipts[0].receipt;
   assert.equal(stored.kind, "effort-change");
@@ -657,7 +664,7 @@ test("T-9.7 switch receipts: tokenUsage.next equals the first turn's last breakd
 
   // Applied settings differ from the request: settings_mismatch.
   fake.behavior.settingsFor = () => ({ effort: "low" });
-  const mismatched = await messaging.messageThread({ threadId: thread, message: "again", effort: "xhigh", waitForReply: true, timeoutMs: 5000 }, asCaller());
+  const mismatched = await messaging.messageThread({ threadId: thread, message: "again", effort: "xhigh", waitForReply: true, timeoutMs: 0 }, asCaller());
   assert.ok(mismatched.warnings.some((w) => w.code === "settings_mismatch"));
 });
 
@@ -667,7 +674,7 @@ test("T-9.7 switch receipts: waited without a notification warns; not waiting re
   await recordLaunch(thread, `codex:${CALLER}`);
   fake.behavior.autoComplete.add(thread);
   fake.behavior.requestsFor = () => [];
-  const waited = await messaging.messageThread({ threadId: thread, message: "a", effort: "high", waitForReply: true, timeoutMs: 5000 }, asCaller());
+  const waited = await messaging.messageThread({ threadId: thread, message: "a", effort: "high", waitForReply: true, timeoutMs: 0 }, asCaller());
   assert.equal(waited.switchReceipts[0].receipt.override.tokenUsage.next, null);
   assert.equal(waited.warnings.find((w) => w.code === "token_usage_unavailable").details.reason, "no_notification");
   // Not waiting is the caller's choice: no warning, the receipt says why (manager decision).
@@ -1244,4 +1251,54 @@ test("N4: a failed self-fork returned through its tool result reports archived f
   const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never", waitForResult: true, timeoutMs: 5000 }, asCaller(original));
   assert.equal(result.status, "failed");
   assert.equal(result.archived, false);
+});
+
+// B7b receive: the reconcile `deliver` seam wired to Codex push
+// (makeReconcileDelivery, as src/server/index.js wires it).
+test("reconcile push: an idle loaded original gets exactly one turn; a held original stays queued", async () => {
+  const { makeReconcileDelivery } = await import("../../src/delivery/codex-delivery.js");
+  for (const held of [false, true]) {
+    const fake = fakeCodex();
+    const dir = path.join(tmp, `case-${++mailboxSeq}`);
+    mkdirSync(dir, { recursive: true });
+    const mailboxPath = path.join(dir, "mailbox.jsonl");
+    const store = createForkJobStore({ path: path.join(dir, "forks.jsonl") });
+    const original = fake.addThread({ id: uuid(next++), model: "gpt-a", reasoningEffort: "medium", cwd: project, turns: [{ id: "t1", status: "completed", items: [] }] });
+    if (held) fake.threads.get(original).status = { type: "notLoaded" };
+    const deliver = makeReconcileDelivery({ appServer: fake, mailboxOpener: () => openMailbox({ mailboxPath }) });
+    const { forks } = makeServer(fake, { mailboxPath, store, deliver });
+    const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never" }, asCaller());
+    const fork = result.fork.threadId;
+    const startsBefore = fake.requests.filter((r) => r.method === "turn/start" && r.params.threadId === original).length;
+    fake.complete(fork, fake.threads.get(fork).turns.at(-1).id);
+    const deadline = Date.now() + 5000;
+    let row = null;
+    while (Date.now() < deadline) {
+      const mb = openMailbox({ mailboxPath });
+      row = mb.inspect({ toSessionId: original, limit: 10 })[0] ?? null;
+      mb.close?.();
+      if (row && store.get(result.forkJobId)?.reconciled) break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    assert.ok(row, "the reconcile message is in the original's mailbox");
+    // A sweep or a second delivery attempt must not start another turn.
+    await forks.sweep();
+    await deliver({ messageId: row.id, threadId: original, envelope: null });
+    const starts = fake.requests.filter((r) => r.method === "turn/start" && r.params.threadId === original).slice(startsBefore);
+    const mb = openMailbox({ mailboxPath });
+    const after = mb.getMessage({ messageId: row.id });
+    mb.close?.();
+    if (held) {
+      assert.equal(starts.length, 0, "a held original gets no turn");
+      assert.equal(after.delivered_at, null, "it stays queued for the inbox");
+      const again = await deliver({ messageId: row.id, threadId: original, envelope: null });
+      assert.equal(again.delivery, "queued");
+      assert.equal(again.warnings[0].code, "codex_desktop_push_disabled");
+    } else {
+      assert.equal(starts.length, 1, "exactly one turn for the reconcile message");
+      assert.equal(starts[0].params.clientUserMessageId, row.id);
+      assert.equal(starts[0].params.turnTrigger, "agent-link");
+      assert.equal(after.delivered_via, "codex-turn");
+    }
+  }
 });

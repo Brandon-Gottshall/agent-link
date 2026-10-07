@@ -2,6 +2,8 @@
 // T-1.1): parse/format round trips, every row of the migration table,
 // hostIdentity() sources (R1.4), and the mailbox/receipt readers that show
 // canonical addresses without rewriting stored lines (R1.6).
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";

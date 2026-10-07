@@ -125,7 +125,7 @@
         },
         "reminders": {
           "type": "object",
-          "description": "{limit, intervalMs, codexTurns, warnings}: re-surfacing of open reply/action messages (AGENT_LINK_REMINDER_LIMIT, AGENT_LINK_REMINDER_INTERVAL_MS, AGENT_LINK_CODEX_REMINDERS). warnings lists settings that were ignored."
+          "description": "{limit, intervalMs, codexTurns, warnings}: re-surfacing of open reply/action messages (AGENT_LINK_REMINDER_LIMIT, AGENT_LINK_REMINDER_INTERVAL_MS, AGENT_LINK_CODEX_REMINDERS, on by default). warnings lists settings that were ignored."
         },
         "recentEvents": {
           "type": "array",
@@ -133,7 +133,7 @@
         },
         "codex": {
           "type": "object",
-          "description": "Codex install: {available, path, source, version, versionProbed, searched, reason, usedForManagedAppServer, overrideCosts}. overrideCosts: {measured, codexVersion, measuredAt, effortChange, modelSwitch, cwdChange, forkSameModel, forkOtherModel (each {cachedShare: [rep1, rep2], cacheNeutral}), compactForkAutoFraction, installedVersion, warning}: the measured prompt-cache effect of overrides and forks (B7 spike, R9.12) and the Codex version it was measured on; warning when the installed version differs, also added to the result's warnings[] (code override_costs_version_mismatch)."
+          "description": "Codex install: {available, path, source, version, versionProbed, searched, reason, usedForManagedAppServer, overrideCosts, desktopPush}. overrideCosts: {measured, codexVersion, measuredAt, effortChange, modelSwitch, cwdChange, forkSameModel, forkOtherModel (each {cachedShare: [rep1, rep2], cacheNeutral}), compactForkAutoFraction, installedVersion, warning}: the measured prompt-cache effect of overrides and forks (B7 spike, R9.12) and the Codex version it was measured on; warning when the installed version differs, also added to the result's warnings[] (code override_costs_version_mismatch). desktopPush: {mode: mailbox-only|shared-daemon, source, refused, verifiedCodexVersion, installedCodexVersion, heldSignal, turnCompletedMethod, warnings, rolloutChecks: {checked, held, skipped: {<reason>: count}}} (R1.12a): in mailbox-only mode (the B7 spike's result) a thread not loaded in Agent Link's own app-server is treated as held by the Codex desktop app and gets mail by inbox only; warnings name a Codex version that differs from the verified one, and a refused shared-daemon setting (it needs an explicit AGENT_LINK_CODEX_URL or AGENT_LINK_CODEX_SOCK)."
         },
         "forkJobs": {
           "type": "object",
@@ -1243,6 +1243,19 @@
           ],
           "description": "Optional reasoning effort for the initial turn when message is supplied."
         },
+        "anticipation": {
+          "type": "string",
+          "enum": [
+            "reply",
+            "action",
+            "fyi"
+          ],
+          "description": "Label of the first message: reply (a reply is expected), action (do it and mark it done), or fyi (default). Needs message."
+        },
+        "replyBy": {
+          "type": "string",
+          "description": "Optional deadline for a reply or action first message, ISO 8601 with a time zone, at least 30 s ahead. Not allowed with fyi."
+        },
         "ephemeral": {
           "type": "boolean",
           "description": "When true, create the thread as ephemeral if supported by the app-server. Ephemeral threads may not support includeTurns-based reply confirmation."
@@ -1404,6 +1417,41 @@
             "null"
           ],
           "description": "The envelope fields of the message sent: {messageId, from, fromHarness, fromVerified, sentAt, enveloped}."
+        },
+        "messageId": {
+          "type": "string",
+          "description": "With message: the first message's mailbox id (the thread answers it with reply_agent_link_message)."
+        },
+        "delivery": {
+          "type": "string",
+          "enum": [
+            "delivered",
+            "queued"
+          ],
+          "description": "With message: delivered when it started the first turn, queued when the push failed (see warnings)."
+        },
+        "deliveredVia": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "With message: codex-turn when delivered, else null."
+        },
+        "anticipation": {
+          "type": "string",
+          "enum": [
+            "reply",
+            "action",
+            "fyi"
+          ],
+          "description": "With message: its anticipation label."
+        },
+        "replyBy": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "With message: its deadline (ISO 8601), or null."
         },
         "gui": {
           "type": "object",
@@ -1640,7 +1688,7 @@
   },
   {
     "name": "message_codex_thread",
-    "description": "Send a direct text message to a Codex thread, wrapped in the peer-message envelope. Resumes not-loaded threads through the app-server before starting a new turn when needed, or steers an active turn. Starting a second turn on a busy thread fails with active_turn_conflict unless allowParallelTurn is true; an existing thread keeps its cwd, model, and effort: a different value fails with permission_denied unless the thread's launcher changes effort, the target's override policy (set by the user) allows the change, or the deprecated allowTargetOverride is set (until 0.7.0); an allowed change persists. threadId also accepts role:<name>, which reaches the Codex thread holding that role.",
+    "description": "Send a message to a Codex thread. It is written to the Agent Link mailbox first (messageId), then pushed to the thread as a turn wrapped in the peer-message envelope: a new turn on an idle thread, or steering an active turn (delivery delivered). A thread not loaded in Agent Link's Codex app-server is treated as held by the Codex desktop app and gets the message by inbox only (delivery queued, warning codex_desktop_push_disabled); a failed push also leaves it queued. Label it with anticipation (reply, action, fyi) and replyBy; the thread resolves reply/action messages with reply_agent_link_message, and waitForReply waits for that explicit resolution, never for the turn to complete. Starting a second turn on a busy thread fails with active_turn_conflict unless allowParallelTurn is true; an existing thread keeps its cwd, model, and effort: a different value fails with permission_denied unless the thread's launcher changes effort, the target's override policy (set by the user) allows the change, or the deprecated allowTargetOverride is set (until 0.7.0); an allowed change persists. threadId also accepts role:<name>, which reaches the Codex thread holding that role.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1692,9 +1740,26 @@
           "type": "boolean",
           "description": "Allow mode=start_turn even when the target appears active or waiting. Defaults to false."
         },
+        "anticipation": {
+          "type": "string",
+          "enum": [
+            "reply",
+            "action",
+            "fyi"
+          ],
+          "description": "What the sender expects: reply (a reply is expected), action (do the requested thing and mark it done), or fyi (no reply needed). Defaults to fyi, or reply with waitForReply=true; fyi with waitForReply=true is rejected. The thread resolves a reply/action message with reply_agent_link_message and is reminded between its turns until then, up to a cap."
+        },
+        "replyBy": {
+          "type": "string",
+          "description": "Optional deadline for a reply or action message, ISO 8601 with a time zone, at least 30 s ahead. After it passes the message status is expired. Not allowed with fyi."
+        },
+        "replyToMessageId": {
+          "type": "string",
+          "description": "If this send answers a message addressed to the caller, its messageId. An open reply/action message from the target thread is resolved as replied."
+        },
         "waitForReply": {
           "type": "boolean",
-          "description": "After delivery, wait for the target turn to finish and return the result in `wait`. Defaults to false."
+          "description": "Block until the thread resolves this message explicitly (reply_agent_link_message: reply, decline, done) or it becomes unresolved or expired, or timeoutMs elapses; the result is in `wait`. A turn completing does not end the wait. Implies anticipation reply. Defaults to false."
         },
         "timeoutMs": {
           "type": "integer",
@@ -1715,7 +1780,7 @@
           "minimum": 0,
           "maximum": 100,
           "default": 10,
-          "description": "When waitForReply is true, include up to this many recent ITEMS (not turns) of the target thread in wait.recentItems, oldest first, each with its turnId. Integer 0..100; defaults to 10."
+          "description": "Deprecated and ignored since 0.6.0: a message wait returns only the explicit reply, never the thread's items (read them with get_codex_thread). Integer 0..100; defaults to 10."
         },
         "allowTargetOverride": {
           "type": "boolean",
@@ -1848,31 +1913,68 @@
         },
         "messageId": {
           "type": "string",
-          "description": "Id of the message sent (the envelope id)."
+          "description": "Id of the message: its mailbox record and envelope id. The recipient answers it with reply_agent_link_message."
         },
         "delivery": {
-          "type": "object",
-          "description": "Delivery state: {state, action, turnId, ...}."
-        },
-        "deliveredVia": {
           "type": "string",
           "enum": [
-            "turn/start",
-            "turn/steer"
+            "delivered",
+            "queued"
           ],
-          "description": "The app-server request that carried the message."
+          "description": "delivered: pushed to the thread as a turn. queued: in the mailbox only (the thread is held by the Codex desktop app, or the push failed; see warnings); the thread reads it with read_agent_link_inbox."
+        },
+        "deliveredVia": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "codex-turn when the message was pushed as a turn (turn/start or turn/steer), else null."
+        },
+        "deliveryState": {
+          "type": "object",
+          "description": "{state: accepted_by_app_server | queued_in_mailbox, action, turnId}."
         },
         "target": {
           "type": "object",
-          "description": "{threadId} of the target thread."
+          "description": "{threadId, address} of the target thread."
         },
         "turn": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "The turn that carries the message: the new turn for turn/start, {id} for turn/steer; null when queued."
+        },
+        "anticipation": {
+          "type": "string",
+          "enum": [
+            "reply",
+            "action",
+            "fyi"
+          ],
+          "description": "The message's anticipation label."
+        },
+        "replyBy": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The message's deadline (ISO 8601), or null."
+        },
+        "messageStatus": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "pending for a reply/action message (or its status when a wait ended), null for fyi."
+        },
+        "resolved": {
           "type": "object",
-          "description": "The turn that carries the message: the new turn for turn/start, {id} for turn/steer."
+          "description": "With replyToMessageId: {messageId, kind: reply|done, late} when this send resolved the message it answers."
         },
         "wait": {
           "type": "object",
-          "description": "With waitForReply: {outcome: turn_completed|timeout|unavailable, waitedMs, target, turn?, reply?, recentItems?, recentItemsEnvelope?, error?} (section 3.4)."
+          "description": "With waitForReply: {outcome: reply|declined|done|unresolved|expired|timeout, messageStatus, waitedMs, target, reply?, turn?: {turnId}} (sections 3.4, 7.6). Ends only on an explicit resolution by the thread (reply_agent_link_message), never on its turn completing; reply is the explicit reply, decline reason, or done note, enveloped. Read the turn itself with get_codex_thread."
         },
         "receipt": {
           "type": "object",
@@ -2750,9 +2852,26 @@
           "type": "boolean",
           "description": "Allow mode=start_turn even when the target appears active or waiting. Defaults to false."
         },
+        "anticipation": {
+          "type": "string",
+          "enum": [
+            "reply",
+            "action",
+            "fyi"
+          ],
+          "description": "What the sender expects: reply (a reply is expected), action (do the requested thing and mark it done), or fyi (no reply needed). Defaults to fyi, or reply with waitForReply=true; fyi with waitForReply=true is rejected. The thread resolves a reply/action message with reply_agent_link_message and is reminded between its turns until then, up to a cap."
+        },
+        "replyBy": {
+          "type": "string",
+          "description": "Optional deadline for a reply or action message, ISO 8601 with a time zone, at least 30 s ahead. After it passes the message status is expired. Not allowed with fyi."
+        },
+        "replyToMessageId": {
+          "type": "string",
+          "description": "If this send answers a message addressed to the caller, its messageId. An open reply/action message from the target thread is resolved as replied."
+        },
         "waitForReply": {
           "type": "boolean",
-          "description": "After delivery, wait for the target turn to finish and return the result in `wait`. Defaults to false."
+          "description": "Block until the thread resolves this message explicitly (reply_agent_link_message: reply, decline, done) or it becomes unresolved or expired, or timeoutMs elapses; the result is in `wait`. A turn completing does not end the wait. Implies anticipation reply. Defaults to false."
         },
         "timeoutMs": {
           "type": "integer",
@@ -2773,7 +2892,7 @@
           "minimum": 0,
           "maximum": 100,
           "default": 10,
-          "description": "When waitForReply is true, include up to this many recent ITEMS (not turns) of the target thread in wait.recentItems, oldest first, each with its turnId. Integer 0..100; defaults to 10."
+          "description": "Deprecated and ignored since 0.6.0: a message wait returns only the explicit reply, never the thread's items (read them with get_codex_thread). Integer 0..100; defaults to 10."
         },
         "allowTargetOverride": {
           "type": "boolean",
@@ -3314,9 +3433,26 @@
           "type": "boolean",
           "description": "Allow mode=start_turn even when the target appears active or waiting. Defaults to false."
         },
+        "anticipation": {
+          "type": "string",
+          "enum": [
+            "reply",
+            "action",
+            "fyi"
+          ],
+          "description": "What the sender expects: reply (a reply is expected), action (do the requested thing and mark it done), or fyi (no reply needed). Defaults to fyi, or reply with waitForReply=true; fyi with waitForReply=true is rejected. The thread resolves a reply/action message with reply_agent_link_message and is reminded between its turns until then, up to a cap."
+        },
+        "replyBy": {
+          "type": "string",
+          "description": "Optional deadline for a reply or action message, ISO 8601 with a time zone, at least 30 s ahead. After it passes the message status is expired. Not allowed with fyi."
+        },
+        "replyToMessageId": {
+          "type": "string",
+          "description": "The messageId of the task message this result answers (it must be addressed to you). It is resolved as done, with this result as the note (R7.7): not_found, wrong_recipient, or already_resolved otherwise, and nothing is sent."
+        },
         "waitForReply": {
           "type": "boolean",
-          "description": "After delivery, wait for the target turn to finish and return the result in `wait`. Defaults to false."
+          "description": "Block until the thread resolves this message explicitly (reply_agent_link_message: reply, decline, done) or it becomes unresolved or expired, or timeoutMs elapses; the result is in `wait`. A turn completing does not end the wait. Implies anticipation reply. Defaults to false."
         },
         "timeoutMs": {
           "type": "integer",
@@ -3337,7 +3473,7 @@
           "minimum": 0,
           "maximum": 100,
           "default": 10,
-          "description": "When waitForReply is true, include up to this many recent ITEMS (not turns) of the target thread in wait.recentItems, oldest first, each with its turnId. Integer 0..100; defaults to 10."
+          "description": "Deprecated and ignored since 0.6.0: a message wait returns only the explicit reply, never the thread's items (read them with get_codex_thread). Integer 0..100; defaults to 10."
         },
         "allowTargetOverride": {
           "type": "boolean",
@@ -3614,9 +3750,26 @@
           "type": "boolean",
           "description": "Allow mode=start_turn even when the target appears active or waiting. Defaults to false."
         },
+        "anticipation": {
+          "type": "string",
+          "enum": [
+            "reply",
+            "action",
+            "fyi"
+          ],
+          "description": "What the sender expects: reply (a reply is expected), action (do the requested thing and mark it done), or fyi (no reply needed). Defaults to fyi, or reply with waitForReply=true; fyi with waitForReply=true is rejected. The thread resolves a reply/action message with reply_agent_link_message and is reminded between its turns until then, up to a cap."
+        },
+        "replyBy": {
+          "type": "string",
+          "description": "Optional deadline for a reply or action message, ISO 8601 with a time zone, at least 30 s ahead. After it passes the message status is expired. Not allowed with fyi."
+        },
+        "replyToMessageId": {
+          "type": "string",
+          "description": "If this send answers a message addressed to the caller, its messageId. An open reply/action message from the target thread is resolved as replied."
+        },
         "waitForReply": {
           "type": "boolean",
-          "description": "After delivery, wait for the target turn to finish and return the result in `wait`. Defaults to false."
+          "description": "Block until the thread resolves this message explicitly (reply_agent_link_message: reply, decline, done) or it becomes unresolved or expired, or timeoutMs elapses; the result is in `wait`. A turn completing does not end the wait. Implies anticipation reply. Defaults to false."
         },
         "timeoutMs": {
           "type": "integer",
@@ -3637,7 +3790,7 @@
           "minimum": 0,
           "maximum": 100,
           "default": 10,
-          "description": "When waitForReply is true, include up to this many recent ITEMS (not turns) of the target thread in wait.recentItems, oldest first, each with its turnId. Integer 0..100; defaults to 10."
+          "description": "Deprecated and ignored since 0.6.0: a message wait returns only the explicit reply, never the thread's items (read them with get_codex_thread). Integer 0..100; defaults to 10."
         },
         "allowTargetOverride": {
           "type": "boolean",
@@ -4581,7 +4734,7 @@
   },
   {
     "name": "read_agent_link_inbox",
-    "description": "Read pending agent-link messages addressed to the current session, oldest first. By default the tool marks the returned messages delivered as it reads them; messages beyond `limit` stay pending (remainingCount). Returns validated message fields and a rendered <agent-link-inbox> block as a visible MCP tool result so the user can see the inbound mail in the transcript. Each message is wrapped in an <agent-link-message> envelope marking it as content from another agent, not from the user. After the new messages it also shows open messages awaiting your resolution (reply or action messages already delivered and still pending), so they can be resolved with reply_agent_link_message; set includeOpen=false to skip them. Pair with the agent-link notify hooks, which report pending mail and remind about open messages. Fails with no_current_session when the calling Claude session cannot be identified.",
+    "description": "Read pending agent-link messages addressed to the current session (a Claude session, or the calling Codex thread), oldest first. By default the tool marks the returned messages delivered as it reads them; messages beyond `limit` stay pending (remainingCount). Returns validated message fields and a rendered <agent-link-inbox> block as a visible MCP tool result so the user can see the inbound mail in the transcript. Each message is wrapped in an <agent-link-message> envelope marking it as content from another agent, not from the user. After the new messages it also shows open messages awaiting your resolution (reply or action messages already delivered and still pending), so they can be resolved with reply_agent_link_message; set includeOpen=false to skip them. Pair with the agent-link notify hooks, which report pending mail and remind about open messages. Fails with no_current_session when the caller cannot be identified (a Codex thread is identified by the thread id Codex passes in the call's _meta, or CODEX_THREAD_ID).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4679,15 +4832,22 @@
           }
         },
         "sessionId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The Claude session whose inbox was read, or null for a Codex thread."
+        },
+        "threadId": {
           "type": "string",
-          "description": "The session whose inbox was read."
+          "description": "The Codex thread whose inbox was read (Codex callers only)."
         },
         "address": {
           "type": [
             "string",
             "null"
           ],
-          "description": "That session's address, claude:<cliSessionId>."
+          "description": "The caller's address: claude:<cliSessionId> or codex:<threadId>."
         },
         "markedDelivered": {
           "type": "boolean",
@@ -4727,7 +4887,7 @@
   },
   {
     "name": "reply_agent_link_message",
-    "description": "Reply to or resolve an inbound Agent Link message by messageId (the only way to resolve one: a turn's final response is never a reply). resolution 'reply' (default) sends `message` back to the sender; 'decline' sends `message` as the reason; 'done' marks a requested action finished, with an optional note. A reply or action message resolves once (a second resolution is already_resolved); an fyi message only takes resolution 'reply', which sends a reply and sets no status. The reply is itself a labeled message (anticipation, replyBy). Writes a receipt and acknowledges the original. Fails with not_found for an unknown messageId and wrong_recipient for a message not addressed to the caller.",
+    "description": "Reply to or resolve an inbound Agent Link message by messageId, from a Claude session or a Codex thread (the only way to resolve one: a turn's final response is never a reply). resolution 'reply' (default) sends `message` back to the sender; 'decline' sends `message` as the reason; 'done' marks a requested action finished, with an optional note. A reply or action message resolves once (a second resolution is already_resolved); an fyi message only takes resolution 'reply', which sends a reply and sets no status. The reply is itself a labeled message (anticipation, replyBy). Writes a receipt and acknowledges the original. Fails with not_found for an unknown messageId and wrong_recipient for a message not addressed to the caller.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4859,7 +5019,7 @@
         },
         "delivery": {
           "type": "string",
-          "description": "queued-mailbox, or none when no message was sent (done without a note)."
+          "description": "queued-mailbox; delivered when a reply to a Codex thread was pushed to it as a turn (codex-turn); or none when no message was sent (done without a note)."
         },
         "resolution": {
           "type": [
@@ -5861,6 +6021,550 @@
         "role": {
           "type": "string",
           "description": "The role name when the query was a role address."
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "message_agent",
+    "description": "Send a message to any session: a Claude session (claude:<id>), a Codex thread (codex:<id>), a role (role:<name>, whoever holds it now), a bare id, or a fuzzy query (title, cwd, partial id; several matches fail with ambiguous). The message is written to the Agent Link mailbox first, then pushed where the target can receive pushes: a Claude Code channel, or a Codex turn (a Codex thread held by the Codex desktop app gets it by inbox only, delivery queued). Label it with anticipation: reply (a reply is expected), action (do it and mark it done), or fyi (default), plus an optional replyBy. The recipient answers or resolves it with reply_agent_link_message. waitForReply (implies reply) blocks until that explicit resolution, or until the message becomes unresolved or expired, or timeoutMs; a Codex turn completing never ends the wait. The Codex turn options (mode, resumeIfNeeded, expectedTurnId, allowParallelTurn, pollIntervalMs, cwd, model, effort, allowTargetOverride) are only for codex: targets. Returns harness and to, plus the result of message_claude_session or message_codex_thread.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "to": {
+          "type": "string",
+          "description": "Target: an address (claude:<id> or codex:<id>), role:<name>, a bare id, or a fuzzy query."
+        },
+        "message": {
+          "type": "string",
+          "description": "Message text to deliver (at most 64 KiB)."
+        },
+        "replyToMessageId": {
+          "type": "string",
+          "description": "If this send answers a message addressed to the caller, its messageId. An open reply/action message from the target is resolved as replied."
+        },
+        "anticipation": {
+          "type": "string",
+          "enum": [
+            "reply",
+            "action",
+            "fyi"
+          ],
+          "description": "What the sender expects: reply, action, or fyi (default; reply with waitForReply=true; fyi with waitForReply=true is rejected)."
+        },
+        "replyBy": {
+          "type": "string",
+          "description": "Optional deadline for a reply or action message, ISO 8601 with a time zone, at least 30 s ahead. Not allowed with fyi."
+        },
+        "waitForReply": {
+          "type": "boolean",
+          "description": "Block until the target resolves this message (reply, decline, done), it becomes unresolved or expired, or timeoutMs elapses. Implies anticipation reply."
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600000,
+          "default": 60000,
+          "description": "Maximum wait when waitForReply=true, in milliseconds. Integer 0..600000; defaults to 60000."
+        },
+        "cwd": {
+          "type": "string",
+          "description": "Codex targets only: cwd for the target turn (see message_codex_thread). A Claude target returns unsupported."
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "start_turn",
+            "steer_active"
+          ],
+          "description": "auto resumes idle or not-loaded threads, or steers an active turn when its turn id is known. Defaults to auto."
+        },
+        "resumeIfNeeded": {
+          "type": "boolean",
+          "description": "Allow thread/resume before messaging a not-loaded target. Defaults to true."
+        },
+        "expectedTurnId": {
+          "type": "string",
+          "description": "Required by the app-server when steering an active turn unless Agent Link can infer the active turn."
+        },
+        "model": {
+          "type": "string",
+          "description": "Optional model for the target turn. A model different from the thread's own is refused (permission_denied, model_switch_requires_fork_or_opt_in) unless the target's override policy allows you (or the deprecated allowTargetOverride is set); an allowed switch persists and the next turn re-reads the thread uncached. Not applied (with a warning) when the thread reports no model and nothing allows it."
+        },
+        "effort": {
+          "type": "string",
+          "enum": [
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "description": "Optional reasoning effort for the target turn. The thread's launcher may change it; anyone else needs the target's override policy (or the deprecated allowTargetOverride), otherwise permission_denied (effort_not_permitted). A change persists. Not applied (with a warning) when the thread reports none and you may not change it."
+        },
+        "allowParallelTurn": {
+          "type": "boolean",
+          "description": "Allow mode=start_turn even when the target appears active or waiting. Defaults to false."
+        },
+        "pollIntervalMs": {
+          "type": "integer",
+          "minimum": 250,
+          "maximum": 10000,
+          "default": 1000,
+          "description": "Polling interval when waitForReply is true, in milliseconds. Integer 250..10000; defaults to 1000."
+        },
+        "allowTargetOverride": {
+          "type": "boolean",
+          "description": "Deprecated (deprecated_argument warning). Until 0.7.0 it still lets you change an existing thread's cwd, model, and effort (the change persists; a cwd must stay inside the thread's workspace); from 0.7.0 it grants nothing and from 0.8.0 it is rejected. Prefer a new thread for another model, the thread's launcher for effort, or the target's override policy."
+        },
+        "receipt": {
+          "type": "object",
+          "description": "Optional provenance metadata for the local Agent Link receipt index. Receipts are recorded by default for launch, message, reply, and archive actions; set record=false to opt out.",
+          "properties": {
+            "record": {
+              "type": "boolean",
+              "description": "When false, skip writing a receipt for this action. Defaults to true."
+            },
+            "purpose": {
+              "type": "string",
+              "description": "Short human-readable reason, such as WF verification, handoff, coordination, or receipt test."
+            },
+            "originThreadId": {
+              "type": "string",
+              "description": "Thread ID that caused this action, when known."
+            },
+            "originTurnId": {
+              "type": "string",
+              "description": "Turn ID that caused this action, when known."
+            },
+            "originToolCallId": {
+              "type": "string",
+              "description": "Tool call ID that caused this action, when known."
+            },
+            "cleanupRecommendation": {
+              "type": "string",
+              "description": "Caller guidance for the created, messaged, or archived target, for example archiveable, archived, keep_as_evidence, or review_before_archive."
+            },
+            "note": {
+              "type": "string",
+              "description": "Brief extra provenance note."
+            },
+            "tags": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "One entry."
+              },
+              "description": "Optional searchable tags."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "to",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "true on success, false on failure; isError is set exactly when this is false."
+        },
+        "error": {
+          "type": "object",
+          "description": "Present only when ok is false.",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "invalid_arguments",
+                "unknown_tool",
+                "not_found",
+                "ambiguous",
+                "archived",
+                "wrong_recipient",
+                "already_resolved",
+                "no_current_session",
+                "body_too_large",
+                "permission_denied",
+                "active_turn_conflict",
+                "codex_unavailable",
+                "claude_unavailable",
+                "upstream_error",
+                "unsupported",
+                "state_io_error",
+                "internal_error"
+              ],
+              "description": "Stable error code (design doc section 3.2)."
+            },
+            "message": {
+              "type": "string",
+              "description": "Human-readable description of the failure."
+            },
+            "details": {
+              "type": "object",
+              "description": "Code-specific details, for example errors[] for invalid_arguments or limitBytes/actualBytes for body_too_large."
+            },
+            "hint": {
+              "type": "string",
+              "description": "Suggested next step, when there is one."
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "warnings": {
+          "type": "array",
+          "description": "Non-fatal notices, omitted when empty. Deprecated arguments add {code:'deprecated_argument', message, replacement}.",
+          "items": {
+            "type": "object",
+            "description": "One warning: at least code and message.",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Warning code."
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable warning."
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "messageId": {
+          "type": "string",
+          "description": "Id of the queued message."
+        },
+        "delivery": {
+          "type": "string",
+          "description": "Codex: delivered (pushed as a turn) or queued (mailbox only). Claude: queued-channel, queued-online, queued-offline, or queued-mailbox."
+        },
+        "deliveredVia": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "codex-turn when the message was pushed as a turn (turn/start or turn/steer), else null."
+        },
+        "deliveryState": {
+          "type": "object",
+          "description": "{state: accepted_by_app_server | queued_in_mailbox, action, turnId}."
+        },
+        "target": {
+          "type": "object",
+          "description": "The target: {address, threadId} for Codex, {address, sessionId, title, loaded, surface} for Claude."
+        },
+        "turn": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "The turn that carries the message: the new turn for turn/start, {id} for turn/steer; null when queued."
+        },
+        "anticipation": {
+          "type": "string",
+          "enum": [
+            "reply",
+            "action",
+            "fyi"
+          ],
+          "description": "The message's anticipation label."
+        },
+        "replyBy": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The message's deadline (ISO 8601), or null."
+        },
+        "messageStatus": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "pending for a reply/action message (or its status when a wait ended), null for fyi."
+        },
+        "resolved": {
+          "type": "object",
+          "description": "With replyToMessageId: {messageId, kind: reply|done, late} when this send resolved the message it answers."
+        },
+        "wait": {
+          "type": "object",
+          "description": "With waitForReply: {outcome: reply|declined|done|unresolved|expired|timeout, messageStatus, waitedMs, target, reply?} (sections 3.4, 7.6)."
+        },
+        "receipt": {
+          "type": "object",
+          "description": "Result of writing the receipt for this action."
+        },
+        "source": {
+          "type": "string",
+          "description": "Where the data came from, e.g. app-server or local-jsonl-fallback."
+        },
+        "action": {
+          "type": "string",
+          "description": "What was done, e.g. started_turn, resumed+started_turn, steered_active_turn."
+        },
+        "previousStatus": {
+          "description": "The thread status before sending."
+        },
+        "threadId": {
+          "type": "string",
+          "description": "Target thread id."
+        },
+        "turnId": {
+          "type": "string",
+          "description": "Turn id (turn/steer)."
+        },
+        "peerMessage": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "The envelope fields of the message sent: {messageId, from, fromHarness, fromVerified, sentAt, enveloped}."
+        },
+        "runtimeState": {
+          "type": "object",
+          "description": "Runtime state contract for the target."
+        },
+        "archiveState": {
+          "type": "object",
+          "description": "Archive state contract for the target."
+        },
+        "desktopVisibility": {
+          "type": "object",
+          "description": "Whether Codex Desktop shows the change."
+        },
+        "appServer": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Connection summary for the Codex app-server."
+        },
+        "via": {
+          "type": "string",
+          "description": "role:<name> when the target was addressed by role; the message went to the role's current holder."
+        },
+        "roleProcedure": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "With a role target: {name, version, textIncluded} of the role's procedure, or null when the role has none."
+        },
+        "switches": {
+          "type": "array",
+          "description": "In-place changes applied to the thread, one per setting: {setting, previous, current, grantedBy: launcher|policy|allowTargetOverride, policy?, persists: true, expectedCost: {uncachedInputTokens, basis}}. expectedCost is the last turn's input tokens (basis last-turn-input, or null with basis unknown) for a model or effort change, which re-reads the thread uncached, and 0 (basis cache-neutral) for a cwd change. A change persists; Agent Link never sends a revert."
+        },
+        "switchReceipts": {
+          "type": "array",
+          "description": "Receipt write results for the model-switch, effort-change, and cwd-change receipts, one per entry in switches."
+        },
+        "resolution": {
+          "type": "object",
+          "description": "How the target was found: {via: exact|fuzzy|role:<name>, query, matchReasons, candidates?}."
+        },
+        "harness": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex"
+          ],
+          "description": "The target's harness."
+        },
+        "to": {
+          "type": "string",
+          "description": "The target's address."
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "wait_for_agent",
+    "description": "Wait on any session (claude:<id>, codex:<id>, role:<name>, or a bare id). With replyToMessageId (the messageId a send returned) it waits on that message: a reply or action message ends when the target resolves it (outcome reply, declined, done) or it becomes unresolved or expired; an fyi message ends on an explicit reply. A Codex turn completing never ends a message wait. Without replyToMessageId it waits on the session: a Claude session's next message to the caller or the session going idle; a Codex thread's latest turn completing (turn_completed, without its text: read it with get_codex_thread) or the thread being idle. Returns {outcome, waitedMs, target, messageStatus?, reply?, turn?}; a timeout is ok:true.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "agent": {
+          "type": "string",
+          "description": "The session to wait on: an address (claude:<id> or codex:<id>), role:<name>, or a bare id."
+        },
+        "replyToMessageId": {
+          "type": "string",
+          "description": "Recommended: the messageId of a message you sent to this session. Waits for its resolution."
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600000,
+          "default": 60000,
+          "description": "Maximum wait, in milliseconds. Integer 0..600000; defaults to 60000."
+        },
+        "pollIntervalMs": {
+          "type": "integer",
+          "minimum": 250,
+          "maximum": 10000,
+          "default": 1000,
+          "description": "Polling interval when waitForReply is true, in milliseconds. Integer 250..10000; defaults to 1000."
+        }
+      },
+      "required": [
+        "agent"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "true on success, false on failure; isError is set exactly when this is false."
+        },
+        "error": {
+          "type": "object",
+          "description": "Present only when ok is false.",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "invalid_arguments",
+                "unknown_tool",
+                "not_found",
+                "ambiguous",
+                "archived",
+                "wrong_recipient",
+                "already_resolved",
+                "no_current_session",
+                "body_too_large",
+                "permission_denied",
+                "active_turn_conflict",
+                "codex_unavailable",
+                "claude_unavailable",
+                "upstream_error",
+                "unsupported",
+                "state_io_error",
+                "internal_error"
+              ],
+              "description": "Stable error code (design doc section 3.2)."
+            },
+            "message": {
+              "type": "string",
+              "description": "Human-readable description of the failure."
+            },
+            "details": {
+              "type": "object",
+              "description": "Code-specific details, for example errors[] for invalid_arguments or limitBytes/actualBytes for body_too_large."
+            },
+            "hint": {
+              "type": "string",
+              "description": "Suggested next step, when there is one."
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "warnings": {
+          "type": "array",
+          "description": "Non-fatal notices, omitted when empty. Deprecated arguments add {code:'deprecated_argument', message, replacement}.",
+          "items": {
+            "type": "object",
+            "description": "One warning: at least code and message.",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Warning code."
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable warning."
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "reply",
+            "declined",
+            "done",
+            "unresolved",
+            "expired",
+            "turn_completed",
+            "idle",
+            "timeout"
+          ],
+          "description": "How the wait ended (sections 3.4, 7.6)."
+        },
+        "harness": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex"
+          ],
+          "description": "The target's harness."
+        },
+        "messageStatus": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "With replyToMessageId: the message's status, or null for an fyi message."
+        },
+        "waitedMs": {
+          "type": "integer",
+          "description": "How long the wait lasted."
+        },
+        "target": {
+          "type": "object",
+          "description": "{address, threadId | sessionId} of the session waited on."
+        },
+        "reply": {
+          "type": "object",
+          "description": "The explicit reply, decline reason, or done note, enveloped."
+        },
+        "turn": {
+          "type": "object",
+          "description": "Codex session wait: {turnId, status, completedAt} of the latest turn (no text)."
+        },
+        "timedOut": {
+          "type": "boolean",
+          "description": "Same as outcome === 'timeout'."
         }
       },
       "required": [

@@ -2,6 +2,8 @@
 // tools/call, schema validation rejects unknown and out-of-range arguments,
 // arguments removed in 0.6.0 are rejected with a hint naming their
 // replacement, and every result is the section 3.1 envelope.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { AgentLinkError } from "../../src/shared/errors.js";
 import { createRegistry, removedArgumentHint, toMcpTool } from "../../src/server/registry.js";

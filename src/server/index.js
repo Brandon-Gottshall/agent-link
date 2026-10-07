@@ -21,15 +21,15 @@ import { forkEntries } from "../tools/fork.js";
 import { orchestrationEntries } from "../tools/orchestration.js";
 import { receiptEntries } from "../tools/receipts.js";
 import { claudeListingEntries } from "../tools/claude-listing.js";
-import { claudeSendEntries } from "../tools/claude-send.js";
-import { claudeWaitEntries } from "../tools/claude-wait.js";
+import { claudeSendEntries, makeClaudeSendHandler } from "../tools/claude-send.js";
+import { claudeWaitEntries, makeWaitHandler } from "../tools/claude-wait.js";
 import { mailboxInspectEntries } from "../tools/mailbox-inspect.js";
 import { readInboxEntries } from "../tools/read-inbox.js";
 import { replyAgentLinkMessageEntries } from "../tools/claude-reply.js";
 import { messageStatusEntries } from "../tools/message-status.js";
-import { deliverCodexReminders } from "../delivery/reminders.js";
-import { readRoleTable } from "../delivery/role-handover.js";
-import { reminderSettings } from "../delivery/message-status.js";
+import { desktopPushPolicy, makeThreadStatusTracker, pushWhenIdle } from "../delivery/codex-push.js";
+import { makeReconcileDelivery, startCodexDelivery } from "../delivery/codex-delivery.js";
+import { makeRolloutCheck } from "../codex/rollout-holders.js";
 import { agentEntries } from "../tools/agents.js";
 import { roleEntries } from "../tools/roles.js";
 import { createRoleStore } from "../registry/roles.js";
@@ -42,7 +42,7 @@ import { makeLoadedThreads } from "../codex/loaded-threads.js";
 import { makeThreadActions } from "../codex/thread-actions.js";
 import { makeThreadMessaging } from "../codex/thread-messaging.js";
 import { makeThreadQueries } from "../codex/thread-queries.js";
-import { FORK_SWEEP_INTERVAL_MS, makeForkJobs, queuedDelivery } from "../codex/fork.js";
+import { FORK_SWEEP_INTERVAL_MS, makeForkJobs } from "../codex/fork.js";
 import { createTokenUsageTracker } from "../codex/token-usage.js";
 import { forkJobsPath } from "../shared/paths.js";
 import {
@@ -191,18 +191,39 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
   const desktop = makeDesktopRouting({ appServer: codexAppServer });
   // Token usage and applied settings from app-server notifications (R9.10).
   const tokenUsage = createTokenUsageTracker({ appServer: codexAppServer });
+  // What the endpoint reports about each thread (notifications): reminder
+  // timing, steer detection, one turn at a time (B7 spike). Cleared when the
+  // endpoint connection closes or is replaced (src/delivery/codex-delivery.js).
+  const threadStatus = makeThreadStatusTracker();
+  // Deny-only: a thread whose transcript another process has open is held
+  // (R1.12a). Only for an app-server Agent Link started (its process group
+  // is known).
+  const rolloutCheck = makeRolloutCheck({ ownProcessGroup: () => codexAppServer.getConnectionSummary().managedPid ?? null });
   const messaging = makeThreadMessaging({
     appServer: codexAppServer,
     host: hostInfo.host,
     resolveCurrentSession: currentClaudeSession,
     queries,
     roles,
-    tokenUsage
+    tokenUsage,
+    tracker: threadStatus,
+    rolloutCheck
   });
+  // A reply to a Codex sender is pushed to it when it is idle (R1.10).
+  /** @param {{messageId: string, threadId: string}} options */
+  const pushReplyToCodex = async ({ messageId, threadId }) => {
+    const mailbox = openMailbox();
+    try {
+      return await pushWhenIdle({ appServer: codexAppServer, mailbox, messageId, threadId, tracker: threadStatus, rolloutCheck });
+    } finally {
+      mailbox.close();
+    }
+  };
   const actions = makeThreadActions({ appServer: codexAppServer, messaging, desktop });
   // Fork and reconcile (section 9.3). `deliver` pushes a reconcile message
-  // that is already in the original's mailbox; queuedDelivery leaves it for
-  // inbox pull until Codex push (src/delivery/codex-push.js) is wired in here.
+  // that is already in the original's mailbox through the same Codex push as
+  // every other message (src/delivery/codex-delivery.js makeReconcileDelivery).
+  const deliverReconcile = makeReconcileDelivery({ appServer: codexAppServer, tracker: threadStatus, rolloutCheck });
   const forks = makeForkJobs({
     appServer: codexAppServer,
     host: hostInfo.host,
@@ -210,7 +231,7 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
     queries,
     messaging,
     tokenUsage,
-    deliver: queuedDelivery
+    deliver: deliverReconcile
   });
   // The session registry (section 1.4): both providers on every host.
   const sessionRegistry = createSessionRegistry({
@@ -224,7 +245,8 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
     channelState: () => ({ enabled: channelEnabled, error: channelError }),
     roles,
     roleAdmin: config.roleAdmin,
-    forkJobs: () => (existsSync(forkJobsPath()) ? forks.jobCounts() : { pending: 0, running: 0, stuck: 0 })
+    forkJobs: () => (existsSync(forkJobsPath()) ? forks.jobCounts() : { pending: 0, running: 0, stuck: 0 }),
+    rolloutStats: rolloutCheck.stats
   });
 
   /** @param {Record<string, any>} [args] */
@@ -316,12 +338,24 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
     ...claudeSendEntries({ ...claudeDeps, roles }),
     ...claudeWaitEntries(claudeDeps),
     ...readInboxEntries({ resolveCurrentSession: currentClaudeSession, host: hostInfo.host, roles }),
-    ...replyAgentLinkMessageEntries({ ...claudeDeps, roles }),
+    ...replyAgentLinkMessageEntries({ ...claudeDeps, roles, pushToCodex: pushReplyToCodex }),
     ...messageStatusEntries({ ...claudeDeps, roles }),
     // Every tool on every host (R1.16): the Claude listing tools are no
     // longer limited to the Claude host.
     ...claudeListingEntries(),
-    ...agentEntries({ registry: sessionRegistry, host: hostInfo.host, resolveCurrentSession: currentClaudeSession, roles }),
+    ...agentEntries({
+      registry: sessionRegistry,
+      host: hostInfo.host,
+      resolveCurrentSession: currentClaudeSession,
+      roles,
+      messageThread: messaging.messageThread,
+      waitOnCodexMessage: messaging.waitOnCodexMessage,
+      waitForThread: queries.waitForThread,
+      claude: {
+        ...makeClaudeSendHandler({ ...claudeDeps, roles }),
+        ...makeWaitHandler(claudeDeps)
+      }
+    }),
     // Roles and the override policy (B9). Writes need AGENT_LINK_ROLE_ADMIN=1.
     ...roleEntries({ roles, registry: sessionRegistry, admin: config.roleAdmin })
   ], { hintFor: appServerErrorHint });
@@ -354,7 +388,13 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
     if (channel.error !== null) channelError = channel.error;
     lifecycle.setChannelBridge(channel.bridge);
 
-    if (config.codexReminders) startCodexReminders({ appServer: codexAppServer, roles });
+    const pushPolicy = desktopPushPolicy();
+    if (pushPolicy.refused) {
+      getLogger().error("config.desktop_push_refused", { setting: "AGENT_LINK_CODEX_DESKTOP_PUSH", value: pushPolicy.refused, using: pushPolicy.mode, reason: "shared-daemon needs an explicit AGENT_LINK_CODEX_URL or AGENT_LINK_CODEX_SOCK; it would make Agent Link's own app-server a second writer to desktop-app threads" });
+    }
+    // Background Codex delivery stops (timers, listeners) on shutdown, like the fork sweeper.
+    const codexDelivery = startCodexDelivery({ appServer: codexAppServer, roles, reminders: config.codexReminders, tracker: threadStatus, rolloutCheck });
+    lifecycle.onShutdown(() => codexDelivery.stop());
     startClaimSweeper({ host: hostInfo.host });
     lifecycle.onShutdown(startForkSweep(forks));
 
@@ -433,35 +473,6 @@ function startForkSweep(forks) {
     clearInterval(timer);
     forks.close();
   };
-}
-
-/**
- * Codex reminder turns (design R7.14), only with AGENT_LINK_CODEX_REMINDERS=1.
- * Off by default until the B7 spike confirms the turn-completion signal
- * (B7b). One pass per reminder interval; the timer never keeps the process
- * alive, and a failed pass is logged and retried on the next tick.
- * @param {{appServer: CodexAppServerClient, roles?: import("../registry/roles.js").RoleStore | null}} options
- */
-function startCodexReminders({ appServer, roles = null }) {
-  const settings = reminderSettings();
-  let running = false;
-  const timer = setInterval(async () => {
-    if (running) return;
-    running = true;
-    let mailbox = null;
-    try {
-      mailbox = openMailbox();
-      const results = await deliverCodexReminders({ appServer, mailbox, settings, roleTable: readRoleTable(roles) });
-      if (results.length) getLogger().info("codex_reminders.pass", { results });
-    } catch (error) {
-      getLogger().warn("codex_reminders.failed", { message: error instanceof Error ? error.message : String(error) });
-    } finally {
-      mailbox?.close();
-      running = false;
-    }
-  }, settings.intervalMs);
-  timer.unref?.();
-  return timer;
 }
 
 /**

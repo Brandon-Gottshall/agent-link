@@ -15,6 +15,8 @@
 //                                                     replay against another tree
 //
 // Never launches Codex; HOME, CODEX_HOME, receipts and the mailbox are temp.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import http from "node:http";
@@ -350,11 +352,11 @@ const SCRIPT = [
   ["list_loaded_codex_threads", { threadId: ORCH }],
   ["list_loaded_codex_threads", { threadId: MISSING }],
   ["get_codex_sidebar_state", {}],
-  ["message_codex_thread", { threadId: ALPHA, message: "hello alpha", waitForReply: true, timeoutMs: 3000, pollIntervalMs: 250, recentItems: 3 }, { meta: true }],
+  ["message_codex_thread", { threadId: ALPHA, message: "hello alpha", waitForReply: true, timeoutMs: 0, pollIntervalMs: 250, recentItems: 3 }, { meta: true }],
   ["message_codex_thread", { threadId: ALPHA, message: "bad poll", pollIntervalMs: 50 }],
   ["wait_for_codex_thread", { threadId: BETA, timeoutMs: 0 }],
   ["message_codex_thread", { threadId: BETA, message: "parallel", mode: "start_turn" }],
-  ["message_codex_thread", { threadId: BETA, message: "steer beta", waitForReply: true, timeoutMs: 3000, pollIntervalMs: 250 }, { meta: true }],
+  ["message_codex_thread", { threadId: BETA, message: "steer beta", waitForReply: true, timeoutMs: 0, pollIntervalMs: 250 }, { meta: true }],
   ["message_codex_thread", { threadId: GAMMA, message: "wake gamma" }],
   ["message_codex_thread", { threadId: ALPHA, message: "elsewhere", cwd: "/somewhere/else" }],
   ["message_codex_thread", { threadId: ALPHA, message: "same dir", cwd: projectDir, model: "gpt-known", effort: "high" }],

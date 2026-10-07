@@ -33,7 +33,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { withFileLockSync } from "../shared/file-lock.js";
 import { DIR_MODE, FILE_MODE, appendJsonlSync, parseJsonlLines, readJsonlSync, toJsonl } from "../shared/jsonl.js";
-import { forkJobsPath } from "../shared/paths.js";
+import { assertTestSafeWrite, forkJobsPath } from "../shared/paths.js";
 
 export const FORK_OUTCOMES = Object.freeze(["completed", "failed", "interrupted"]);
 
@@ -169,6 +169,7 @@ export function createForkJobStore({ path = undefined, now = () => Date.now() } 
  * @returns {T}
  */
 export function withForkLogLock(file, fn) {
+  assertTestSafeWrite(file);
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: DIR_MODE });
   return withFileLockSync(`${file}.lock`, fn, { label: "fork job log", timeoutMs: 2_000 });
 }
@@ -199,6 +200,7 @@ export function compactForkJobs(file, { now = Date.now(), maxBytes = FORK_LOG_MA
     if (!finished.size) return { compacted: false, dropped: 0 };
     const kept = events.filter((event) => !finished.has(event?.jobId));
     const tmp = `${file}.compact-${process.pid}`;
+    assertTestSafeWrite(tmp);
     fs.writeFileSync(tmp, toJsonl(kept), { encoding: "utf8", mode: FILE_MODE });
     fs.renameSync(tmp, file);
     return { compacted: true, dropped: finished.size };

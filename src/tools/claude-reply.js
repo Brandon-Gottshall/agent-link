@@ -1,9 +1,8 @@
 import { openMailbox } from "../claude/mailbox.js";
 import { storedAddress } from "../registry/addresses.js";
-import { canonicalClaudeSessionId, claudeSessionAliases } from "../claude/identity.js";
+import { currentRecipient, noCurrentSession } from "../delivery/recipient.js";
 import { buildReceipt, safeAppendReceipt } from "../shared/receipt-index.js";
 import { assertPeerBodyWithinLimit } from "../shared/envelope.js";
-import { claudeAddress } from "../shared/identity.js";
 import { handedOverTo, readRoleTable, recipientMatcher, roleRoute } from "../delivery/role-handover.js";
 import { AgentLinkError } from "../shared/errors.js";
 import { commonOut, enumOf, out, str } from "../server/schemas.js";
@@ -25,7 +24,7 @@ const RESOLVED_STATUS = Object.freeze({ reply: "replied", decline: "declined", d
 export const replyAgentLinkMessageTool = {
   name: "reply_agent_link_message",
   description:
-    "Reply to or resolve an inbound Agent Link message by messageId (the only way to resolve one: a turn's final " +
+    "Reply to or resolve an inbound Agent Link message by messageId, from a Claude session or a Codex thread (the only way to resolve one: a turn's final " +
     "response is never a reply). resolution 'reply' (default) sends `message` back to the sender; 'decline' sends " +
     "`message` as the reason; 'done' marks a requested action finished, with an optional note. A reply or action " +
     "message resolves once (a second resolution is already_resolved); an fyi message only takes resolution 'reply', " +
@@ -49,7 +48,7 @@ export const replyAgentLinkMessageTool = {
     messageId: out(["string", "null"], "Id of the reply message, or null for done without a note."),
     replyToMessageId: out("string", "The message replied to or resolved."),
     target: out("object", "{address, sessionId, kind} of the original sender; address is null for an external sender."),
-    delivery: out("string", "queued-mailbox, or none when no message was sent (done without a note)."),
+    delivery: out("string", "queued-mailbox; delivered when a reply to a Codex thread was pushed to it as a turn (codex-turn); or none when no message was sent (done without a note)."),
     resolution: out(["string", "null"], "reply, decline, or done when the original was a reply/action message; null for an fyi reply."),
     status: out(["string", "null"], "The original message's status after this call: replied, declined, done, or null for fyi."),
     late: out("boolean", "True when the message was resolved after it became unresolved or expired."),
@@ -68,6 +67,7 @@ export const replyAgentLinkMessageTool = {
  * @property {() => number} [now]
  * @property {() => import("../delivery/message-status.js").ReminderSettings} [reminderSettings]
  * @property {import("../registry/roles.js").RoleStore | null} [roles]  role table (role handover, R7.20)
+ * @property {((options: {messageId: string, threadId: string}) => Promise<{delivery: string, warnings?: any[]}>) | null} [pushToCodex]  pushes a reply to a Codex sender (src/delivery/codex-push.js pushWhenIdle)
  */
 
 /** @param {ClaudeReplyDeps} [deps] */
@@ -78,7 +78,8 @@ export function makeReplyAgentLinkMessageHandler({
   appendReceipt = safeAppendReceipt,
   now = () => Date.now(),
   reminderSettings: settingsFn = () => reminderSettings(),
-  roles = null
+  roles = null,
+  pushToCodex = null
 } = {}) {
   const openMb = typeof mailboxOpener === "function"
     ? mailboxOpener
@@ -105,15 +106,11 @@ export function makeReplyAgentLinkMessageHandler({
       const at = now();
       const labels = resolveLabels({ anticipation, replyBy, waitForReply: false, now: at });
 
-      const session = typeof resolveCurrentSession === "function" ? resolveCurrentSession() : null;
-      if (!session?.sessionId) {
-        throw new AgentLinkError("no_current_session", "Could not resolve the current Claude session.", {
-          details: { host, sources: ["CLAUDE_SESSION_ID", "CLAUDE_CODE_SESSION_ID", "session sidecar", "transcript"] },
-          hint: "reply_agent_link_message must run inside an indexed Claude session."
-        });
-      }
-      const currentSessionId = canonicalClaudeSessionId(session);
-      const resolverAddress = claudeAddress(session) ?? currentSessionId;
+      // A Claude session or a Codex thread, from runtime identity (R1.4, R1.13).
+      const me = currentRecipient({ host, callerContext: toolContext.runtimeCallerContext ?? null, resolveCurrentSession });
+      if (!me) throw noCurrentSession("reply_agent_link_message", host);
+      const currentSessionId = me.storedId;
+      const resolverAddress = me.address;
 
       const mb = openMb();
       let original;
@@ -133,7 +130,7 @@ export function makeReplyAgentLinkMessageHandler({
         // current holder (R7.20): the previous holder is refused.
         const table = readRoleTable(roles);
         const holder = handedOverTo(original, table);
-        if (!recipientMatcher({ aliases: claudeSessionAliases(session), address: claudeAddress(session), table })(original)) {
+        if (!recipientMatcher({ aliases: me.aliases, address: me.address, table })(original)) {
           throw new AgentLinkError("wrong_recipient", holder
             ? `That message was sent to ${roleRoute(original)?.via ?? "a role"} and has been handed over to ${holder}.`
             : "That message was not addressed to this session.", {
@@ -164,12 +161,12 @@ export function makeReplyAgentLinkMessageHandler({
           // the original was addressed to, so the sender's wait can match it.
           replyId = mb.insertMessage({
             fromSessionId: currentSessionId,
-            fromSessionKind: "claude",
+            fromSessionKind: me.harness,
             toSessionId: original.from_session_id,
             toSessionKind: original.from_session_kind,
             body,
-            // The sender is the resolved current session (runtime identity).
-            metadata: { sender: { source: "current_session" } },
+            // The sender is the caller's runtime identity (R1.4).
+            metadata: { sender: { source: me.source } },
             replyToMessageId: messageId,
             anticipation: labels.anticipation,
             replyBy: labels.replyBy
@@ -201,7 +198,22 @@ export function makeReplyAgentLinkMessageHandler({
         sessionId: original.from_session_id,
         kind: original.from_session_kind
       };
-      const delivery = replyId ? "queued-mailbox" : "none";
+      let delivery = replyId ? "queued-mailbox" : "none";
+      /** @type {Array<Record<string, any>>} */
+      let pushWarnings = [];
+      // A reply to a Codex thread is pushed to it as a turn when it is idle
+      // (R1.10, R1.11); otherwise it stays queued for its wait or inbox.
+      if (replyId && original.from_session_kind === "codex" && typeof pushToCodex === "function") {
+        const threadId = String(original.from_session_id).replace(/^codex:/, "");
+        try {
+          const pushed = await pushToCodex({ messageId: replyId, threadId });
+          if (pushed.delivery === "delivered") delivery = "delivered";
+          pushWarnings = pushed.warnings ?? [];
+        } catch (error) {
+          pushWarnings = [{ code: "codex_push_failed", message: `The reply is queued in the mailbox; pushing it failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, 600) }];
+        }
+        for (const warning of pushWarnings) toolContext.warn?.(warning);
+      }
       const built = buildReceipt({
         action: "reply_message",
         receipt: null,

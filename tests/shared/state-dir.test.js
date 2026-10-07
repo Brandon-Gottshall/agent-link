@@ -12,6 +12,8 @@
 //
 // Every case uses a throwaway HOME; nothing here can touch the real
 // ~/.agent-link, ~/.claude or ~/.codex.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";

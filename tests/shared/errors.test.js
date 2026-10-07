@@ -1,3 +1,5 @@
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AgentLinkError, ERROR_CODES, errorCodeOf, isErrorCode, toErrorPayload } from "../../src/shared/errors.js";

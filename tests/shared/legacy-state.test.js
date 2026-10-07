@@ -1,4 +1,6 @@
 // health.legacyState (R4.7) and health.recentEvents redaction.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";

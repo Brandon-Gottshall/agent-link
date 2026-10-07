@@ -5,6 +5,8 @@
 // Close points are events, not delays: before any reply, after the initialize
 // reply, once the stub app-server has started, and after the tool-call reply.
 // Uses a stub app-server; never launches Codex.app.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";

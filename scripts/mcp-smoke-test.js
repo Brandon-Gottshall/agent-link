@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../tests/helpers/guard.js";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { readFileSync } from "node:fs";
@@ -51,10 +53,11 @@ const CLAUDE_LISTING_TOOLS = [
 ].sort();
 
 // Every tool is registered on every host (design doc R1.16, PR B6): the
-// Claude listing tools and the host-neutral list_agents / resolve_agent too.
+// Claude listing tools and the host-neutral list_agents / resolve_agent /
+// message_agent / wait_for_agent too.
 // B9 adds the role and override-policy tools.
 const ROLE_TOOLS = ["set_agent_role", "clear_agent_role", "list_agent_roles", "get_agent_role", "set_agent_override_policy", "get_agent_override_policy"];
-const ALL_TOOLS = [...BASE_CODEX_TOOLS, ...CLAUDE_LISTING_TOOLS, "list_agents", "resolve_agent", ...ROLE_TOOLS].sort();
+const ALL_TOOLS = [...BASE_CODEX_TOOLS, ...CLAUDE_LISTING_TOOLS, "list_agents", "resolve_agent", "message_agent", "wait_for_agent", ...ROLE_TOOLS].sort();
 
 async function listToolsWithEnv(envOverrides) {
   // Strip CLAUDE_* and CODEX_HOME from the inherited env so each scenario is hermetic.

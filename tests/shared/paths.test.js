@@ -1,3 +1,5 @@
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
@@ -136,4 +138,42 @@ test("legacyPaths are the 0.4.x locations", () => {
 test("pure: defaults to process.env without touching the filesystem", () => {
   assert.equal(typeof stateDir(), "string");
   assert.ok(path.isAbsolute(stateDir()));
+});
+
+// Fix round a2, F3: under node --test, state under the real home directory is
+// refused; temp paths and non-test runs are not affected.
+test("assertTestSafeWrite refuses the real home during a test run", async () => {
+  const { assertTestSafeWrite } = await import("../../src/shared/paths.js");
+  const os = await import("node:os");
+  const realHome = "/Users/someone";
+  const tmpdir = os.default.tmpdir();
+  const test = { NODE_TEST_CONTEXT: "child" };
+  assert.throws(() => assertTestSafeWrite("/Users/someone/.agent-link/mailbox.jsonl", { env: test, realHome, tmpdir }), /refuses to write/);
+  assert.throws(() => assertTestSafeWrite("/Users/someone/.codex/agent-link-receipts.jsonl", { env: test, realHome, tmpdir }), /refuses to write/);
+  assert.doesNotThrow(() => assertTestSafeWrite(path.join(tmpdir, "x", ".agent-link"), { env: test, realHome, tmpdir }));
+  assert.doesNotThrow(() => assertTestSafeWrite("/elsewhere/state", { env: test, realHome, tmpdir }));
+  assert.doesNotThrow(() => assertTestSafeWrite("/Users/someone/.agent-link", { env: {}, realHome, tmpdir }), "outside tests nothing changes");
+  // A temp directory inside the home (TMPDIR under $HOME) stays allowed.
+  assert.doesNotThrow(() => assertTestSafeWrite("/Users/someone/tmp/run/.agent-link", { env: test, realHome, tmpdir: "/Users/someone/tmp" }));
+});
+
+test("tests/helpers/guard.js names every state root outside the temp directory", async () => {
+  const os = await import("node:os");
+  const tmp = os.default.tmpdir();
+  const { unsafeStateRoots } = await import("../helpers/guard.js");
+  const inside = { HOME: path.join(tmp, "h"), CODEX_HOME: path.join(tmp, "h", ".codex"), CLAUDE_CONFIG_DIR: path.join(tmp, "h", ".claude"), AGENT_LINK_STATE_DIR: path.join(tmp, "h", "s") };
+  assert.deepEqual(unsafeStateRoots(inside), []);
+  assert.deepEqual(unsafeStateRoots({ ...inside, HOME: "/Users/someone", AGENT_LINK_STATE_DIR: undefined }), ["HOME", "AGENT_LINK_STATE_DIR"]);
+});
+
+test("N3: the real home's state roots are refused even when TMPDIR is inside the home", async () => {
+  const { assertTestSafeWrite } = await import("../../src/shared/paths.js");
+  const { unsafeStateRoots } = await import("../helpers/guard.js");
+  const test = { NODE_TEST_CONTEXT: "child" };
+  for (const tmpdir of ["/Users/someone", "/Users/someone/tmp"]) {
+    for (const target of ["/Users/someone/.agent-link/mailbox.jsonl", "/Users/someone/.codex/x", "/Users/someone/.claude/agent-link", "/Users/someone"]) {
+      assert.throws(() => assertTestSafeWrite(target, { env: test, realHome: "/Users/someone", tmpdir }), /refuses to write/, `${target} with TMPDIR ${tmpdir}`);
+    }
+  }
+  assert.deepEqual(unsafeStateRoots({ HOME: "/Users/someone", CODEX_HOME: "/Users/someone/.codex", CLAUDE_CONFIG_DIR: "/Users/someone/tmp/c", AGENT_LINK_STATE_DIR: "/Users/someone/.agent-link" }, "/Users/someone", "/Users/someone"), ["HOME", "CODEX_HOME", "AGENT_LINK_STATE_DIR"]);
 });

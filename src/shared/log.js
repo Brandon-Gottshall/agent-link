@@ -17,7 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { env as lookup, envFlag } from "./env.js";
 import { DIR_MODE, FILE_MODE } from "./jsonl.js";
-import { logFilePath } from "./paths.js";
+import { assertTestSafeWrite, logFilePath } from "./paths.js";
 import { tightenMode } from "./state.js";
 
 /** @typedef {"error" | "warn" | "info" | "debug"} LogLevel */
@@ -137,6 +137,7 @@ export function createLogger(options = {}) {
   function writeFile(line) {
     if (!filePath) return;
     try {
+      assertTestSafeWrite(filePath);
       fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: DIR_MODE });
       if (!fileChecked) {
         // An existing log file from an older release may be looser than 0600.

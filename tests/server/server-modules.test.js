@@ -5,6 +5,8 @@
 //     (no listeners, no handles, no child processes, no stdout, no files);
 //   - createAgentLinkServer() builds the server in-process without starting
 //     anything, and its tools/list matches the committed snapshots.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";

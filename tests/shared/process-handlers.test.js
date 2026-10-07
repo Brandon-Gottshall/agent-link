@@ -1,5 +1,7 @@
 // A stray rejection or exception in the MCP server is logged and runs the
 // normal shutdown (exit 1), instead of crashing silently or hanging.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import path from "node:path";

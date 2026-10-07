@@ -9,8 +9,10 @@
 // to them.
 //
 // Pure: every function takes `{env, homedir}` (defaults: process.env and
-// os.homedir()) and touches no file.
+// os.homedir()) and touches no file, except assertTestSafeWrite (the
+// test-run guard at the end).
 
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { env as lookup } from "./env.js";
@@ -325,4 +327,84 @@ function unique(paths) {
 function without(paths, current) {
   const resolved = path.resolve(current);
   return paths.filter((p) => p !== resolved);
+}
+
+/**
+ * Test-run guard (not pure: reads process.env and the user database). Under
+ * `node --test` (NODE_TEST_CONTEXT is set) Agent Link refuses to create or
+ * write state under the real home directory (os.userInfo().homedir, which
+ * ignores HOME), unless the path is inside the temp directory. A test that
+ * forgot to point HOME, CODEX_HOME, CLAUDE_CONFIG_DIR, AGENT_LINK_STATE_DIR
+ * and AGENT_LINK_MAILBOX_PATH at a temp directory fails here instead of
+ * writing the user's mailbox, receipts or roles. Outside tests it does
+ * nothing.
+ * @param {string} target  a file or directory about to be written
+ * @param {{env?: Record<string, string | undefined>, realHome?: string | null, tmpdir?: string}} [options]
+ *   realHome / tmpdir: injected for tests; by default both are resolved once
+ *   per process
+ */
+export function assertTestSafeWrite(target, { env = process.env, realHome = undefined, tmpdir = undefined } = {}) {
+  if (!env.NODE_TEST_CONTEXT || typeof target !== "string") return;
+  const roots = guardRoots(realHome, tmpdir);
+  if (!roots) return;
+  const resolved = canonical(target);
+  const { home, tmp } = roots;
+  const within = (/** @type {string} */ p, /** @type {string} */ root) => p === root || p.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
+  // The real home's own state roots are refused even when the temp
+  // directory is inside the home (TMPDIR under $HOME, or TMPDIR = $HOME).
+  const realRoots = [".agent-link", ".claude", ".codex"].map((name) => path.join(home, name));
+  if (resolved === home || realRoots.some((root) => within(resolved, root)) || (within(resolved, home) && !within(resolved, tmp))) {
+    throw new Error(`Agent Link refuses to write ${resolved} during a test run (NODE_TEST_CONTEXT is set): it is under the real home directory. Run tests with npm test, or point HOME, CODEX_HOME, CLAUDE_CONFIG_DIR, AGENT_LINK_STATE_DIR and AGENT_LINK_MAILBOX_PATH at a temp directory.`);
+  }
+}
+
+/** @type {{home: string, tmp: string} | null | undefined} */
+let defaultRoots;
+
+/**
+ * The canonical real home and temp directory, cached for the process when
+ * neither is injected (the guard runs on hot write paths in tests).
+ * @param {string | null | undefined} realHome
+ * @param {string | undefined} tmpdir
+ * @returns {{home: string, tmp: string} | null}
+ */
+function guardRoots(realHome, tmpdir) {
+  if (realHome === undefined && tmpdir === undefined) {
+    if (defaultRoots === undefined) {
+      const home = realHomeDir();
+      defaultRoots = home ? { home: canonical(home), tmp: canonical(os.tmpdir()) } : null;
+    }
+    return defaultRoots;
+  }
+  const home = realHome === undefined ? realHomeDir() : realHome;
+  return home ? { home: canonical(home), tmp: canonical(tmpdir ?? os.tmpdir()) } : null;
+}
+
+/** @returns {string | null} */
+function realHomeDir() {
+  try {
+    return os.userInfo().homedir || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The real path of `value`, or of its nearest existing ancestor joined with
+ * the rest (macOS /var is /private/var).
+ * @param {string} value
+ */
+function canonical(value) {
+  let current = path.resolve(value);
+  const rest = [];
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync(current), ...rest);
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) return path.resolve(value);
+      rest.unshift(path.basename(current));
+      current = parent;
+    }
+  }
 }

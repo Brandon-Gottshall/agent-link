@@ -3,6 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
 import {
+  assertTestSafeWrite,
   legacyMailboxPaths,
   mailboxPath as defaultMailboxPath,
   stateDir
@@ -81,6 +82,7 @@ function ensurePrivateMailbox(mailboxPath) {
   if (isDefaultMailbox(mailboxPath)) {
     ensureStateDir();
   } else {
+    assertTestSafeWrite(mailboxPath);
     fs.mkdirSync(path.dirname(mailboxPath), { recursive: true, mode: DIR_MODE });
   }
   tightenMode(mailboxPath, FILE_MODE);
@@ -138,6 +140,7 @@ export function openMailbox(options = {}) {
   const readPaths = mailboxReadPaths(options);
   ensurePrivateMailbox(mailboxPath);
   const claimsDir = `${mailboxPath}.claims`;
+  let claimsDirChecked = false;
   const view = () => mergedView(readPaths, claimsDir);
 
   function appendEvent(event) {
@@ -159,7 +162,8 @@ export function openMailbox(options = {}) {
    *   metadata?: object | null,
    *   replyToMessageId?: string | null,
    *   anticipation?: string | null,
-   *   replyBy?: number | null
+   *   replyBy?: number | null,
+   *   sentAt?: number | null
    * }} message
    */
   function insertMessage({
@@ -171,12 +175,14 @@ export function openMailbox(options = {}) {
     metadata,
     replyToMessageId = null,
     anticipation = null,
-    replyBy = null
+    replyBy = null,
+    sentAt = null
   }) {
     const tooLarge = messageBodyTooLarge(body);
     if (tooLarge) throw new Error(tooLarge.message);
     const id = ulid();
-    const now = Date.now();
+    // `sentAt` lets a sender render the envelope it stores (Codex push).
+    const now = Number.isFinite(sentAt) ? /** @type {number} */ (sentAt) : Date.now();
     appendEvent({
       type: "message",
       at: now,
@@ -235,6 +241,11 @@ export function openMailbox(options = {}) {
    */
   function claim(key, content = "") {
     try {
+      // Once per mailbox handle: a Stop hook may claim thousands of reminders.
+      if (!claimsDirChecked) {
+        assertTestSafeWrite(claimsDir);
+        claimsDirChecked = true;
+      }
       fs.mkdirSync(claimsDir, { recursive: true, mode: DIR_MODE });
       // A directory created looser (another umask, an older copy) is
       // tightened when it is ours.
@@ -293,9 +304,16 @@ export function openMailbox(options = {}) {
   // `to` (optional) is the address the message was delivered to. After a
   // role handover (R7.20) the new holder gets a fresh delivery, tracked by
   // this field.
-  /** @param {{messageId: string, deliveredAt?: number, to?: string | null}} event */
-  function markDelivered({ messageId, deliveredAt = Date.now(), to = null }) {
-    appendEvent({ type: "delivered", at: deliveredAt, messageId, ...(typeof to === "string" && to ? { to } : {}) });
+  // `via` (optional) names the push path, e.g. "codex-turn" (R1.11, R3.8).
+  /** @param {{messageId: string, deliveredAt?: number, to?: string | null, via?: string | null}} event */
+  function markDelivered({ messageId, deliveredAt = Date.now(), to = null, via = null }) {
+    appendEvent({
+      type: "delivered",
+      at: deliveredAt,
+      messageId,
+      ...(typeof to === "string" && to ? { to } : {}),
+      ...(typeof via === "string" && via ? { via } : {})
+    });
   }
 
   function markAcknowledged({ messageId, acknowledgedAt = Date.now() }) {
@@ -457,6 +475,7 @@ function mergedView(paths, claimsDir = null) {
       const message = messages.get(event.messageId);
       message.delivered_at = event.at ?? Date.now();
       message.deliveries.push({ to: typeof event.to === "string" && event.to ? event.to : null, at: message.delivered_at });
+      if (typeof event.via === "string" && event.via) message.delivered_via = event.via;
       // First surfacing, for the reminder interval (R7.13).
       message.first_delivered_at ??= message.delivered_at;
     } else if (event.type === "acknowledged" && event.messageId && messages.has(event.messageId)) {

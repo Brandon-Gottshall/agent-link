@@ -3,6 +3,8 @@
 // versioning by SHA-256, once-per-version procedure delivery, role
 // resolution errors, and the enforcement-mode precedence. Every test uses a
 // temp state directory; nothing touches the real ~/.agent-link.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";

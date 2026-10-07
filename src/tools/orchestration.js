@@ -137,6 +137,7 @@ export const orchestrationTools = [
         // Free-form by design: the worker's own structured payload.
         details: { type: "object", additionalProperties: true, description: "Optional structured details, sent as JSON." },
         ...turnOptions,
+        replyToMessageId: str("The messageId of the task message this result answers (it must be addressed to you). It is resolved as done, with this result as the note (R7.7): not_found, wrong_recipient, or already_resolved otherwise, and nothing is sent."),
         receipt: receiptInput
       },
       required: ["resultStatus"],

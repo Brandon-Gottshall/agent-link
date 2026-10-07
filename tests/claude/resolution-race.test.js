@@ -6,6 +6,8 @@
 //
 // AGENT_LINK_RACE_SRC_ROOT points the children at another checkout's src/
 // (for example the pre-fix commit, which must fail this test).
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import fs from "node:fs";

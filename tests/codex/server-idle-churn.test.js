@@ -2,6 +2,8 @@
 // app-server; the first tool call spawns exactly one, later calls reuse it;
 // every shutdown path (stdin end, SIGTERM, SIGHUP) takes the whole app-server
 // process group down with the server. The three variants run concurrently.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { measure } from "../helpers/idle-churn.js";

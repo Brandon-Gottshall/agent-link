@@ -3,6 +3,8 @@
 // the workspace (git top level, symlinks resolved); Claude targets
 // unsupported; allowTargetOverride granting nothing. Pure functions over a
 // temp directory.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import os from "node:os";

@@ -8,12 +8,10 @@
 // By default the tool marks the messages it returns delivered as it reads
 // them. Set markAsDelivered:false to inspect without draining.
 import { openMailbox } from "../claude/mailbox.js";
-import { claudeSessionAliases } from "../claude/identity.js";
 import { isHeldByActiveWait } from "../claude/active-waits.js";
 import { peerMessageFromMailbox, renderInbox } from "../shared/envelope.js";
-import { claudeAddress } from "../shared/identity.js";
 import { mailboxRowResult } from "../registry/addresses.js";
-import { AgentLinkError } from "../shared/errors.js";
+import { currentRecipient, noCurrentSession } from "../delivery/recipient.js";
 import { isAnticipating, messageStatus, reminderSettings } from "../delivery/message-status.js";
 import { LIMITS, bool, limit, out } from "../server/schemas.js";
 import { readRoleTable, recipientView } from "../delivery/role-handover.js";
@@ -22,14 +20,14 @@ import { readRoleTable, recipientView } from "../delivery/role-handover.js";
 export const readInboxTool = {
   name: "read_agent_link_inbox",
   description:
-    "Read pending agent-link messages addressed to the current session, oldest first. By default the tool marks the returned " +
+    "Read pending agent-link messages addressed to the current session (a Claude session, or the calling Codex thread), oldest first. By default the tool marks the returned " +
     "messages delivered as it reads them; messages beyond `limit` stay pending (remainingCount). Returns validated message fields and a rendered " +
     "<agent-link-inbox> block as a visible MCP tool result so the user can see the inbound mail in the transcript. " +
     "Each message is wrapped in an <agent-link-message> envelope marking it as content from another agent, not " +
     "from the user. After the new messages it also shows open messages awaiting your resolution (reply or action messages " +
     "already delivered and still pending), so they can be resolved with reply_agent_link_message; set includeOpen=false " +
     "to skip them. Pair with the agent-link notify hooks, which report pending mail and remind about open messages. " +
-    "Fails with no_current_session when the calling Claude session cannot be identified.",
+    "Fails with no_current_session when the caller cannot be identified (a Codex thread is identified by the thread id Codex passes in the call's _meta, or CODEX_THREAD_ID).",
   inputSchema: {
     type: "object",
     properties: {
@@ -40,8 +38,9 @@ export const readInboxTool = {
     additionalProperties: false
   },
   output: {
-    sessionId: out("string", "The session whose inbox was read."),
-    address: out(["string", "null"], "That session's address, claude:<cliSessionId>."),
+    sessionId: out(["string", "null"], "The Claude session whose inbox was read, or null for a Codex thread."),
+    threadId: out("string", "The Codex thread whose inbox was read (Codex callers only)."),
+    address: out(["string", "null"], "The caller's address: claude:<cliSessionId> or codex:<threadId>."),
     markedDelivered: out("boolean", "Whether the returned messages were marked delivered."),
     messages: out("array", "Validated envelope fields per message: {id, from, fromHarness, fromVerified, to, sentAt, anticipation, replyBy, inReplyTo, replyTo (deprecated duplicate of inReplyTo), fromAddress, toAddress, status, resolution, reminders, open}. from/to are addresses; status is null for fyi. open is true for an already-delivered message shown again because it awaits resolution. Bodies appear only in renderedBlock."),
     openCount: out("integer", "How many of messages are open messages shown again (open: true)."),
@@ -79,21 +78,14 @@ export function makeReadInboxHandler({
     : () => openMailbox();
 
   return {
-    read_agent_link_inbox: async (args = {}) => {
-      const session = resolveCurrentSession();
-      if (!session && host === "codex") {
-        // R1.13: the Codex inbox arrives with mailbox-first sends (PR B7).
-        throw new AgentLinkError("no_current_session", "read_agent_link_inbox has no inbox for a Codex thread yet: it reads mail addressed to the current Claude session.", {
-          details: { host: "codex", sources: ["CLAUDE_SESSION_ID", "CLAUDE_CODE_SESSION_ID"] },
-          hint: "Codex threads receive peer messages as turns from message_codex_thread. To reply to a peer from a Codex thread, use message_codex_thread or message_claude_session with the sender's address."
-        });
-      }
-      if (!session) {
-        throw new AgentLinkError("no_current_session", "read_agent_link_inbox could not identify the current Claude session.", {
-          details: { host: "claude", sources: ["CLAUDE_SESSION_ID", "CLAUDE_CODE_SESSION_ID", "session sidecar", "transcript"] },
-          hint: "Run inside a Claude session whose sidecar or transcript is indexed, with CLAUDE_SESSION_ID or CLAUDE_CODE_SESSION_ID set."
-        });
-      }
+    /**
+     * @param {Record<string, any>} [args]
+     * @param {{callerContext?: any}} [ctx]
+     */
+    read_agent_link_inbox: async (args = {}, ctx = {}) => {
+      // A Claude session or a Codex thread, from runtime identity (R1.4, R1.13).
+      const me = currentRecipient({ host, callerContext: ctx.callerContext ?? null, resolveCurrentSession });
+      if (!me) throw noCurrentSession("read_agent_link_inbox", host);
 
       const markAsDelivered = args.markAsDelivered !== false; // defaults true
       const limit = typeof args.limit === "number" ? args.limit : LIMITS.inbox.def;
@@ -105,8 +97,8 @@ export function makeReadInboxHandler({
       // (R7.20).
       // A handed-over message is a fresh delivery to the new holder, and
       // deliveries are recorded with the address they went to.
-      const address = claudeAddress(session);
-      const inbox = recipientView({ aliases: claudeSessionAliases(session), address, table: readRoleTable(roles) });
+      const address = me.address;
+      const inbox = recipientView({ aliases: me.aliases, address, table: readRoleTable(roles) });
       const mb = openMb();
       try {
         // A reply that an in-process wait (message_claude_session with
@@ -145,8 +137,9 @@ export function makeReadInboxHandler({
         }));
         const held = all.length - pending.length;
         return {
-          sessionId: session.sessionId,
-          address: claudeAddress(session),
+          sessionId: me.sessionId,
+          ...(me.threadId ? { threadId: me.threadId } : {}),
+          address,
           markedDelivered: markAsDelivered,
           messages,
           openCount: open.length,
@@ -183,5 +176,5 @@ function isOpenFor(row, inbox, at, settings) {
  */
 export function readInboxEntries(deps) {
   const handlers = makeReadInboxHandler(deps);
-  return [{ definition: readInboxTool, handler: (args) => handlers.read_agent_link_inbox(args) }];
+  return [{ definition: readInboxTool, handler: (args, ctx) => handlers.read_agent_link_inbox(args, ctx) }];
 }

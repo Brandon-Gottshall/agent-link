@@ -2,6 +2,8 @@
 // every message in the read_agent_link_inbox block, and the hook notice all
 // come from src/shared/envelope.js (T-2.1..T-2.5). Also: the inbox never
 // drains a reply an in-process wait is holding (same rule as the channel).
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";

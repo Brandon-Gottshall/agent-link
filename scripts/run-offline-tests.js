@@ -58,10 +58,13 @@ const groups = {
   ],
   codex: [
     "tests/codex/app-server-client.test.js",
+    "tests/codex/app-server-connection.test.js",
     "tests/codex/orchestrator-role.test.js",
     "tests/codex/app-server-lifecycle.test.js",
     "tests/codex/app-server-logging.test.js",
     "tests/codex/chat-style-close.test.js",
+    "tests/codex/codex-delivery.test.js",
+    "tests/codex/codex-receive.test.js",
     "tests/codex/codex-binary.test.js",
     "tests/codex/dependency-handoff-matching.test.js",
     "tests/codex/fork.test.js",
@@ -82,6 +85,7 @@ const groups = {
     "scripts/mcp-smoke-test.js"
   ],
   server: [
+    "tests/server/guard-imports.test.js",
     "tests/server/registry.test.js",
     "tests/server/removed-arguments.test.js",
     "tests/server/roles-e2e.test.js",
@@ -140,8 +144,15 @@ if (unlisted.length) {
 // inherited CODEX_*, CLAUDE_* or AGENT_LINK_* settings, so a test that forgets
 // to pass an explicit path can never read or write the real ~/.agent-link,
 // ~/.claude or ~/.codex.
+// CLAUDE_CONFIG_DIR and the Agent Link state paths are pinned under that HOME
+// too, and tests/helpers/guard.js (preloaded into every test process) refuses
+// to run unless they all point into the temp directory.
 const env = hermeticEnv();
-const result = spawnSync(process.execPath, ["--test", ...passthrough, ...files], { cwd: root, stdio: "inherit", env });
+env.CLAUDE_CONFIG_DIR = path.join(env.HOME, ".claude");
+env.AGENT_LINK_STATE_DIR = path.join(env.HOME, ".agent-link");
+env.AGENT_LINK_MAILBOX_PATH = path.join(env.AGENT_LINK_STATE_DIR, "mailbox.jsonl");
+const guard = path.join(root, "tests", "helpers", "guard.js");
+const result = spawnSync(process.execPath, ["--import", guard, "--test", ...passthrough, ...files], { cwd: root, stdio: "inherit", env });
 if (unlisted.length) {
   process.stderr.write(`run-offline-tests: WARNING unlisted test files were not run: ${unlisted.join(", ")}\n`);
 }

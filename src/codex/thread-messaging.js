@@ -9,6 +9,8 @@
 import { realpathSync } from "node:fs";
 import path from "node:path";
 import { asUserTextInput } from "./app-server-client.js";
+import { openMailbox } from "../claude/mailbox.js";
+import { registerActiveWait } from "../claude/active-waits.js";
 import { codexThreadDeepLink } from "./desktop-routing.js";
 import { recentItemWindow, summarizeTurn } from "./thread-summary.js";
 import {
@@ -25,6 +27,7 @@ import {
   isRuntimeIdentitySource,
   newPeerMessageId,
   normalizePeerMessage,
+  peerMessageFromMailbox,
   peerMessageResult,
   renderPeerEnvelope
 } from "../shared/envelope.js";
@@ -36,6 +39,12 @@ import { looksLikeRoleAddress, procedureProblemWarning } from "../registry/roles
 import { assertNoClaudeOverrides, decideTargetOverrides, overrideDeniedError } from "../delivery/override-policy.js";
 import { checkRoleAddressing } from "../delivery/role-policy.js";
 import { expectedCostFrom, lastRecordedUsage, settingsMismatchWarning, tokenUsageUnavailableWarning } from "./token-usage.js";
+import { codexTurnText, desktopPushPolicy, pushCodexMessage } from "../delivery/codex-push.js";
+import { messageStatus, reminderSettings, resolveLabels } from "../delivery/message-status.js";
+import { pollMessageResolution } from "../delivery/message-wait.js";
+import { resolveByAnswer } from "../delivery/resolution.js";
+import { readRoleTable, recipientMatcher } from "../delivery/role-handover.js";
+import { storedAddress } from "../registry/addresses.js";
 
 /** @typedef {import("./thread-queries.js").AppServerLike} AppServerLike */
 /** @typedef {import("./thread-queries.js").WaitReadArgs} WaitReadArgs */
@@ -43,9 +52,11 @@ import { expectedCostFrom, lastRecordedUsage, settingsMismatchWarning, tokenUsag
 
 /**
  * What a tool handler receives besides its arguments (src/server/registry.js).
- * @typedef {{callerContext?: any, roleVia?: string}} ToolContext
+ * @typedef {{callerContext?: any, roleVia?: string, answeredKind?: "reply" | "done"}} ToolContext
  *   roleVia: set only by the orchestrator tools when the target came from
  *   the role table (R1.21), never from tool arguments
+ *   answeredKind: how replyToMessageId resolves the answered message: reply
+ *   (default) or done (return_project_work_result, R7.7)
  */
 
 /**
@@ -87,6 +98,10 @@ import { expectedCostFrom, lastRecordedUsage, settingsMismatchWarning, tokenUsag
  *   roles?: import("../registry/roles.js").RoleStore | null,
  *   listReceipts?: (options: Record<string, any>) => Promise<{data: any[]}>,
  *   tokenUsage?: import("./token-usage.js").TokenUsageTracker | null,
+ *   mailboxOpener?: () => ReturnType<typeof openMailbox>,
+ *   pushPolicy?: () => import("../delivery/codex-push.js").DesktopPushPolicy,
+ *   tracker?: import("../delivery/codex-push.js").ThreadStatusTracker | null,
+ *   rolloutCheck?: import("../delivery/codex-push.js").RolloutCheck | null,
  *   queries: {
  *     waitForThreadRead: (args: WaitReadArgs) => Promise<WaitReadResult>,
  *     enrichThreadLookupError: (error: any, threadId: string) => Promise<any>,
@@ -274,8 +289,9 @@ export function sameDirectory(a, b) {
 /**
  * @param {ThreadMessagingDeps} deps
  */
-export function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries, roles = null, listReceipts = defaultListReceipts, tokenUsage = null }) {
+export function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries, roles = null, listReceipts = defaultListReceipts, tokenUsage = null, mailboxOpener, pushPolicy = () => desktopPushPolicy(), tracker = null, rolloutCheck = null }) {
   const { waitForThreadRead, enrichThreadLookupError, inferActiveTurnId } = queries;
+  const openMb = typeof mailboxOpener === "function" ? mailboxOpener : () => openMailbox();
 
   /**
    * The caller's address from runtime identity only (R1.4).
@@ -404,65 +420,46 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
     });
     if (decision.denied) throw overrideDeniedError(decision.denied, threadId);
     const overrides = decision.forward;
-    let status = read.thread.status;
-    let action = null;
+    const status = read.thread.status;
     const warnings = [
       ...decision.warnings,
       ...(addressing.warning ? [addressing.warning] : []),
       ...warningsForMessageTarget(status, mode)
     ];
+    // Labels (R7.1, R7.2): validated before anything is written or sent.
+    const labels = resolveLabels({ anticipation: args.anticipation, replyBy: args.replyBy, waitForReply: args.waitForReply === true, now: Date.now() });
 
-    if (status.type === "notLoaded") {
-      if (!resumeIfNeeded) {
-        throw new AgentLinkError("active_turn_conflict", `Thread ${threadId} is not loaded and resumeIfNeeded is false.`, {
-          details: { status: "notLoaded", activeTurnId: null },
-          hint: "Pass resumeIfNeeded=true (the default) to resume the thread before messaging it."
+    // The plan, decided before the mailbox write so that a conflict writes
+    // nothing. A thread held by the desktop app gets no turn (R1.12a).
+    const held = pushPolicy().isHeld(status);
+    if (status?.type === "notLoaded" && !held && !resumeIfNeeded) {
+      throw new AgentLinkError("active_turn_conflict", `Thread ${threadId} is not loaded and resumeIfNeeded is false.`, {
+        details: { status: "notLoaded", activeTurnId: null },
+        hint: "Pass resumeIfNeeded=true (the default) to resume the thread before messaging it."
+      });
+    }
+    const steering = !held && (mode === "steer_active" || (mode === "auto" && status?.type === "active"));
+    let expectedTurnId = null;
+    if (steering) {
+      expectedTurnId = args.expectedTurnId || await inferActiveTurnId(threadId);
+      if (!expectedTurnId) {
+        throw new AgentLinkError("active_turn_conflict", "Cannot steer the active thread without expectedTurnId or an inferable in-progress turn.", {
+          details: { status: status?.type ?? null, activeTurnId: null },
+          hint: "Pass expectedTurnId, or use mode=start_turn with allowParallelTurn=true."
         });
       }
-      /** @type {Record<string, any>} */
-      const resumeParams = {
-        threadId,
-        excludeTurns: true,
-        persistExtendedHistory: true
-      };
-      if (overrides.cwd) {
-        resumeParams.cwd = overrides.cwd;
-      }
-      if (overrides.model) {
-        resumeParams.model = overrides.model;
-      }
-      if (overrides.effort) {
-        resumeParams.reasoningEffort = overrides.effort;
-      }
-      read = await appServer.request("thread/resume", resumeParams);
-      status = read.thread.status;
-      action = "resumed";
-      warnings.push(...warningsForMessageTarget(status, mode));
+    } else if (!held && isRiskyParallelStatus(status) && !allowParallelTurn) {
+      throw new AgentLinkError("active_turn_conflict", "Target thread has an active or waiting turn, and this request would start another turn.", {
+        details: { status: status?.type ?? null, activeTurnId: await inferActiveTurnId(threadId).catch(() => null), warnings },
+        hint: "Use mode=steer_active when possible, or set allowParallelTurn=true to intentionally start a parallel turn."
+      });
     }
 
-    const steering = mode === "steer_active" || (mode === "auto" && status.type === "active");
-    // R1.20: the procedure text goes with the first delivery of each version
-    // to the holder; a failed send releases the claim.
+    // R1.20: the procedure text goes with the first send of each version to
+    // the holder, in the mailbox record; a failed write releases the claim.
     const procedure = role?.procedure ?? null;
-    const procedureClaim = procedure ? { role: procedure.name, sha256: procedure.sha256, address: targetAddress } : null;
-    const withText = procedureClaim && roles ? roles.claimProcedureDelivery(procedureClaim) : false;
-    const roleFields = role
-      ? { via: role.via, procedure: procedure ? { name: procedure.name, version: procedure.version, ...(withText ? { text: procedure.text } : {}) } : null }
-      : null;
-    // turn/steer ignores cwd/model/effort, so only a new turn shows overrides.
-    const peer = buildPeerTurnInput({
-      toolContext,
-      threadId,
-      message,
-      overrides: steering ? null : overrides,
-      // R7.2 default label. Codex sends get anticipation/replyBy arguments
-      // and mailbox records in B7b; until then the reply line stays direct.
-      anticipation: args.waitForReply === true ? "reply" : "fyi",
-      role: roleFields
-    });
-    const input = peer.input;
     const roleResult = role
-      ? { via: role.via, roleProcedure: procedure ? { name: procedure.name, version: procedure.version, textIncluded: withText } : null }
+      ? { via: role.via, roleProcedure: procedure ? { name: procedure.name, version: procedure.version, textIncluded: false } : null }
       : {};
     // A procedure file that was refused (symlink, FIFO, over 64 KiB) is reported, not silently skipped.
     const procedureWarning = procedureProblemWarning(role);
@@ -473,149 +470,108 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
           roleProcedure: procedure ? { name: procedure.name, version: procedure.version } : null,
           ...(procedureWarning ? { roleProcedureWarning: procedureWarning.details } : {})
         }
-      : null;
+      : {};
     const receiptTags = addressing.tag ? [addressing.tag] : [];
-    const releaseClaim = () => {
-      if (withText && procedureClaim && roles) roles.releaseProcedureDelivery(procedureClaim);
-    };
-    /** @param {unknown} error */
-    const releaseOnFailure = (error) => {
-      releaseClaim();
-      throw error;
-    };
-    if (steering) {
-      const expectedTurnId = args.expectedTurnId || await inferActiveTurnId(threadId).catch(releaseOnFailure);
-      if (!expectedTurnId) {
-        releaseClaim();
-        throw new AgentLinkError("active_turn_conflict", "Cannot steer the active thread without expectedTurnId or an inferable in-progress turn.", {
-          details: { status: status?.type ?? null, activeTurnId: null },
-          hint: "Pass expectedTurnId, or use mode=start_turn with allowParallelTurn=true."
-        });
-      }
-      const response = await appServer.request("turn/steer", {
-        threadId,
-        input,
-        expectedTurnId
-      }).catch(releaseOnFailure);
-      const wait = args.waitForReply
-        ? await tryWaitForReply({
-            threadId,
-            targetTurnId: response.turnId,
-            timeoutMs: args.timeoutMs,
-            pollIntervalMs: args.pollIntervalMs
-          })
-        : null;
-      const appServerSummary = appServer.getConnectionSummary();
-      const actionName = action ? `${action}+steered_active_turn` : "steered_active_turn";
-      const replyConfirmation = envelopeReplyConfirmation(buildReplyConfirmation(wait, response.turnId, args.recentItems ?? LIMITS.replyRecentItems.def), { threadId, sent: peer.summary });
-      /** @type {Record<string, any>} */
-      const result = {
-        ok: true,
-        messageId: peer.summary.messageId,
-        deliveredVia: "turn/steer",
-        target: { threadId, address: codexAddress(threadId) },
-        turn: { id: response.turnId },
-        ...roleResult,
-        ...(wait ? { wait: waitOutcome(replyConfirmation, { threadId, turnId: response.turnId, waitedMs: wait.waitedMs }) } : {}),
-        source: "app-server",
-        action: actionName,
-        previousStatus: status,
-        threadId,
-        turnId: response.turnId,
-        peerMessage: peer.summary,
-        warnings,
-        ...buildStateContract({
-          action: actionName,
-          initialThread,
-          beforeSendThread: read.thread,
-          turnId: response.turnId,
-          appServer: appServerSummary
-        }),
-        appServer: appServerSummary
-      };
-      result.receipt = await recordActionReceipt({
-        action: "message_thread",
-        receipt: args.receipt,
-        target: {
-          threadId,
-          address: codexAddress(threadId),
-          turnId: response.turnId,
-          name: read.thread.name,
-          cwd: read.thread.cwd,
-          archiveState: inferArchiveState(read.thread),
-          status: read.thread.status,
-          deepLink: codexThreadDeepLink(threadId)
-        },
-        message,
-        finalResponse: replyConfirmation.finalResponse,
-        delivery: result.delivery,
-        replyConfirmation,
-        runtimeCallerContext: toolContext.callerContext,
-        appServer: appServerSummary,
-        extra: receiptExtra,
-        tags: receiptTags
-      });
-      return result;
-    }
 
-    if (isRiskyParallelStatus(status) && !allowParallelTurn) {
-      releaseClaim();
-      throw new AgentLinkError("active_turn_conflict", "Target thread has an active or waiting turn, and this request would start another turn.", {
-        details: { status: status?.type ?? null, activeTurnId: await inferActiveTurnId(threadId).catch(() => null), warnings },
-        hint: "Use mode=steer_active when possible, or set allowParallelTurn=true to intentionally start a parallel turn."
-      });
-    }
-
+    // turn/steer ignores cwd/model/effort, so only a new turn carries (and
+    // shows) overrides.
+    const turnOverrides = steering || held ? {} : overrides;
     /** @type {Record<string, any>} */
-    const startParams = { threadId, input };
-    if (overrides.cwd) {
-      startParams.cwd = overrides.cwd;
+    const startParams = {};
+    for (const field of ["cwd", "model", "effort"]) {
+      if (turnOverrides[field]) startParams[field] = turnOverrides[field];
     }
-    if (overrides.model) {
-      startParams.model = overrides.model;
-    }
-    if (overrides.effort) {
-      startParams.effort = overrides.effort;
+    /** @type {Record<string, any> | null} */
+    let resume = null;
+    if (status?.type === "notLoaded" && !held) {
+      resume = { threadId, excludeTurns: true, persistExtendedHistory: true };
+      if (turnOverrides.cwd) resume.cwd = turnOverrides.cwd;
+      if (turnOverrides.model) resume.model = turnOverrides.model;
+      if (turnOverrides.effort) resume.reasoningEffort = turnOverrides.effort;
     }
 
     // thread/settings/updated follows only a turn/start that changes settings.
     const settingsMark = tokenUsage?.mark() ?? 0;
-    const response = await appServer.request("turn/start", startParams).catch(releaseOnFailure);
-    const summarizedTurn = summarizeTurn(response.turn);
-    const wait = args.waitForReply
-      ? await tryWaitForReply({
-          threadId,
-          targetTurnId: summarizedTurn.id,
-          timeoutMs: args.timeoutMs,
-          pollIntervalMs: args.pollIntervalMs
-        })
+    const sent = await sendToThread({
+      toolContext,
+      threadId,
+      message,
+      labels,
+      replyToMessageId: args.replyToMessageId,
+      answeredKind: toolContext.answeredKind === "done" ? "done" : "reply",
+      role,
+      overrides: turnOverrides,
+      receipt: args.receipt,
+      plan: held ? "held" : steering ? "steer" : "start",
+      resume,
+      startParams,
+      expectedTurnId,
+      rolloutPath: typeof read.thread?.path === "string" ? read.thread.path : null
+    });
+    if (role && procedure) roleResult.roleProcedure = { name: procedure.name, version: procedure.version, textIncluded: sent.procedureTextIncluded };
+    warnings.push(...sent.push.warnings);
+    if (sent.answered && !sent.answer?.ok) {
+      warnings.push({
+        code: "not_resolved",
+        message: sent.answered.fromTarget
+          ? `Message ${sent.answered.id} was not resolved by this send: ${sent.answer?.reason ?? "unknown"}.`
+          : `Message ${sent.answered.id} came from another session, so this send to ${targetAddress} does not resolve it.`,
+        details: { messageId: sent.answered.id, reason: sent.answered.fromTarget ? sent.answer?.reason ?? null : "different_sender" }
+      });
+    }
+    const push = sent.push;
+    const delivered = push.delivery === "delivered";
+    const turn = !delivered
+      ? null
+      : push.request === "turn/steer"
+        ? { id: push.response?.turnId ?? push.response?.turn?.id ?? null }
+        : summarizeTurn(push.response?.turn);
+    const turnId = turn?.id ?? null;
+    const action = !delivered
+      ? (held ? "queued_held_thread" : "queued_push_failed")
+      : push.request === "turn/steer"
+        ? "steered_active_turn"
+        : push.resumed ? "resumed+started_turn" : "started_turn";
+    const switches = delivered && push.request === "turn/start" ? decision.switches : [];
+
+    // R7.19: a message wait ends on an explicit resolution, never on the
+    // turn completing; the turn's final response is not returned.
+    const wait = args.waitForReply === true
+      ? await waitForResolution({ messageId: sent.messageId, threadId, caller: sent.caller, timeoutMs: args.timeoutMs, pollIntervalMs: args.pollIntervalMs, turnId })
       : null;
+
     const appServerSummary = appServer.getConnectionSummary();
-    const actionName = action ? `${action}+started_turn` : "started_turn";
-    const replyConfirmation = envelopeReplyConfirmation(buildReplyConfirmation(wait, summarizedTurn.id, args.recentItems ?? LIMITS.replyRecentItems.def), { threadId, sent: peer.summary });
+    const { delivery: deliveryContract, ...stateContract } = buildStateContract({
+      action,
+      initialThread,
+      beforeSendThread: read.thread,
+      ...(push.request === "turn/steer" ? { turnId } : { turn: turn ?? undefined }),
+      appServer: appServerSummary
+    });
     /** @type {Record<string, any>} */
     const result = {
       ok: true,
-      messageId: peer.summary.messageId,
-      deliveredVia: "turn/start",
-      target: { threadId, address: codexAddress(threadId) },
+      messageId: sent.messageId,
+      delivery: push.delivery,
+      deliveredVia: push.deliveredVia,
+      target: { threadId, address: targetAddress },
+      turn,
+      anticipation: labels.anticipation,
+      replyBy: labels.replyBy === null ? null : new Date(labels.replyBy).toISOString(),
+      messageStatus: wait ? wait.messageStatus : labels.anticipation === "fyi" ? null : "pending",
       ...roleResult,
-      ...(decision.switches.length ? { switches: decision.switches.map(switchResult) } : {}),
-      ...(wait ? { wait: waitOutcome(replyConfirmation, { threadId, turnId: summarizedTurn.id, waitedMs: wait.waitedMs }) } : {}),
+      ...(sent.answer?.ok ? { resolved: { messageId: sent.answered?.id, kind: sent.answer.kind, late: sent.answer.late } } : {}),
+      ...(switches.length ? { switches: switches.map(switchResult) } : {}),
+      ...(wait ? { wait } : {}),
       source: "app-server",
-      action: actionName,
+      action,
       previousStatus: status,
       threadId,
-      turn: summarizedTurn,
-      peerMessage: peer.summary,
+      ...(push.request === "turn/steer" ? { turnId } : {}),
+      peerMessage: sent.peerMessage,
       warnings,
-      ...buildStateContract({
-        action: actionName,
-        initialThread,
-        beforeSendThread: read.thread,
-        turn: summarizedTurn,
-        appServer: appServerSummary
-      }),
+      ...stateContract,
+      deliveryState: { ...deliveryContract, state: delivered ? "accepted_by_app_server" : "queued_in_mailbox" },
       appServer: appServerSummary
     };
     result.receipt = await recordActionReceipt({
@@ -623,8 +579,8 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
       receipt: args.receipt,
       target: {
         threadId,
-        address: codexAddress(threadId),
-        turnId: summarizedTurn.id,
+        address: targetAddress,
+        turnId,
         name: read.thread.name,
         cwd: read.thread.cwd,
         archiveState: inferArchiveState(read.thread),
@@ -632,25 +588,25 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
         deepLink: codexThreadDeepLink(threadId)
       },
       message,
-      finalResponse: replyConfirmation.finalResponse,
-      delivery: result.delivery,
-      replyConfirmation,
+      finalResponse: null,
+      delivery: { state: push.delivery, deliveredVia: push.deliveredVia, request: push.request, turnId },
+      replyConfirmation: null,
       runtimeCallerContext: toolContext.callerContext,
       appServer: appServerSummary,
-      extra: receiptExtra,
+      extra: { ...receiptExtra, messageId: sent.messageId },
       tags: receiptTags
     });
     // R9.4/R9.10: every applied switch persists (no revert is ever sent) and
     // gets its own receipt, with the token usage of the first turn on the new
-    // setting (known only when the call waited for that turn to end).
-    if (decision.switches.length) {
-      const tokenUsageNext = await firstTurnUsage({ threadId, turnId: summarizedTurn.id, wait, warnings, overrides, settingsMark });
+    // setting (known only when the call waited).
+    if (switches.length) {
+      const tokenUsageNext = await firstTurnUsage({ threadId, turnId, waited: args.waitForReply === true, warnings, overrides: turnOverrides, settingsMark });
       result.switchReceipts = [];
-      for (const change of decision.switches) {
+      for (const change of switches) {
         result.switchReceipts.push(await recordActionReceipt({
           action: change.kind.replace("-", "_"),
           receipt: args.receipt,
-          target: { threadId, address: targetAddress, turnId: summarizedTurn.id, name: read.thread.name, cwd: read.thread.cwd },
+          target: { threadId, address: targetAddress, turnId, name: read.thread.name, cwd: read.thread.cwd },
           message: null,
           runtimeCallerContext: toolContext.callerContext,
           appServer: appServerSummary,
@@ -676,33 +632,261 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
   }
 
   /**
-   * Token usage of the first turn on a new setting (R9.10), waiting at most
-   * 5 s after the turn ended (the notifications normally arrive before it
-   * ends). `{next: null, reason: "not_waited"}` when the call did not wait
-   * for the turn (no warning); `{next: null, reason: "no_notification"}` with
-   * a token_usage_unavailable warning when it waited and none came. Adds a settings_mismatch
-   * warning when a thread/settings/updated sent after this turn/start reports
-   * other values than the ones sent; no notification is not a mismatch.
-   * @param {{threadId: string, turnId: string, wait: ReplyWait | null, warnings: any[], overrides: Record<string, string>, settingsMark: number}} input
+   * Mailbox first, then push (R1.10, R1.11): writes the message to the
+   * mailbox addressed to codex:<threadId>, resolves the message it answers
+   * (replyToMessageId), then pushes it to the thread as a turn. Shared by
+   * message_codex_thread (and the orchestrator and handoff tools built on
+   * it) and launch_codex_thread's first message.
+   * @param {{
+   *   toolContext?: ToolContext,
+   *   threadId: string,
+   *   message: string,
+   *   labels: {anticipation: string, replyBy: number | null},
+   *   replyToMessageId?: unknown,
+   *   answeredKind?: "reply" | "done",
+   *   role?: any,
+   *   overrides?: Record<string, any> | null,
+   *   receipt?: any,
+   *   plan: "start" | "steer" | "held",
+   *   resume?: Record<string, any> | null,
+   *   startParams?: Record<string, any>,
+   *   expectedTurnId?: string | null,
+   *   rolloutPath?: string | null
+   * }} options
+   *   rolloutPath: the thread's transcript (thread/read `path`), for the
+   *   deny-only "open in another process" check
    */
-  async function firstTurnUsage({ threadId, turnId, wait, warnings, overrides, settingsMark }) {
-    if (!tokenUsage) return { next: null };
-    const mismatch = settingsMismatchWarning({ threadId, requested: { model: overrides.model, effort: overrides.effort, cwd: overrides.cwd }, applied: tokenUsage.settingsSince(threadId, settingsMark) });
-    if (mismatch) warnings.push(mismatch);
-    // Not waiting for the turn is the caller's choice, not a failure: no warning.
-    if (!wait) return { next: null, reason: "not_waited" };
-    if (!(wait.ok === true && wait.timedOut === false)) {
-      warnings.push(tokenUsageUnavailableWarning({ threadId, turnId, purpose: "the first turn on the new setting", reason: "turn_not_ended" }));
-      return { next: null, reason: "turn_not_ended" };
+  async function sendToThread({ toolContext = {}, threadId, message, labels, replyToMessageId, answeredKind = "reply", role = null, overrides = null, receipt = null, plan, resume = null, startParams = {}, expectedTurnId = null, rolloutPath = null }) {
+    const caller = resolveCallerIdentity({ host, runtimeCallerContext: toolContext.callerContext ?? null, currentSession: resolveCurrentSession });
+    const targetAddress = /** @type {string} */ (codexAddress(threadId));
+    const procedure = role?.procedure ?? null;
+    const procedureClaim = procedure ? { role: procedure.name, sha256: procedure.sha256, address: targetAddress } : null;
+    const mb = openMb();
+    try {
+      // The message this send answers must be addressed to the caller
+      // (a role's new holder included, R7.20).
+      let answered = null;
+      if (replyToMessageId !== undefined && replyToMessageId !== null) {
+        answered = answeredMessage(mb, replyToMessageId, caller, answeredKind);
+      }
+      const withText = procedureClaim && roles ? roles.claimProcedureDelivery(procedureClaim) : false;
+      const shownOverrides = overrides && Object.values(overrides).some((v) => typeof v === "string" && v.trim()) ? overrides : null;
+      const sentAt = Date.now();
+      /** @type {Record<string, any>} */
+      const metadata = {
+        sender: { source: caller.source },
+        ...(receipt ? { receipt: receiptMetadata(receipt) } : {}),
+        ...(shownOverrides ? { overrides: shownOverrides } : {}),
+        ...(role
+          ? {
+              role: {
+                via: role.via,
+                address: role.address,
+                procedure: procedure ? { name: procedure.name, version: procedure.version } : null,
+                ...(withText && procedure ? { procedureText: procedure.text } : {})
+              }
+            }
+          : {})
+      };
+      /** @type {string} */
+      let messageId;
+      try {
+        messageId = mb.insertMessage({
+          fromSessionId: caller.id,
+          fromSessionKind: caller.kind,
+          toSessionId: threadId,
+          toSessionKind: "codex",
+          body: message,
+          metadata,
+          replyToMessageId: answered ? answered.id : null,
+          anticipation: labels.anticipation,
+          replyBy: labels.replyBy,
+          sentAt
+        });
+      } catch (error) {
+        if (withText && procedureClaim && roles) roles.releaseProcedureDelivery(procedureClaim);
+        throw error;
+      }
+      // An answer sent back to the original sender resolves an open
+      // reply/action message (R7.5): "reply", or "done" for a work result
+      // (R7.7). Exactly once (R7.10).
+      /** @type {Record<string, any> | null} */
+      let answer = null;
+      if (answered && [threadId, targetAddress].includes(answered.from_session_id)) {
+        answer = resolveByAnswer(mb, answered, {
+          kind: answeredKind,
+          byAddress: callerAddressOf(caller),
+          replyMessageId: messageId,
+          now: Date.now(),
+          settings: reminderSettings()
+        });
+      }
+      const row = {
+        id: messageId,
+        from_session_id: caller.id,
+        from_session_kind: caller.kind,
+        to_session_id: threadId,
+        to_session_kind: "codex",
+        body: message,
+        metadata_json: JSON.stringify(metadata),
+        sent_at: sentAt,
+        reply_to_message_id: answered ? answered.id : null,
+        anticipation: labels.anticipation,
+        reply_by: labels.replyBy
+      };
+      const fields = normalizePeerMessage(peerMessageFromMailbox(row));
+      const push = await pushCodexMessage({
+        appServer,
+        mailbox: mb,
+        messageId,
+        threadId,
+        text: codexTurnText(row, plan === "steer" ? null : shownOverrides),
+        plan,
+        resume,
+        startParams,
+        expectedTurnId,
+        // The endpoint's last word on the thread (B7 spike: a turn/start that
+        // returns the active turn id steered it), and the deny-only
+        // "open in another process" check (R1.12a).
+        tracker,
+        rolloutPath,
+        rolloutCheck
+      });
+      return {
+        messageId,
+        caller,
+        push,
+        answer,
+        answered: answered ? { id: answered.id, fromTarget: [threadId, targetAddress].includes(answered.from_session_id) } : null,
+        procedureTextIncluded: Boolean(withText),
+        peerMessage: {
+          messageId: fields.id,
+          from: fields.from,
+          fromHarness: fields.fromHarness,
+          fromVerified: fields.fromVerified,
+          sentAt: fields.sentAt,
+          anticipation: fields.anticipation,
+          enveloped: true
+        }
+      };
+    } finally {
+      mb.close();
     }
-    const usage = await tokenUsage.awaitTurnUsage(threadId, turnId);
+  }
+
+  /**
+   * The message a send answers: it must exist and be addressed to the caller.
+   * @param {ReturnType<import("../claude/mailbox.js").openMailbox>} mb
+   * @param {unknown} replyToMessageId
+   * @param {{aliases: string[], id: string, kind: string}} caller
+   * @param {"reply" | "done"} [kind]
+   */
+  function answeredMessage(mb, replyToMessageId, caller, kind = "reply") {
+    const original = typeof replyToMessageId === "string" ? mb.getMessage({ messageId: replyToMessageId }) : null;
+    const address = callerAddressOf(caller);
+    const aliases = address ? [...caller.aliases, address] : caller.aliases;
+    if (kind === "done") {
+      // return_project_work_result resolves the message (R7.7): the
+      // resolution errors of reply_agent_link_message apply.
+      if (!original) {
+        throw new AgentLinkError("not_found", `No Agent Link message has id ${JSON.stringify(String(replyToMessageId)).slice(0, 80)}.`, {
+          details: { id: replyToMessageId, candidates: [] },
+          hint: "Use the messageId from the <agent-link-message> envelope or read_agent_link_inbox."
+        });
+      }
+      if (!recipientMatcher({ aliases, table: readRoleTable(roles) })(original)) {
+        throw new AgentLinkError("wrong_recipient", "That message was not addressed to this session.", {
+          details: { messageId: original.id, expected: original.to_session_id, caller: caller.id }
+        });
+      }
+      if (original.resolution) {
+        const view = messageStatus(original, { now: Date.now(), settings: reminderSettings() });
+        throw new AgentLinkError("already_resolved", `Message ${original.id} is already ${view.status}.`, {
+          details: { messageId: original.id, status: view.status, resolvedAt: view.resolution?.at ?? null },
+          hint: "Send the result without replyToMessageId if there is more to report."
+        });
+      }
+      return original;
+    }
+    if (!original || !recipientMatcher({ aliases, table: readRoleTable(roles) })(original)) {
+      throw new AgentLinkError("invalid_arguments", "`replyToMessageId` must reference an Agent Link message addressed to the caller.", {
+        details: { errors: [{ path: "replyToMessageId", rule: "reference", expected: "a message addressed to the caller" }] }
+      });
+    }
+    return original;
+  }
+
+  /**
+   * A message wait on a Codex send (R7.19): ends when the message is
+   * resolved (an explicit reply_agent_link_message from the thread, or a
+   * send with replyToMessageId), becomes unresolved or expired, or on
+   * timeout. Never on turn completion.
+   * @param {{messageId: string, threadId: string, caller: {aliases: string[]}, timeoutMs?: number, pollIntervalMs?: number, turnId?: string | null}} options
+   */
+  async function waitForResolution({ messageId, threadId, caller, timeoutMs, pollIntervalMs, turnId = null }) {
+    const fromIds = [threadId, /** @type {string} */ (codexAddress(threadId))];
+    const releaseWait = registerActiveWait({ replyToMessageId: messageId, fromIds, toIds: caller.aliases });
+    const startedAt = Date.now();
+    const mb = openMb();
+    try {
+      const done = await pollMessageResolution(mb, {
+        messageId,
+        fromIds,
+        toIds: caller.aliases,
+        timeoutMs: typeof timeoutMs === "number" && timeoutMs >= 0 ? timeoutMs : LIMITS.timeoutMs.def,
+        pollIntervalMs: typeof pollIntervalMs === "number" && pollIntervalMs > 0 ? pollIntervalMs : 250,
+        settings: reminderSettings(),
+        host
+      });
+      return {
+        outcome: done.outcome,
+        messageStatus: done.messageStatus,
+        waitedMs: Date.now() - startedAt,
+        target: { threadId, address: codexAddress(threadId) },
+        ...(done.reply ? { reply: done.reply } : {}),
+        // The turn that carried the message, for get_codex_thread; its
+        // final response is never a reply (R7.5, R7.19).
+        ...(turnId ? { turn: { turnId } } : {})
+      };
+    } finally {
+      releaseWait();
+      mb.close();
+    }
+  }
+
+  /**
+   * Token usage of the first turn on a new setting (R9.10). Message waits end
+   * on an explicit resolution, not on the turn (R7.19), so with waitForReply
+   * this asks the tracker for the turn's usage directly
+   * (tokenUsage.awaitTurnUsage: usage notifications arrive before
+   * turn/completed; it waits at most its grace period). Without a wait the
+   * result is `{next: null, reason: "not_waited"}` with no warning;
+   * `{next: null, reason: "no_notification"}` with a token_usage_unavailable
+   * warning when it waited and none came. Adds a settings_mismatch warning
+   * when a thread/settings/updated sent after this turn/start reports other
+   * values than the ones sent; no notification is not a mismatch.
+   * @param {{threadId: string, turnId: string | null, waited: boolean, warnings: any[], overrides: Record<string, string>, settingsMark: number}} input
+   */
+  async function firstTurnUsage({ threadId, turnId, waited, warnings, overrides, settingsMark }) {
+    if (!tokenUsage) return { next: null };
+    const checkSettings = () => {
+      const mismatch = settingsMismatchWarning({ threadId, requested: { model: overrides.model, effort: overrides.effort, cwd: overrides.cwd }, applied: tokenUsage.settingsSince(threadId, settingsMark) });
+      if (mismatch) warnings.push(mismatch);
+    };
+    // Not waiting is the caller's choice, not a failure: no warning.
+    if (!waited) {
+      checkSettings();
+      return { next: null, reason: "not_waited" };
+    }
+    const usage = turnId ? await tokenUsage.awaitTurnUsage(threadId, turnId) : null;
+    // After the usage wait, so a thread/settings/updated sent during the turn is seen.
+    checkSettings();
     if (!usage) {
       warnings.push(tokenUsageUnavailableWarning({ threadId, turnId, purpose: "the first turn on the new setting" }));
       return { next: null, reason: "no_notification" };
     }
     return { next: usage };
   }
-
 
   /**
    * The result entry for one applied switch (R9.4).
@@ -835,5 +1019,39 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
     }
   }
 
-  return { messageThread, messageThreadTool, buildPeerTurnInput, recordActionReceipt, tryWaitForReply, callerAddress, launcherOf };
+  /**
+   * wait_for_agent on a message sent to a Codex thread (R7.19).
+   * @param {{messageId: string, threadId: string, callerContext?: any, timeoutMs?: number, pollIntervalMs?: number}} options
+   */
+  async function waitOnCodexMessage({ messageId, threadId, callerContext = null, timeoutMs, pollIntervalMs }) {
+    const caller = resolveCallerIdentity({ host, runtimeCallerContext: callerContext, currentSession: resolveCurrentSession });
+    return await waitForResolution({ messageId, threadId, caller, timeoutMs, pollIntervalMs });
+  }
+
+  return { messageThread, messageThreadTool, sendToThread, waitOnCodexMessage, buildPeerTurnInput, recordActionReceipt, tryWaitForReply, callerAddress, launcherOf };
+}
+
+/**
+ * The caller's canonical address, or null for an external caller.
+ * @param {{id: string, kind: string}} caller
+ * @returns {string | null}
+ */
+function callerAddressOf(caller) {
+  if (!caller || caller.id === "external") return null;
+  const address = storedAddress(caller.id, caller.kind);
+  return address.includes(":") ? address : null;
+}
+
+/**
+ * Bounded receipt fields kept in the mailbox record (never the free-text note).
+ * @param {any} receipt
+ */
+function receiptMetadata(receipt) {
+  const normalized = normalizeReceiptInput(receipt);
+  return {
+    record: normalized.record,
+    purpose: normalized.purpose,
+    cleanupRecommendation: normalized.cleanupRecommendation,
+    tags: normalized.tags
+  };
 }

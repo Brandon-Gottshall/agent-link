@@ -26,12 +26,17 @@ const WRITE = { readOnlyHint: false, destructiveHint: false };
  * dependency-handoff wrappers nest this object as messageResult.
  */
 export const messageThreadOut = {
-  messageId: out("string", "Id of the message sent (the envelope id)."),
-  delivery: out("object", "Delivery state: {state, action, turnId, ...}."),
-  deliveredVia: enumOf(["turn/start", "turn/steer"], "The app-server request that carried the message."),
-  target: out("object", "{threadId} of the target thread."),
-  turn: out("object", "The turn that carries the message: the new turn for turn/start, {id} for turn/steer."),
-  wait: out("object", "With waitForReply: {outcome: turn_completed|timeout|unavailable, waitedMs, target, turn?, reply?, recentItems?, recentItemsEnvelope?, error?} (section 3.4)."),
+  messageId: out("string", "Id of the message: its mailbox record and envelope id. The recipient answers it with reply_agent_link_message."),
+  delivery: enumOf(["delivered", "queued"], "delivered: pushed to the thread as a turn. queued: in the mailbox only (the thread is held by the Codex desktop app, or the push failed; see warnings); the thread reads it with read_agent_link_inbox."),
+  deliveredVia: out(["string", "null"], "codex-turn when the message was pushed as a turn (turn/start or turn/steer), else null."),
+  deliveryState: out("object", "{state: accepted_by_app_server | queued_in_mailbox, action, turnId}."),
+  target: out("object", "{threadId, address} of the target thread."),
+  turn: out(["object", "null"], "The turn that carries the message: the new turn for turn/start, {id} for turn/steer; null when queued."),
+  anticipation: enumOf(["reply", "action", "fyi"], "The message's anticipation label."),
+  replyBy: out(["string", "null"], "The message's deadline (ISO 8601), or null."),
+  messageStatus: out(["string", "null"], "pending for a reply/action message (or its status when a wait ended), null for fyi."),
+  resolved: out("object", "With replyToMessageId: {messageId, kind: reply|done, late} when this send resolved the message it answers."),
+  wait: out("object", "With waitForReply: {outcome: reply|declined|done|unresolved|expired|timeout, messageStatus, waitedMs, target, reply?, turn?: {turnId}} (sections 3.4, 7.6). Ends only on an explicit resolution by the thread (reply_agent_link_message), never on its turn completing; reply is the explicit reply, decline reason, or done note, enveloped. Read the turn itself with get_codex_thread."),
   receipt: commonOut.receipt,
   source: commonOut.source,
   action: out("string", "What was done, e.g. started_turn, resumed+started_turn, steered_active_turn."),
@@ -64,6 +69,8 @@ export const codexActionTools = [
         modelProvider: str("Optional model provider for the new thread."),
         serviceTier: str("Optional service tier for the new thread."),
         effort: enumOf(EFFORT_VALUES, "Optional reasoning effort for the initial turn when message is supplied."),
+        anticipation: enumOf(["reply", "action", "fyi"], "Label of the first message: reply (a reply is expected), action (do it and mark it done), or fyi (default). Needs message."),
+        replyBy: str("Optional deadline for a reply or action first message, ISO 8601 with a time zone, at least 30 s ahead. Not allowed with fyi."),
         ephemeral: bool("When true, create the thread as ephemeral if supported by the app-server. Ephemeral threads may not support includeTurns-based reply confirmation."),
         openInGui: bool("Route Codex Desktop to the created thread via codex://threads/<id>. Defaults to false to avoid stealing focus or changing the active GUI thread."),
         receipt: receiptInput
@@ -77,6 +84,11 @@ export const codexActionTools = [
       nameUpdate: out(["object", "null"], "The name set on the thread, and why."),
       turn: out(["object", "null"], "The first turn, when message was supplied."),
       peerMessage: commonOut.peerMessage,
+      messageId: out("string", "With message: the first message's mailbox id (the thread answers it with reply_agent_link_message)."),
+      delivery: enumOf(["delivered", "queued"], "With message: delivered when it started the first turn, queued when the push failed (see warnings)."),
+      deliveredVia: out(["string", "null"], "With message: codex-turn when delivered, else null."),
+      anticipation: enumOf(["reply", "action", "fyi"], "With message: its anticipation label."),
+      replyBy: out(["string", "null"], "With message: its deadline (ISO 8601), or null."),
       gui: out("object", "{opened, attempted, deepLink, warnings, ...}: whether Codex Desktop was routed to the thread."),
       appServer: commonOut.appServer,
       receipt: commonOut.receipt
@@ -113,7 +125,7 @@ export const codexActionTools = [
   },
   {
     name: "message_codex_thread",
-    description: "Send a direct text message to a Codex thread, wrapped in the peer-message envelope. Resumes not-loaded threads through the app-server before starting a new turn when needed, or steers an active turn. Starting a second turn on a busy thread fails with active_turn_conflict unless allowParallelTurn is true; an existing thread keeps its cwd, model, and effort: a different value fails with permission_denied unless the thread's launcher changes effort, the target's override policy (set by the user) allows the change, or the deprecated allowTargetOverride is set (until 0.7.0); an allowed change persists. threadId also accepts role:<name>, which reaches the Codex thread holding that role.",
+    description: "Send a message to a Codex thread. It is written to the Agent Link mailbox first (messageId), then pushed to the thread as a turn wrapped in the peer-message envelope: a new turn on an idle thread, or steering an active turn (delivery delivered). A thread not loaded in Agent Link's Codex app-server is treated as held by the Codex desktop app and gets the message by inbox only (delivery queued, warning codex_desktop_push_disabled); a failed push also leaves it queued. Label it with anticipation (reply, action, fyi) and replyBy; the thread resolves reply/action messages with reply_agent_link_message, and waitForReply waits for that explicit resolution, never for the turn to complete. Starting a second turn on a busy thread fails with active_turn_conflict unless allowParallelTurn is true; an existing thread keeps its cwd, model, and effort: a different value fails with permission_denied unless the thread's launcher changes effort, the target's override policy (set by the user) allows the change, or the deprecated allowTargetOverride is set (until 0.7.0); an allowed change persists. threadId also accepts role:<name>, which reaches the Codex thread holding that role.",
     inputSchema: {
       type: "object",
       required: ["threadId", "message"],

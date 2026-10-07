@@ -1,3 +1,5 @@
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -244,7 +246,11 @@ test("register_dependency_handoff forwards the shared allowlist and never cwd", 
     waitForReply: true,
     timeoutMs: 1000,
     pollIntervalMs: 50,
-    recentItems: 3
+    recentItems: 3,
+    // B7b labels (R7.1) and the answered message (R7.7).
+    anticipation: "action",
+    replyBy: "2099-01-01T00:00:00.000Z",
+    replyToMessageId: "01M4BJKBS1W176SJQ8AQHXYE4Q"
   };
   assert.deepEqual(Object.keys(forwarded).sort(), [...FORWARDED_MESSAGE_OPTION_KEYS].sort());
   await registerDependencyHandoff({

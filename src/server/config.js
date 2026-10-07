@@ -18,7 +18,7 @@ import { detectHost } from "../shared/host-detect.js";
  * @property {boolean} inspectAll         agent_link_mailbox_inspect may use scope "all"
  * @property {boolean} roleAdmin          the role and override-policy write tools are allowed (AGENT_LINK_ROLE_ADMIN=1, set by the user)
  * @property {boolean} codexAutostart     a managed app-server may be started
- * @property {boolean} codexReminders     Codex reminder turns (design 7.5; off until the B7 spike, B7b)
+ * @property {boolean} codexReminders     Codex reminder turns (design 7.5; on by default since B7b)
  */
 
 /**
@@ -52,6 +52,6 @@ export function loadConfig(source = process.env) {
     inspectAll: envFlag("AGENT_LINK_INSPECT_ALL", false, source),
     roleAdmin: envFlag("AGENT_LINK_ROLE_ADMIN", false, source),
     codexAutostart: envFlag("AGENT_LINK_CODEX_AUTOSTART", true, source),
-    codexReminders: envFlag("AGENT_LINK_CODEX_REMINDERS", false, source)
+    codexReminders: envFlag("AGENT_LINK_CODEX_REMINDERS", true, source)
   };
 }

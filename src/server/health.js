@@ -10,6 +10,7 @@ import { mailboxStatus } from "../claude/mailbox.js";
 import { AppServerError, describeCodexInstall } from "../codex/app-server-client.js";
 import { loadedStateSemantics } from "../codex/thread-utils.js";
 import { overrideCostsHealth } from "../codex/override-costs.js";
+import { desktopPushReport } from "../delivery/codex-push.js";
 import { callerContextContract, summarizeRuntimeCallerContext } from "../shared/caller-context.js";
 import { env, envFlag } from "../shared/env.js";
 import { hostIdentity } from "../shared/identity.js";
@@ -26,7 +27,8 @@ import { healthExtras } from "../tools/health.js";
  *   channelState: () => {enabled: boolean, error: string | null},
  *   roles?: import("../registry/roles.js").RoleStore | null,
  *   roleAdmin?: boolean,
- *   forkJobs?: (() => {pending: number, running: number, stuck: number}) | null
+ *   forkJobs?: (() => {pending: number, running: number, stuck: number}) | null,
+ *   rolloutStats?: (() => {checked: number, held: number, skipped: Record<string, number>}) | null
  * }} HealthDeps
  */
 
@@ -79,7 +81,7 @@ export function configuredEndpointSummary() {
 /**
  * @param {HealthDeps} deps
  */
-export function makeHealth({ appServer, hostInfo, resolveCurrentSession, channelState, roles = null, roleAdmin = false, forkJobs = null }) {
+export function makeHealth({ appServer, hostInfo, resolveCurrentSession, channelState, roles = null, roleAdmin = false, forkJobs = null, rolloutStats = null }) {
   /**
    * @param {Record<string, any>} args
    * @param {{callerContext?: any}} [toolContext]
@@ -93,7 +95,18 @@ export function makeHealth({ appServer, hostInfo, resolveCurrentSession, channel
     const overrideCosts = overrideCostsHealth(report.codex?.version ?? null);
     return {
       ...report,
-      codex: { ...report.codex, overrideCosts },
+      // R1.12a: whether Agent Link pushes into threads the Codex desktop app
+      // holds, as decided by the B7 spike; R9.12: the measured override costs.
+      codex: {
+        ...report.codex,
+        overrideCosts,
+        desktopPush: {
+          ...desktopPushReport(process.env, report.codex?.version ?? null),
+          // The deny-only lsof check (R1.12a): how often it ran, found
+          // another holder, or was skipped and why.
+          ...(typeof rolloutStats === "function" ? { rolloutChecks: rolloutStats() } : {})
+        }
+      },
       ...(forkJobs ? { forkJobs: forkJobCounts(forkJobs) } : {}),
       ...(overrideCosts.warning ? { warnings: [overrideCosts.warning] } : {}),
       address: caller.address,

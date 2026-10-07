@@ -1,4 +1,6 @@
 // tests/shared/host-detect.test.js
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { detectHost, currentClaudeSessionId } from "../../src/shared/host-detect.js";
 

@@ -1,5 +1,7 @@
 // Design doc section 2 (peer-message envelope): exact rendering, escaping,
 // sender validation, the body cap, and the hook notice.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {

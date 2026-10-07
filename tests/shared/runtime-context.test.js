@@ -8,6 +8,8 @@
 //
 // Phase 8 review locked this with a one-line regression case.
 
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { summarizeRuntimeCallerContext } from "../../src/shared/caller-context.js";
 

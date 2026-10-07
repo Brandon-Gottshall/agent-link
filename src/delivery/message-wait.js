@@ -13,8 +13,10 @@ import { buildReceipt, safeAppendReceipt } from "../shared/receipt-index.js";
 import { explicitReplies, isAnticipating, isLateResolution, messageStatus, reminderSettings } from "./message-status.js";
 import { claimResolution } from "./resolution.js";
 import { canonicalAddress } from "../shared/identity.js";
-import { addressAliases } from "../registry/addresses.js";
+import { addressAliases, mailboxRowResult } from "../registry/addresses.js";
 import { roleRoute } from "./role-handover.js";
+
+const DEFAULT_POLL_INTERVAL_MS = 250;
 
 const OUTCOME_FOR_STATUS = Object.freeze({
   replied: "reply",
@@ -153,7 +155,7 @@ export async function recordStatusTransition(mb, row, { now = Date.now(), settin
   }
 }
 
-const CLAIM_PATTERN = /^(reminder|resolve|status)-([0-9A-HJKMNP-TV-Z]{26})(?:[-.](.+))?$/;
+const CLAIM_PATTERN = /^(reminder|resolve|status|push)-([0-9A-HJKMNP-TV-Z]{26})(?:[-.](.+))?$/;
 const ORPHAN_CLAIM_MAX_AGE_MS = 7 * 86_400_000;
 const STOP_CLAIM_MAX_AGE_MS = 86_400_000;
 
@@ -207,6 +209,10 @@ export async function sweepClaims(mb, { now = Date.now(), settings = reminderSet
         remove = age > ORPHAN_CLAIM_MAX_AGE_MS;
       } else if (row.resolution) {
         remove = true;
+      } else if (kind === "push") {
+        // A Codex push claim (src/delivery/codex-push.js) is needed only
+        // until the delivery is recorded.
+        remove = Boolean(row.delivered_at);
       } else if (kind === "reminder") {
         const n = Number(rest);
         remove = (row.reminders ?? []).some((r) => r.n === n && r.via !== null);
@@ -229,4 +235,75 @@ export async function sweepClaims(mb, { now = Date.now(), settings = reminderSet
     // Collection is housekeeping; a failure leaves claims for the next pass.
   }
   return result;
+}
+
+// Polls until the message leaves `pending` (design R7.19) or the timeout.
+// Only an explicit reply from the target session (any of its id forms)
+// addressed to this caller is returned: anyone can append to the mailbox, so
+// a reply_to_message_id match alone would let a third party forge the answer
+// the caller is blocked on. A turn's final response never ends the wait.
+/**
+ * @param {ReturnType<import("../claude/mailbox.js").openMailbox>} mb
+ * @param {{messageId: string, fromIds: string[], toIds: string[], timeoutMs: number, now?: () => number, settings: import("./message-status.js").ReminderSettings, host?: string, appendReceipt?: (receipt: any) => Promise<any>, pollIntervalMs?: number}} options
+ * @returns {Promise<{received: boolean, outcome: string, messageStatus: string | null, reply: Record<string, any> | null}>}
+ */
+export async function pollMessageResolution(mb, { messageId, fromIds, toIds, timeoutMs, now = () => Date.now(), settings, host, appendReceipt = safeAppendReceipt, pollIntervalMs = DEFAULT_POLL_INTERVAL_MS }) {
+  const deadline = now() + timeoutMs;
+  // First check immediately in case a reply arrived synchronously.
+  while (true) {
+    const done = checkMessageWait(mb, { messageId, fromIds, toIds, now: now(), settings });
+    if (done) {
+      if (done.messageStatus === "unresolved" || done.messageStatus === "expired") {
+        await recordStatusTransition(mb, mb.getMessage({ messageId }), { now: now(), settings, host, appendReceipt });
+      }
+      if (done.replyRow) {
+        // The wait consumed this reply: it counts as delivered (and
+        // acknowledged), so the sender's channel, hook and inbox do not
+        // deliver it a second time.
+        consumeReply(mb, done.replyRow);
+      }
+      return {
+        received: Boolean(done.replyRow),
+        outcome: done.outcome,
+        messageStatus: done.messageStatus,
+        // The reply is another agent's text: it reaches the caller only
+        // inside the peer envelope, never as a raw body.
+        reply: done.replyRow ? mailboxRowResult(done.replyRow) : null
+      };
+    }
+    if (now() >= deadline) {
+      return { received: false, outcome: "timeout", messageStatus: messageStatusOf(mb, messageId, now(), settings, toIds), reply: null };
+    }
+    const remaining = deadline - now();
+    await sleep(Math.min(pollIntervalMs, Math.max(remaining, 10)));
+  }
+}
+
+/**
+ * @param {ReturnType<import("../claude/mailbox.js").openMailbox>} mb
+ * @param {string} messageId
+ * @param {number} at
+ * @param {import("./message-status.js").ReminderSettings} settings
+ * @param {string[]} senderIds  the caller's ids: the status is shown only to the sender
+ */
+function messageStatusOf(mb, messageId, at, settings, senderIds) {
+  const row = mb.getMessage({ messageId });
+  // Only the message's sender sees its status here (as in
+  // wait_for_claude_session); anyone else gets null.
+  return row && new Set(senderIds).has(row.from_session_id) ? messageStatus(row, { now: at, settings }).status : null;
+}
+
+/**
+ * A reply a wait returned counts as delivered and acknowledged.
+ * @param {ReturnType<import("../claude/mailbox.js").openMailbox>} mb
+ * @param {Record<string, any>} message
+ */
+export function consumeReply(mb, message) {
+  if (!message.delivered_at) mb.markDelivered({ messageId: message.id });
+  if (!message.acknowledged_at) mb.markAcknowledged({ messageId: message.id });
+}
+
+/** @param {number} ms */
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

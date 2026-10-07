@@ -2,6 +2,8 @@
 // re-surfacing, and the sender view. Tests T-7.1 to T-7.8 and T-7.10 for the
 // Claude side; Codex reminder turns are in tests/codex/reminder-turns.test.js.
 // Everything runs on temp files with an injected clock where timing matters.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -407,7 +409,8 @@ test("cap 0, deadlines, and late resolution", async () => {
   assert.deepEqual(reminderSettings({ AGENT_LINK_REMINDER_INTERVAL_MS: "45000", AGENT_LINK_REMINDER_LIMIT: "0" }), { limit: 0, intervalMs: 45_000, warnings: [] });
   const health = healthExtras({ source: { HOME: tmp, AGENT_LINK_STATE_DIR: path.join(tmp, "state"), AGENT_LINK_REMINDER_INTERVAL_MS: "5" } });
   assert.equal(health.reminders.intervalMs, 30_000);
-  assert.equal(health.reminders.codexTurns, false);
+  // Codex reminder turns are on by default since B7b.
+  assert.equal(health.reminders.codexTurns, true);
   assert.equal(health.reminders.warnings[0].code, "reminder_interval_ignored");
 });
 

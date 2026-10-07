@@ -3,6 +3,8 @@
 // alias is now an unknown property: the registry rejects it with
 // invalid_arguments, the handler never runs, and the hint names the
 // replacement. The real tool definitions are used with stub handlers.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { createRegistry } from "../../src/server/registry.js";
 import { claudeSendTool } from "../../src/tools/claude-send.js";

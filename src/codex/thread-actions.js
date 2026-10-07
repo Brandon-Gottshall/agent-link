@@ -13,6 +13,7 @@ import { inferArchiveState, loadedStateSemantics } from "./thread-utils.js";
 import { optionalString, requiredString } from "../shared/args.js";
 import { assertPeerBodyWithinLimit } from "../shared/envelope.js";
 import { AgentLinkError } from "../shared/errors.js";
+import { resolveLabels } from "../delivery/message-status.js";
 
 /** @typedef {import("./thread-queries.js").AppServerLike} AppServerLike */
 /** @typedef {import("./thread-messaging.js").ToolContext} ToolContext */
@@ -52,7 +53,7 @@ import { AgentLinkError } from "../shared/errors.js";
 /**
  * @typedef {{
  *   appServer: AppServerLike,
- *   messaging: Pick<ThreadMessaging, "buildPeerTurnInput" | "recordActionReceipt"> & Partial<Pick<ThreadMessaging, "callerAddress">>,
+ *   messaging: Pick<ThreadMessaging, "sendToThread" | "recordActionReceipt"> & Partial<Pick<ThreadMessaging, "callerAddress">>,
  *   desktop: Pick<DesktopRouting, "openCodexDesktopThread">
  * }} ThreadActionDeps
  */
@@ -132,7 +133,7 @@ export function launcherAddress(address) {
  * @param {ThreadActionDeps} deps
  */
 export function makeThreadActions({ appServer, messaging, desktop }) {
-  const { buildPeerTurnInput, recordActionReceipt, callerAddress } = messaging;
+  const { sendToThread, recordActionReceipt, callerAddress } = messaging;
   const { openCodexDesktopThread } = desktop;
 
   /**
@@ -160,8 +161,14 @@ export function makeThreadActions({ appServer, messaging, desktop }) {
    * @returns {Promise<Record<string, any>>}
    */
   async function launchThread(args, toolContext = {}) {
-    // Reject an oversized message before a thread is created for it.
+    // Reject an oversized message, or bad labels, before a thread is created for it.
     assertPeerBodyWithinLimit(optionalString(args.message).trim());
+    const labels = resolveLabels({ anticipation: args.anticipation, replyBy: args.replyBy, waitForReply: false, now: Date.now() });
+    if (!optionalString(args.message).trim() && (args.anticipation !== undefined || args.replyBy !== undefined)) {
+      throw new AgentLinkError("invalid_arguments", "anticipation and replyBy label the first message; pass message too.", {
+        details: { errors: [{ path: args.anticipation !== undefined ? "anticipation" : "replyBy", rule: "requires", expected: "message" }] }
+      });
+    }
     /** @type {Record<string, any>} */
     const startParams = {};
     copyOptionalString(args, startParams, "cwd");
@@ -192,22 +199,24 @@ export function makeThreadActions({ appServer, messaging, desktop }) {
     }
 
     let peerMessage = null;
+    /** @type {Record<string, any> | null} */
+    let sent = null;
     if (message) {
       /** @type {Record<string, any>} */
-      const turnParams = { threadId };
-      copyOptionalString(args, turnParams, "cwd");
-      copyOptionalString(args, turnParams, "model");
-      copyOptionalString(args, turnParams, "effort");
+      const startParams = {};
+      copyOptionalString(args, startParams, "cwd");
+      copyOptionalString(args, startParams, "model");
+      copyOptionalString(args, startParams, "effort");
       // The sender chose every setting of the new thread and its first turn.
       const overrides = {};
       for (const field of ["cwd", "model", "effort", "modelProvider", "serviceTier"]) {
         copyOptionalString(args, overrides, field);
       }
-      const peer = buildPeerTurnInput({ toolContext, threadId, message, overrides });
-      peerMessage = peer.summary;
-      turnParams.input = peer.input;
-      const turnResponse = await appServer.request("turn/start", turnParams);
-      turn = summarizeTurn(turnResponse.turn);
+      // Mailbox first, then push (R1.10, R1.11): the new thread is loaded and
+      // idle, so the message starts its first turn.
+      sent = await sendToThread({ toolContext, threadId, message, labels, overrides, receipt: args.receipt, plan: "start", startParams });
+      peerMessage = sent.peerMessage;
+      if (sent.push.delivery === "delivered") turn = summarizeTurn(sent.push.response?.turn);
     }
 
     const shouldOpenGui = args.openInGui === true;
@@ -239,7 +248,16 @@ export function makeThreadActions({ appServer, messaging, desktop }) {
       nameUpdate,
       turn,
       peerMessage,
-      warnings: launchWarnings(args),
+      ...(sent
+        ? {
+            messageId: sent.messageId,
+            delivery: sent.push.delivery,
+            deliveredVia: sent.push.deliveredVia,
+            anticipation: labels.anticipation,
+            replyBy: labels.replyBy === null ? null : new Date(labels.replyBy).toISOString()
+          }
+        : {}),
+      warnings: [...launchWarnings(args), ...(sent ? sent.push.warnings : [])],
       gui,
       appServer: appServerSummary
     };
@@ -258,7 +276,7 @@ export function makeThreadActions({ appServer, messaging, desktop }) {
       message,
       finalResponse: null,
       delivery: {
-        state: "accepted_by_app_server",
+        state: sent && sent.push.delivery !== "delivered" ? "queued_in_mailbox" : "accepted_by_app_server",
         action,
         turnId: turn?.id ?? null
       },
@@ -266,7 +284,7 @@ export function makeThreadActions({ appServer, messaging, desktop }) {
       runtimeCallerContext: toolContext.callerContext,
       appServer: appServerSummary,
       // R9.9: the launcher, from runtime identity only; external is never one.
-      extra: { launchedBy: launcherAddress(callerAddress?.(toolContext)) }
+      extra: { launchedBy: launcherAddress(callerAddress?.(toolContext)), ...(sent ? { messageId: sent.messageId } : {}) }
     });
     return result;
   }
@@ -341,14 +359,32 @@ export function makeThreadActions({ appServer, messaging, desktop }) {
    */
   async function archiveThreadViaAppServer(threadId) {
     const before = await readArchiveSnapshot(threadId);
-    const response = await appServer.request("thread/archive", { threadId });
+    let response;
+    let rolloutGone = false;
+    try {
+      response = await appServer.request("thread/archive", { threadId });
+    } catch (error) {
+      // B7 spike: archiving an archived thread fails with -32600 "no rollout
+      // found for thread id". So does an id that never existed: only a
+      // thread Agent Link can still find (app-server read, or its transcript
+      // on disk, archived ones included) counts as already archived.
+      if (!isAlreadyArchivedError(error)) throw error;
+      if (!before) {
+        throw new AgentLinkError("not_found", `No Codex thread has id ${JSON.stringify(threadId).slice(0, 80)}.`, {
+          details: { id: threadId, candidates: [] },
+          hint: "Call list_codex_threads (archiveScope: \"all\") to find the thread."
+        });
+      }
+      response = null;
+      rolloutGone = true;
+    }
     const after = await readArchiveSnapshot(threadId);
     return {
       ok: true,
       source: "app-server",
       response,
       threadId,
-      alreadyArchived: before?.archiveState?.scope === "archived",
+      alreadyArchived: rolloutGone || before?.archiveState?.scope === "archived",
       from: before?.path ?? null,
       to: after?.path ?? null,
       thread: after ?? before ?? { id: threadId, status: { type: "unknown" } },
@@ -472,4 +508,15 @@ export function makeThreadActions({ appServer, messaging, desktop }) {
   }
 
   return { launchThread, launchThreadTool, archiveThread, archiveThreadTool };
+}
+
+/**
+ * The app-server's answer to thread/archive on a thread that is already
+ * archived (B7 spike, codex-cli 0.159.2): JSON-RPC -32600 "no rollout found
+ * for thread id ...".
+ * @param {unknown} error
+ */
+export function isAlreadyArchivedError(error) {
+  const e = /** @type {any} */ (error);
+  return e?.code === -32600 && /no rollout found/i.test(String(e?.message ?? ""));
 }

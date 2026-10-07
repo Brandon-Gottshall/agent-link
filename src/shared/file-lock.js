@@ -10,6 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { AgentLinkError } from "./errors.js";
 import { FILE_MODE } from "./jsonl.js";
+import { assertTestSafeWrite } from "./paths.js";
 
 const LOCK_STALE_MS = 30_000;
 // Critical sections take milliseconds. A request waits at most this long for
@@ -109,6 +110,7 @@ function breakStaleLock(lockPath, observed, token, now) {
  * @returns {T}
  */
 export function withFileLockSync(lockPath, fn, { timeoutMs = LOCK_TIMEOUT_MS, staleMs = LOCK_STALE_MS, now = () => Date.now(), label = "role table" } = {}) {
+  assertTestSafeWrite(lockPath);
   const deadline = now() + timeoutMs;
   const token = `${process.pid}:${crypto.randomUUID()}`;
   for (;;) {

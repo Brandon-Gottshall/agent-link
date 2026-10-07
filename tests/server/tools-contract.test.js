@@ -10,6 +10,8 @@
 // Regenerate the snapshots after an intended schema change with
 //   node tests/server/tools-contract.test.js --update
 // and list the diff in the PR description.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -44,6 +46,7 @@ const READ_ONLY = new Set([
   "resolve_claude_session",
   "resolve_codex_thread",
   "resolve_project_orchestrator",
+  "wait_for_agent",
   "wait_for_claude_session",
   "wait_for_codex_thread"
 ]);

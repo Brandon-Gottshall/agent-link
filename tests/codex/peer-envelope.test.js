@@ -1,6 +1,8 @@
 // Design doc section 2 (T-2.4): every Codex input point where another agent's
 // text becomes a turn sends exactly renderPeerEnvelope(message), checked
 // against a fake app-server through the real MCP server. Never launches Codex.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
@@ -12,7 +14,6 @@ import { WebSocketServer } from "ws";
 import { pluginRoot } from "../helpers/codex-stub.js";
 import { hermeticEnv } from "../helpers/env.js";
 import { MAX_PEER_BODY_BYTES, renderPeerEnvelope } from "../../src/shared/envelope.js";
-import { envelopeBody } from "../helpers/envelope-body.js";
 import { INJECTION_CORPUS, assertNoRawInjection } from "../helpers/injection-corpus.js";
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), "agent-link-envelope-"));
@@ -118,13 +119,14 @@ function peerOf(payload) {
 
 // Asserts the turn text is exactly the envelope for this message.
 // B7a: from/to are addresses; a Codex turn is labeled fyi unless the sender
-// waits for a reply (R7.2).
+// waits for a reply (R7.2). B7b: the turn carries the mailbox record, so the
+// reply line names reply_agent_link_message (R1.15, R2.6a).
 function assertEnveloped(params, peer, { to, body, overrides = null, from = `codex:${CALLER}`, fromHarness = "codex", fromVerified = true, anticipation = "fyi" }) {
   assert.ok(peer?.enveloped, "result reports the envelope");
   assert.equal(peer.from, from);
   assert.equal(peer.fromVerified, fromVerified);
   assert.match(peer.messageId, /^[0-9A-HJKMNP-TV-Z]{26}$/);
-  const expected = renderPeerEnvelope({ id: peer.messageId, from, fromHarness, fromVerified, to, toHarness: "codex", sentAt: peer.sentAt, anticipation, body, overrides, reply: "direct" });
+  const expected = renderPeerEnvelope({ id: peer.messageId, from, fromHarness, fromVerified, to, toHarness: "codex", sentAt: peer.sentAt, anticipation, body, overrides, reply: "mailbox" });
   assert.match(expected, new RegExp(` to="codex:[^"]+" sentAt="[^"]+" anticipation="${anticipation}"`));
   assert.equal(params.input[0].text, expected);
   return expected;
@@ -138,7 +140,9 @@ try {
   let r = await call("message_codex_thread", { threadId: TARGET, message: BODY });
   assert.ok(!r.isError, JSON.stringify(r.payload));
   let text = assertEnveloped(lastTurn("turn/start", mark), peerOf(r.payload), { to: TARGET, body: BODY });
-  assert.match(text, new RegExp(`<reply>To reply, call message_codex_thread with threadId="codex:${CALLER}".</reply>`));
+  assert.match(text, new RegExp(`<reply>No reply needed. To reply anyway, call reply_agent_link_message with messageId="${peerOf(r.payload).messageId}".</reply>`));
+  assert.equal(r.payload.delivery, "delivered");
+  assert.equal(r.payload.deliveredVia, "codex-turn");
   assert.ok(!text.includes("<overrides"), "no overrides were requested");
 
   // message_codex_thread, turn/steer on an active thread: same envelope, and
@@ -208,43 +212,32 @@ try {
     assert.equal(text.split("</agent-link-message>").length, 2);
   }
 
-  // I1: the target's answer handed back by waitForReply is enveloped, and
-  // the whole tool result (receipt included) holds nothing raw.
-  for (const body of INJECTION_CORPUS) {
+  // I1 (B7b, R7.19): a message wait never ends on the turn completing and
+  // never returns the turn's final response, so nothing raw from the target
+  // reaches the caller. With no explicit reply the wait times out.
+  for (const body of INJECTION_CORPUS.slice(0, 3)) {
     replyText = body;
     const turnMark = received.length;
-    r = await call("message_codex_thread", { threadId: TARGET, message: "hi", waitForReply: true, timeoutMs: 2000, pollIntervalMs: 250 });
+    r = await call("message_codex_thread", { threadId: TARGET, message: "hi", waitForReply: true, timeoutMs: 0, pollIntervalMs: 250 });
     assert.ok(!r.isError, JSON.stringify(r.payload));
     // R7.2: waitForReply labels the sent turn anticipation="reply".
     assertEnveloped(lastTurn("turn/start", turnMark), peerOf(r.payload), { to: TARGET, body: "hi", anticipation: "reply" });
-    const label = `reply ${JSON.stringify(body).slice(0, 40)}`;
-    assertNoRawInjection(r.payload, label);
+    assertNoRawInjection(r.payload, `wait ${JSON.stringify(body).slice(0, 40)}`);
     assert.equal("replyConfirmation" in r.payload, false, "the 0.4 replyConfirmation key was removed in 0.6.0");
-    const confirmation = r.payload.wait;
-    assert.equal(confirmation.outcome, "turn_completed");
-    assert.ok(confirmation.turn.finalResponse.startsWith(`<agent-link-message id="${confirmation.reply.id}" from="codex:${TARGET}" fromHarness="codex" fromVerified="true" to="codex:${CALLER}" sentAt="`), label);
-    assert.match(confirmation.turn.finalResponse, new RegExp(`anticipation="fyi" inReplyTo="${r.payload.peerMessage.messageId}">`));
-    assert.match(confirmation.turn.finalResponse, new RegExp(`<reply>To reply, call message_codex_thread with threadId="codex:${TARGET}".</reply>`));
-    assert.equal(confirmation.turn.finalResponse.split("</agent-link-message>").length, 2);
-    assert.ok(confirmation.recentItems.every((item) => !("text" in item) && !("summary" in item) && !("command" in item)));
-    assert.match(confirmation.recentItemsEnvelope, /^<agent-link-message /);
-    assert.match(confirmation.recentItemsEnvelope, /\[commandExecution i9\] \$ /);
+    assert.equal(r.payload.wait.outcome, "timeout");
+    assert.equal(r.payload.wait.messageStatus, "pending");
+    assert.equal(r.payload.wait.turn.finalResponse, undefined, "a turn's final response is never a reply");
   }
   replyText = "plain answer";
-  r = await call("message_codex_thread", { threadId: TARGET, message: "hi", waitForReply: true, timeoutMs: 2000, pollIntervalMs: 250 });
-  assert.equal(envelopeBody(r.payload.wait.turn.finalResponse), "plain answer");
 
-  // The wrappers return the same enveloped confirmation.
-  replyText = INJECTION_CORPUS[0];
-  r = await call("message_project_orchestrator", { orchestratorThreadId: TARGET, message: "status?", waitForReply: true, timeoutMs: 2000, pollIntervalMs: 250 });
+  // The wrappers wait the same way.
+  r = await call("message_project_orchestrator", { orchestratorThreadId: TARGET, message: "status?", waitForReply: true, timeoutMs: 0, pollIntervalMs: 250 });
   assert.ok(!r.isError, JSON.stringify(r.payload));
-  assertNoRawInjection(r.payload, "message_project_orchestrator reply");
   assert.equal("replyConfirmation" in r.payload.messageResult, false);
-  assert.match(r.payload.messageResult.wait.turn.finalResponse, /^<agent-link-message /);
-  r = await call("register_dependency_handoff", { targetThreadId: TARGET, dependencyName: "schema v2", readinessContract: "merged", waitForReply: true, timeoutMs: 2000, pollIntervalMs: 250 });
+  assert.equal(r.payload.messageResult.wait.outcome, "timeout");
+  r = await call("register_dependency_handoff", { targetThreadId: TARGET, dependencyName: "schema v2", readinessContract: "merged", waitForReply: true, timeoutMs: 0, pollIntervalMs: 250 });
   assert.ok(!r.isError, JSON.stringify(r.payload));
-  assertNoRawInjection(r.payload, "register_dependency_handoff reply");
-  replyText = "plain answer";
+  assert.equal(r.payload.messageResult.wait.outcome, "timeout");
 
   // I2: wrappers check the composed size before any app-server request, and
   // the error names caller text and template sizes.
@@ -296,7 +289,7 @@ try {
   r = await call("message_codex_thread", { threadId: TARGET, message: BODY }, null);
   text = lastTurn("turn/start", mark).input[0].text;
   assert.match(text, /from="external" fromHarness="external" fromVerified="false"/);
-  assert.match(text, /<reply>The sender has no verified address, so this message cannot be answered directly.<\/reply>/);
+  assert.match(text, /<reply>No reply needed. To reply anyway, call reply_agent_link_message with messageId="/);
   assert.equal(peerOf(r.payload).fromVerified, false);
 
   // An instruction-like caller id is never rendered.

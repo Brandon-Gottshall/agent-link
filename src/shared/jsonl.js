@@ -9,6 +9,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
+import { assertTestSafeWrite } from "./paths.js";
 
 export const FILE_MODE = 0o600;
 export const DIR_MODE = 0o700;
@@ -119,6 +120,7 @@ export async function appendJsonl(filePath, records) {
  */
 export function appendJsonlSync(filePath, records) {
   const text = toJsonl(Array.isArray(records) ? records : [records]);
+  assertTestSafeWrite(filePath);
   fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: DIR_MODE });
   fs.appendFileSync(filePath, text, { encoding: "utf8", mode: FILE_MODE });
 }

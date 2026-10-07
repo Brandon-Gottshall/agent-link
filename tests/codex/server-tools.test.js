@@ -3,6 +3,8 @@
 // recentItems counts items (one result key on every path), the local
 // fallback keeps its source label, and health on a machine without Codex.
 // Never launches Codex; HOME, CODEX_HOME and the mailbox live in a temp dir.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
@@ -174,17 +176,16 @@ try {
     assert.equal(result.payload.error.code, "invalid_arguments");
     assert.ok(!received.some((msg) => msg.method === "turn/start"), "nothing was started");
 
-    // P2-04: message + waitForReply returns up to N recent items.
-    result = await call("message_codex_thread", { threadId, message: "hi", waitForReply: true, timeoutMs: 2000, pollIntervalMs: 250, recentItems: 2 });
+    // B7b (R7.19): a message wait never ends on the turn completing and
+    // returns no turn text; with no explicit reply it times out.
+    result = await call("message_codex_thread", { threadId, message: "hi", waitForReply: true, timeoutMs: 0, pollIntervalMs: 250 });
     assert.equal(result.isError, false);
     assert.equal("replyConfirmation" in result.payload, false, "the 0.4 replyConfirmation key was removed in 0.6.0");
-    assert.match(result.payload.wait.recentItemsEnvelope, /\[agentMessage i5\] second answer/);
-    assert.deepEqual(result.payload.wait.recentItems.map((entry) => [entry.turnId, entry.id]), [["turn-2", "i4"], ["turn-2", "i5"]]);
-    // Section 3.4: the wait, plus the top-level message fields.
-    assert.equal(result.payload.wait.outcome, "turn_completed");
-    assert.equal(result.payload.wait.turn.status, "completed");
-    assert.equal(envelopeBody(result.payload.wait.turn.finalResponse), "second answer");
-    assert.equal(result.payload.deliveredVia, "turn/start");
+    assert.equal(result.payload.wait.outcome, "timeout");
+    assert.equal(result.payload.wait.messageStatus, "pending");
+    assert.equal(result.payload.wait.turn?.finalResponse, undefined);
+    assert.equal(result.payload.deliveredVia, "codex-turn");
+    assert.equal(result.payload.anticipation, "reply");
     assert.equal(result.payload.messageId, result.payload.peerMessage.messageId);
     assert.deepEqual(result.payload.target, { threadId, address: `codex:${threadId}` });
 

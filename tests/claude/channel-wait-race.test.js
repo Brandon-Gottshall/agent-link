@@ -7,6 +7,8 @@
 // as a second <agent-link-message> on top of the tool result. These tests run
 // a live bridge (fs.watch on, short poll) next to each wait and require the
 // reply to reach the caller exactly once.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";

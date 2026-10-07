@@ -1,6 +1,8 @@
 // The orchestrator role (design R1.21): the project-orchestrator binding as
 // a role scoped by project root. resolve_project_orchestrator consults the
 // role table; the binding file and search keep working. Temp state only.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -11,6 +13,7 @@ import { createRoleStore, validateRoleTable } from "../../src/registry/roles.js"
 import { makeRoleHandlers } from "../../src/tools/roles.js";
 import { messageProjectOrchestrator, resolveProjectOrchestrator } from "../../src/codex/project-orchestrator.js";
 import { makeThreadMessaging } from "../../src/codex/thread-messaging.js";
+import { openMailbox } from "../../src/claude/mailbox.js";
 import { makeThreadQueries } from "../../src/codex/thread-queries.js";
 import { AgentLinkError } from "../../src/shared/errors.js";
 
@@ -196,7 +199,8 @@ test("enforce: message_project_orchestrator reaches a per-project role holder; a
       },
       getConnectionSummary: () => ({ connected: true, managed: false })
     };
-    const messaging = makeThreadMessaging({ appServer, host: "codex", resolveCurrentSession: () => null, queries: makeThreadQueries({ appServer }), roles: fx.roles });
+    // Mailbox first (B7b): the fixture's temp mailbox, never the default one.
+    const messaging = makeThreadMessaging({ appServer, host: "codex", resolveCurrentSession: () => null, queries: makeThreadQueries({ appServer }), roles: fx.roles, mailboxOpener: () => openMailbox({ mailboxPath: path.join(fx.dir, "mailbox.jsonl") }) });
     const toolContext = { callerContext: { available: true, threadId: ROUTER, turnId: "t", source: "runtime_context" } };
 
     await assert.rejects(messaging.messageThread({ threadId: ROLE_THREAD, message: "direct", receipt: { record: false } }, toolContext), (error) => {

@@ -11,6 +11,8 @@
 //   4. Codex-side receipts built with host="codex" and target.kind="codex"
 //      surface those fields in the schema.
 
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";

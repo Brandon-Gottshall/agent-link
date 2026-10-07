@@ -1,6 +1,8 @@
 // Role addressing between persistent agents (design doc T-1.10, R1.23-R1.26):
 // for each mode and each sender/recipient pair, the check allows, warns, or
 // rejects as specified. B9 ships the plumbing with `off` as the default.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { checkRoleAddressing } from "../../src/delivery/role-policy.js";

@@ -4,6 +4,8 @@
 // violation.
 //
 //   AGENT_LINK_LOCK_MODULE=<path to roles.js>  run against another tree
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";

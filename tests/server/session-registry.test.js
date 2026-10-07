@@ -4,6 +4,8 @@
 // the real thread queries against a fake app-server. Covers listing from
 // both providers, provider failure as warnings (R1.8), exact lookup and
 // bare-id ambiguity (R1.3), resolve ranking, and the B4 envelope contract.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import os from "node:os";
@@ -318,7 +320,10 @@ test("M4: read_agent_link_inbox on the Codex host names the Codex host and a Cod
   await assert.rejects(handler.read_agent_link_inbox({}), (error) => {
     assert.equal(error.errorCode, "no_current_session");
     assert.equal(error.details.host, "codex");
-    assert.match(error.hint, /message_codex_thread/);
+    // B7b (R1.13): Codex threads have an inbox; the hint says how a thread is identified.
+    assert.deepEqual(error.details.sources, ["caller _meta threadId", "CODEX_THREAD_ID"]);
+    assert.match(error.hint, /_meta/);
+    assert.match(error.hint, /CODEX_THREAD_ID/);
     return true;
   });
   const claude = makeReadInboxHandler({ resolveCurrentSession: () => null });

@@ -135,7 +135,7 @@ export const receiptInput = {
   additionalProperties: false
 };
 
-const RECENT_ITEMS_REPLY = "When waitForReply is true, include up to this many recent ITEMS (not turns) of the target thread in wait.recentItems, oldest first, each with its turnId.";
+const RECENT_ITEMS_REPLY = "Deprecated and ignored since 0.6.0: a message wait returns only the explicit reply, never the thread's items (read them with get_codex_thread).";
 
 /**
  * The options every tool that sends a Codex turn accepts (message_codex_thread
@@ -149,7 +149,10 @@ export const turnOptions = {
   model: str("Optional model for the target turn. A model different from the thread's own is refused (permission_denied, model_switch_requires_fork_or_opt_in) unless the target's override policy allows you (or the deprecated allowTargetOverride is set); an allowed switch persists and the next turn re-reads the thread uncached. Not applied (with a warning) when the thread reports no model and nothing allows it."),
   effort: enumOf(EFFORT_VALUES, "Optional reasoning effort for the target turn. The thread's launcher may change it; anyone else needs the target's override policy (or the deprecated allowTargetOverride), otherwise permission_denied (effort_not_permitted). A change persists. Not applied (with a warning) when the thread reports none and you may not change it."),
   allowParallelTurn: bool("Allow mode=start_turn even when the target appears active or waiting. Defaults to false."),
-  waitForReply: bool("After delivery, wait for the target turn to finish and return the result in `wait`. Defaults to false."),
+  anticipation: enumOf(["reply", "action", "fyi"], "What the sender expects: reply (a reply is expected), action (do the requested thing and mark it done), or fyi (no reply needed). Defaults to fyi, or reply with waitForReply=true; fyi with waitForReply=true is rejected. The thread resolves a reply/action message with reply_agent_link_message and is reminded between its turns until then, up to a cap."),
+  replyBy: str("Optional deadline for a reply or action message, ISO 8601 with a time zone, at least 30 s ahead. After it passes the message status is expired. Not allowed with fyi."),
+  replyToMessageId: str("If this send answers a message addressed to the caller, its messageId. An open reply/action message from the target thread is resolved as replied."),
+  waitForReply: bool("Block until the thread resolves this message explicitly (reply_agent_link_message: reply, decline, done) or it becomes unresolved or expired, or timeoutMs elapses; the result is in `wait`. A turn completing does not end the wait. Implies anticipation reply. Defaults to false."),
   timeoutMs: timeoutMs("Maximum wait when waitForReply is true, in milliseconds."),
   pollIntervalMs: pollIntervalMs("Polling interval when waitForReply is true, in milliseconds."),
   recentItems: intRange({ ...LIMITS.replyRecentItems, description: RECENT_ITEMS_REPLY }),

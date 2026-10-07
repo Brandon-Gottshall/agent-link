@@ -3,6 +3,8 @@
 // reading anything, even when a config exists at the default location; the
 // real config is read only with --real-config or AGENT_LINK_CHECK_REAL_CONFIG=1.
 // Runs against dist/server.mjs with a temp HOME and CODEX_HOME.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "./helpers/guard.js";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";

@@ -261,7 +261,12 @@ export async function returnProjectWorkResult(args = {}, deps = {}, toolContext 
     threadId: resolution.threadId,
     message,
     receipt: args.receipt ?? defaultReceipt("project_work_result", resolution)
-  }, orchestratorSendContext(resolution, toolContext));
+  }, {
+    ...orchestratorSendContext(resolution, toolContext),
+    // R7.7: with replyToMessageId the result resolves that message as done,
+    // the result being the note.
+    answeredKind: "done"
+  });
   return {
     ok: result.ok !== false,
     source: "project-orchestrator",
@@ -554,7 +559,10 @@ export const FORWARDED_MESSAGE_OPTION_KEYS = Object.freeze([
   "waitForReply",
   "timeoutMs",
   "pollIntervalMs",
-  "recentItems"
+  "recentItems",
+  "anticipation",
+  "replyBy",
+  "replyToMessageId"
 ]);
 
 export function forwardMessageOptions(args) {

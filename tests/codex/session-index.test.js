@@ -3,6 +3,8 @@
 // reads (transcripts over V8's ~512 MB string limit), the (path, size, mtime)
 // summary cache, recent items, archive without overwrite, and timestamps.
 // Synthetic transcript trees only; never reads the real ~/.codex.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { promises as fsp } from "node:fs";
 import { mkdtempSync, rmSync } from "node:fs";

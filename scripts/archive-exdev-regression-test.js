@@ -3,6 +3,8 @@
 // is a symlink onto a different filesystem (EXDEV). fs.rename alone throws EXDEV
 // there; the archive path needs a copy+unlink fallback that preserves mtime and
 // never leaves a partial .jsonl visible to discovery.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../tests/helpers/guard.js";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";

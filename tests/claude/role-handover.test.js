@@ -3,6 +3,8 @@
 // holder sees it, is reminded (the count carries over, the cap holds), and
 // may resolve it; the previous holder no longer can. Stored lines are never
 // rewritten. Temp state, injected clocks.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";

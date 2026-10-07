@@ -38,7 +38,7 @@ import { AgentLinkError } from "../shared/errors.js";
 import { env as lookupEnv } from "../shared/env.js";
 import { isAddress } from "../shared/identity.js";
 import { DIR_MODE, FILE_MODE } from "../shared/jsonl.js";
-import { roleProceduresDir, rolesPath, stateDir } from "../shared/paths.js";
+import { assertTestSafeWrite, roleProceduresDir, rolesPath, stateDir } from "../shared/paths.js";
 import { ensureStateDir, tightenMode } from "../shared/state.js";
 import { LOCK_TIMEOUT_MS, withFileLockSync } from "../shared/file-lock.js";
 
@@ -259,6 +259,7 @@ export function validateRoleTable(raw) {
  * @param {string} text
  */
 export function writeFileAtomicSync(filePath, text) {
+  assertTestSafeWrite(filePath);
   fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: DIR_MODE });
   const temp = `${filePath}.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`;
   try {
@@ -600,6 +601,7 @@ export function createRoleStore({ env = process.env, homedir, now = () => Date.n
       raw.roles[name] = entry;
     });
     if (typeof procedureText === "string") {
+      assertTestSafeWrite(proceduresDir());
       fs.mkdirSync(proceduresDir(), { recursive: true, mode: DIR_MODE });
       tightenMode(proceduresDir(), DIR_MODE);
       const existing = fs.lstatSync(procedureFile(name), { throwIfNoEntry: false });

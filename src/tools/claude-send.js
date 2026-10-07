@@ -10,20 +10,19 @@ import {
 } from "../claude/identity.js";
 import { registerActiveWait } from "../claude/active-waits.js";
 import { assertPeerBodyWithinLimit } from "../shared/envelope.js";
-import { isAnticipating, isLateResolution, messageStatus, reminderSettings, resolveLabels } from "../delivery/message-status.js";
-import { checkMessageWait, recordStatusTransition } from "../delivery/message-wait.js";
-import { claimResolution } from "../delivery/resolution.js";
+import { reminderSettings, resolveLabels } from "../delivery/message-status.js";
+import { consumeReply, pollMessageResolution } from "../delivery/message-wait.js";
+import { resolveByAnswer } from "../delivery/resolution.js";
 import { claudeAddress, hostIdentity, parseAddress } from "../shared/identity.js";
 import { looksLikeRoleAddress, procedureProblemWarning } from "../registry/roles.js";
 import { checkRoleAddressing } from "../delivery/role-policy.js";
 import { readRoleTable, recipientMatcher } from "../delivery/role-handover.js";
-import { mailboxRowResult, storedAddress } from "../registry/addresses.js";
+import { storedAddress } from "../registry/addresses.js";
 import { buildReceipt, normalizeReceiptInput, safeAppendReceipt } from "../shared/receipt-index.js";
 import { AgentLinkError } from "../shared/errors.js";
 import { LIMITS, bool, commonOut, enumOf, out, receiptInput, str, timeoutMs as timeoutMsSchema } from "../server/schemas.js";
 
 const DEFAULT_WAIT_TIMEOUT_MS = LIMITS.timeoutMs.def;
-const DEFAULT_POLL_INTERVAL_MS = 250;
 
 /** @type {import("../server/registry.js").ToolDefinition} */
 export const claudeSendTool = {
@@ -308,21 +307,16 @@ export function makeClaudeSendHandler({
         // status, and a resolved message stays as it was.
         // Exactly once (R7.10): the resolve claim first; a lost claim means
         // another resolver got there, and this send stays a plain message.
-        if (answered && isAnticipating(answered) && !answered.resolution &&
-            claudeSessionAliases(target).includes(answered.from_session_id) &&
-            claimResolution(mb, answered.id).ok) {
-          const view = messageStatus(answered, { now: now(), settings: settingsFn() });
-          mb.markAcknowledged({ messageId: answered.id });
-          mb.recordResolution({
-            messageId: answered.id,
+        if (answered && claudeSessionAliases(target).includes(answered.from_session_id)) {
+          resolveByAnswer(mb, answered, {
             kind: "reply",
-            by: answered.to_session_id,
             // The authenticated caller, however it was identified (current
             // session, CLAUDE_SESSION_ID, or a Codex runtime context): after a
             // role handover this is what credits the new holder (R7.20).
             byAddress: callerAddress(caller),
-            late: isLateResolution(view),
-            replyMessageId: messageId
+            replyMessageId: messageId,
+            now: now(),
+            settings: settingsFn()
           });
         }
         // Register the reply wait before the receipt write yields, so this
@@ -393,7 +387,7 @@ export function makeClaudeSendHandler({
         // 4. Optionally wait for the message to be resolved
         if (waitForReply) {
           const startedAt = now();
-          const confirmation = await pollForResolution(mb, {
+          const confirmation = await pollMessageResolution(mb, {
             messageId,
             fromIds: claudeSessionAliases(target),
             toIds: caller.aliases,
@@ -481,57 +475,6 @@ function classifyDelivery({ target, deliveryPreference }) {
   return target.loaded ? "queued-online" : "queued-offline";
 }
 
-// Polls until the message leaves `pending` (design R7.19) or the timeout.
-// Only an explicit reply from the target session (any of its id forms)
-// addressed to this caller is returned: anyone can append to the mailbox, so
-// a reply_to_message_id match alone would let a third party forge the answer
-// the caller is blocked on. A turn's final response never ends the wait.
-async function pollForResolution(mb, { messageId, fromIds, toIds, timeoutMs, now, settings, host, appendReceipt }) {
-  const deadline = now() + timeoutMs;
-  // First check immediately in case a reply arrived synchronously.
-  while (true) {
-    const done = checkMessageWait(mb, { messageId, fromIds, toIds, now: now(), settings });
-    if (done) {
-      if (done.messageStatus === "unresolved" || done.messageStatus === "expired") {
-        await recordStatusTransition(mb, mb.getMessage({ messageId }), { now: now(), settings, host, appendReceipt });
-      }
-      if (done.replyRow) {
-        // The wait consumed this reply: it counts as delivered (and
-        // acknowledged), so the sender's channel, hook and inbox do not
-        // deliver it a second time.
-        consumeReply(mb, done.replyRow);
-      }
-      return {
-        received: Boolean(done.replyRow),
-        outcome: done.outcome,
-        messageStatus: done.messageStatus,
-        // The reply is another agent's text: it reaches the caller only
-        // inside the peer envelope, never as a raw body.
-        reply: done.replyRow ? mailboxRowResult(done.replyRow) : null
-      };
-    }
-    if (now() >= deadline) {
-      return { received: false, outcome: "timeout", messageStatus: messageStatusOf(mb, messageId, now(), settings), reply: null };
-    }
-    const remaining = deadline - now();
-    await sleep(Math.min(DEFAULT_POLL_INTERVAL_MS, Math.max(remaining, 10)));
-  }
-}
-
-function messageStatusOf(mb, messageId, at, settings) {
-  const row = mb.getMessage({ messageId });
-  return row ? messageStatus(row, { now: at, settings }).status : null;
-}
-
-export function consumeReply(mb, message) {
-  if (!message.delivered_at) mb.markDelivered({ messageId: message.id });
-  if (!message.acknowledged_at) mb.markAcknowledged({ messageId: message.id });
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 /**
  * @param {Parameters<typeof makeClaudeSendHandler>[0]} deps
  * @returns {import("../server/registry.js").ToolEntry[]}
@@ -554,3 +497,6 @@ function callerAddress(caller) {
   const address = storedAddress(caller.id, caller.kind);
   return address.includes(":") ? address : null;
 }
+
+// Moved to src/delivery/message-wait.js (B7b); re-exported for callers.
+export { consumeReply };

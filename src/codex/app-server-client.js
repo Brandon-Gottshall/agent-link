@@ -14,7 +14,7 @@ import {
 import { env, envFlag, envValue } from "../shared/env.js";
 import { AgentLinkError } from "../shared/errors.js";
 import { getLogger } from "../shared/log.js";
-import { legacyManagedAppServerDirs, managedAppServerDir, stateDir as agentLinkStateDir } from "../shared/paths.js";
+import { assertTestSafeWrite, legacyManagedAppServerDirs, managedAppServerDir, stateDir as agentLinkStateDir } from "../shared/paths.js";
 import { ensureStateDir } from "../shared/state.js";
 
 /**
@@ -159,6 +159,8 @@ export class CodexAppServerClient {
     this.notifications = { total: 0, parseErrors: 0, byMethod: {}, recent: [] };
     /** @type {Set<(notification: {method: string, params?: any}) => void>} */
     this.notificationListeners = new Set();
+    /** @type {Array<(event: "connecting" | "closed") => void>} */
+    this.connectionListeners = [];
     this.serverRequests = { total: 0, declined: 0, rejected: 0, unanswered: 0, byMethod: {}, last: null };
   }
 
@@ -245,6 +247,9 @@ export class CodexAppServerClient {
     if (previous && previous.readyState !== WebSocket.CLOSED) {
       previous.terminate();
     }
+    // Before the new socket exists, so no notification of the new
+    // connection can arrive ahead of it.
+    this.emitConnection("connecting");
     // A socketPath option is ignored by ws (it silently dials localhost:80),
     // and its ws+unix: URL form splits on ":" and keeps %-escapes, so paths
     // with a colon or a space break. Hand ws the Unix-socket connection itself.
@@ -262,6 +267,7 @@ export class CodexAppServerClient {
       if (this.ws === ws) {
         this.failAllPending("Codex app-server websocket closed");
       }
+      this.emitConnection("closed");
     });
     ws.on("error", (error) => {
       if (this.ws === ws) {
@@ -335,6 +341,7 @@ export class CodexAppServerClient {
     const ws = this.ws;
     this.ws = null;
     this.initialized = false;
+    if (ws) this.emitConnection("closed");
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.close();
     } else if (ws && ws.readyState === WebSocket.CONNECTING) {
@@ -418,8 +425,10 @@ export class CodexAppServerClient {
     }
   }
 
-  // Notifications (no id) are handed to every listener, for example the
-  // token-usage tracker (src/codex/token-usage.js). Returns an unsubscribe.
+  // Notifications (no id) are handed to every listener: the token-usage
+  // tracker (src/codex/token-usage.js) and background Codex delivery
+  // (src/delivery/codex-delivery.js: thread status, clientId confirmation).
+  // Returns an unsubscribe.
   /** @param {(notification: {method: string, params?: any}) => void} listener */
   onNotification(listener) {
     this.notificationListeners.add(listener);
@@ -573,6 +582,7 @@ export class CodexAppServerClient {
     if (this.options.transport === "ws-token") {
       const token = randomBytes(32).toString("hex");
       const tokenFile = path.join(stateDir, `${stem}.token`);
+      assertTestSafeWrite(tokenFile);
       writeFileSync(tokenFile, token, { mode: 0o600 });
       chmodSync(tokenFile, 0o600);
       return {
@@ -813,6 +823,40 @@ export class CodexAppServerClient {
     signalProcessGroup(child, signal);
   }
 
+  /**
+   * Calls `listener` when a connection to the app-server is about to be made
+   * ("connecting": a new endpoint process or socket, before it can send
+   * anything) or is lost ("closed": idle shutdown, exit, or replacement).
+   * What one app-server said about its threads says nothing about the next.
+   * @param {(event: "connecting" | "closed") => void} listener
+   * @returns {() => void}
+   */
+  onConnectionChange(listener) {
+    this.connectionListeners.push(listener);
+    return () => {
+      this.connectionListeners = this.connectionListeners.filter((l) => l !== listener);
+    };
+  }
+
+  /** @param {"connecting" | "closed"} event */
+  emitConnection(event) {
+    for (const listener of this.connectionListeners ?? []) {
+      try {
+        listener(event);
+      } catch {
+        // A listener's failure never affects the connection.
+      }
+    }
+  }
+
+  /**
+   * True while a connection is open and initialized. Never connects (so it
+   * never starts a managed app-server).
+   */
+  isConnected() {
+    return this.ws?.readyState === WebSocket.OPEN && this.initialized === true;
+  }
+
   getConnectionSummary() {
     const failure = this.lastStartupFailure;
     const failureAgeMs = failure ? Date.now() - failure.at : null;
@@ -898,6 +942,7 @@ function readPackageVersion() {
 // a real directory (not a symlink someone else could have planted) owned by
 // this user.
 function ensurePrivateDir(dir) {
+  assertTestSafeWrite(dir);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const stat = lstatSync(dir);
   if (stat.isSymbolicLink()) {
@@ -967,6 +1012,7 @@ function processGroupAlive(pgid) {
 
 function writeManagedRecord(stateDir, record) {
   try {
+    assertTestSafeWrite(stateDir);
     mkdirSync(stateDir, { recursive: true, mode: 0o700 });
     const file = path.join(stateDir, `${record.pid}.json`);
     writeFileSync(file, `${JSON.stringify(record)}\n`, { mode: 0o600 });

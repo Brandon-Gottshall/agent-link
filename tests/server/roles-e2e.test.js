@@ -11,6 +11,8 @@
 //   - enforcement modes off / warn / enforce from AGENT_LINK_ROLE_ENFORCEMENT.
 // Never launches Codex; HOME, CODEX_HOME, the state dir, receipts and the
 // mailbox live in a temp directory.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import http from "node:http";

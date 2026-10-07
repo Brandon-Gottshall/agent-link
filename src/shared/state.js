@@ -12,6 +12,7 @@ import {
   legacyMailboxPaths,
   legacyManagedAppServerDirs,
   legacyReceiptPaths,
+  assertTestSafeWrite,
   migrationRecordPath,
   stateDir
 } from "./paths.js";
@@ -52,6 +53,7 @@ export function tightenMode(target, mode) {
  */
 export function ensureStateDir(options = {}) {
   const dir = stateDir(options);
+  assertTestSafeWrite(dir);
   fs.mkdirSync(dir, { recursive: true, mode: DIR_MODE });
   tightenMode(dir, DIR_MODE);
   writeMigrationRecord(options);

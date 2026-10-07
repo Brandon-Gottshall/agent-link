@@ -1,6 +1,8 @@
 // The managed app-server reports idle release and child exits to the logger
 // (expected exits at info, unexpected ones at warn with the output tail).
 // Uses the stub app-server; never launches Codex.app.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";

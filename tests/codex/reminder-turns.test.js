@@ -1,10 +1,14 @@
-// Design doc R7.14, Codex path (B7a, behind AGENT_LINK_CODEX_REMINDERS,
-// default off until the B7 spike, B7b): a due reminder for a Codex thread
-// becomes a reminder turn (turn/start, turnTrigger "agent-link-reminder")
-// whose text is exactly the reminder notice, only when the thread is idle.
-// An active turn is never steered; a thread that is not loaded is left to
-// inbox pull. Runs against the stub app-server (managed spawn); never
+// Design doc R7.14, Codex path (on by default since B7b): a due reminder for
+// a Codex thread becomes a reminder turn (turn/start, turnTrigger
+// "agent-link-reminder") whose text is exactly the reminder notice, only when
+// the thread is idle. An active turn is never steered; a thread that is not
+// loaded in Agent Link's endpoint is held by the desktop app (mailbox-only,
+// R1.12a) and gets no turn. With the server's status tracker, only a thread
+// the endpoint reported idle gets one (B7 spike: turn/start steers an active
+// thread). Runs against the stub app-server (managed spawn); never
 // launches Codex.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
@@ -67,10 +71,10 @@ mb.markDelivered({ messageId: fyi, deliveredAt: T0 - 600_000 });
 
 const client = new CodexAppServerClient({ idleTimeoutMs: 0 });
 try {
-  // Off by default (B7b decides).
-  assert.equal(codexRemindersEnabled({}), false);
-  assert.equal(codexRemindersEnabled({ AGENT_LINK_CODEX_REMINDERS: "1" }), true);
-  assert.equal(loadConfig({}).codexReminders, false);
+  // On by default since B7b; AGENT_LINK_CODEX_REMINDERS=0 turns it off.
+  assert.equal(codexRemindersEnabled({}), true);
+  assert.equal(codexRemindersEnabled({ AGENT_LINK_CODEX_REMINDERS: "0" }), false);
+  assert.equal(loadConfig({}).codexReminders, true);
 
   // Not due yet: nothing is read or sent.
   assert.deepEqual(await deliverCodexReminders({ appServer: client, mailbox: mb, now: T0 + 29_999, settings: SETTINGS }), []);
@@ -79,7 +83,7 @@ try {
   // Due: only the idle thread gets a turn.
   const results = await deliverCodexReminders({ appServer: client, mailbox: mb, now: T0 + 30_000, settings: SETTINGS });
   const byThread = Object.fromEntries(results.map((r) => [r.threadId, r.outcome]));
-  assert.deepEqual(byThread, { [IDLE]: "sent", [ACTIVE]: "busy", [COLD]: "not_loaded" });
+  assert.deepEqual(byThread, { [IDLE]: "sent", [ACTIVE]: "busy", [COLD]: "held" });
   const sent = turns();
   assert.equal(sent.length, 1);
   assert.equal(sent[0].method, "turn/start");
@@ -105,6 +109,28 @@ try {
   assert.deepEqual(idleOutcomes, ["claimed_elsewhere", "sent"]);
   assert.equal(turns().length, 2);
   other.close();
+
+  // With the server's background preflight, a thread is reminded only when
+  // the tracker last saw it idle AND a fresh thread/read agrees (F1), at
+  // most one background turn per pass (F4).
+  const { makeBackgroundPreflight, makeThreadStatusTracker } = await import("../../src/delivery/codex-push.js");
+  const tracker = makeThreadStatusTracker();
+  const preflight = () => makeBackgroundPreflight({ appServer: client, tracker, sent: new Set() });
+  const before = turns().length;
+  let tracked = await deliverCodexReminders({ appServer: client, mailbox: mb, now: T0 + 95_000, settings: SETTINGS, preflight: preflight() });
+  assert.deepEqual(Object.fromEntries(tracked.map((r) => [r.threadId, r.outcome])), { [IDLE]: "not_known_idle", [ACTIVE]: "not_known_idle", [COLD]: "not_known_idle" });
+  tracker.observe({ method: "turn/started", params: { threadId: IDLE, turn: { id: "t-1", status: "inProgress" } } });
+  tracked = await deliverCodexReminders({ appServer: client, mailbox: mb, now: T0 + 95_000, settings: SETTINGS, preflight: preflight() });
+  assert.equal(tracked.find((r) => r.threadId === IDLE).outcome, "busy");
+  // A stale idle record for a thread the endpoint no longer has loaded: the
+  // fresh thread/read finds it held and no turn is sent.
+  tracker.observe({ method: "thread/status/changed", params: { threadId: COLD, status: { type: "idle" } } });
+  tracker.observe({ method: "turn/completed", params: { threadId: IDLE, turn: { id: "t-1", status: "completed", items: [] } } });
+  tracked = await deliverCodexReminders({ appServer: client, mailbox: mb, now: T0 + 95_000, settings: SETTINGS, preflight: preflight() });
+  assert.equal(tracked.find((r) => r.threadId === IDLE).outcome, "sent");
+  assert.equal(tracked.find((r) => r.threadId === COLD).outcome, "held");
+  assert.equal(turns().length, before + 1);
+  assert.equal(tracker.isKnownIdle(IDLE), false, "a sent reminder marks the thread active");
 
   // Never a turn/steer for a reminder.
   assert.ok(turns().every((t) => t.method === "turn/start"));

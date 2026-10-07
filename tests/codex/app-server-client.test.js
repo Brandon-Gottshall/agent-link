@@ -3,6 +3,8 @@
 // bounded notification bookkeeping, a closed client never reconnects, startup
 // failures are cached, binary discovery order, and clientInfo.version.
 // Uses the stub app-server and in-process fake servers; never launches Codex.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import http from "node:http";

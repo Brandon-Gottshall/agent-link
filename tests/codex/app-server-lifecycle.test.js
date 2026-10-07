@@ -1,6 +1,8 @@
 // Managed app-server lifecycle: lazy start, single spawn under concurrency,
 // reuse, idle shutdown, process-group kill, startup-failure cleanup, and the
 // orphan reaper. Uses a stub app-server; never launches Codex.app.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";

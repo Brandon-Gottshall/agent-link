@@ -1,6 +1,8 @@
 // Managed app-server binary selection: the live Codex ships inside ChatGPT.app as
 // Resources/codex-cli/CodexCLI.app; a stale /Applications/Codex.app must never win
 // over it (its app-server cannot resume threads written by newer Codex versions).
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { codexBinaryCandidates } from "../../src/codex/app-server-client.js";
 

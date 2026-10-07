@@ -3,6 +3,8 @@
 // were only reachable by spawning the MCP server; now they are imported and
 // driven with fake app-servers, clocks and command runners. Nothing here
 // spawns a process, opens a socket or writes a receipt.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "../helpers/guard.js";
 import assert from "node:assert/strict";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import os from "node:os";
@@ -40,6 +42,7 @@ import { makeCurrentClaudeSession } from "../../src/server/index.js";
 import { createLifecycle } from "../../src/server/lifecycle.js";
 import { shellQuoteForDisplay } from "../../src/shared/process.js";
 import { envelopeBody } from "../helpers/envelope-body.js";
+import { openMailbox } from "../../src/claude/mailbox.js";
 
 const THREAD = "019d4000-0000-7000-8000-000000000001";
 const CALLER = "019d4000-0000-7000-8000-0000000000c1";
@@ -268,7 +271,10 @@ test("messageThread starts a turn through the injected app-server", async () => 
     "turn/start": async () => ({ turn: { id: "turn-9", status: "inProgress", items: [] } })
   });
   const queries = makeThreadQueries({ appServer });
-  const messaging = makeThreadMessaging({ appServer, host: "codex", resolveCurrentSession: () => null, queries });
+  // Mailbox first (B7b): a temp mailbox, never the user's.
+  const mailboxDir = mkdtempSync(path.join(os.tmpdir(), "al-tm-mb-"));
+  const mailboxPath = path.join(mailboxDir, "mailbox.jsonl");
+  const messaging = makeThreadMessaging({ appServer, host: "codex", resolveCurrentSession: () => null, queries, mailboxOpener: () => openMailbox({ mailboxPath }) });
   const result = await messaging.messageThread(
     { threadId: THREAD, message: "hello", receipt: { record: false } },
     { callerContext: { available: true, threadId: CALLER, turnId: "ct", source: "runtime_context" } }
@@ -277,10 +283,17 @@ test("messageThread starts a turn through the injected app-server", async () => 
   const input = appServer.requests[1].params.input;
   assert.equal(envelopeBody(input[0].text), "hello");
   assert.equal(result.action, "started_turn");
-  assert.equal(result.deliveredVia, "turn/start");
+  assert.equal(result.deliveredVia, "codex-turn");
+  assert.equal(result.delivery, "delivered");
+  assert.equal(appServer.requests[1].params.turnTrigger, "agent-link");
+  assert.equal(appServer.requests[1].params.clientUserMessageId, result.messageId);
+  const stored = openMailbox({ mailboxPath }).getMessage({ messageId: result.messageId });
+  assert.equal(stored.to_session_id, THREAD);
+  assert.equal(stored.delivered_via, "codex-turn");
   assert.equal(result.turn.id, "turn-9");
   assert.deepEqual(result.receipt, { ok: true, recorded: false, reason: "receipt.record was false" });
   await assert.rejects(messaging.messageThread({ threadId: THREAD, message: "x", cwd: "/elsewhere" }), (error) => error.errorCode === "permission_denied");
+  rmSync(mailboxDir, { recursive: true, force: true });
 });
 
 test("launchThread names a blank thread and routes the GUI through the injected desktop", async () => {

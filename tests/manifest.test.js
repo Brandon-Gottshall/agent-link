@@ -7,6 +7,8 @@
 // manifest and Codex marketplace entry, which keep the legacy name
 // `codex-agent-link`. The MCP server key is `codex-agent-link` on both hosts so
 // existing tool-approval keys keep working.
+// Refuses to run unless every state root is a temp directory (F3/N3).
+import "./helpers/guard.js";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
