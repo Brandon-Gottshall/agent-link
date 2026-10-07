@@ -26,7 +26,7 @@ import { healthExtras } from "../tools/health.js";
  *   channelState: () => {enabled: boolean, error: string | null},
  *   roles?: import("../registry/roles.js").RoleStore | null,
  *   roleAdmin?: boolean,
- *   forkSweep?: (() => Promise<Record<string, any>>) | null
+ *   forkJobs?: (() => {pending: number, running: number, stuck: number}) | null
  * }} HealthDeps
  */
 
@@ -79,7 +79,7 @@ export function configuredEndpointSummary() {
 /**
  * @param {HealthDeps} deps
  */
-export function makeHealth({ appServer, hostInfo, resolveCurrentSession, channelState, roles = null, roleAdmin = false, forkSweep = null }) {
+export function makeHealth({ appServer, hostInfo, resolveCurrentSession, channelState, roles = null, roleAdmin = false, forkJobs = null }) {
   /**
    * @param {Record<string, any>} args
    * @param {{callerContext?: any}} [toolContext]
@@ -91,12 +91,10 @@ export function makeHealth({ appServer, hostInfo, resolveCurrentSession, channel
     // R9.12: the recorded override costs, and a warning when they were
     // measured on another Codex version.
     const overrideCosts = overrideCostsHealth(report.codex?.version ?? null);
-    // R9.7: finish fork jobs whose task ended while no server watched them.
-    const forkJobs = forkSweep && args.startAppServer !== false ? await forkSweep().catch((error) => ({ error: error instanceof Error ? error.message : String(error) })) : null;
     return {
       ...report,
       codex: { ...report.codex, overrideCosts },
-      ...(forkJobs ? { forkJobs } : {}),
+      ...(forkJobs ? { forkJobs: forkJobCounts(forkJobs) } : {}),
       ...(overrideCosts.warning ? { warnings: [overrideCosts.warning] } : {}),
       address: caller.address,
       addressSource: caller.source,
@@ -226,6 +224,19 @@ export function makeHealth({ appServer, hostInfo, resolveCurrentSession, channel
   }
 
   return { health, healthReport, claudeHealthSummary };
+}
+
+/**
+ * Fork job counts for health (read-only, from the job log): the same shape
+ * on error, with null counts.
+ * @param {() => {pending: number, running: number, stuck: number}} counts
+ */
+export function forkJobCounts(counts) {
+  try {
+    return { ...counts(), error: null };
+  } catch (error) {
+    return { pending: null, running: null, stuck: null, error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 /**

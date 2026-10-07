@@ -27,7 +27,7 @@ import { asUserTextInput } from "./app-server-client.js";
 import { inferArchiveState } from "./thread-utils.js";
 import { launcherAddress } from "./thread-actions.js";
 import { createForkJobStore, forkJobStatus } from "./fork-jobs.js";
-import { lastRecordedUsage, settingsMismatchWarning, tokenUsageUnavailableWarning } from "./token-usage.js";
+import { finalAnswerText, lastRecordedUsage, settingsMismatchWarning, tokenUsageUnavailableWarning } from "./token-usage.js";
 import { openMailbox as defaultOpenMailbox } from "../claude/mailbox.js";
 import { resolveCallerIdentity } from "../claude/identity.js";
 import { isWithinWorkspace, workspaceRoot } from "../delivery/override-policy.js";
@@ -64,14 +64,26 @@ export const COMPACT_FORK_AUTO_FRACTION = 0.5;
 
 export const COMPACT_FORK_MODES = Object.freeze(["auto", "always", "never"]);
 
-/** How often a watcher reads the fork's task turn. */
+/** How often the owner's watcher first reads the fork's status; it backs off. */
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
+/** The watcher's longest poll interval. */
+const MAX_POLL_INTERVAL_MS = 15_000;
+const POLL_BACKOFF = 1.5;
 /** A watcher that cannot read the fork this many times in a row stops; sweep() takes over. */
 const WATCH_MAX_CONSECUTIVE_ERRORS = 30;
 /** Longest wait for a compaction to finish before the task starts. */
 const COMPACTION_WAIT_MS = 10 * 60_000;
-/** A reconcile claim older than this with no message is superseded. */
+/**
+ * A reconcile claim older than this with no message is superseded, and a
+ * written but unfinished reconcile older than this is finished by a sweep.
+ */
 const STALE_RECONCILE_MS = 60_000;
+/** A job forked this long ago whose task never started is failed (R9.7.5). */
+export const FORK_START_STALE_MS = COMPACTION_WAIT_MS + 5 * 60_000;
+/** One server at a time sweeps a job: a lease this long (claim-gated). */
+const SWEEP_LEASE_MS = 60_000;
+/** How often the server-wide sweeper runs (src/server/index.js). */
+export const FORK_SWEEP_INTERVAL_MS = 60_000;
 /** At most this many reconcile claims per job (the first plus supersessions). */
 const MAX_RECONCILE_CLAIMS = 5;
 
@@ -143,16 +155,28 @@ export function reconcileBody({ status, text = null, error = null, forkAddress }
   return cut + note;
 }
 
+/** @deprecated use finalAnswerText (src/codex/token-usage.js) */
+export const finalResponseText = finalAnswerText;
+
+const TERMINAL = ["completed", "failed", "interrupted"];
+
 /**
- * The task turn's own final response: the agentMessage with phase
- * "final_answer" (spike), else its last agent message. Only this turn's
- * items: a fork also holds the original's turns.
- * @param {any[] | null | undefined} items
- * @returns {string | null}
+ * @typedef {{
+ *   promise: Promise<any> | null,
+ *   waiting: boolean,
+ *   settingsMark: number,
+ *   toolResult: Record<string, any> | null,
+ *   done: boolean
+ * }} JobRuntime
+ *   One job this server started. `waiting`: its caller waits for the result
+ *   (R9.8 self-fork). `toolResult`: the self-fork result, set synchronously
+ *   with the mailbox write.
  */
-export function finalResponseText(items) {
-  const messages = (items ?? []).filter((item) => ["agentMessage", "assistantMessage"].includes(item?.type) && typeof item.text === "string" && item.text.trim());
-  return (messages.find((item) => item.phase === "final_answer") ?? messages.at(-1))?.text ?? null;
+
+/** @param {unknown} error */
+function errorText(error) {
+  const e = /** @type {any} */ (error);
+  return typeof e?.message === "string" ? e.message : typeof e === "string" ? e : null;
 }
 
 /**
@@ -216,9 +240,18 @@ export function makeForkJobs({
   /**
    * Jobs this process is watching or finishing. `waiting` is true while a
    * caller waits for the result in its tool call (R9.8 self-fork).
-   * @type {Map<string, {promise: Promise<any> | null, waiting: boolean, settingsMark: number}>}
+   * @type {Map<string, JobRuntime>}
    */
   const active = new Map();
+  /** This server's lease token (takeLease). */
+  const token = `${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
+  let closed = false;
+  /** @type {() => void} */
+  let resolveClosed = () => {};
+  /** @type {Promise<void>} */
+  const closedSignal = new Promise((resolve) => {
+    resolveClosed = resolve;
+  });
 
   /**
    * @param {Record<string, any>} args
@@ -313,6 +346,8 @@ export function makeForkJobs({
       cwd: forkResponse.cwd ?? forkResponse.thread.cwd ?? requested.cwd ?? null
     };
     store.append("forked", jobId, { fork });
+    // turn/completed of the fork's turns is kept while this server owns the job.
+    tokenUsage?.watch(forkThreadId);
     const forkMismatch = settingsMismatchWarning({
       threadId: forkThreadId,
       requested: { model: requested.model, cwd: requested.cwd },
@@ -364,13 +399,18 @@ export function makeForkJobs({
     if (requested.effort) startParams.effort = requested.effort;
     // thread/settings/updated is sent only after a turn/start that changes
     // settings; only one received after this mark is about the task's turn.
-    const runtime = { promise: /** @type {Promise<any> | null} */ (null), waiting: args.waitForResult === true, settingsMark: tokenUsage?.mark() ?? 0 };
+    /** @type {JobRuntime} */
+    const runtime = { promise: null, waiting: args.waitForResult === true, settingsMark: tokenUsage?.mark() ?? 0, toolResult: null, done: false };
     active.set(jobId, runtime);
     let turnId = null;
     try {
       const started = await appServer.request("turn/start", startParams);
       turnId = started?.turn?.id ?? started?.turnId ?? null;
-      store.append("turn-started", jobId, { turnId });
+      // No id in the answer: the task turn is the one carrying this job's
+      // clientUserMessageId (echoed as clientId, spike).
+      if (!turnId) turnId = await findTaskTurn(forkThreadId, jobId).catch(() => null);
+      if (turnId) store.append("turn-started", jobId, { turnId });
+      else store.append("failed", jobId, { turnId: null, error: "turn/start returned no turn id, and no turn on the fork carries this job's clientUserMessageId" });
     } catch (error) {
       // The outcome is never silent (R9.7.5): a task that could not start is
       // a failed fork, reconciled like one.
@@ -385,8 +425,13 @@ export function makeForkJobs({
       const timeoutMs = Math.min(Math.max(Number(args.timeoutMs ?? LIMITS.timeoutMs.def), LIMITS.timeoutMs.min), LIMITS.timeoutMs.max);
       // A real timer: `wait` paces the watcher's polls, not the caller's deadline.
       finished = await Promise.race([runtime.promise.catch(() => null), sleep(timeoutMs).then(() => null)]);
+      // Synchronous from here: once waiting is false, a reconcile not yet
+      // written is pushed instead. One already written for this tool result
+      // (R9.8) is returned even when the archive and receipts are still
+      // running.
       runtime.waiting = false;
-      if (finished) active.delete(jobId);
+      if (!finished && runtime.toolResult) finished = runtime.toolResult;
+      if (runtime.done) active.delete(jobId);
     }
 
     const job = store.get(jobId);
@@ -403,10 +448,10 @@ export function makeForkJobs({
         ? {
             reconcile: finished.reconcile,
             ...(finished.output ? { output: finished.output } : {}),
-            tokenUsage: { ...(compaction.compact ? { compaction: compactionUsage } : {}), task: finished.taskUsage },
-            archived: finished.archived,
-            receipt: finished.receipt,
-            reconcileReceipt: finished.reconcileReceipt
+            tokenUsage: { ...(compaction.compact ? { compaction: compactionUsage } : {}), task: finished.taskUsage ?? null },
+            archived: finished.archived ?? null,
+            ...(finished.receipt ? { receipt: finished.receipt } : {}),
+            ...(finished.reconcileReceipt ? { reconcileReceipt: finished.reconcileReceipt } : {})
           }
         : {}),
       warnings: [...warnings, ...(finished?.warnings ?? [])]
@@ -500,45 +545,85 @@ export function makeForkJobs({
   }
 
   /**
-   * Reads the fork's task turn once.
+   * The fork's task turn by its clientUserMessageId (echoed as `clientId`
+   * on the userMessage item, spike), or null.
+   * @param {string} forkThreadId
+   * @param {string} jobId
+   */
+  async function findTaskTurn(forkThreadId, jobId) {
+    const read = await appServer.request("thread/read", { threadId: forkThreadId, includeTurns: true });
+    const turn = (read?.thread?.turns ?? []).find((/** @type {any} */ t) => (t?.items ?? []).some((/** @type {any} */ item) =>
+      item?.type === "userMessage" && (item.clientId === jobId || item.clientUserMessageId === jobId)));
+    return typeof turn?.id === "string" ? turn.id : null;
+  }
+
+  /**
+   * Reads the fork's task turn: its turn/completed when this server saw it,
+   * else the fork's status (cheap, no turns) and, once it is not active, the
+   * turns once. Null while the turn runs.
    * @param {string} forkThreadId
    * @param {string} turnId
    */
   async function observeTurn(forkThreadId, turnId) {
-    // turn/completed carries the turn's status and items (spike); a read
-    // covers a turn that ended while this server was not connected.
     const notified = tokenUsage?.completedTurns(forkThreadId).find((t) => t.turnId === turnId) ?? null;
-    let turn = notified ? { id: turnId, status: notified.status, items: notified.items, error: notified.error } : null;
-    if (!turn || !finalResponseText(turn.items) && turn.status === "completed") {
-      const read = await appServer.request("thread/read", { threadId: forkThreadId, includeTurns: true });
-      turn = (read?.thread?.turns ?? []).find((/** @type {any} */ t) => t?.id === turnId) ?? turn;
+    if (notified && TERMINAL.includes(/** @type {string} */ (notified.status)) && (notified.status !== "completed" || notified.finalText)) {
+      return { status: /** @type {"completed" | "failed" | "interrupted"} */ (notified.status), text: notified.finalText, error: errorText(notified.error) };
     }
-    if (!turn || !["completed", "failed", "interrupted"].includes(turn.status)) return null;
-    const error = typeof turn.error?.message === "string" ? turn.error.message : typeof turn.error === "string" ? turn.error : null;
-    return { status: /** @type {"completed" | "failed" | "interrupted"} */ (turn.status), text: finalResponseText(turn.items), error };
+    if (!notified) {
+      const status = (await appServer.request("thread/read", { threadId: forkThreadId, includeTurns: false }))?.thread?.status?.type;
+      if (status === "active") return null;
+    }
+    const read = await appServer.request("thread/read", { threadId: forkThreadId, includeTurns: true });
+    const turn = (read?.thread?.turns ?? []).find((/** @type {any} */ t) => t?.id === turnId);
+    if (!turn || !TERMINAL.includes(turn.status)) return null;
+    return { status: /** @type {"completed" | "failed" | "interrupted"} */ (turn.status), text: finalAnswerText(turn.items), error: errorText(turn.error) };
   }
 
   /**
-   * Watches a job's task turn until it ends, then finishes the job. Gives up
-   * after repeated read failures; sweep() takes the job over.
+   * Waits one poll interval, waking early on the task's turn/completed or
+   * when this server closes.
+   * @param {string} forkThreadId
+   * @param {string} turnId
+   * @param {number} interval
+   */
+  function pause(forkThreadId, turnId, interval) {
+    return Promise.race([
+      wait(interval),
+      closedSignal,
+      ...(tokenUsage ? [tokenUsage.awaitTurnCompleted(forkThreadId, (t) => t.turnId === turnId, { timeoutMs: interval })] : [])
+    ]);
+  }
+
+  /**
+   * The owner's watcher (R9.7): only the server that started the job
+   * watches it live, with a backed-off cheap status poll; other servers'
+   * sweeps check it at most once per lease. Finishes the job when its task
+   * turn ends. Stops after repeated read failures or when the server closes;
+   * the sweep then takes the job over.
    * @param {string} jobId
    * @param {{warnings?: any[]}} [options]
    */
   async function runJob(jobId, { warnings = [] } = {}) {
+    const runtime = active.get(jobId);
+    let forkThreadId = null;
     try {
+      const job = store.get(jobId);
+      if (!job || job.reconciled) return null;
+      forkThreadId = job.forked?.fork?.threadId ?? null;
+      if (job.outcome || job.written) return await finishJob(job, outcomeOf(job), { warnings });
+      const turnId = job.turnStarted?.turnId;
+      if (!forkThreadId || !turnId) return null;
+      let interval = pollIntervalMs;
       let errors = 0;
       for (;;) {
-        const job = store.get(jobId);
-        if (!job) return null;
-        if (job.reconciled) return null;
-        if (job.outcome) return await finishJob(job, { status: /** @type {any} */ (job.outcome.type), text: null, error: job.outcome.error ?? null }, warnings);
-        const forkThreadId = job.forked?.fork?.threadId;
-        const turnId = job.turnStarted?.turnId;
-        if (!forkThreadId || !turnId) return null;
+        if (closed) return null;
         try {
           const observed = await observeTurn(forkThreadId, turnId);
           errors = 0;
-          if (observed) return await finishJob(job, observed, warnings);
+          if (observed) {
+            if (closed) return null;
+            return await finishJob(store.get(jobId) ?? job, observed, { warnings });
+          }
         } catch (error) {
           errors += 1;
           if (errors >= WATCH_MAX_CONSECUTIVE_ERRORS) {
@@ -546,71 +631,110 @@ export function makeForkJobs({
             return null;
           }
         }
-        await wait(pollIntervalMs);
+        await pause(forkThreadId, turnId, interval);
+        interval = Math.min(Math.ceil(interval * POLL_BACKOFF), MAX_POLL_INTERVAL_MS);
       }
     } finally {
-      const runtime = active.get(jobId);
-      if (runtime && !runtime.waiting) active.delete(jobId);
+      if (forkThreadId) tokenUsage?.unwatch(forkThreadId);
+      if (runtime) {
+        runtime.done = true;
+        if (!runtime.waiting) active.delete(jobId);
+      }
     }
   }
 
   /**
-   * The task turn ended: record the outcome, read its token usage, and
-   * reconcile once.
+   * The task turn ended: record the outcome and reconcile once.
    * @param {import("./fork-jobs.js").ForkJob} job
    * @param {{status: "completed" | "failed" | "interrupted", text: string | null, error: string | null}} observed
-   * @param {any[]} [startWarnings]
+   * @param {{warnings?: any[], graceMs?: number}} [options]  graceMs 0 in sweeps: no wait for usage
+   * @returns {Promise<Record<string, any>>}
    */
-  async function finishJob(job, observed, startWarnings = []) {
-    const forkInfo = job.forked?.fork ?? {};
-    const turnId = job.turnStarted?.turnId ?? null;
-    if (!job.outcome) store.append(observed.status, job.id, { turnId, ...(observed.error ? { error: observed.error } : {}) });
-    // A recorded outcome without text (another server saw the turn end):
-    // read the turn again for the final response.
-    let outcome = observed;
-    if (observed.status === "completed" && observed.text === null && forkInfo.threadId && turnId) {
-      outcome = (await observeTurn(forkInfo.threadId, turnId).catch(() => null)) ?? observed;
+  async function finishJob(job, observed, { warnings = [], graceMs = tokenUsageGraceMs } = {}) {
+    if (!job.outcome) {
+      store.append(observed.status, job.id, { turnId: job.turnStarted?.turnId ?? null, ...(observed.error ? { error: observed.error } : {}) });
     }
-    const warnings = [...startWarnings];
-    let taskUsage = null;
-    if (tokenUsage && forkInfo.threadId && turnId) {
-      taskUsage = await tokenUsage.awaitTurnUsage(forkInfo.threadId, turnId, tokenUsageGraceMs === undefined ? {} : { graceMs: tokenUsageGraceMs });
-      if (!taskUsage) warnings.push(tokenUsageUnavailableWarning({ threadId: forkInfo.threadId, turnId, purpose: "the fork's task" }));
-      const mismatch = settingsMismatchWarning({
-        threadId: forkInfo.threadId,
-        requested: { model: job.created?.request?.model, effort: job.created?.request?.effort, cwd: job.created?.request?.cwd },
-        applied: tokenUsage.settingsSince(forkInfo.threadId, active.get(job.id)?.settingsMark ?? 0)
-      });
-      if (mismatch) warnings.push(mismatch);
-    }
-    const reconciled = await reconcile(job, { ...outcome, taskUsage });
-    return { ...reconciled, status: outcome.status, taskUsage, warnings: [...warnings, ...(reconciled.warnings ?? [])] };
+    const reconciled = await reconcile(store.get(job.id) ?? job, observed, { warnings, graceMs });
+    return { ...reconciled, status: reconciled.status ?? observed.status };
+  }
+
+  /**
+   * The task turn's usage, read after the reconcile claim (a sweep passes
+   * graceMs 0: what this server saw, or null).
+   * @param {import("./fork-jobs.js").ForkJob} job
+   * @param {number | undefined} graceMs
+   * @param {any[]} warnings
+   */
+  async function taskUsageOf(job, graceMs, warnings) {
+    const forkThreadId = job.forked?.fork?.threadId;
+    const turnId = job.turnStarted?.turnId;
+    if (!tokenUsage || !forkThreadId || !turnId) return null;
+    const usage = await tokenUsage.awaitTurnUsage(forkThreadId, turnId, graceMs === undefined ? {} : { graceMs });
+    if (!usage) warnings.push(tokenUsageUnavailableWarning({ threadId: forkThreadId, turnId, purpose: "the fork's task" }));
+    const request = job.created?.request ?? {};
+    const mismatch = settingsMismatchWarning({
+      threadId: forkThreadId,
+      requested: { model: request.model, effort: request.effort, cwd: request.cwd },
+      applied: tokenUsage.settingsSince(forkThreadId, active.get(job.id)?.settingsMark ?? 0)
+    });
+    if (mismatch) warnings.push(mismatch);
+    return usage;
   }
 
   /**
    * Writes the reconcile message once (claim-before-notify), delivers it,
    * archives a completed fork, and writes the fork and reconcile receipts.
+   * A message that is already written (job.written) is finished instead
+   * (recoverReconcile).
    * @param {import("./fork-jobs.js").ForkJob} job
-   * @param {{status: "completed" | "failed" | "interrupted", text: string | null, error: string | null, taskUsage: any}} outcome
+   * @param {{status: "completed" | "failed" | "interrupted", text: string | null, error: string | null}} observed
+   * @param {{warnings?: any[], graceMs?: number}} options
+   * @returns {Promise<Record<string, any>>}
    */
-  async function reconcile(job, outcome) {
+  async function reconcile(job, observed, { warnings: startWarnings = [], graceMs }) {
     const created = job.created ?? /** @type {any} */ ({});
     const forkInfo = job.forked?.fork ?? {};
     const originalAddress = created.original;
     const originalId = parseAddress(originalAddress)?.id ?? null;
     if (!originalId || !forkInfo.threadId) return { reconcile: null, warnings: [] };
+    if (job.reconciled) return alreadyReconciled(job);
     const mb = openMailbox();
     try {
-      const existing = findReconcileMessage(mb, originalId, job.id);
-      if (existing) return { reconcile: { messageId: existing.id, delivery: "already-reconciled" }, warnings: [] };
-      if (!claimReconcile(mb, job.id)) return { reconcile: { messageId: null, delivery: "claimed-elsewhere" }, warnings: [] };
-      // Re-checked under the claim: a superseded claim's holder may have written it.
-      const again = findReconcileMessage(mb, originalId, job.id);
-      if (again) return { reconcile: { messageId: again.id, delivery: "already-reconciled" }, warnings: [] };
+      if (job.written) return await recoverReconcile(mb, job, observed);
+      const claimed = claimReconcile(mb, job.id);
+      if (!claimed) return { reconcile: { messageId: null, delivery: "claimed-elsewhere" }, warnings: [] };
+      // Re-read under the claim: a superseded claim's holder may have written it.
+      const fresh = store.get(job.id) ?? job;
+      if (fresh.reconciled) return alreadyReconciled(fresh);
+      if (fresh.written) return await recoverReconcile(mb, fresh, observed);
+      if (claimed > 1) {
+        // A superseded claim (its holder stopped): it may have written the
+        // message without recording it. Only this rare path scans the mailbox.
+        const lost = findReconcileMessage(mb, originalId, job.id);
+        if (lost) {
+          const status = (() => {
+            try {
+              return JSON.parse(lost.metadata_json)?.fork?.status ?? observed.status;
+            } catch {
+              return observed.status;
+            }
+          })();
+          store.append("reconcile-written", job.id, { messageId: lost.id, status, recovered: true });
+          return await recoverReconcile(mb, { ...fresh, written: { type: "reconcile-written", jobId: job.id, at: 0, messageId: lost.id, status } }, observed);
+        }
+      }
 
+      const warnings = [...startWarnings];
+      let outcome = observed;
+      const turnId = fresh.turnStarted?.turnId ?? null;
+      if (observed.status === "completed" && observed.text === null && turnId) {
+        outcome = (await observeTurn(forkInfo.threadId, turnId).catch(() => null)) ?? observed;
+      }
+      const taskUsage = await taskUsageOf(fresh, graceMs, warnings);
+
+      // Synchronous from the check to the tool-result record: the waiting
+      // caller (R9.8) sees either this result or a pushed message.
       const runtime = active.get(job.id);
-      // R9.8: the original asked for its own fork and is waiting, so the
-      // output goes back in its tool result instead of a push.
       const viaToolResult = runtime?.waiting === true && created.by === originalAddress;
       const labels = created.request?.reconcile ?? {};
       const body = reconcileBody({ status: outcome.status, text: outcome.text, error: outcome.error, forkAddress: forkInfo.address });
@@ -628,104 +752,255 @@ export function makeForkJobs({
         anticipation: labels.anticipation ?? "fyi",
         replyBy: labels.replyBy ?? null
       });
+      store.append("reconcile-written", job.id, { messageId, status: outcome.status, ...(viaToolResult ? { deliveredVia: "tool-result" } : {}) });
       const row = mb.getMessage({ messageId });
       const peer = row ? peerMessageFromMailbox(row) : null;
-      const warnings = [];
       /** @type {DeliveryResult} */
       let delivery;
       if (viaToolResult) {
         mb.markDelivered({ messageId, to: originalAddress });
         delivery = { delivery: "delivered", deliveredVia: "tool-result" };
+        if (runtime) {
+          runtime.toolResult = {
+            status: outcome.status,
+            reconcile: { messageId, delivery: "delivered", deliveredVia: "tool-result", anticipation: labels.anticipation ?? "fyi" },
+            ...(peer ? { output: peerMessageResult(peer) } : {}),
+            taskUsage,
+            archived: null,
+            warnings
+          };
+        }
       } else {
-        try {
-          delivery = await deliver({ kind: "fork-reconcile", messageId, forkJobId: job.id, to: originalAddress, threadId: originalId, row, envelope: peer ? renderPeerEnvelope(peer) : null });
-        } catch (error) {
-          delivery = { delivery: "queued" };
-          warnings.push({ code: "reconcile_push_failed", severity: "warning", message: `The reconcile message is queued; pushing it failed: ${messageOf(error)}` });
-        }
-        if (Array.isArray(delivery?.warnings)) warnings.push(...delivery.warnings);
+        delivery = await safeDeliver({ messageId, job, originalAddress, originalId, row, peer }, warnings);
       }
-      store.append("reconciled", job.id, { messageId, delivery: delivery.delivery, deliveredVia: delivery.deliveredVia ?? null });
-
-      // 6. Archive a completed fork; a failed or interrupted one is kept.
-      let archived = false;
-      if (outcome.status === "completed" && created.request?.archiveFork !== false) {
-        try {
-          await appServer.request("thread/archive", { threadId: forkInfo.threadId });
-          archived = true;
-          store.append("archived", job.id, {});
-        } catch (error) {
-          if (alreadyArchived(error)) {
-            archived = true;
-            store.append("archived", job.id, { already: true });
-          } else warnings.push({ code: "fork_archive_failed", severity: "warning", message: `The fork ${forkInfo.address} was not archived: ${messageOf(error)}` });
-        }
-      }
-
-      const links = { forkJobId: job.id, original: originalAddress, fork: forkInfo.address };
-      const receipt = await messaging.recordActionReceipt({
-        action: "fork_thread",
-        receipt: created.receipt ?? null,
-        target: { threadId: forkInfo.threadId, address: forkInfo.address, turnId: job.turnStarted?.turnId ?? null, cwd: forkInfo.cwd ?? null },
-        message: null,
-        appServer: appServer.getConnectionSummary(),
-        extra: {
-          kind: "fork",
-          ...links,
-          forkedFromId: forkInfo.forkedFromId ?? originalId,
-          lastTurnId: created.lastTurnId ?? null,
-          model: forkInfo.model ?? null,
-          effort: forkInfo.effort ?? null,
-          cwd: forkInfo.cwd ?? null,
-          compacted: job.compacted?.compacted === true,
-          by: created.by ?? null,
-          // R9.9: the caller launched the fork.
-          launchedBy: created.launchedBy ?? null,
-          status: outcome.status,
-          tokenUsage: { ...(job.compacted ? { compaction: job.compacted.tokenUsage ?? null } : {}), task: outcome.taskUsage ?? null }
-        }
-      });
-      const reconcileReceipt = await messaging.recordActionReceipt({
-        action: "reconcile_fork",
-        receipt: created.receipt ?? null,
-        target: { threadId: originalId, address: originalAddress },
-        message: null,
-        delivery: { state: delivery.delivery, deliveredVia: delivery.deliveredVia ?? null, messageId },
-        appServer: appServer.getConnectionSummary(),
-        extra: {
-          kind: "reconcile",
-          ...links,
-          messageId,
-          from: peer ? peerMessageResult(peer, { includeEnvelope: false }).from : null,
-          to: originalAddress,
-          status: outcome.status,
-          archived,
-          deliveredVia: delivery.deliveredVia ?? null,
-          tokenUsage: { delivery: delivery.tokenUsage ?? null }
-        }
-      });
-      return {
-        reconcile: { messageId, delivery: delivery.delivery, ...(delivery.deliveredVia ? { deliveredVia: delivery.deliveredVia } : {}), anticipation: labels.anticipation ?? "fyi" },
-        ...(viaToolResult && peer ? { output: peerMessageResult(peer) } : {}),
-        archived,
-        receipt,
-        reconcileReceipt,
-        warnings
-      };
+      return await completeReconcile(mb, fresh, { messageId, peer, delivery, status: outcome.status, taskUsage, warnings, labels, viaToolResult });
     } finally {
       mb.close?.();
     }
   }
 
+  /** @param {import("./fork-jobs.js").ForkJob} job */
+  function alreadyReconciled(job) {
+    return { reconcile: { messageId: job.reconciled?.messageId ?? job.written?.messageId ?? null, delivery: "already-reconciled" }, warnings: [] };
+  }
+
   /**
-   * The reconcile message already written for a job, or null.
+   * Hands a written reconcile message to `deliver`; a throw leaves it queued.
+   * @param {{messageId: string, job: import("./fork-jobs.js").ForkJob, originalAddress: string, originalId: string, row: Record<string, any> | null, peer: any}} input
+   * @param {any[]} warnings
+   * @returns {Promise<DeliveryResult>}
+   */
+  async function safeDeliver({ messageId, job, originalAddress, originalId, row, peer }, warnings) {
+    /** @type {DeliveryResult} */
+    let delivery;
+    try {
+      delivery = await deliver({ kind: "fork-reconcile", messageId, forkJobId: job.id, to: originalAddress, threadId: originalId, row, envelope: peer ? renderPeerEnvelope(peer) : null });
+    } catch (error) {
+      delivery = { delivery: "queued" };
+      warnings.push({ code: "reconcile_push_failed", severity: "warning", message: `The reconcile message is queued; pushing it failed: ${messageOf(error)}` });
+    }
+    if (Array.isArray(delivery?.warnings)) warnings.push(...delivery.warnings);
+    return delivery;
+  }
+
+  /**
+   * A reconcile message was written but the job never recorded `reconciled`
+   * (its server stopped in between). Once it is older than
+   * STALE_RECONCILE_MS, one sweep (a `fork-recover-<jobId>` claim) finishes
+   * the rest: delivery if the message is still undelivered, `reconciled`,
+   * the archive, and any missing receipt.
+   * @param {ReturnType<typeof defaultOpenMailbox>} mb
+   * @param {import("./fork-jobs.js").ForkJob} job
+   * @param {{status: string}} observed
+   */
+  async function recoverReconcile(mb, job, observed) {
+    const written = /** @type {import("./fork-jobs.js").ForkJobEvent} */ (job.written);
+    const messageId = written.messageId;
+    if (now() - written.at < STALE_RECONCILE_MS) return { reconcile: { messageId, delivery: "in-progress" }, warnings: [] };
+    if (!mb.claim(`fork-recover-${job.id}`, String(now()))) return { reconcile: { messageId, delivery: "claimed-elsewhere" }, warnings: [] };
+    const created = job.created ?? /** @type {any} */ ({});
+    const originalAddress = created.original;
+    const originalId = /** @type {string} */ (parseAddress(originalAddress)?.id);
+    const row = mb.getMessage({ messageId });
+    const peer = row ? peerMessageFromMailbox(row) : null;
+    const warnings = [];
+    /** @type {DeliveryResult} */
+    let delivery;
+    if (written.deliveredVia === "tool-result") {
+      // Treated as delivered: the waiting caller may have returned it.
+      delivery = { delivery: "delivered", deliveredVia: "tool-result" };
+    } else if (row?.delivered_at) {
+      delivery = { delivery: "delivered" };
+    } else {
+      delivery = await safeDeliver({ messageId, job, originalAddress, originalId, row, peer }, warnings);
+    }
+    const status = written.status ?? job.outcome?.type ?? observed.status;
+    const taskUsage = await taskUsageOf(job, 0, warnings);
+    return await completeReconcile(mb, job, {
+      messageId, peer, delivery, status, taskUsage, warnings,
+      labels: created.request?.reconcile ?? {},
+      viaToolResult: written.deliveredVia === "tool-result",
+      recovered: true
+    });
+  }
+
+  /**
+   * After the message is written and delivered (or queued): `reconciled`,
+   * the archive of a completed fork, the receipts, and claim cleanup.
+   * Idempotent for a recovery: it skips an archive or receipt that exists.
+   * @param {ReturnType<typeof defaultOpenMailbox>} mb
+   * @param {import("./fork-jobs.js").ForkJob} job
+   * @param {{messageId: string, peer: any, delivery: DeliveryResult, status: string, taskUsage: any, warnings: any[], labels: Record<string, any>, viaToolResult: boolean, recovered?: boolean}} input
+   */
+  async function completeReconcile(mb, job, { messageId, peer, delivery, status, taskUsage, warnings, labels, viaToolResult, recovered = false }) {
+    const created = job.created ?? /** @type {any} */ ({});
+    const forkInfo = job.forked?.fork ?? {};
+    const originalAddress = created.original;
+    const originalId = /** @type {string} */ (parseAddress(originalAddress)?.id);
+    store.append("reconciled", job.id, { messageId, delivery: delivery.delivery, deliveredVia: delivery.deliveredVia ?? null, ...(recovered ? { recovered: true } : {}) });
+
+    // 6. Archive a completed fork, unless archiveFork is false; a failed or
+    // interrupted one is kept.
+    let archived = !!job.archived;
+    if (!archived && status === "completed" && created.request?.archiveFork !== false) {
+      archived = await archiveForkThread(job, forkInfo, originalId, warnings);
+    }
+
+    const links = { forkJobId: job.id, original: originalAddress, fork: forkInfo.address };
+    const haveReceipt = async (/** @type {string} */ kind, /** @type {string} */ threadId) => recovered
+      && ((await listReceipts({ kind, targetThreadId: threadId, limit: 50 }).catch(() => ({ data: [] }))).data ?? []).some((r) => r.forkJobId === job.id);
+    const receipt = await haveReceipt("fork", forkInfo.threadId) ? null : await messaging.recordActionReceipt({
+      action: "fork_thread",
+      receipt: created.receipt ?? null,
+      target: { threadId: forkInfo.threadId, address: forkInfo.address, turnId: job.turnStarted?.turnId ?? null, cwd: forkInfo.cwd ?? null },
+      message: null,
+      appServer: appServer.getConnectionSummary(),
+      extra: {
+        kind: "fork",
+        ...links,
+        forkedFromId: forkInfo.forkedFromId ?? originalId,
+        lastTurnId: created.lastTurnId ?? null,
+        model: forkInfo.model ?? null,
+        effort: forkInfo.effort ?? null,
+        cwd: forkInfo.cwd ?? null,
+        compacted: job.compacted?.compacted === true,
+        by: created.by ?? null,
+        // R9.9: the caller launched the fork.
+        launchedBy: created.launchedBy ?? null,
+        status,
+        tokenUsage: { ...(job.compacted ? { compaction: job.compacted.tokenUsage ?? null } : {}), task: taskUsage ?? null }
+      }
+    });
+    const reconcileReceipt = await haveReceipt("reconcile", originalId) ? null : await messaging.recordActionReceipt({
+      action: "reconcile_fork",
+      receipt: created.receipt ?? null,
+      target: { threadId: originalId, address: originalAddress },
+      message: null,
+      delivery: { state: delivery.delivery, deliveredVia: delivery.deliveredVia ?? null, messageId },
+      appServer: appServer.getConnectionSummary(),
+      extra: {
+        kind: "reconcile",
+        ...links,
+        messageId,
+        from: peer ? peerMessageResult(peer, { includeEnvelope: false }).from : null,
+        to: originalAddress,
+        status,
+        archived,
+        deliveredVia: delivery.deliveredVia ?? null,
+        tokenUsage: { delivery: delivery.tokenUsage ?? null },
+        ...(recovered ? { recovered: true } : {})
+      }
+    });
+
+    // The job is done: its claims are no longer needed (bounded state).
+    for (const name of mb.listClaims()) {
+      if (name.startsWith(`fork-reconcile-${job.id}`) || name === `fork-recover-${job.id}` || name === `fork-lease-${job.id}`) mb.removeClaim(name);
+    }
+    if (forkInfo.threadId) tokenUsage?.unwatch(forkInfo.threadId);
+    return {
+      status,
+      reconcile: { messageId, delivery: delivery.delivery, ...(delivery.deliveredVia ? { deliveredVia: delivery.deliveredVia } : {}), anticipation: labels.anticipation ?? "fyi", ...(recovered ? { recovered: true } : {}) },
+      ...(viaToolResult && peer ? { output: peerMessageResult(peer) } : {}),
+      taskUsage,
+      archived,
+      receipt,
+      reconcileReceipt,
+      warnings
+    };
+  }
+
+  /**
+   * Archives the fork, only after checking it is the fork this job made:
+   * not the original, forked from the original, and (when the app-server
+   * reports it) with threadSource "agent-link-fork". An already archived
+   * fork counts as archived.
+   * @param {import("./fork-jobs.js").ForkJob} job
+   * @param {Record<string, any>} forkInfo
+   * @param {string} originalId
+   * @param {any[]} warnings
+   */
+  async function archiveForkThread(job, forkInfo, originalId, warnings) {
+    const refuse = (/** @type {string} */ why) => {
+      warnings.push({ code: "fork_archive_refused", severity: "warning", message: `The fork ${forkInfo.address} was not archived: ${why}.` });
+      return false;
+    };
+    if (!forkInfo.threadId || forkInfo.threadId === originalId) return refuse("its id is the original's");
+    let thread;
+    try {
+      thread = (await appServer.request("thread/read", { threadId: forkInfo.threadId, includeTurns: false }))?.thread ?? {};
+    } catch (error) {
+      if (alreadyArchived(error)) {
+        store.append("archived", job.id, { already: true });
+        return true;
+      }
+      warnings.push({ code: "fork_archive_failed", severity: "warning", message: `The fork ${forkInfo.address} was not archived: ${messageOf(error)}` });
+      return false;
+    }
+    if (thread.forkedFromId !== originalId) return refuse(`it reports forkedFromId ${String(thread.forkedFromId ?? null)}, not ${originalId}`);
+    if (thread.threadSource !== undefined && thread.threadSource !== null && thread.threadSource !== FORK_THREAD_SOURCE) {
+      return refuse(`its threadSource is ${String(thread.threadSource)}, not ${FORK_THREAD_SOURCE}`);
+    }
+    try {
+      await appServer.request("thread/archive", { threadId: forkInfo.threadId });
+      store.append("archived", job.id, {});
+      return true;
+    } catch (error) {
+      if (alreadyArchived(error)) {
+        store.append("archived", job.id, { already: true });
+        return true;
+      }
+      warnings.push({ code: "fork_archive_failed", severity: "warning", message: `The fork ${forkInfo.address} was not archived: ${messageOf(error)}` });
+      return false;
+    }
+  }
+
+  /**
+   * Claim-before-notify for one job's reconcile (P4-10). A claim with no
+   * message after STALE_RECONCILE_MS (its holder died) is superseded by the
+   * next numbered claim, up to MAX_RECONCILE_CLAIMS. Returns the claim's
+   * number (1 for the first, more for a supersession), or 0.
+   * @param {ReturnType<typeof defaultOpenMailbox>} mb
+   * @param {string} jobId
+   */
+  function claimReconcile(mb, jobId) {
+    for (let n = 1; n <= MAX_RECONCILE_CLAIMS; n += 1) {
+      const key = n === 1 ? `fork-reconcile-${jobId}` : `fork-reconcile-${jobId}.${n}`;
+      if (mb.claim(key, String(now()))) return n;
+      const takenAt = Number(mb.claimContent(key)) || mb.claimTakenAt(key) || 0;
+      if (now() - takenAt < STALE_RECONCILE_MS) return 0;
+    }
+    return 0;
+  }
+
+  /**
+   * A reconcile message already in the mailbox for a job, by a scan of the
+   * original's messages. Used only after superseding a stale claim.
    * @param {ReturnType<typeof defaultOpenMailbox>} mb
    * @param {string} originalId
    * @param {string} jobId
    */
   function findReconcileMessage(mb, originalId, jobId) {
-    const rows = mb.inspect({ toSessionId: originalId, limit: Number.MAX_SAFE_INTEGER });
-    return rows.find((/** @type {Record<string, any>} */ row) => {
+    return mb.inspect({ toSessionId: originalId, limit: 1000 }).find((/** @type {Record<string, any>} */ row) => {
       if (typeof row.metadata_json !== "string" || !row.metadata_json.includes(jobId)) return false;
       try {
         return JSON.parse(row.metadata_json)?.fork?.jobId === jobId;
@@ -736,65 +1011,130 @@ export function makeForkJobs({
   }
 
   /**
-   * Claim-before-notify for one job's reconcile (P4-10). A claim with no
-   * message after STALE_RECONCILE_MS (its holder died) is superseded by the
-   * next numbered claim, up to MAX_RECONCILE_CLAIMS.
+   * One server at a time sweeps a job (fix for watcher fan-out): a
+   * `fork-lease-<jobId>` claim holding this server's token and the time.
+   * This server renews its own lease; another server's lease is taken over
+   * only when older than SWEEP_LEASE_MS. The lease spreads load; exactly-
+   * once still rests on the reconcile claim.
    * @param {ReturnType<typeof defaultOpenMailbox>} mb
    * @param {string} jobId
    */
-  function claimReconcile(mb, jobId) {
-    for (let n = 1; n <= MAX_RECONCILE_CLAIMS; n += 1) {
-      const key = n === 1 ? `fork-reconcile-${jobId}` : `fork-reconcile-${jobId}.${n}`;
-      if (mb.claim(key, String(now()))) return true;
-      const takenAt = Number(mb.claimContent(key)) || mb.claimTakenAt(key) || 0;
-      if (now() - takenAt < STALE_RECONCILE_MS) return false;
-    }
-    return false;
+  function takeLease(mb, jobId) {
+    const key = `fork-lease-${jobId}`;
+    const content = `${token}:${now()}`;
+    if (mb.claim(key, content)) return true;
+    const [holder, at] = String(mb.claimContent(key) ?? "").split(":");
+    if (holder !== token && now() - Number(at || 0) < SWEEP_LEASE_MS) return false;
+    mb.removeClaim(key);
+    return mb.claim(key, content);
+  }
+
+  /** @param {import("./fork-jobs.js").ForkJob} job */
+  function outcomeOf(job) {
+    return {
+      status: /** @type {"completed" | "failed" | "interrupted"} */ (job.outcome?.type ?? job.written?.status ?? "failed"),
+      text: null,
+      error: job.outcome?.error ?? null
+    };
   }
 
   /**
-   * Finishes jobs whose task turn ended while no server watched them, and
-   * starts watching unfinished ones this process does not watch yet (R9.7:
-   * at startup and on agent_link_health). Exactly one reconcile per job
-   * across every server (claims).
-   * @returns {Promise<{checked: number, reconciled: number, running: number, errors: number}>}
+   * The server-wide sweep (R9.7), run at start and on a timer
+   * (src/server/index.js), never from a tool call. For every unfinished job
+   * this server does not own and holds the lease for:
+   *   - an outcome or a written message: finish it (graceMs 0, after the claim);
+   *   - no task turn recorded: find it by clientUserMessageId, or after
+   *     FORK_START_STALE_MS mark the job failed and reconcile it (R9.7.5);
+   *   - a running turn: one cheap status read, and finish it if it ended.
+   * Then the job log is compacted when it is large.
    */
   async function sweep() {
-    const summary = { checked: 0, reconciled: 0, running: 0, errors: 0 };
+    const summary = { checked: 0, reconciled: 0, running: 0, failed: 0, errors: 0 };
     let jobs;
     try {
       jobs = store.list();
     } catch {
       return summary;
     }
-    for (const job of jobs) {
-      if (job.reconciled || job.aborted || !job.forked || active.has(job.id)) continue;
-      summary.checked += 1;
+    const pending = jobs.filter((job) => !job.reconciled && !job.aborted && job.forked && !active.has(job.id));
+    if (pending.length) {
+      const mb = openMailbox();
       try {
-        if (job.outcome) {
-          const done = await finishJob(job, { status: /** @type {any} */ (job.outcome.type), text: null, error: job.outcome.error ?? null });
-          if (done.reconcile?.messageId && done.reconcile.delivery !== "already-reconciled") summary.reconciled += 1;
-          continue;
+        for (const job of pending) {
+          if (closed) break;
+          if (!takeLease(mb, job.id)) continue;
+          summary.checked += 1;
+          try {
+            const done = await sweepJob(job, summary);
+            if (done?.reconcile?.messageId && !["already-reconciled", "in-progress", "claimed-elsewhere"].includes(done.reconcile.delivery)) summary.reconciled += 1;
+          } catch (error) {
+            summary.errors += 1;
+            getLogger().warn("fork.sweep_failed", { jobId: job.id, message: messageOf(error) });
+          }
         }
-        const turnId = job.turnStarted?.turnId;
-        if (!turnId) continue;
-        const observed = await observeTurn(job.forked.fork.threadId, turnId);
-        if (observed) {
-          const done = await finishJob(job, observed);
-          if (done.reconcile?.messageId && done.reconcile.delivery !== "already-reconciled") summary.reconciled += 1;
-        } else {
-          summary.running += 1;
-          const runtime = { promise: /** @type {Promise<any> | null} */ (null), waiting: false, settingsMark: tokenUsage?.mark() ?? 0 };
-          active.set(job.id, runtime);
-          runtime.promise = runJob(job.id);
-          runtime.promise.catch((error) => getLogger().warn("fork.job_failed", { jobId: job.id, message: messageOf(error) }));
-        }
-      } catch (error) {
-        summary.errors += 1;
-        getLogger().warn("fork.sweep_failed", { jobId: job.id, message: messageOf(error) });
+      } finally {
+        mb.close?.();
       }
     }
+    try {
+      store.compact();
+    } catch (error) {
+      getLogger().warn("fork.compact_failed", { message: messageOf(error) });
+    }
     return summary;
+  }
+
+  /**
+   * @param {import("./fork-jobs.js").ForkJob} job
+   * @param {{running: number, failed: number}} summary
+   * @returns {Promise<Record<string, any> | null>}
+   */
+  async function sweepJob(job, summary) {
+    if (job.outcome || job.written) return await finishJob(job, outcomeOf(job), { graceMs: 0 });
+    const forkThreadId = /** @type {string} */ (job.forked?.fork?.threadId);
+    let turnId = job.turnStarted?.turnId ?? null;
+    if (!turnId) {
+      turnId = await findTaskTurn(forkThreadId, job.id).catch(() => null);
+      if (turnId) {
+        store.append("turn-started", job.id, { turnId, recovered: true });
+      } else if (now() - Number(job.forked?.at ?? 0) > FORK_START_STALE_MS) {
+        store.append("failed", job.id, { turnId: null, error: "The fork's task never started: the server that forked it stopped before turn/start." });
+        summary.failed += 1;
+        const failed = store.get(job.id) ?? job;
+        return await finishJob(failed, outcomeOf(failed), { graceMs: 0 });
+      } else {
+        summary.running += 1;
+        return null;
+      }
+    }
+    const observed = await observeTurn(forkThreadId, turnId);
+    if (!observed) {
+      summary.running += 1;
+      return null;
+    }
+    return await finishJob(store.get(job.id) ?? job, observed, { graceMs: 0 });
+  }
+
+  /**
+   * Fork job counts for agent_link_health, from the job log only: no
+   * writes, no app-server reads.
+   * - pending: the task ended (or the message is written) but the job is
+   *   not reconciled yet;
+   * - running: the task turn started and has not ended;
+   * - stuck: forked FORK_START_STALE_MS ago with no task turn, or a written
+   *   message unfinished for STALE_RECONCILE_MS (the next sweep finishes both).
+   */
+  function jobCounts() {
+    const counts = { pending: 0, running: 0, stuck: 0 };
+    for (const job of store.list()) {
+      if (job.reconciled || job.aborted || !job.forked) continue;
+      if (job.written && now() - Number(job.written.at) > STALE_RECONCILE_MS) counts.stuck += 1;
+      else if (job.outcome || job.written) counts.pending += 1;
+      else if (job.turnStarted) counts.running += 1;
+      else if (now() - Number(job.forked.at) > FORK_START_STALE_MS) counts.stuck += 1;
+      else counts.running += 1;
+    }
+    return counts;
   }
 
   /** Promises of the jobs this process watches (tests wait on them). */
@@ -802,5 +1142,11 @@ export function makeForkJobs({
     return Promise.all([...active.values()].map((runtime) => runtime.promise?.catch(() => null)));
   }
 
-  return { forkThread, sweep, settled, reconcile, decideForkCompaction };
+  /** Stops this server's watchers (shutdown); sweeps elsewhere take over. */
+  function close() {
+    closed = true;
+    resolveClosed();
+  }
+
+  return { forkThread, sweep, jobCounts, settled, close, reconcile, decideForkCompaction };
 }

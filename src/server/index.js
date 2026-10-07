@@ -42,7 +42,7 @@ import { makeLoadedThreads } from "../codex/loaded-threads.js";
 import { makeThreadActions } from "../codex/thread-actions.js";
 import { makeThreadMessaging } from "../codex/thread-messaging.js";
 import { makeThreadQueries } from "../codex/thread-queries.js";
-import { makeForkJobs, queuedDelivery } from "../codex/fork.js";
+import { FORK_SWEEP_INTERVAL_MS, makeForkJobs, queuedDelivery } from "../codex/fork.js";
 import { createTokenUsageTracker } from "../codex/token-usage.js";
 import { forkJobsPath } from "../shared/paths.js";
 import {
@@ -224,7 +224,7 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
     channelState: () => ({ enabled: channelEnabled, error: channelError }),
     roles,
     roleAdmin: config.roleAdmin,
-    forkSweep: forks.sweep
+    forkJobs: () => (existsSync(forkJobsPath()) ? forks.jobCounts() : { pending: 0, running: 0, stuck: 0 })
   });
 
   /** @param {Record<string, any>} [args] */
@@ -356,7 +356,7 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
 
     if (config.codexReminders) startCodexReminders({ appServer: codexAppServer, roles });
     startClaimSweeper({ host: hostInfo.host });
-    startForkSweep(forks);
+    lifecycle.onShutdown(startForkSweep(forks));
 
     lifecycle.installSignalHandlers();
   }
@@ -399,22 +399,40 @@ function startClaimSweeper({ host }) {
 }
 
 /**
- * Fork jobs whose task ended while no server watched them are reconciled
- * shortly after start (R9.7), and unfinished ones are watched again. Only
- * when a fork job log exists, so a server that never forked creates nothing.
- * @param {{sweep: () => Promise<any>}} forks
+ * The fork job sweeper (R9.7): shortly after start, then every
+ * FORK_SWEEP_INTERVAL_MS. It finishes jobs whose task ended while their
+ * server was gone, and checks running jobs no server here watches; each job
+ * is swept by one server at a time (a lease). Only when a fork job log
+ * exists, so a server that never forked creates nothing. The timers never
+ * keep the process alive. Returns the stop for shutdown, which also stops
+ * this server's fork watchers.
+ * @param {{sweep: () => Promise<any>, close: () => void}} forks
+ * @returns {() => void}
  */
 function startForkSweep(forks) {
-  const timer = setTimeout(async () => {
+  let running = false;
+  const run = async () => {
+    if (running) return;
+    running = true;
     try {
       if (!existsSync(forkJobsPath())) return;
       const result = await forks.sweep();
       if (result.checked) getLogger().info("forks.swept", result);
     } catch (error) {
       getLogger().warn("forks.sweep_failed", { message: error instanceof Error ? error.message : String(error) });
+    } finally {
+      running = false;
     }
-  }, 5_000);
+  };
+  const first = setTimeout(run, 5_000);
+  first.unref?.();
+  const timer = setInterval(run, FORK_SWEEP_INTERVAL_MS);
   timer.unref?.();
+  return () => {
+    clearTimeout(first);
+    clearInterval(timer);
+    forks.close();
+  };
 }
 
 /**

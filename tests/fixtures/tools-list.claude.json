@@ -133,11 +133,11 @@
         },
         "codex": {
           "type": "object",
-          "description": "Codex install: {available, path, source, version, versionProbed, searched, reason, usedForManagedAppServer, overrideCosts}. overrideCosts: {measured, codexVersion, measuredAt, effortChange, modelSwitch, cwdChange, forkSameModel, forkOtherModel (each {cachedShare: [rep1, rep2], cacheNeutral}), compactForkAutoFraction, installedVersion, warning}: the measured prompt-cache effect of overrides and forks (B7 spike, R9.12) and the Codex version it was measured on; warning when the installed version differs."
+          "description": "Codex install: {available, path, source, version, versionProbed, searched, reason, usedForManagedAppServer, overrideCosts}. overrideCosts: {measured, codexVersion, measuredAt, effortChange, modelSwitch, cwdChange, forkSameModel, forkOtherModel (each {cachedShare: [rep1, rep2], cacheNeutral}), compactForkAutoFraction, installedVersion, warning}: the measured prompt-cache effect of overrides and forks (B7 spike, R9.12) and the Codex version it was measured on; warning when the installed version differs, also added to the result's warnings[] (code override_costs_version_mismatch)."
         },
         "forkJobs": {
           "type": "object",
-          "description": "{checked, reconciled, running, errors}: fork_codex_thread jobs this call finished or resumed watching (their task ended while no server watched them)."
+          "description": "{pending, running, stuck, error}: unfinished fork_codex_thread jobs in the job log. pending: the task ended and the reconcile is not finished yet; running: the task turn is running; stuck: no task turn long after the fork, or a written reconcile left unfinished (the server's sweeper finishes both). Counts are null with error when the log cannot be read. Health reads the log only; the sweep runs on a timer, never from this tool."
         },
         "appServer": {
           "type": [
@@ -1956,7 +1956,7 @@
   },
   {
     "name": "fork_codex_thread",
-    "description": "Run a task on a fork of an existing Codex thread, then send the fork's final response back to the original thread as a new Agent Link message (a reconcile message with a <fork> element). Use it to run another model, effort, or cwd on a thread's context: an existing thread keeps its model and warm prompt cache, because the cache is per model and a switch re-reads the whole thread uncached. The fork takes the original's completed turns only; the original gets no turn with model, effort, or cwd and is never compacted. Exactly one reconcile message is sent for every outcome (completed, failed, interrupted), even if this server restarts; a completed fork is archived. Claude sessions cannot be forked (unsupported).",
+    "description": "Run a task on a fork of an existing Codex thread, then send the fork's final response back to the original thread as a new Agent Link message (a reconcile message with a <fork> element). Use it to run another model, effort, or cwd on a thread's context: an existing thread keeps its model and warm prompt cache, because the cache is per model and a switch re-reads the whole thread uncached. The fork takes the original's completed turns only; the original gets no turn with model, effort, or cwd and is never compacted. One reconcile message is sent per job for every outcome (completed, failed, interrupted, or a task that never started), also when this server stops before the task ends: the sweeper of any Agent Link server finishes the job, as long as one runs. A completed fork is then archived unless archiveFork is false. Claude sessions cannot be forked (unsupported).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2219,11 +2219,14 @@
         },
         "tokenUsage": {
           "type": "object",
-          "description": "When finished: {compaction?, task}: the `last` token breakdown plus modelContextWindow of each turn, or null when no notification arrived (token_usage_unavailable)."
+          "description": "When finished: {compaction?, task}. task: the summed `last` breakdown of the task turn's model requests plus modelContextWindow, modelRequests and turnId, or null when no notification arrived (token_usage_unavailable); compaction: {totalTokens}."
         },
         "archived": {
-          "type": "boolean",
-          "description": "Whether the fork was archived."
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Whether the fork was archived; null when a self-fork's result came back before the archive finished."
         },
         "receipt": {
           "type": "object",

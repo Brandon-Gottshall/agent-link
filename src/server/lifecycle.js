@@ -35,6 +35,8 @@ export function createLifecycle({ appServer, exit = (code) => process.exit(code)
   let channelBridge = null;
   /** @type {Promise<void> | null} */
   let shutdownPromise = null;
+  /** @type {Array<() => void>} */
+  const stoppers = [];
 
   /**
    * @param {number} exitCode
@@ -44,6 +46,13 @@ export function createLifecycle({ appServer, exit = (code) => process.exit(code)
       return shutdownPromise;
     }
     channelBridge?.stop();
+    for (const stop of stoppers) {
+      try {
+        stop();
+      } catch (error) {
+        getLogger().warn("server.stop_failed", { error });
+      }
+    }
     const hardStop = setTimeout(() => {
       appServer.killManagedSync("SIGKILL");
       exit(exitCode);
@@ -81,6 +90,15 @@ export function createLifecycle({ appServer, exit = (code) => process.exit(code)
   }
 
   /**
+   * Registers a synchronous stop for a background task (timers, watchers),
+   * run first on shutdown.
+   * @param {() => void} stop
+   */
+  function onShutdown(stop) {
+    stoppers.push(stop);
+  }
+
+  /**
    * SIGINT/SIGTERM/SIGHUP and the end of stdin shut down; process exit kills
    * the managed app-server synchronously as a last resort.
    * @param {NodeJS.Process} [proc]
@@ -97,7 +115,7 @@ export function createLifecycle({ appServer, exit = (code) => process.exit(code)
     });
   }
 
-  return { shutdown, fatal, setChannelBridge, installSignalHandlers };
+  return { shutdown, fatal, setChannelBridge, onShutdown, installSignalHandlers };
 }
 
 // Cheap, file-based: kill app-servers orphaned by an agent-link server that

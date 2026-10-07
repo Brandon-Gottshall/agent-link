@@ -140,6 +140,12 @@
           "socket": null
         },
         "autoStartEnabled": true,
+        "forkJobs": {
+          "pending": 0,
+          "running": 0,
+          "stuck": 0,
+          "error": null
+        },
         "address": "external",
         "addressSource": "fallback",
         "providers": {
@@ -353,10 +359,10 @@
         },
         "autoStartEnabled": true,
         "forkJobs": {
-          "checked": 0,
-          "reconciled": 0,
+          "pending": 0,
           "running": 0,
-          "errors": 0
+          "stuck": 0,
+          "error": null
         },
         "address": "external",
         "addressSource": "fallback",
@@ -611,10 +617,10 @@
         },
         "autoStartEnabled": true,
         "forkJobs": {
-          "checked": 0,
-          "reconciled": 0,
+          "pending": 0,
           "running": 0,
-          "errors": 0
+          "stuck": 0,
+          "error": null
         },
         "address": "codex:019d3000-0000-7000-8000-000000000002",
         "addressSource": "runtime_context",
@@ -4668,18 +4674,6 @@
             "code": "deprecated_argument",
             "message": "allowTargetOverride is deprecated and stops granting overrides in 0.7.0 (it is rejected from 0.8.0). Instead: launch a new thread (later: fork it) for a different model, ask the thread's launcher to change effort, or ask the user for an override policy (set_agent_override_policy).",
             "replacement": "a new thread or fork for model; the launcher for effort; set_agent_override_policy otherwise"
-          },
-          {
-            "code": "token_usage_unavailable",
-            "severity": "warning",
-            "message": "Token usage for the first turn on the new setting was not recorded, because the call did not wait for the turn to end.",
-            "details": {
-              "threadId": "019d3000-0000-7000-8000-000000000001",
-              "turnId": "turn-4-001",
-              "purpose": "the first turn on the new setting",
-              "reason": "not_waited"
-            },
-            "hint": "Pass waitForReply:true to record the turn's token usage in the receipt."
           }
         ]
       },
@@ -10251,6 +10245,12 @@
           "socket": null
         },
         "autoStartEnabled": true,
+        "forkJobs": {
+          "pending": 0,
+          "running": 0,
+          "stuck": 0,
+          "error": null
+        },
         "address": "external",
         "addressSource": "fallback",
         "providers": {
@@ -12398,6 +12398,12 @@
           "socket": null
         },
         "autoStartEnabled": true,
+        "forkJobs": {
+          "pending": 0,
+          "running": 0,
+          "stuck": 0,
+          "error": null
+        },
         "address": "external",
         "addressSource": "fallback",
         "providers": {

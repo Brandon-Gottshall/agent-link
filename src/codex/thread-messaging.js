@@ -644,7 +644,7 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
     // gets its own receipt, with the token usage of the first turn on the new
     // setting (known only when the call waited for that turn to end).
     if (decision.switches.length) {
-      const next = await firstTurnUsage({ threadId, turnId: summarizedTurn.id, wait, warnings, overrides, settingsMark });
+      const tokenUsageNext = await firstTurnUsage({ threadId, turnId: summarizedTurn.id, wait, warnings, overrides, settingsMark });
       result.switchReceipts = [];
       for (const change of decision.switches) {
         result.switchReceipts.push(await recordActionReceipt({
@@ -666,7 +666,7 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
               grantedBy: change.grantedBy,
               policy: change.policy,
               expectedCost: change.expectedCost,
-              tokenUsage: { next }
+              tokenUsage: tokenUsageNext
             }
           }
         }));
@@ -678,23 +678,31 @@ export function makeThreadMessaging({ appServer, host, resolveCurrentSession, qu
   /**
    * Token usage of the first turn on a new setting (R9.10), waiting at most
    * 5 s after the turn ended (the notifications normally arrive before it
-   * ends); null with a token_usage_unavailable warning when the call did not
-   * wait for the turn or no notification came. Adds a settings_mismatch
+   * ends). `{next: null, reason: "not_waited"}` when the call did not wait
+   * for the turn (no warning); `{next: null, reason: "no_notification"}` with
+   * a token_usage_unavailable warning when it waited and none came. Adds a settings_mismatch
    * warning when a thread/settings/updated sent after this turn/start reports
    * other values than the ones sent; no notification is not a mismatch.
    * @param {{threadId: string, turnId: string, wait: ReplyWait | null, warnings: any[], overrides: Record<string, string>, settingsMark: number}} input
    */
   async function firstTurnUsage({ threadId, turnId, wait, warnings, overrides, settingsMark }) {
-    if (!tokenUsage) return null;
-    const ended = wait?.ok === true && wait.timedOut === false;
-    const usage = ended ? await tokenUsage.awaitTurnUsage(threadId, turnId) : null;
-    if (!usage) {
-      warnings.push(tokenUsageUnavailableWarning({ threadId, turnId, purpose: "the first turn on the new setting", reason: ended ? "no_notification" : "not_waited" }));
-    }
+    if (!tokenUsage) return { next: null };
     const mismatch = settingsMismatchWarning({ threadId, requested: { model: overrides.model, effort: overrides.effort, cwd: overrides.cwd }, applied: tokenUsage.settingsSince(threadId, settingsMark) });
     if (mismatch) warnings.push(mismatch);
-    return usage;
+    // Not waiting for the turn is the caller's choice, not a failure: no warning.
+    if (!wait) return { next: null, reason: "not_waited" };
+    if (!(wait.ok === true && wait.timedOut === false)) {
+      warnings.push(tokenUsageUnavailableWarning({ threadId, turnId, purpose: "the first turn on the new setting", reason: "turn_not_ended" }));
+      return { next: null, reason: "turn_not_ended" };
+    }
+    const usage = await tokenUsage.awaitTurnUsage(threadId, turnId);
+    if (!usage) {
+      warnings.push(tokenUsageUnavailableWarning({ threadId, turnId, purpose: "the first turn on the new setting" }));
+      return { next: null, reason: "no_notification" };
+    }
+    return { next: usage };
   }
+
 
   /**
    * The result entry for one applied switch (R9.4).

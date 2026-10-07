@@ -21,6 +21,8 @@
 // so the TOKEN_USAGE_GRACE_MS wait after a turn ends is only a fallback.
 // Nothing here sends a request.
 
+import { resolveRealPath } from "../delivery/override-policy.js";
+
 /** Fallback wait for a turn's usage after the turn ends (R9.10). */
 export const TOKEN_USAGE_GRACE_MS = 5_000;
 
@@ -48,11 +50,17 @@ const BREAKDOWN_FIELDS = /** @type {const} */ (["inputTokens", "cachedInputToken
  *   counted: number,
  *   notifications: number,
  *   sum: Record<string, number>,
+ *   uncertain: {counted: number, sum: Record<string, number>},
  *   rawLast: Record<string, any> | null,
  *   modelContextWindow: number | null
  * }} TurnAccumulator
+ *   `uncertain`: requests counted without a baseline (the first notification
+ *   a tracker sees for a thread, or one without `total`). They are dropped
+ *   when the turn completes as interrupted, whose only notification is a
+ *   stale copy of the previous request (spike).
  *
- * @typedef {{turnId: string, status: string | null, items: any[], error: any}} CompletedTurn
+ * @typedef {{turnId: string, status: string | null, error: any, finalText: string | null}} CompletedTurn
+ *   Only what fork watching needs, never the turn's items.
  */
 
 /** @param {unknown} value */
@@ -67,11 +75,33 @@ const num = (value) => (Number.isFinite(value) ? /** @type {number} */ (value) :
  * @returns {TurnTokenUsage | null}
  */
 function turnUsage(acc, turnId) {
-  if (!acc || acc.counted === 0) return null;
+  if (!acc || acc.counted + acc.uncertain.counted === 0) return null;
   /** @type {Record<string, number | null>} */
   const out = {};
-  for (const field of BREAKDOWN_FIELDS) out[field] = Object.prototype.hasOwnProperty.call(acc.sum, field) ? acc.sum[field] : null;
-  return /** @type {TurnTokenUsage} */ ({ ...out, modelContextWindow: acc.modelContextWindow, modelRequests: acc.counted, turnId });
+  for (const field of BREAKDOWN_FIELDS) {
+    const known = [acc.sum[field], acc.uncertain.sum[field]].filter((value) => value !== undefined);
+    out[field] = known.length ? known.reduce((a, b) => a + b, 0) : null;
+  }
+  return /** @type {TurnTokenUsage} */ ({ ...out, modelContextWindow: acc.modelContextWindow, modelRequests: acc.counted + acc.uncertain.counted, turnId });
+}
+
+/**
+ * The final response of a turn: its agentMessage with phase "final_answer"
+ * (spike), else its last agent message.
+ * @param {any[] | null | undefined} items
+ * @returns {string | null}
+ */
+export function finalAnswerText(items) {
+  const messages = (items ?? []).filter((item) => ["agentMessage", "assistantMessage"].includes(item?.type) && typeof item.text === "string" && item.text.trim());
+  return (messages.find((item) => item.phase === "final_answer") ?? messages.at(-1))?.text ?? null;
+}
+
+/**
+ * @param {Record<string, any>} a
+ * @param {Record<string, any> | null} b
+ */
+function sameBreakdown(a, b) {
+  return !!b && BREAKDOWN_FIELDS.every((field) => num(a[field]) === num(b[field]));
 }
 
 /**
@@ -79,15 +109,15 @@ function turnUsage(acc, turnId) {
  * @param {{threadId: string, turnId?: string | null, purpose: string, reason?: string}} details
  */
 export function tokenUsageUnavailableWarning({ threadId, turnId = null, purpose, reason = "no_notification" }) {
-  const notWaited = reason === "not_waited";
+  const notWaited = reason === "not_waited" || reason === "turn_not_ended";
   return {
     code: "token_usage_unavailable",
     severity: "warning",
     message: notWaited
-      ? `Token usage for ${purpose} was not recorded, because the call did not wait for the turn to end.`
+      ? `Token usage for ${purpose} was not recorded, because the turn had not ended when the wait stopped.`
       : `No thread/tokenUsage/updated notification for ${purpose} was seen by ${TOKEN_USAGE_GRACE_MS / 1000} s after the turn ended, so its token usage is recorded as null.`,
     details: { threadId, turnId, purpose, reason },
-    ...(notWaited ? { hint: "Pass waitForReply:true to record the turn's token usage in the receipt." } : {})
+    ...(notWaited ? { hint: "Wait longer (timeoutMs) to record the turn's token usage in the receipt." } : {})
   };
 }
 
@@ -107,7 +137,9 @@ export function settingsMismatchWarning({ threadId, requested, applied }) {
     if (typeof value !== "string" || !value) continue;
     const actual = appliedValue(applied, setting);
     if (actual === undefined || actual === null) continue;
-    if (String(actual) !== value) mismatches.push({ setting, requested: value, applied: actual });
+    // A cwd is compared by real path (macOS /tmp is /private/tmp).
+    const same = setting === "cwd" ? resolveRealPath(String(actual)) === resolveRealPath(value) : String(actual) === value;
+    if (!same) mismatches.push({ setting, requested: value, applied: actual });
   }
   if (!mismatches.length) return null;
   return {
@@ -134,6 +166,8 @@ function appliedValue(applied, setting) {
  *   compactionUsage: (threadId: string, turnId: string) => {totalTokens: number | null} | null,
  *   awaitTurnUsage: (threadId: string, turnId: string, options?: {graceMs?: number}) => Promise<TurnTokenUsage | null>,
  *   completedTurns: (threadId: string) => CompletedTurn[],
+ *   watch: (threadId: string) => void,
+ *   unwatch: (threadId: string) => void,
  *   awaitTurnCompleted: (threadId: string, predicate: (turn: CompletedTurn) => boolean, options?: {timeoutMs?: number}) => Promise<CompletedTurn | null>,
  *   settings: (threadId: string) => Record<string, any> | null,
  *   settingsSince: (threadId: string, mark: number) => Record<string, any> | null,
@@ -156,6 +190,7 @@ export function createTokenUsageTracker({ appServer = null, setTimer = setTimeou
    *   turns: Map<string, TurnAccumulator>,
    *   latestTurnId: string | null,
    *   lastTotal: number | null,
+   *   lastLast: Record<string, any> | null,
    *   settings: Record<string, any> | null,
    *   settingsMark: number,
    *   completed: CompletedTurn[]
@@ -165,12 +200,14 @@ export function createTokenUsageTracker({ appServer = null, setTimer = setTimeou
   /** @type {Set<{threadId: string, test: (kind: string, value: any) => boolean, resolve: (value: any) => void}>} */
   const waiters = new Set();
   let sequence = 0;
+  /** Threads whose turn/completed is kept (fork watching). */
+  const watched = new Set();
 
   /** @param {string} threadId */
   function entry(threadId) {
     let found = threads.get(threadId);
     if (!found) {
-      found = { turns: new Map(), latestTurnId: null, lastTotal: null, settings: null, settingsMark: 0, completed: [] };
+      found = { turns: new Map(), latestTurnId: null, lastTotal: null, lastLast: null, settings: null, settingsMark: 0, completed: [] };
       threads.set(threadId, found);
       if (threads.size > MAX_THREADS) threads.delete(/** @type {string} */ (threads.keys().next().value));
     }
@@ -201,7 +238,7 @@ export function createTokenUsageTracker({ appServer = null, setTimer = setTimeou
       const record = entry(threadId);
       let acc = record.turns.get(turnId);
       if (!acc) {
-        acc = { counted: 0, notifications: 0, sum: {}, rawLast: null, modelContextWindow: null };
+        acc = { counted: 0, notifications: 0, sum: {}, uncertain: { counted: 0, sum: {} }, rawLast: null, modelContextWindow: null };
         record.turns.set(turnId, acc);
         if (record.turns.size > MAX_TURNS_PER_THREAD) record.turns.delete(/** @type {string} */ (record.turns.keys().next().value));
       }
@@ -209,17 +246,31 @@ export function createTokenUsageTracker({ appServer = null, setTimer = setTimeou
       acc.rawLast = { ...last };
       acc.modelContextWindow = num(usage.modelContextWindow) ?? acc.modelContextWindow;
       record.latestTurnId = turnId;
-      // A notification whose cumulative total did not move is not a new
-      // model request: an interrupted turn's stale copy of the previous
-      // `last`, or a compaction (spike). It is not counted.
+      // Which notifications are new model requests (spike):
+      // - a compaction reports only last.totalTokens: never counted;
+      // - with a baseline, a request moves the cumulative `total`; an
+      //   interrupted turn's stale copy of the previous `last` does not;
+      // - without a baseline (the first notification this tracker sees for
+      //   the thread, or no `total`), a `last` equal to the previous one is
+      //   a stale copy; anything else is counted as uncertain and dropped if
+      //   the turn completes as interrupted.
       const total = num(usage.total?.totalTokens);
-      const counts = record.lastTotal === null || total === null || total !== record.lastTotal;
+      const previousLast = record.lastLast;
+      record.lastLast = { ...last };
+      const compactionLike = !(num(last.inputTokens) > 0) && !(num(last.outputTokens) > 0);
+      /** @type {"certain" | "uncertain" | null} */
+      let kind = null;
+      if (!compactionLike) {
+        if (total !== null && record.lastTotal !== null) kind = total !== record.lastTotal ? "certain" : null;
+        else kind = sameBreakdown(last, previousLast) ? null : "uncertain";
+      }
       if (total !== null) record.lastTotal = total;
-      if (counts) {
-        acc.counted += 1;
+      if (kind) {
+        const target = kind === "certain" ? acc : acc.uncertain;
+        target.counted += 1;
         for (const field of BREAKDOWN_FIELDS) {
           const value = num(last[field]);
-          if (value !== null) acc.sum[field] = (acc.sum[field] ?? 0) + value;
+          if (value !== null) target.sum[field] = (target.sum[field] ?? 0) + value;
         }
         notify(threadId, "usage", turnId);
       }
@@ -234,8 +285,17 @@ export function createTokenUsageTracker({ appServer = null, setTimer = setTimeou
     } else if (notification.method === "turn/completed") {
       const turn = params.turn;
       if (!turn || typeof turn.id !== "string") return;
+      const status = typeof turn.status === "string" ? turn.status : null;
+      const acc = threads.get(threadId)?.turns.get(turn.id);
+      if (acc && status === "interrupted") acc.uncertain = { counted: 0, sum: {} };
+      if (!watched.has(threadId)) return;
       /** @type {CompletedTurn} */
-      const completed = { turnId: turn.id, status: typeof turn.status === "string" ? turn.status : null, items: Array.isArray(turn.items) ? turn.items : [], error: turn.error ?? null };
+      const completed = {
+        turnId: turn.id,
+        status,
+        error: turn.error ?? null,
+        finalText: finalAnswerText(Array.isArray(turn.items) ? turn.items : [])
+      };
       const record = entry(threadId);
       record.completed.push(completed);
       if (record.completed.length > MAX_TURNS_PER_THREAD) record.completed.shift();
@@ -286,6 +346,14 @@ export function createTokenUsageTracker({ appServer = null, setTimer = setTimeou
       return raw ? { totalTokens: num(raw.totalTokens) } : null;
     },
     completedTurns: (threadId) => [...(threads.get(threadId)?.completed ?? [])],
+    watch: (threadId) => {
+      watched.add(threadId);
+    },
+    unwatch: (threadId) => {
+      watched.delete(threadId);
+      const record = threads.get(threadId);
+      if (record) record.completed = [];
+    },
     awaitTurnCompleted(threadId, predicate, { timeoutMs = TOKEN_USAGE_GRACE_MS } = {}) {
       const done = (threads.get(threadId)?.completed ?? []).find(predicate);
       if (done) return Promise.resolve(done);

@@ -6885,12 +6885,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs17, exportName) {
+    function addFormats(ajv, list, fs18, exportName) {
       var _a3;
       var _b;
       (_a3 = (_b = ajv.opts.code).formats) !== null && _a3 !== void 0 ? _a3 : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs17[f]);
+        ajv.addFormat(f, fs18[f]);
     }
     module.exports = exports = formatsPlugin;
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -24857,15 +24857,18 @@ function makeThreadActions({ appServer, messaging, desktop }) {
 }
 
 // src/codex/fork-jobs.js
+import fs8 from "node:fs";
 var FORK_OUTCOMES = Object.freeze(["completed", "failed", "interrupted"]);
-var EVENT_TYPES = /* @__PURE__ */ new Set(["created", "forked", "compacted", "turn-started", ...FORK_OUTCOMES, "reconciled", "archived", "aborted"]);
+var EVENT_TYPES = /* @__PURE__ */ new Set(["created", "forked", "compacted", "turn-started", ...FORK_OUTCOMES, "reconcile-written", "reconciled", "archived", "aborted"]);
+var FORK_LOG_MAX_BYTES = 512 * 1024;
+var FORK_LOG_RETENTION_MS = 7 * 24 * 60 * 60 * 1e3;
 function foldForkJobs(events) {
   const jobs = /* @__PURE__ */ new Map();
   for (const event of events) {
     if (!event || typeof event.jobId !== "string" || !EVENT_TYPES.has(event.type)) continue;
     let job = jobs.get(event.jobId);
     if (!job) {
-      job = { id: event.jobId, createdAt: null, created: null, forked: null, compacted: null, turnStarted: null, outcome: null, reconciled: null, archived: null, aborted: null };
+      job = { id: event.jobId, createdAt: null, created: null, forked: null, compacted: null, turnStarted: null, outcome: null, written: null, reconciled: null, archived: null, aborted: null };
       jobs.set(event.jobId, job);
     }
     const slot = slotOf(event.type);
@@ -24878,6 +24881,7 @@ function foldForkJobs(events) {
 }
 function slotOf(type) {
   if (type === "turn-started") return "turnStarted";
+  if (type === "reconcile-written") return "written";
   if (FORK_OUTCOMES.includes(type)) return "outcome";
   return (
     /** @type {any} */
@@ -24909,226 +24913,45 @@ function createForkJobStore({ path: path19 = void 0, now = () => Date.now() } = 
     /** @param {string} jobId */
     get(jobId) {
       return this.list().find((job) => job.id === jobId) ?? null;
+    },
+    /** @param {{maxBytes?: number, retentionMs?: number}} [options] */
+    compact(options = {}) {
+      return compactForkJobs(file(), { now: now(), ...options });
     }
   };
 }
-
-// src/codex/token-usage.js
-var TOKEN_USAGE_GRACE_MS = 5e3;
-var MAX_TURNS_PER_THREAD = 20;
-var MAX_THREADS = 500;
-var BREAKDOWN_FIELDS = (
-  /** @type {const} */
-  ["inputTokens", "cachedInputTokens", "cacheWriteInputTokens", "outputTokens", "reasoningOutputTokens", "totalTokens"]
-);
-var num = (value) => Number.isFinite(value) ? (
-  /** @type {number} */
-  value
-) : null;
-function turnUsage(acc, turnId) {
-  if (!acc || acc.counted === 0) return null;
-  const out2 = {};
-  for (const field of BREAKDOWN_FIELDS) out2[field] = Object.prototype.hasOwnProperty.call(acc.sum, field) ? acc.sum[field] : null;
-  return (
-    /** @type {TurnTokenUsage} */
-    { ...out2, modelContextWindow: acc.modelContextWindow, modelRequests: acc.counted, turnId }
-  );
-}
-function tokenUsageUnavailableWarning({ threadId, turnId = null, purpose, reason = "no_notification" }) {
-  const notWaited = reason === "not_waited";
-  return {
-    code: "token_usage_unavailable",
-    severity: "warning",
-    message: notWaited ? `Token usage for ${purpose} was not recorded, because the call did not wait for the turn to end.` : `No thread/tokenUsage/updated notification for ${purpose} was seen by ${TOKEN_USAGE_GRACE_MS / 1e3} s after the turn ended, so its token usage is recorded as null.`,
-    details: { threadId, turnId, purpose, reason },
-    ...notWaited ? { hint: "Pass waitForReply:true to record the turn's token usage in the receipt." } : {}
-  };
-}
-function settingsMismatchWarning({ threadId, requested, applied }) {
-  if (!applied) return null;
-  const mismatches = [];
-  for (const [setting, value] of Object.entries(requested)) {
-    if (typeof value !== "string" || !value) continue;
-    const actual = appliedValue(applied, setting);
-    if (actual === void 0 || actual === null) continue;
-    if (String(actual) !== value) mismatches.push({ setting, requested: value, applied: actual });
-  }
-  if (!mismatches.length) return null;
-  return {
-    code: "settings_mismatch",
-    severity: "warning",
-    message: `The app-server reports different settings than requested for ${threadId}: ${mismatches.map((m) => `${m.setting} ${String(m.applied)} (requested ${m.requested})`).join(", ")}.`,
-    details: { threadId, mismatches }
-  };
-}
-function appliedValue(applied, setting) {
-  if (setting === "effort") return applied.effort ?? applied.reasoningEffort;
-  return applied[setting];
-}
-function createTokenUsageTracker({ appServer = null, setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
-  const threads = /* @__PURE__ */ new Map();
-  const waiters = /* @__PURE__ */ new Set();
-  let sequence = 0;
-  function entry(threadId) {
-    let found = threads.get(threadId);
-    if (!found) {
-      found = { turns: /* @__PURE__ */ new Map(), latestTurnId: null, lastTotal: null, settings: null, settingsMark: 0, completed: [] };
-      threads.set(threadId, found);
-      if (threads.size > MAX_THREADS) threads.delete(
-        /** @type {string} */
-        threads.keys().next().value
-      );
-    }
-    return found;
-  }
-  function notify(threadId, kind, value) {
-    for (const waiter of [...waiters]) {
-      if (waiter.threadId === threadId && waiter.test(kind, value)) waiter.resolve(value);
-    }
-  }
-  function handle(notification) {
-    const params = notification?.params;
-    const threadId = typeof params?.threadId === "string" ? params.threadId : null;
-    if (!threadId) return;
-    if (notification.method === "thread/tokenUsage/updated") {
-      const usage = params.tokenUsage;
-      const last = usage?.last;
-      const turnId = typeof params.turnId === "string" ? params.turnId : null;
-      if (!last || typeof last !== "object" || !turnId) return;
-      const record2 = entry(threadId);
-      let acc = record2.turns.get(turnId);
-      if (!acc) {
-        acc = { counted: 0, notifications: 0, sum: {}, rawLast: null, modelContextWindow: null };
-        record2.turns.set(turnId, acc);
-        if (record2.turns.size > MAX_TURNS_PER_THREAD) record2.turns.delete(
-          /** @type {string} */
-          record2.turns.keys().next().value
-        );
-      }
-      acc.notifications += 1;
-      acc.rawLast = { ...last };
-      acc.modelContextWindow = num(usage.modelContextWindow) ?? acc.modelContextWindow;
-      record2.latestTurnId = turnId;
-      const total = num(usage.total?.totalTokens);
-      const counts = record2.lastTotal === null || total === null || total !== record2.lastTotal;
-      if (total !== null) record2.lastTotal = total;
-      if (counts) {
-        acc.counted += 1;
-        for (const field of BREAKDOWN_FIELDS) {
-          const value = num(last[field]);
-          if (value !== null) acc.sum[field] = (acc.sum[field] ?? 0) + value;
-        }
-        notify(threadId, "usage", turnId);
-      }
-    } else if (notification.method === "thread/settings/updated") {
-      const { threadId: _id, ...rest } = params;
-      const settings = rest.threadSettings && typeof rest.threadSettings === "object" ? rest.threadSettings : rest.settings && typeof rest.settings === "object" ? rest.settings : rest;
-      const record2 = entry(threadId);
-      record2.settings = { ...settings };
-      record2.settingsMark = ++sequence;
-    } else if (notification.method === "turn/completed") {
-      const turn = params.turn;
-      if (!turn || typeof turn.id !== "string") return;
-      const completed = { turnId: turn.id, status: typeof turn.status === "string" ? turn.status : null, items: Array.isArray(turn.items) ? turn.items : [], error: turn.error ?? null };
-      const record2 = entry(threadId);
-      record2.completed.push(completed);
-      if (record2.completed.length > MAX_TURNS_PER_THREAD) record2.completed.shift();
-      notify(threadId, "completed", completed);
-    }
-  }
-  function waitFor(threadId, test, timeoutMs2) {
-    return new Promise((resolve) => {
-      const waiter = {
-        threadId,
-        test,
-        resolve: (value) => {
-          clearTimer(timer);
-          waiters.delete(waiter);
-          resolve(value);
-        }
-      };
-      const timer = setTimer(() => waiter.resolve(null), timeoutMs2);
-      timer?.unref?.();
-      waiters.add(waiter);
-    });
-  }
-  const unsubscribe = typeof appServer?.onNotification === "function" ? appServer.onNotification(handle) : null;
-  return {
-    latest(threadId) {
-      const record2 = threads.get(threadId);
-      if (!record2) return null;
-      for (const [turnId, acc] of [...record2.turns].reverse()) {
-        const usage = turnUsage(acc, turnId);
-        if (usage) return usage;
-      }
-      return null;
-    },
-    forTurn: (threadId, turnId) => turnUsage(threads.get(threadId)?.turns.get(turnId), turnId),
-    // A compaction reports only `last.totalTokens` (spike).
-    compactionUsage(threadId, turnId) {
-      const raw = threads.get(threadId)?.turns.get(turnId)?.rawLast;
-      return raw ? { totalTokens: num(raw.totalTokens) } : null;
-    },
-    completedTurns: (threadId) => [...threads.get(threadId)?.completed ?? []],
-    awaitTurnCompleted(threadId, predicate, { timeoutMs: timeoutMs2 = TOKEN_USAGE_GRACE_MS } = {}) {
-      const done = (threads.get(threadId)?.completed ?? []).find(predicate);
-      if (done) return Promise.resolve(done);
-      return waitFor(threadId, (kind, value) => kind === "completed" && predicate(value), timeoutMs2);
-    },
-    settings: (threadId) => threads.get(threadId)?.settings ?? null,
-    settingsSince(threadId, mark) {
-      const record2 = threads.get(threadId);
-      return record2 && record2.settingsMark > mark ? record2.settings : null;
-    },
-    mark: () => sequence,
-    handle,
-    /**
-     * The turn's usage. Usage notifications arrive before turn/completed, so
-     * this normally answers at once; otherwise it waits at most `graceMs`.
-     */
-    awaitTurnUsage(threadId, turnId, { graceMs = TOKEN_USAGE_GRACE_MS } = {}) {
-      const known = turnUsage(threads.get(threadId)?.turns.get(turnId), turnId);
-      if (known || !(graceMs > 0)) return Promise.resolve(known);
-      return waitFor(threadId, (kind, value) => kind === "usage" && value === turnId, graceMs).then(() => turnUsage(threads.get(threadId)?.turns.get(turnId), turnId));
-    },
-    close() {
-      unsubscribe?.();
-      for (const waiter of [...waiters]) waiter.resolve(null);
-    }
-  };
-}
-function usageFromReceipt(receipt) {
-  const candidates = [receipt?.tokenUsage?.task, receipt?.tokenUsage?.delivery, receipt?.tokenUsage?.next, receipt?.override?.tokenUsage?.next];
-  return candidates.find((usage) => usage && typeof usage === "object" && Number.isFinite(usage.inputTokens)) ?? null;
-}
-async function lastRecordedUsage({ threadId, tracker = null, listReceipts: listReceipts2 = null }) {
-  const seen = tracker?.latest(threadId) ?? null;
-  if (seen) return seen;
-  if (!listReceipts2) return null;
+function compactForkJobs(file, { now = Date.now(), maxBytes = FORK_LOG_MAX_BYTES, retentionMs = FORK_LOG_RETENTION_MS } = {}) {
+  let raw;
   try {
-    const { data = [] } = await listReceipts2({ targetThreadId: threadId, limit: 50 });
-    for (const receipt of data) {
-      const usage = usageFromReceipt(receipt);
-      if (usage) return usage;
-    }
+    if (fs8.statSync(file).size <= maxBytes) return { compacted: false, dropped: 0 };
+    raw = fs8.readFileSync(file, "utf8");
   } catch {
+    return { compacted: false, dropped: 0 };
   }
-  return null;
-}
-function expectedCostFrom(usage) {
-  return usage && Number.isFinite(usage.inputTokens) ? { uncachedInputTokens: (
-    /** @type {number} */
-    usage.inputTokens
-  ), basis: "last-turn-input" } : { uncachedInputTokens: null, basis: "unknown" };
+  const events = parseJsonlLines(raw);
+  const finished = new Set(foldForkJobs(events).filter((job) => {
+    const end = job.reconciled?.at ?? job.aborted?.at;
+    return Number.isFinite(end) && now - end > retentionMs;
+  }).map((job) => job.id));
+  if (!finished.size) return { compacted: false, dropped: 0 };
+  const kept = events.filter((event) => !finished.has(event?.jobId));
+  const tmp = `${file}.compact-${process.pid}`;
+  fs8.writeFileSync(tmp, toJsonl(kept), { encoding: "utf8", mode: FILE_MODE });
+  if (fs8.statSync(file).size !== Buffer.byteLength(raw, "utf8")) {
+    fs8.rmSync(tmp, { force: true });
+    return { compacted: false, dropped: 0 };
+  }
+  fs8.renameSync(tmp, file);
+  return { compacted: true, dropped: finished.size };
 }
 
 // src/delivery/override-policy.js
-import fs9 from "node:fs";
+import fs10 from "node:fs";
 import path12 from "node:path";
 
 // src/registry/roles.js
 import crypto3 from "node:crypto";
-import fs8 from "node:fs";
+import fs9 from "node:fs";
 import path11 from "node:path";
 var ROLE_NAME_PATTERN = /^[a-z0-9-]{1,40}$/;
 var ROLE_ADDRESS_PATTERN = /^role:([a-z0-9-]{1,40})$/;
@@ -25286,8 +25109,8 @@ function processAlive(pid) {
 }
 function lockSnapshot(lockPath) {
   try {
-    const stat = fs8.statSync(lockPath);
-    return { raw: fs8.readFileSync(lockPath, "utf8"), ino: stat.ino, mtimeMs: stat.mtimeMs };
+    const stat = fs9.statSync(lockPath);
+    return { raw: fs9.readFileSync(lockPath, "utf8"), ino: stat.ino, mtimeMs: stat.mtimeMs };
   } catch {
     return null;
   }
@@ -25302,7 +25125,7 @@ function ownerPid(raw) {
 function breakStaleLock(lockPath, observed, token, now) {
   const breaker = `${lockPath}.break`;
   try {
-    fs8.writeFileSync(breaker, JSON.stringify({ pid: process.pid, token }), { flag: "wx", mode: FILE_MODE });
+    fs9.writeFileSync(breaker, JSON.stringify({ pid: process.pid, token }), { flag: "wx", mode: FILE_MODE });
   } catch (error2) {
     if (
       /** @type {NodeJS.ErrnoException} */
@@ -25310,17 +25133,17 @@ function breakStaleLock(lockPath, observed, token, now) {
     ) return false;
     const stale = lockSnapshot(breaker);
     if (stale && now() - stale.mtimeMs > BREAKER_STALE_MS && !processAlive(ownerPid(stale.raw))) {
-      fs8.rmSync(breaker, { force: true });
+      fs9.rmSync(breaker, { force: true });
     }
     return false;
   }
   try {
     const current = lockSnapshot(lockPath);
     if (!current || current.raw !== observed.raw || current.ino !== observed.ino || current.mtimeMs !== observed.mtimeMs) return false;
-    fs8.rmSync(lockPath, { force: true });
+    fs9.rmSync(lockPath, { force: true });
     return true;
   } finally {
-    fs8.rmSync(breaker, { force: true });
+    fs9.rmSync(breaker, { force: true });
   }
 }
 function withFileLockSync(lockPath, fn, { timeoutMs: timeoutMs2 = LOCK_TIMEOUT_MS, staleMs = LOCK_STALE_MS, now = () => Date.now() } = {}) {
@@ -25328,7 +25151,7 @@ function withFileLockSync(lockPath, fn, { timeoutMs: timeoutMs2 = LOCK_TIMEOUT_M
   const token = `${process.pid}:${crypto3.randomUUID()}`;
   for (; ; ) {
     try {
-      fs8.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, token, at: new Date(now()).toISOString() }), { flag: "wx", mode: FILE_MODE });
+      fs9.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, token, at: new Date(now()).toISOString() }), { flag: "wx", mode: FILE_MODE });
       break;
     } catch (error2) {
       if (
@@ -25354,26 +25177,26 @@ function withFileLockSync(lockPath, fn, { timeoutMs: timeoutMs2 = LOCK_TIMEOUT_M
     return fn();
   } finally {
     try {
-      const current = JSON.parse(fs8.readFileSync(lockPath, "utf8"));
-      if (current?.token === token) fs8.rmSync(lockPath, { force: true });
+      const current = JSON.parse(fs9.readFileSync(lockPath, "utf8"));
+      if (current?.token === token) fs9.rmSync(lockPath, { force: true });
     } catch {
     }
   }
 }
 function writeFileAtomicSync(filePath, text2) {
-  fs8.mkdirSync(path11.dirname(filePath), { recursive: true, mode: DIR_MODE });
+  fs9.mkdirSync(path11.dirname(filePath), { recursive: true, mode: DIR_MODE });
   const temp = `${filePath}.${process.pid}.${crypto3.randomBytes(6).toString("hex")}.tmp`;
   try {
-    const fd = fs8.openSync(temp, "wx", FILE_MODE);
+    const fd = fs9.openSync(temp, "wx", FILE_MODE);
     try {
-      fs8.writeFileSync(fd, text2, "utf8");
-      fs8.fsyncSync(fd);
+      fs9.writeFileSync(fd, text2, "utf8");
+      fs9.fsyncSync(fd);
     } finally {
-      fs8.closeSync(fd);
+      fs9.closeSync(fd);
     }
-    fs8.renameSync(temp, filePath);
+    fs9.renameSync(temp, filePath);
   } catch (error2) {
-    fs8.rmSync(temp, { force: true });
+    fs9.rmSync(temp, { force: true });
     throw stateIoError(filePath, error2, "Could not write the role table.");
   }
   tightenMode(filePath, FILE_MODE);
@@ -25390,30 +25213,30 @@ function stateIoError(filePath, error2, message) {
 }
 function readProcedureFileSafe(dir, file) {
   try {
-    if (!fs8.lstatSync(dir).isDirectory()) return { error: "the roles directory is not a directory" };
+    if (!fs9.lstatSync(dir).isDirectory()) return { error: "the roles directory is not a directory" };
   } catch {
     return null;
   }
   let stat;
   try {
-    stat = fs8.lstatSync(file);
+    stat = fs9.lstatSync(file);
   } catch {
     return null;
   }
   if (!stat.isFile()) return { error: "the procedure file is not a regular file (symlinks, FIFOs, and devices are refused)" };
   let fd;
   try {
-    fd = fs8.openSync(file, fs8.constants.O_RDONLY | fs8.constants.O_NOFOLLOW | fs8.constants.O_NONBLOCK);
+    fd = fs9.openSync(file, fs9.constants.O_RDONLY | fs9.constants.O_NOFOLLOW | fs9.constants.O_NONBLOCK);
   } catch (error2) {
     return { error: `the procedure file could not be opened (${/** @type {NodeJS.ErrnoException} */
     error2.code ?? "error"})` };
   }
   try {
-    if (!fs8.fstatSync(fd).isFile()) return { error: "the procedure file is not a regular file" };
+    if (!fs9.fstatSync(fd).isFile()) return { error: "the procedure file is not a regular file" };
     const buffer = Buffer.alloc(MAX_PROCEDURE_BYTES + 1);
     let length = 0;
     for (; ; ) {
-      const read = fs8.readSync(fd, buffer, length, buffer.length - length, null);
+      const read = fs9.readSync(fd, buffer, length, buffer.length - length, null);
       if (read === 0) break;
       length += read;
       if (length > MAX_PROCEDURE_BYTES) {
@@ -25426,7 +25249,7 @@ function readProcedureFileSafe(dir, file) {
     return { error: `the procedure file could not be read (${/** @type {NodeJS.ErrnoException} */
     error2.code ?? "error"})` };
   } finally {
-    fs8.closeSync(fd);
+    fs9.closeSync(fd);
   }
 }
 function sha256(text2) {
@@ -25450,7 +25273,7 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
     const base = { path: file, exists: true, writable: false, raw: null };
     let text2;
     try {
-      text2 = fs8.readFileSync(file, "utf8");
+      text2 = fs9.readFileSync(file, "utf8");
     } catch (error2) {
       if (
         /** @type {NodeJS.ErrnoException} */
@@ -25501,7 +25324,7 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
   }
   function readState() {
     try {
-      const parsed = JSON.parse(fs8.readFileSync(statePath(), "utf8"));
+      const parsed = JSON.parse(fs9.readFileSync(statePath(), "utf8"));
       if (isPlainObject3(parsed)) {
         return {
           version: STATE_VERSION,
@@ -25607,9 +25430,9 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
       raw.roles[name] = entry;
     });
     if (typeof procedureText === "string") {
-      fs8.mkdirSync(proceduresDir(), { recursive: true, mode: DIR_MODE });
+      fs9.mkdirSync(proceduresDir(), { recursive: true, mode: DIR_MODE });
       tightenMode(proceduresDir(), DIR_MODE);
-      const existing = fs8.lstatSync(procedureFile(name), { throwIfNoEntry: false });
+      const existing = fs9.lstatSync(procedureFile(name), { throwIfNoEntry: false });
       if (existing && !existing.isFile()) {
         throw new AgentLinkError("state_io_error", `The procedure file for ${name} is not a regular file; Agent Link will not replace it.`, {
           details: { path: `roles/${name}.md`, errno: null }
@@ -25805,7 +25628,7 @@ function resolveRealPath(target) {
   const rest = [];
   for (; ; ) {
     try {
-      return path12.join(fs9.realpathSync(current), ...rest.reverse());
+      return path12.join(fs10.realpathSync(current), ...rest.reverse());
     } catch {
       const parent = path12.dirname(current);
       if (parent === current) return path12.resolve(target);
@@ -25818,7 +25641,7 @@ function workspaceRoot(cwd) {
   const start = resolveRealPath(cwd);
   let dir = start;
   for (; ; ) {
-    if (fs9.existsSync(path12.join(dir, ".git"))) return dir;
+    if (fs10.existsSync(path12.join(dir, ".git"))) return dir;
     const parent = path12.dirname(dir);
     if (parent === dir) return start;
     dir = parent;
@@ -25961,6 +25784,252 @@ function assertNoClaudeOverrides(args, address) {
     details: { capability: "turn_overrides", fields: given, address },
     hint: "Omit cwd, model, effort, modelProvider, and serviceTier when messaging a Claude session."
   });
+}
+
+// src/codex/token-usage.js
+var TOKEN_USAGE_GRACE_MS = 5e3;
+var MAX_TURNS_PER_THREAD = 20;
+var MAX_THREADS = 500;
+var BREAKDOWN_FIELDS = (
+  /** @type {const} */
+  ["inputTokens", "cachedInputTokens", "cacheWriteInputTokens", "outputTokens", "reasoningOutputTokens", "totalTokens"]
+);
+var num = (value) => Number.isFinite(value) ? (
+  /** @type {number} */
+  value
+) : null;
+function turnUsage(acc, turnId) {
+  if (!acc || acc.counted + acc.uncertain.counted === 0) return null;
+  const out2 = {};
+  for (const field of BREAKDOWN_FIELDS) {
+    const known = [acc.sum[field], acc.uncertain.sum[field]].filter((value) => value !== void 0);
+    out2[field] = known.length ? known.reduce((a, b) => a + b, 0) : null;
+  }
+  return (
+    /** @type {TurnTokenUsage} */
+    { ...out2, modelContextWindow: acc.modelContextWindow, modelRequests: acc.counted + acc.uncertain.counted, turnId }
+  );
+}
+function finalAnswerText(items) {
+  const messages = (items ?? []).filter((item) => ["agentMessage", "assistantMessage"].includes(item?.type) && typeof item.text === "string" && item.text.trim());
+  return (messages.find((item) => item.phase === "final_answer") ?? messages.at(-1))?.text ?? null;
+}
+function sameBreakdown(a, b) {
+  return !!b && BREAKDOWN_FIELDS.every((field) => num(a[field]) === num(b[field]));
+}
+function tokenUsageUnavailableWarning({ threadId, turnId = null, purpose, reason = "no_notification" }) {
+  const notWaited = reason === "not_waited" || reason === "turn_not_ended";
+  return {
+    code: "token_usage_unavailable",
+    severity: "warning",
+    message: notWaited ? `Token usage for ${purpose} was not recorded, because the turn had not ended when the wait stopped.` : `No thread/tokenUsage/updated notification for ${purpose} was seen by ${TOKEN_USAGE_GRACE_MS / 1e3} s after the turn ended, so its token usage is recorded as null.`,
+    details: { threadId, turnId, purpose, reason },
+    ...notWaited ? { hint: "Wait longer (timeoutMs) to record the turn's token usage in the receipt." } : {}
+  };
+}
+function settingsMismatchWarning({ threadId, requested, applied }) {
+  if (!applied) return null;
+  const mismatches = [];
+  for (const [setting, value] of Object.entries(requested)) {
+    if (typeof value !== "string" || !value) continue;
+    const actual = appliedValue(applied, setting);
+    if (actual === void 0 || actual === null) continue;
+    const same = setting === "cwd" ? resolveRealPath(String(actual)) === resolveRealPath(value) : String(actual) === value;
+    if (!same) mismatches.push({ setting, requested: value, applied: actual });
+  }
+  if (!mismatches.length) return null;
+  return {
+    code: "settings_mismatch",
+    severity: "warning",
+    message: `The app-server reports different settings than requested for ${threadId}: ${mismatches.map((m) => `${m.setting} ${String(m.applied)} (requested ${m.requested})`).join(", ")}.`,
+    details: { threadId, mismatches }
+  };
+}
+function appliedValue(applied, setting) {
+  if (setting === "effort") return applied.effort ?? applied.reasoningEffort;
+  return applied[setting];
+}
+function createTokenUsageTracker({ appServer = null, setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
+  const threads = /* @__PURE__ */ new Map();
+  const waiters = /* @__PURE__ */ new Set();
+  let sequence = 0;
+  const watched = /* @__PURE__ */ new Set();
+  function entry(threadId) {
+    let found = threads.get(threadId);
+    if (!found) {
+      found = { turns: /* @__PURE__ */ new Map(), latestTurnId: null, lastTotal: null, lastLast: null, settings: null, settingsMark: 0, completed: [] };
+      threads.set(threadId, found);
+      if (threads.size > MAX_THREADS) threads.delete(
+        /** @type {string} */
+        threads.keys().next().value
+      );
+    }
+    return found;
+  }
+  function notify(threadId, kind, value) {
+    for (const waiter of [...waiters]) {
+      if (waiter.threadId === threadId && waiter.test(kind, value)) waiter.resolve(value);
+    }
+  }
+  function handle(notification) {
+    const params = notification?.params;
+    const threadId = typeof params?.threadId === "string" ? params.threadId : null;
+    if (!threadId) return;
+    if (notification.method === "thread/tokenUsage/updated") {
+      const usage = params.tokenUsage;
+      const last = usage?.last;
+      const turnId = typeof params.turnId === "string" ? params.turnId : null;
+      if (!last || typeof last !== "object" || !turnId) return;
+      const record2 = entry(threadId);
+      let acc = record2.turns.get(turnId);
+      if (!acc) {
+        acc = { counted: 0, notifications: 0, sum: {}, uncertain: { counted: 0, sum: {} }, rawLast: null, modelContextWindow: null };
+        record2.turns.set(turnId, acc);
+        if (record2.turns.size > MAX_TURNS_PER_THREAD) record2.turns.delete(
+          /** @type {string} */
+          record2.turns.keys().next().value
+        );
+      }
+      acc.notifications += 1;
+      acc.rawLast = { ...last };
+      acc.modelContextWindow = num(usage.modelContextWindow) ?? acc.modelContextWindow;
+      record2.latestTurnId = turnId;
+      const total = num(usage.total?.totalTokens);
+      const previousLast = record2.lastLast;
+      record2.lastLast = { ...last };
+      const compactionLike = !(num(last.inputTokens) > 0) && !(num(last.outputTokens) > 0);
+      let kind = null;
+      if (!compactionLike) {
+        if (total !== null && record2.lastTotal !== null) kind = total !== record2.lastTotal ? "certain" : null;
+        else kind = sameBreakdown(last, previousLast) ? null : "uncertain";
+      }
+      if (total !== null) record2.lastTotal = total;
+      if (kind) {
+        const target = kind === "certain" ? acc : acc.uncertain;
+        target.counted += 1;
+        for (const field of BREAKDOWN_FIELDS) {
+          const value = num(last[field]);
+          if (value !== null) target.sum[field] = (target.sum[field] ?? 0) + value;
+        }
+        notify(threadId, "usage", turnId);
+      }
+    } else if (notification.method === "thread/settings/updated") {
+      const { threadId: _id, ...rest } = params;
+      const settings = rest.threadSettings && typeof rest.threadSettings === "object" ? rest.threadSettings : rest.settings && typeof rest.settings === "object" ? rest.settings : rest;
+      const record2 = entry(threadId);
+      record2.settings = { ...settings };
+      record2.settingsMark = ++sequence;
+    } else if (notification.method === "turn/completed") {
+      const turn = params.turn;
+      if (!turn || typeof turn.id !== "string") return;
+      const status = typeof turn.status === "string" ? turn.status : null;
+      const acc = threads.get(threadId)?.turns.get(turn.id);
+      if (acc && status === "interrupted") acc.uncertain = { counted: 0, sum: {} };
+      if (!watched.has(threadId)) return;
+      const completed = {
+        turnId: turn.id,
+        status,
+        error: turn.error ?? null,
+        finalText: finalAnswerText(Array.isArray(turn.items) ? turn.items : [])
+      };
+      const record2 = entry(threadId);
+      record2.completed.push(completed);
+      if (record2.completed.length > MAX_TURNS_PER_THREAD) record2.completed.shift();
+      notify(threadId, "completed", completed);
+    }
+  }
+  function waitFor(threadId, test, timeoutMs2) {
+    return new Promise((resolve) => {
+      const waiter = {
+        threadId,
+        test,
+        resolve: (value) => {
+          clearTimer(timer);
+          waiters.delete(waiter);
+          resolve(value);
+        }
+      };
+      const timer = setTimer(() => waiter.resolve(null), timeoutMs2);
+      timer?.unref?.();
+      waiters.add(waiter);
+    });
+  }
+  const unsubscribe = typeof appServer?.onNotification === "function" ? appServer.onNotification(handle) : null;
+  return {
+    latest(threadId) {
+      const record2 = threads.get(threadId);
+      if (!record2) return null;
+      for (const [turnId, acc] of [...record2.turns].reverse()) {
+        const usage = turnUsage(acc, turnId);
+        if (usage) return usage;
+      }
+      return null;
+    },
+    forTurn: (threadId, turnId) => turnUsage(threads.get(threadId)?.turns.get(turnId), turnId),
+    // A compaction reports only `last.totalTokens` (spike).
+    compactionUsage(threadId, turnId) {
+      const raw = threads.get(threadId)?.turns.get(turnId)?.rawLast;
+      return raw ? { totalTokens: num(raw.totalTokens) } : null;
+    },
+    completedTurns: (threadId) => [...threads.get(threadId)?.completed ?? []],
+    watch: (threadId) => {
+      watched.add(threadId);
+    },
+    unwatch: (threadId) => {
+      watched.delete(threadId);
+      const record2 = threads.get(threadId);
+      if (record2) record2.completed = [];
+    },
+    awaitTurnCompleted(threadId, predicate, { timeoutMs: timeoutMs2 = TOKEN_USAGE_GRACE_MS } = {}) {
+      const done = (threads.get(threadId)?.completed ?? []).find(predicate);
+      if (done) return Promise.resolve(done);
+      return waitFor(threadId, (kind, value) => kind === "completed" && predicate(value), timeoutMs2);
+    },
+    settings: (threadId) => threads.get(threadId)?.settings ?? null,
+    settingsSince(threadId, mark) {
+      const record2 = threads.get(threadId);
+      return record2 && record2.settingsMark > mark ? record2.settings : null;
+    },
+    mark: () => sequence,
+    handle,
+    /**
+     * The turn's usage. Usage notifications arrive before turn/completed, so
+     * this normally answers at once; otherwise it waits at most `graceMs`.
+     */
+    awaitTurnUsage(threadId, turnId, { graceMs = TOKEN_USAGE_GRACE_MS } = {}) {
+      const known = turnUsage(threads.get(threadId)?.turns.get(turnId), turnId);
+      if (known || !(graceMs > 0)) return Promise.resolve(known);
+      return waitFor(threadId, (kind, value) => kind === "usage" && value === turnId, graceMs).then(() => turnUsage(threads.get(threadId)?.turns.get(turnId), turnId));
+    },
+    close() {
+      unsubscribe?.();
+      for (const waiter of [...waiters]) waiter.resolve(null);
+    }
+  };
+}
+function usageFromReceipt(receipt) {
+  const candidates = [receipt?.tokenUsage?.task, receipt?.tokenUsage?.delivery, receipt?.tokenUsage?.next, receipt?.override?.tokenUsage?.next];
+  return candidates.find((usage) => usage && typeof usage === "object" && Number.isFinite(usage.inputTokens)) ?? null;
+}
+async function lastRecordedUsage({ threadId, tracker = null, listReceipts: listReceipts2 = null }) {
+  const seen = tracker?.latest(threadId) ?? null;
+  if (seen) return seen;
+  if (!listReceipts2) return null;
+  try {
+    const { data = [] } = await listReceipts2({ targetThreadId: threadId, limit: 50 });
+    for (const receipt of data) {
+      const usage = usageFromReceipt(receipt);
+      if (usage) return usage;
+    }
+  } catch {
+  }
+  return null;
+}
+function expectedCostFrom(usage) {
+  return usage && Number.isFinite(usage.inputTokens) ? { uncachedInputTokens: (
+    /** @type {number} */
+    usage.inputTokens
+  ), basis: "last-turn-input" } : { uncachedInputTokens: null, basis: "unknown" };
 }
 
 // src/delivery/message-status.js
@@ -26120,7 +26189,7 @@ function explicitReplies(mb, messageId, from, to) {
 
 // src/shared/receipt-index.js
 import { randomUUID } from "node:crypto";
-import { promises as fs10 } from "node:fs";
+import { promises as fs11 } from "node:fs";
 import path13 from "node:path";
 
 // src/shared/caller-context.js
@@ -26452,10 +26521,10 @@ function summarizeResolution(resolution) {
 }
 async function tightenFileMode(target, mode) {
   try {
-    const stat = await fs10.stat(target);
+    const stat = await fs11.stat(target);
     const uid = typeof process.getuid === "function" ? process.getuid() : null;
     if (uid !== null && stat.uid !== uid) return;
-    if ((stat.mode & 511 & ~mode) !== 0) await fs10.chmod(target, mode);
+    if ((stat.mode & 511 & ~mode) !== 0) await fs11.chmod(target, mode);
   } catch {
   }
 }
@@ -26493,7 +26562,7 @@ function safeWritePath(options) {
 }
 async function readReceiptFile(file) {
   try {
-    return parseJsonlLines(await fs10.readFile(file, "utf8"));
+    return parseJsonlLines(await fs11.readFile(file, "utf8"));
   } catch (error2) {
     if (error2.code === "ENOENT") return [];
     throw error2;
@@ -26731,9 +26800,14 @@ var FORK_TURN_TRIGGER = "agent-link-fork";
 var COMPACT_FORK_AUTO_FRACTION = 0.5;
 var COMPACT_FORK_MODES = Object.freeze(["auto", "always", "never"]);
 var DEFAULT_POLL_INTERVAL_MS = 1e3;
+var MAX_POLL_INTERVAL_MS = 15e3;
+var POLL_BACKOFF = 1.5;
 var WATCH_MAX_CONSECUTIVE_ERRORS = 30;
 var COMPACTION_WAIT_MS = 10 * 6e4;
 var STALE_RECONCILE_MS = 6e4;
+var FORK_START_STALE_MS = COMPACTION_WAIT_MS + 5 * 6e4;
+var SWEEP_LEASE_MS = 6e4;
+var FORK_SWEEP_INTERVAL_MS = 6e4;
 var MAX_RECONCILE_CLAIMS = 5;
 async function queuedDelivery(_record) {
   return { delivery: "queued" };
@@ -26765,9 +26839,13 @@ function reconcileBody({ status, text: text2 = null, error: error2 = null, forkA
   const cut = new TextDecoder("utf-8").decode(Buffer.from(body, "utf8").subarray(0, room)).replace(/�+$/, "");
   return cut + note;
 }
-function finalResponseText(items) {
-  const messages = (items ?? []).filter((item) => ["agentMessage", "assistantMessage"].includes(item?.type) && typeof item.text === "string" && item.text.trim());
-  return (messages.find((item) => item.phase === "final_answer") ?? messages.at(-1))?.text ?? null;
+var TERMINAL = ["completed", "failed", "interrupted"];
+function errorText(error2) {
+  const e = (
+    /** @type {any} */
+    error2
+  );
+  return typeof e?.message === "string" ? e.message : typeof e === "string" ? e : null;
 }
 function alreadyArchived(error2) {
   return /no rollout found for thread id/i.test(error2 instanceof Error ? error2.message : String(error2));
@@ -26798,6 +26876,13 @@ function makeForkJobs({
   tokenUsageGraceMs = void 0
 }) {
   const active = /* @__PURE__ */ new Map();
+  const token = `${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
+  let closed = false;
+  let resolveClosed = () => {
+  };
+  const closedSignal = new Promise((resolve) => {
+    resolveClosed = resolve;
+  });
   async function forkThread(args, toolContext = {}) {
     const originalId = await resolveOriginal(args);
     const message = requiredString(args.message, "message").trim();
@@ -26888,6 +26973,7 @@ function makeForkJobs({
       cwd: forkResponse.cwd ?? forkResponse.thread.cwd ?? requested.cwd ?? null
     };
     store.append("forked", jobId, { fork });
+    tokenUsage?.watch(forkThreadId);
     const forkMismatch = settingsMismatchWarning({
       threadId: forkThreadId,
       requested: { model: requested.model, cwd: requested.cwd },
@@ -26930,16 +27016,15 @@ function makeForkJobs({
     });
     const startParams = { threadId: forkThreadId, input: asUserTextInput(envelope), turnTrigger: FORK_TURN_TRIGGER, clientUserMessageId: jobId };
     if (requested.effort) startParams.effort = requested.effort;
-    const runtime = { promise: (
-      /** @type {Promise<any> | null} */
-      null
-    ), waiting: args.waitForResult === true, settingsMark: tokenUsage?.mark() ?? 0 };
+    const runtime = { promise: null, waiting: args.waitForResult === true, settingsMark: tokenUsage?.mark() ?? 0, toolResult: null, done: false };
     active.set(jobId, runtime);
     let turnId = null;
     try {
       const started = await appServer.request("turn/start", startParams);
       turnId = started?.turn?.id ?? started?.turnId ?? null;
-      store.append("turn-started", jobId, { turnId });
+      if (!turnId) turnId = await findTaskTurn(forkThreadId, jobId).catch(() => null);
+      if (turnId) store.append("turn-started", jobId, { turnId });
+      else store.append("failed", jobId, { turnId: null, error: "turn/start returned no turn id, and no turn on the fork carries this job's clientUserMessageId" });
     } catch (error2) {
       store.append("failed", jobId, { turnId: null, error: `turn/start failed: ${messageOf(error2)}` });
     }
@@ -26950,7 +27035,8 @@ function makeForkJobs({
       const timeoutMs2 = Math.min(Math.max(Number(args.timeoutMs ?? LIMITS.timeoutMs.def), LIMITS.timeoutMs.min), LIMITS.timeoutMs.max);
       finished = await Promise.race([runtime.promise.catch(() => null), sleep3(timeoutMs2).then(() => null)]);
       runtime.waiting = false;
-      if (finished) active.delete(jobId);
+      if (!finished && runtime.toolResult) finished = runtime.toolResult;
+      if (runtime.done) active.delete(jobId);
     }
     const job = store.get(jobId);
     const result = {
@@ -26964,10 +27050,10 @@ function makeForkJobs({
       ...finished ? {
         reconcile: finished.reconcile,
         ...finished.output ? { output: finished.output } : {},
-        tokenUsage: { ...compaction.compact ? { compaction: compactionUsage } : {}, task: finished.taskUsage },
-        archived: finished.archived,
-        receipt: finished.receipt,
-        reconcileReceipt: finished.reconcileReceipt
+        tokenUsage: { ...compaction.compact ? { compaction: compactionUsage } : {}, task: finished.taskUsage ?? null },
+        archived: finished.archived ?? null,
+        ...finished.receipt ? { receipt: finished.receipt } : {},
+        ...finished.reconcileReceipt ? { reconcileReceipt: finished.reconcileReceipt } : {}
       } : {},
       warnings: [...warnings, ...finished?.warnings ?? []]
     };
@@ -27037,38 +27123,62 @@ function makeForkJobs({
     }
     throw new Error("compaction did not finish in time");
   }
+  async function findTaskTurn(forkThreadId, jobId) {
+    const read = await appServer.request("thread/read", { threadId: forkThreadId, includeTurns: true });
+    const turn = (read?.thread?.turns ?? []).find((t) => (t?.items ?? []).some((item) => item?.type === "userMessage" && (item.clientId === jobId || item.clientUserMessageId === jobId)));
+    return typeof turn?.id === "string" ? turn.id : null;
+  }
   async function observeTurn(forkThreadId, turnId) {
     const notified = tokenUsage?.completedTurns(forkThreadId).find((t) => t.turnId === turnId) ?? null;
-    let turn = notified ? { id: turnId, status: notified.status, items: notified.items, error: notified.error } : null;
-    if (!turn || !finalResponseText(turn.items) && turn.status === "completed") {
-      const read = await appServer.request("thread/read", { threadId: forkThreadId, includeTurns: true });
-      turn = (read?.thread?.turns ?? []).find((t) => t?.id === turnId) ?? turn;
+    if (notified && TERMINAL.includes(
+      /** @type {string} */
+      notified.status
+    ) && (notified.status !== "completed" || notified.finalText)) {
+      return { status: (
+        /** @type {"completed" | "failed" | "interrupted"} */
+        notified.status
+      ), text: notified.finalText, error: errorText(notified.error) };
     }
-    if (!turn || !["completed", "failed", "interrupted"].includes(turn.status)) return null;
-    const error2 = typeof turn.error?.message === "string" ? turn.error.message : typeof turn.error === "string" ? turn.error : null;
+    if (!notified) {
+      const status = (await appServer.request("thread/read", { threadId: forkThreadId, includeTurns: false }))?.thread?.status?.type;
+      if (status === "active") return null;
+    }
+    const read = await appServer.request("thread/read", { threadId: forkThreadId, includeTurns: true });
+    const turn = (read?.thread?.turns ?? []).find((t) => t?.id === turnId);
+    if (!turn || !TERMINAL.includes(turn.status)) return null;
     return { status: (
       /** @type {"completed" | "failed" | "interrupted"} */
       turn.status
-    ), text: finalResponseText(turn.items), error: error2 };
+    ), text: finalAnswerText(turn.items), error: errorText(turn.error) };
+  }
+  function pause(forkThreadId, turnId, interval) {
+    return Promise.race([
+      wait(interval),
+      closedSignal,
+      ...tokenUsage ? [tokenUsage.awaitTurnCompleted(forkThreadId, (t) => t.turnId === turnId, { timeoutMs: interval })] : []
+    ]);
   }
   async function runJob(jobId, { warnings = [] } = {}) {
+    const runtime = active.get(jobId);
+    let forkThreadId = null;
     try {
+      const job = store.get(jobId);
+      if (!job || job.reconciled) return null;
+      forkThreadId = job.forked?.fork?.threadId ?? null;
+      if (job.outcome || job.written) return await finishJob(job, outcomeOf(job), { warnings });
+      const turnId = job.turnStarted?.turnId;
+      if (!forkThreadId || !turnId) return null;
+      let interval = pollIntervalMs2;
       let errors = 0;
       for (; ; ) {
-        const job = store.get(jobId);
-        if (!job) return null;
-        if (job.reconciled) return null;
-        if (job.outcome) return await finishJob(job, { status: (
-          /** @type {any} */
-          job.outcome.type
-        ), text: null, error: job.outcome.error ?? null }, warnings);
-        const forkThreadId = job.forked?.fork?.threadId;
-        const turnId = job.turnStarted?.turnId;
-        if (!forkThreadId || !turnId) return null;
+        if (closed) return null;
         try {
           const observed = await observeTurn(forkThreadId, turnId);
           errors = 0;
-          if (observed) return await finishJob(job, observed, warnings);
+          if (observed) {
+            if (closed) return null;
+            return await finishJob(store.get(jobId) ?? job, observed, { warnings });
+          }
         } catch (error2) {
           errors += 1;
           if (errors >= WATCH_MAX_CONSECUTIVE_ERRORS) {
@@ -27076,50 +27186,76 @@ function makeForkJobs({
             return null;
           }
         }
-        await wait(pollIntervalMs2);
+        await pause(forkThreadId, turnId, interval);
+        interval = Math.min(Math.ceil(interval * POLL_BACKOFF), MAX_POLL_INTERVAL_MS);
       }
     } finally {
-      const runtime = active.get(jobId);
-      if (runtime && !runtime.waiting) active.delete(jobId);
+      if (forkThreadId) tokenUsage?.unwatch(forkThreadId);
+      if (runtime) {
+        runtime.done = true;
+        if (!runtime.waiting) active.delete(jobId);
+      }
     }
   }
-  async function finishJob(job, observed, startWarnings = []) {
-    const forkInfo = job.forked?.fork ?? {};
-    const turnId = job.turnStarted?.turnId ?? null;
-    if (!job.outcome) store.append(observed.status, job.id, { turnId, ...observed.error ? { error: observed.error } : {} });
-    let outcome = observed;
-    if (observed.status === "completed" && observed.text === null && forkInfo.threadId && turnId) {
-      outcome = await observeTurn(forkInfo.threadId, turnId).catch(() => null) ?? observed;
+  async function finishJob(job, observed, { warnings = [], graceMs = tokenUsageGraceMs } = {}) {
+    if (!job.outcome) {
+      store.append(observed.status, job.id, { turnId: job.turnStarted?.turnId ?? null, ...observed.error ? { error: observed.error } : {} });
     }
-    const warnings = [...startWarnings];
-    let taskUsage = null;
-    if (tokenUsage && forkInfo.threadId && turnId) {
-      taskUsage = await tokenUsage.awaitTurnUsage(forkInfo.threadId, turnId, tokenUsageGraceMs === void 0 ? {} : { graceMs: tokenUsageGraceMs });
-      if (!taskUsage) warnings.push(tokenUsageUnavailableWarning({ threadId: forkInfo.threadId, turnId, purpose: "the fork's task" }));
-      const mismatch = settingsMismatchWarning({
-        threadId: forkInfo.threadId,
-        requested: { model: job.created?.request?.model, effort: job.created?.request?.effort, cwd: job.created?.request?.cwd },
-        applied: tokenUsage.settingsSince(forkInfo.threadId, active.get(job.id)?.settingsMark ?? 0)
-      });
-      if (mismatch) warnings.push(mismatch);
-    }
-    const reconciled = await reconcile(job, { ...outcome, taskUsage });
-    return { ...reconciled, status: outcome.status, taskUsage, warnings: [...warnings, ...reconciled.warnings ?? []] };
+    const reconciled = await reconcile(store.get(job.id) ?? job, observed, { warnings, graceMs });
+    return { ...reconciled, status: reconciled.status ?? observed.status };
   }
-  async function reconcile(job, outcome) {
+  async function taskUsageOf(job, graceMs, warnings) {
+    const forkThreadId = job.forked?.fork?.threadId;
+    const turnId = job.turnStarted?.turnId;
+    if (!tokenUsage || !forkThreadId || !turnId) return null;
+    const usage = await tokenUsage.awaitTurnUsage(forkThreadId, turnId, graceMs === void 0 ? {} : { graceMs });
+    if (!usage) warnings.push(tokenUsageUnavailableWarning({ threadId: forkThreadId, turnId, purpose: "the fork's task" }));
+    const request = job.created?.request ?? {};
+    const mismatch = settingsMismatchWarning({
+      threadId: forkThreadId,
+      requested: { model: request.model, effort: request.effort, cwd: request.cwd },
+      applied: tokenUsage.settingsSince(forkThreadId, active.get(job.id)?.settingsMark ?? 0)
+    });
+    if (mismatch) warnings.push(mismatch);
+    return usage;
+  }
+  async function reconcile(job, observed, { warnings: startWarnings = [], graceMs }) {
     const created = job.created ?? /** @type {any} */
     {};
     const forkInfo = job.forked?.fork ?? {};
     const originalAddress = created.original;
     const originalId = parseAddress(originalAddress)?.id ?? null;
     if (!originalId || !forkInfo.threadId) return { reconcile: null, warnings: [] };
+    if (job.reconciled) return alreadyReconciled(job);
     const mb = openMailbox2();
     try {
-      const existing = findReconcileMessage(mb, originalId, job.id);
-      if (existing) return { reconcile: { messageId: existing.id, delivery: "already-reconciled" }, warnings: [] };
-      if (!claimReconcile(mb, job.id)) return { reconcile: { messageId: null, delivery: "claimed-elsewhere" }, warnings: [] };
-      const again = findReconcileMessage(mb, originalId, job.id);
-      if (again) return { reconcile: { messageId: again.id, delivery: "already-reconciled" }, warnings: [] };
+      if (job.written) return await recoverReconcile(mb, job, observed);
+      const claimed = claimReconcile(mb, job.id);
+      if (!claimed) return { reconcile: { messageId: null, delivery: "claimed-elsewhere" }, warnings: [] };
+      const fresh = store.get(job.id) ?? job;
+      if (fresh.reconciled) return alreadyReconciled(fresh);
+      if (fresh.written) return await recoverReconcile(mb, fresh, observed);
+      if (claimed > 1) {
+        const lost = findReconcileMessage(mb, originalId, job.id);
+        if (lost) {
+          const status = (() => {
+            try {
+              return JSON.parse(lost.metadata_json)?.fork?.status ?? observed.status;
+            } catch {
+              return observed.status;
+            }
+          })();
+          store.append("reconcile-written", job.id, { messageId: lost.id, status, recovered: true });
+          return await recoverReconcile(mb, { ...fresh, written: { type: "reconcile-written", jobId: job.id, at: 0, messageId: lost.id, status } }, observed);
+        }
+      }
+      const warnings = [...startWarnings];
+      let outcome = observed;
+      const turnId = fresh.turnStarted?.turnId ?? null;
+      if (observed.status === "completed" && observed.text === null && turnId) {
+        outcome = await observeTurn(forkInfo.threadId, turnId).catch(() => null) ?? observed;
+      }
+      const taskUsage = await taskUsageOf(fresh, graceMs, warnings);
       const runtime = active.get(job.id);
       const viaToolResult = runtime?.waiting === true && created.by === originalAddress;
       const labels = created.request?.reconcile ?? {};
@@ -27138,93 +27274,203 @@ function makeForkJobs({
         anticipation: labels.anticipation ?? "fyi",
         replyBy: labels.replyBy ?? null
       });
+      store.append("reconcile-written", job.id, { messageId, status: outcome.status, ...viaToolResult ? { deliveredVia: "tool-result" } : {} });
       const row = mb.getMessage({ messageId });
       const peer = row ? peerMessageFromMailbox(row) : null;
-      const warnings = [];
       let delivery;
       if (viaToolResult) {
         mb.markDelivered({ messageId, to: originalAddress });
         delivery = { delivery: "delivered", deliveredVia: "tool-result" };
+        if (runtime) {
+          runtime.toolResult = {
+            status: outcome.status,
+            reconcile: { messageId, delivery: "delivered", deliveredVia: "tool-result", anticipation: labels.anticipation ?? "fyi" },
+            ...peer ? { output: peerMessageResult(peer) } : {},
+            taskUsage,
+            archived: null,
+            warnings
+          };
+        }
       } else {
-        try {
-          delivery = await deliver({ kind: "fork-reconcile", messageId, forkJobId: job.id, to: originalAddress, threadId: originalId, row, envelope: peer ? renderPeerEnvelope(peer) : null });
-        } catch (error2) {
-          delivery = { delivery: "queued" };
-          warnings.push({ code: "reconcile_push_failed", severity: "warning", message: `The reconcile message is queued; pushing it failed: ${messageOf(error2)}` });
-        }
-        if (Array.isArray(delivery?.warnings)) warnings.push(...delivery.warnings);
+        delivery = await safeDeliver({ messageId, job, originalAddress, originalId, row, peer }, warnings);
       }
-      store.append("reconciled", job.id, { messageId, delivery: delivery.delivery, deliveredVia: delivery.deliveredVia ?? null });
-      let archived = false;
-      if (outcome.status === "completed" && created.request?.archiveFork !== false) {
-        try {
-          await appServer.request("thread/archive", { threadId: forkInfo.threadId });
-          archived = true;
-          store.append("archived", job.id, {});
-        } catch (error2) {
-          if (alreadyArchived(error2)) {
-            archived = true;
-            store.append("archived", job.id, { already: true });
-          } else warnings.push({ code: "fork_archive_failed", severity: "warning", message: `The fork ${forkInfo.address} was not archived: ${messageOf(error2)}` });
-        }
-      }
-      const links = { forkJobId: job.id, original: originalAddress, fork: forkInfo.address };
-      const receipt = await messaging.recordActionReceipt({
-        action: "fork_thread",
-        receipt: created.receipt ?? null,
-        target: { threadId: forkInfo.threadId, address: forkInfo.address, turnId: job.turnStarted?.turnId ?? null, cwd: forkInfo.cwd ?? null },
-        message: null,
-        appServer: appServer.getConnectionSummary(),
-        extra: {
-          kind: "fork",
-          ...links,
-          forkedFromId: forkInfo.forkedFromId ?? originalId,
-          lastTurnId: created.lastTurnId ?? null,
-          model: forkInfo.model ?? null,
-          effort: forkInfo.effort ?? null,
-          cwd: forkInfo.cwd ?? null,
-          compacted: job.compacted?.compacted === true,
-          by: created.by ?? null,
-          // R9.9: the caller launched the fork.
-          launchedBy: created.launchedBy ?? null,
-          status: outcome.status,
-          tokenUsage: { ...job.compacted ? { compaction: job.compacted.tokenUsage ?? null } : {}, task: outcome.taskUsage ?? null }
-        }
-      });
-      const reconcileReceipt = await messaging.recordActionReceipt({
-        action: "reconcile_fork",
-        receipt: created.receipt ?? null,
-        target: { threadId: originalId, address: originalAddress },
-        message: null,
-        delivery: { state: delivery.delivery, deliveredVia: delivery.deliveredVia ?? null, messageId },
-        appServer: appServer.getConnectionSummary(),
-        extra: {
-          kind: "reconcile",
-          ...links,
-          messageId,
-          from: peer ? peerMessageResult(peer, { includeEnvelope: false }).from : null,
-          to: originalAddress,
-          status: outcome.status,
-          archived,
-          deliveredVia: delivery.deliveredVia ?? null,
-          tokenUsage: { delivery: delivery.tokenUsage ?? null }
-        }
-      });
-      return {
-        reconcile: { messageId, delivery: delivery.delivery, ...delivery.deliveredVia ? { deliveredVia: delivery.deliveredVia } : {}, anticipation: labels.anticipation ?? "fyi" },
-        ...viaToolResult && peer ? { output: peerMessageResult(peer) } : {},
-        archived,
-        receipt,
-        reconcileReceipt,
-        warnings
-      };
+      return await completeReconcile(mb, fresh, { messageId, peer, delivery, status: outcome.status, taskUsage, warnings, labels, viaToolResult });
     } finally {
       mb.close?.();
     }
   }
+  function alreadyReconciled(job) {
+    return { reconcile: { messageId: job.reconciled?.messageId ?? job.written?.messageId ?? null, delivery: "already-reconciled" }, warnings: [] };
+  }
+  async function safeDeliver({ messageId, job, originalAddress, originalId, row, peer }, warnings) {
+    let delivery;
+    try {
+      delivery = await deliver({ kind: "fork-reconcile", messageId, forkJobId: job.id, to: originalAddress, threadId: originalId, row, envelope: peer ? renderPeerEnvelope(peer) : null });
+    } catch (error2) {
+      delivery = { delivery: "queued" };
+      warnings.push({ code: "reconcile_push_failed", severity: "warning", message: `The reconcile message is queued; pushing it failed: ${messageOf(error2)}` });
+    }
+    if (Array.isArray(delivery?.warnings)) warnings.push(...delivery.warnings);
+    return delivery;
+  }
+  async function recoverReconcile(mb, job, observed) {
+    const written = (
+      /** @type {import("./fork-jobs.js").ForkJobEvent} */
+      job.written
+    );
+    const messageId = written.messageId;
+    if (now() - written.at < STALE_RECONCILE_MS) return { reconcile: { messageId, delivery: "in-progress" }, warnings: [] };
+    if (!mb.claim(`fork-recover-${job.id}`, String(now()))) return { reconcile: { messageId, delivery: "claimed-elsewhere" }, warnings: [] };
+    const created = job.created ?? /** @type {any} */
+    {};
+    const originalAddress = created.original;
+    const originalId = (
+      /** @type {string} */
+      parseAddress(originalAddress)?.id
+    );
+    const row = mb.getMessage({ messageId });
+    const peer = row ? peerMessageFromMailbox(row) : null;
+    const warnings = [];
+    let delivery;
+    if (written.deliveredVia === "tool-result") {
+      delivery = { delivery: "delivered", deliveredVia: "tool-result" };
+    } else if (row?.delivered_at) {
+      delivery = { delivery: "delivered" };
+    } else {
+      delivery = await safeDeliver({ messageId, job, originalAddress, originalId, row, peer }, warnings);
+    }
+    const status = written.status ?? job.outcome?.type ?? observed.status;
+    const taskUsage = await taskUsageOf(job, 0, warnings);
+    return await completeReconcile(mb, job, {
+      messageId,
+      peer,
+      delivery,
+      status,
+      taskUsage,
+      warnings,
+      labels: created.request?.reconcile ?? {},
+      viaToolResult: written.deliveredVia === "tool-result",
+      recovered: true
+    });
+  }
+  async function completeReconcile(mb, job, { messageId, peer, delivery, status, taskUsage, warnings, labels, viaToolResult, recovered = false }) {
+    const created = job.created ?? /** @type {any} */
+    {};
+    const forkInfo = job.forked?.fork ?? {};
+    const originalAddress = created.original;
+    const originalId = (
+      /** @type {string} */
+      parseAddress(originalAddress)?.id
+    );
+    store.append("reconciled", job.id, { messageId, delivery: delivery.delivery, deliveredVia: delivery.deliveredVia ?? null, ...recovered ? { recovered: true } : {} });
+    let archived = !!job.archived;
+    if (!archived && status === "completed" && created.request?.archiveFork !== false) {
+      archived = await archiveForkThread(job, forkInfo, originalId, warnings);
+    }
+    const links = { forkJobId: job.id, original: originalAddress, fork: forkInfo.address };
+    const haveReceipt = async (kind, threadId) => recovered && ((await listReceipts2({ kind, targetThreadId: threadId, limit: 50 }).catch(() => ({ data: [] }))).data ?? []).some((r) => r.forkJobId === job.id);
+    const receipt = await haveReceipt("fork", forkInfo.threadId) ? null : await messaging.recordActionReceipt({
+      action: "fork_thread",
+      receipt: created.receipt ?? null,
+      target: { threadId: forkInfo.threadId, address: forkInfo.address, turnId: job.turnStarted?.turnId ?? null, cwd: forkInfo.cwd ?? null },
+      message: null,
+      appServer: appServer.getConnectionSummary(),
+      extra: {
+        kind: "fork",
+        ...links,
+        forkedFromId: forkInfo.forkedFromId ?? originalId,
+        lastTurnId: created.lastTurnId ?? null,
+        model: forkInfo.model ?? null,
+        effort: forkInfo.effort ?? null,
+        cwd: forkInfo.cwd ?? null,
+        compacted: job.compacted?.compacted === true,
+        by: created.by ?? null,
+        // R9.9: the caller launched the fork.
+        launchedBy: created.launchedBy ?? null,
+        status,
+        tokenUsage: { ...job.compacted ? { compaction: job.compacted.tokenUsage ?? null } : {}, task: taskUsage ?? null }
+      }
+    });
+    const reconcileReceipt = await haveReceipt("reconcile", originalId) ? null : await messaging.recordActionReceipt({
+      action: "reconcile_fork",
+      receipt: created.receipt ?? null,
+      target: { threadId: originalId, address: originalAddress },
+      message: null,
+      delivery: { state: delivery.delivery, deliveredVia: delivery.deliveredVia ?? null, messageId },
+      appServer: appServer.getConnectionSummary(),
+      extra: {
+        kind: "reconcile",
+        ...links,
+        messageId,
+        from: peer ? peerMessageResult(peer, { includeEnvelope: false }).from : null,
+        to: originalAddress,
+        status,
+        archived,
+        deliveredVia: delivery.deliveredVia ?? null,
+        tokenUsage: { delivery: delivery.tokenUsage ?? null },
+        ...recovered ? { recovered: true } : {}
+      }
+    });
+    for (const name of mb.listClaims()) {
+      if (name.startsWith(`fork-reconcile-${job.id}`) || name === `fork-recover-${job.id}` || name === `fork-lease-${job.id}`) mb.removeClaim(name);
+    }
+    if (forkInfo.threadId) tokenUsage?.unwatch(forkInfo.threadId);
+    return {
+      status,
+      reconcile: { messageId, delivery: delivery.delivery, ...delivery.deliveredVia ? { deliveredVia: delivery.deliveredVia } : {}, anticipation: labels.anticipation ?? "fyi", ...recovered ? { recovered: true } : {} },
+      ...viaToolResult && peer ? { output: peerMessageResult(peer) } : {},
+      taskUsage,
+      archived,
+      receipt,
+      reconcileReceipt,
+      warnings
+    };
+  }
+  async function archiveForkThread(job, forkInfo, originalId, warnings) {
+    const refuse = (why) => {
+      warnings.push({ code: "fork_archive_refused", severity: "warning", message: `The fork ${forkInfo.address} was not archived: ${why}.` });
+      return false;
+    };
+    if (!forkInfo.threadId || forkInfo.threadId === originalId) return refuse("its id is the original's");
+    let thread;
+    try {
+      thread = (await appServer.request("thread/read", { threadId: forkInfo.threadId, includeTurns: false }))?.thread ?? {};
+    } catch (error2) {
+      if (alreadyArchived(error2)) {
+        store.append("archived", job.id, { already: true });
+        return true;
+      }
+      warnings.push({ code: "fork_archive_failed", severity: "warning", message: `The fork ${forkInfo.address} was not archived: ${messageOf(error2)}` });
+      return false;
+    }
+    if (thread.forkedFromId !== originalId) return refuse(`it reports forkedFromId ${String(thread.forkedFromId ?? null)}, not ${originalId}`);
+    if (thread.threadSource !== void 0 && thread.threadSource !== null && thread.threadSource !== FORK_THREAD_SOURCE) {
+      return refuse(`its threadSource is ${String(thread.threadSource)}, not ${FORK_THREAD_SOURCE}`);
+    }
+    try {
+      await appServer.request("thread/archive", { threadId: forkInfo.threadId });
+      store.append("archived", job.id, {});
+      return true;
+    } catch (error2) {
+      if (alreadyArchived(error2)) {
+        store.append("archived", job.id, { already: true });
+        return true;
+      }
+      warnings.push({ code: "fork_archive_failed", severity: "warning", message: `The fork ${forkInfo.address} was not archived: ${messageOf(error2)}` });
+      return false;
+    }
+  }
+  function claimReconcile(mb, jobId) {
+    for (let n = 1; n <= MAX_RECONCILE_CLAIMS; n += 1) {
+      const key = n === 1 ? `fork-reconcile-${jobId}` : `fork-reconcile-${jobId}.${n}`;
+      if (mb.claim(key, String(now()))) return n;
+      const takenAt = Number(mb.claimContent(key)) || mb.claimTakenAt(key) || 0;
+      if (now() - takenAt < STALE_RECONCILE_MS) return 0;
+    }
+    return 0;
+  }
   function findReconcileMessage(mb, originalId, jobId) {
-    const rows = mb.inspect({ toSessionId: originalId, limit: Number.MAX_SAFE_INTEGER });
-    return rows.find((row) => {
+    return mb.inspect({ toSessionId: originalId, limit: 1e3 }).find((row) => {
       if (typeof row.metadata_json !== "string" || !row.metadata_json.includes(jobId)) return false;
       try {
         return JSON.parse(row.metadata_json)?.fork?.jobId === jobId;
@@ -27233,62 +27479,108 @@ function makeForkJobs({
       }
     }) ?? null;
   }
-  function claimReconcile(mb, jobId) {
-    for (let n = 1; n <= MAX_RECONCILE_CLAIMS; n += 1) {
-      const key = n === 1 ? `fork-reconcile-${jobId}` : `fork-reconcile-${jobId}.${n}`;
-      if (mb.claim(key, String(now()))) return true;
-      const takenAt = Number(mb.claimContent(key)) || mb.claimTakenAt(key) || 0;
-      if (now() - takenAt < STALE_RECONCILE_MS) return false;
-    }
-    return false;
+  function takeLease(mb, jobId) {
+    const key = `fork-lease-${jobId}`;
+    const content = `${token}:${now()}`;
+    if (mb.claim(key, content)) return true;
+    const [holder, at] = String(mb.claimContent(key) ?? "").split(":");
+    if (holder !== token && now() - Number(at || 0) < SWEEP_LEASE_MS) return false;
+    mb.removeClaim(key);
+    return mb.claim(key, content);
+  }
+  function outcomeOf(job) {
+    return {
+      status: (
+        /** @type {"completed" | "failed" | "interrupted"} */
+        job.outcome?.type ?? job.written?.status ?? "failed"
+      ),
+      text: null,
+      error: job.outcome?.error ?? null
+    };
   }
   async function sweep() {
-    const summary = { checked: 0, reconciled: 0, running: 0, errors: 0 };
+    const summary = { checked: 0, reconciled: 0, running: 0, failed: 0, errors: 0 };
     let jobs;
     try {
       jobs = store.list();
     } catch {
       return summary;
     }
-    for (const job of jobs) {
-      if (job.reconciled || job.aborted || !job.forked || active.has(job.id)) continue;
-      summary.checked += 1;
+    const pending = jobs.filter((job) => !job.reconciled && !job.aborted && job.forked && !active.has(job.id));
+    if (pending.length) {
+      const mb = openMailbox2();
       try {
-        if (job.outcome) {
-          const done = await finishJob(job, { status: (
-            /** @type {any} */
-            job.outcome.type
-          ), text: null, error: job.outcome.error ?? null });
-          if (done.reconcile?.messageId && done.reconcile.delivery !== "already-reconciled") summary.reconciled += 1;
-          continue;
+        for (const job of pending) {
+          if (closed) break;
+          if (!takeLease(mb, job.id)) continue;
+          summary.checked += 1;
+          try {
+            const done = await sweepJob(job, summary);
+            if (done?.reconcile?.messageId && !["already-reconciled", "in-progress", "claimed-elsewhere"].includes(done.reconcile.delivery)) summary.reconciled += 1;
+          } catch (error2) {
+            summary.errors += 1;
+            getLogger().warn("fork.sweep_failed", { jobId: job.id, message: messageOf(error2) });
+          }
         }
-        const turnId = job.turnStarted?.turnId;
-        if (!turnId) continue;
-        const observed = await observeTurn(job.forked.fork.threadId, turnId);
-        if (observed) {
-          const done = await finishJob(job, observed);
-          if (done.reconcile?.messageId && done.reconcile.delivery !== "already-reconciled") summary.reconciled += 1;
-        } else {
-          summary.running += 1;
-          const runtime = { promise: (
-            /** @type {Promise<any> | null} */
-            null
-          ), waiting: false, settingsMark: tokenUsage?.mark() ?? 0 };
-          active.set(job.id, runtime);
-          runtime.promise = runJob(job.id);
-          runtime.promise.catch((error2) => getLogger().warn("fork.job_failed", { jobId: job.id, message: messageOf(error2) }));
-        }
-      } catch (error2) {
-        summary.errors += 1;
-        getLogger().warn("fork.sweep_failed", { jobId: job.id, message: messageOf(error2) });
+      } finally {
+        mb.close?.();
       }
     }
+    try {
+      store.compact();
+    } catch (error2) {
+      getLogger().warn("fork.compact_failed", { message: messageOf(error2) });
+    }
     return summary;
+  }
+  async function sweepJob(job, summary) {
+    if (job.outcome || job.written) return await finishJob(job, outcomeOf(job), { graceMs: 0 });
+    const forkThreadId = (
+      /** @type {string} */
+      job.forked?.fork?.threadId
+    );
+    let turnId = job.turnStarted?.turnId ?? null;
+    if (!turnId) {
+      turnId = await findTaskTurn(forkThreadId, job.id).catch(() => null);
+      if (turnId) {
+        store.append("turn-started", job.id, { turnId, recovered: true });
+      } else if (now() - Number(job.forked?.at ?? 0) > FORK_START_STALE_MS) {
+        store.append("failed", job.id, { turnId: null, error: "The fork's task never started: the server that forked it stopped before turn/start." });
+        summary.failed += 1;
+        const failed = store.get(job.id) ?? job;
+        return await finishJob(failed, outcomeOf(failed), { graceMs: 0 });
+      } else {
+        summary.running += 1;
+        return null;
+      }
+    }
+    const observed = await observeTurn(forkThreadId, turnId);
+    if (!observed) {
+      summary.running += 1;
+      return null;
+    }
+    return await finishJob(store.get(job.id) ?? job, observed, { graceMs: 0 });
+  }
+  function jobCounts() {
+    const counts = { pending: 0, running: 0, stuck: 0 };
+    for (const job of store.list()) {
+      if (job.reconciled || job.aborted || !job.forked) continue;
+      if (job.written && now() - Number(job.written.at) > STALE_RECONCILE_MS) counts.stuck += 1;
+      else if (job.outcome || job.written) counts.pending += 1;
+      else if (job.turnStarted) counts.running += 1;
+      else if (now() - Number(job.forked.at) > FORK_START_STALE_MS) counts.stuck += 1;
+      else counts.running += 1;
+    }
+    return counts;
   }
   function settled() {
     return Promise.all([...active.values()].map((runtime) => runtime.promise?.catch(() => null)));
   }
-  return { forkThread, sweep, settled, reconcile, decideForkCompaction };
+  function close() {
+    closed = true;
+    resolveClosed();
+  }
+  return { forkThread, sweep, jobCounts, settled, close, reconcile, decideForkCompaction };
 }
 
 // src/codex/override-costs.js
@@ -27337,15 +27629,15 @@ function versionNumber(value) {
 }
 
 // src/tools/health.js
-import fs12 from "node:fs";
+import fs13 from "node:fs";
 
 // src/shared/legacy-state.js
-import fs11 from "node:fs";
+import fs12 from "node:fs";
 import path14 from "node:path";
 var LEGACY_STILL_WRITTEN_WARNING = "A legacy Agent Link state file changed after the migration to ~/.agent-link: an older plugin copy is still running. Upgrade the plugin in every harness and restart its sessions.";
 function statOrNull(file) {
   try {
-    return fs11.statSync(file);
+    return fs12.statSync(file);
   } catch {
     return null;
   }
@@ -27353,7 +27645,7 @@ function statOrNull(file) {
 function newestRecordMtimeMs(dir) {
   let names = [];
   try {
-    names = fs11.readdirSync(dir);
+    names = fs12.readdirSync(dir);
   } catch {
     return null;
   }
@@ -27368,7 +27660,7 @@ function newestRecordMtimeMs(dir) {
 function readMigration(options) {
   const file = migrationRecordPath(options);
   try {
-    const record2 = JSON.parse(fs11.readFileSync(file, "utf8"));
+    const record2 = JSON.parse(fs12.readFileSync(file, "utf8"));
     return {
       path: file,
       at: typeof record2?.at === "string" ? record2.at : null,
@@ -27603,8 +27895,8 @@ var healthTool = {
     legacyState: out("object", "{files: [{kind, path, modifiedAt, writtenAfterMigration}], migration, stillWritten, warning}: pre-0.5 state files still present."),
     reminders: out("object", "{limit, intervalMs, codexTurns, warnings}: re-surfacing of open reply/action messages (AGENT_LINK_REMINDER_LIMIT, AGENT_LINK_REMINDER_INTERVAL_MS, AGENT_LINK_CODEX_REMINDERS). warnings lists settings that were ignored."),
     recentEvents: out("array", "Recent log events (most recent last). Stack traces and process output are redacted."),
-    codex: out("object", "Codex install: {available, path, source, version, versionProbed, searched, reason, usedForManagedAppServer, overrideCosts}. overrideCosts: {measured, codexVersion, measuredAt, effortChange, modelSwitch, cwdChange, forkSameModel, forkOtherModel (each {cachedShare: [rep1, rep2], cacheNeutral}), compactForkAutoFraction, installedVersion, warning}: the measured prompt-cache effect of overrides and forks (B7 spike, R9.12) and the Codex version it was measured on; warning when the installed version differs."),
-    forkJobs: out("object", "{checked, reconciled, running, errors}: fork_codex_thread jobs this call finished or resumed watching (their task ended while no server watched them)."),
+    codex: out("object", "Codex install: {available, path, source, version, versionProbed, searched, reason, usedForManagedAppServer, overrideCosts}. overrideCosts: {measured, codexVersion, measuredAt, effortChange, modelSwitch, cwdChange, forkSameModel, forkOtherModel (each {cachedShare: [rep1, rep2], cacheNeutral}), compactForkAutoFraction, installedVersion, warning}: the measured prompt-cache effect of overrides and forks (B7 spike, R9.12) and the Codex version it was measured on; warning when the installed version differs, also added to the result's warnings[] (code override_costs_version_mismatch)."),
+    forkJobs: out("object", "{pending, running, stuck, error}: unfinished fork_codex_thread jobs in the job log. pending: the task ended and the reconcile is not finished yet; running: the task turn is running; stuck: no task turn long after the fork, or a written reconcile left unfinished (the server's sweeper finishes both). Counts are null with error when the log cannot be read. Health reads the log only; the sweep runs on a timer, never from this tool."),
     appServer: commonOut.appServer,
     loadedThreadProbe: outAny("Result of a one-thread thread/loaded/list probe."),
     hint: out(["string", "null"], "Next step when Codex is unavailable."),
@@ -27646,7 +27938,7 @@ function redactValue(value, depth) {
 }
 function exists(file) {
   try {
-    return fs12.existsSync(file);
+    return fs13.existsSync(file);
   } catch {
     return false;
   }
@@ -27733,16 +28025,15 @@ function configuredEndpointSummary() {
     socket: env("AGENT_LINK_CODEX_SOCK").source
   };
 }
-function makeHealth({ appServer, hostInfo, resolveCurrentSession, channelState, roles = null, roleAdmin = false, forkSweep = null }) {
+function makeHealth({ appServer, hostInfo, resolveCurrentSession, channelState, roles = null, roleAdmin = false, forkJobs = null }) {
   async function health(args, toolContext = {}) {
     const report = await healthReport(args, toolContext);
     const caller = hostIdentity({ host: hostInfo.host, callerContext: toolContext.callerContext ?? null, currentSession: resolveCurrentSession });
     const overrideCosts = overrideCostsHealth(report.codex?.version ?? null);
-    const forkJobs = forkSweep && args.startAppServer !== false ? await forkSweep().catch((error2) => ({ error: error2 instanceof Error ? error2.message : String(error2) })) : null;
     return {
       ...report,
       codex: { ...report.codex, overrideCosts },
-      ...forkJobs ? { forkJobs } : {},
+      ...forkJobs ? { forkJobs: forkJobCounts(forkJobs) } : {},
       ...overrideCosts.warning ? { warnings: [overrideCosts.warning] } : {},
       address: caller.address,
       addressSource: caller.source,
@@ -27853,6 +28144,13 @@ function makeHealth({ appServer, hostInfo, resolveCurrentSession, channelState, 
   }
   return { health, healthReport, claudeHealthSummary };
 }
+function forkJobCounts(counts) {
+  try {
+    return { ...counts(), error: null };
+  } catch (error2) {
+    return { pending: null, running: null, stuck: null, error: error2 instanceof Error ? error2.message : String(error2) };
+  }
+}
 function rolesHealth(roles, roleAdmin) {
   try {
     const read = roles.read();
@@ -27873,7 +28171,7 @@ function rolesHealth(roles, roleAdmin) {
 }
 
 // src/claude/channel-bridge.js
-import fs13 from "node:fs";
+import fs14 from "node:fs";
 import path15 from "node:path";
 
 // src/claude/active-waits.js
@@ -27976,7 +28274,7 @@ function makeAgentLinkChannelBridge({
     const parts = [];
     for (const file of signaturePaths) {
       try {
-        const st = fs13.statSync(file);
+        const st = fs14.statSync(file);
         parts.push(`${st.ino}:${st.size}:${st.mtimeMs}`);
       } catch (error2) {
         if (error2?.code !== "ENOENT") return null;
@@ -28071,9 +28369,9 @@ function makeAgentLinkChannelBridge({
     };
     for (const file of signaturePaths) {
       const dir = path15.dirname(file);
-      if (fs13.existsSync(dir)) {
+      if (fs14.existsSync(dir)) {
         add(dir, path15.basename(file));
-      } else if (fs13.existsSync(path15.dirname(dir))) {
+      } else if (fs14.existsSync(path15.dirname(dir))) {
         add(path15.dirname(dir), path15.basename(dir));
       }
     }
@@ -28088,11 +28386,11 @@ function makeAgentLinkChannelBridge({
     closeWatchers();
     for (const [dir, names] of watchTargets()) {
       try {
-        const w = fs13.watch(dir, { persistent: false }, (_event, filename) => {
+        const w = fs14.watch(dir, { persistent: false }, (_event, filename) => {
           if (stopped) return;
           const name = filename ? String(filename) : null;
           if (name && !names.has(name)) return;
-          if (name && fs13.existsSync(path15.join(dir, name)) && fs13.statSync(path15.join(dir, name)).isDirectory()) {
+          if (name && fs14.existsSync(path15.join(dir, name)) && fs14.statSync(path15.join(dir, name)).isDirectory()) {
             startWatcher();
           }
           wake();
@@ -28133,11 +28431,19 @@ var SHUTDOWN_HARD_LIMIT_MS = 4e3;
 function createLifecycle({ appServer, exit = (code) => process.exit(code), hardLimitMs = SHUTDOWN_HARD_LIMIT_MS }) {
   let channelBridge = null;
   let shutdownPromise = null;
+  const stoppers = [];
   function shutdown(exitCode) {
     if (shutdownPromise) {
       return shutdownPromise;
     }
     channelBridge?.stop();
+    for (const stop of stoppers) {
+      try {
+        stop();
+      } catch (error2) {
+        getLogger().warn("server.stop_failed", { error: error2 });
+      }
+    }
     const hardStop = setTimeout(() => {
       appServer.killManagedSync("SIGKILL");
       exit(exitCode);
@@ -28160,6 +28466,9 @@ function createLifecycle({ appServer, exit = (code) => process.exit(code), hardL
   function setChannelBridge(bridge) {
     channelBridge = bridge;
   }
+  function onShutdown(stop) {
+    stoppers.push(stop);
+  }
   function installSignalHandlers(proc = process) {
     proc.on("SIGINT", () => shutdown(130));
     proc.on("SIGTERM", () => shutdown(143));
@@ -28171,7 +28480,7 @@ function createLifecycle({ appServer, exit = (code) => process.exit(code), hardL
       appServer.killManagedSync("SIGTERM");
     });
   }
-  return { shutdown, fatal: fatal2, setChannelBridge, installSignalHandlers };
+  return { shutdown, fatal: fatal2, setChannelBridge, onShutdown, installSignalHandlers };
 }
 function reapOrphanedAppServers() {
   try {
@@ -28486,7 +28795,7 @@ function codexActionEntries(handlers) {
 // src/tools/fork.js
 var forkCodexThreadTool = {
   name: "fork_codex_thread",
-  description: "Run a task on a fork of an existing Codex thread, then send the fork's final response back to the original thread as a new Agent Link message (a reconcile message with a <fork> element). Use it to run another model, effort, or cwd on a thread's context: an existing thread keeps its model and warm prompt cache, because the cache is per model and a switch re-reads the whole thread uncached. The fork takes the original's completed turns only; the original gets no turn with model, effort, or cwd and is never compacted. Exactly one reconcile message is sent for every outcome (completed, failed, interrupted), even if this server restarts; a completed fork is archived. Claude sessions cannot be forked (unsupported).",
+  description: "Run a task on a fork of an existing Codex thread, then send the fork's final response back to the original thread as a new Agent Link message (a reconcile message with a <fork> element). Use it to run another model, effort, or cwd on a thread's context: an existing thread keeps its model and warm prompt cache, because the cache is per model and a switch re-reads the whole thread uncached. The fork takes the original's completed turns only; the original gets no turn with model, effort, or cwd and is never compacted. One reconcile message is sent per job for every outcome (completed, failed, interrupted, or a task that never started), also when this server stops before the task ends: the sweeper of any Agent Link server finishes the job, as long as one runs. A completed fork is then archived unless archiveFork is false. Claude sessions cannot be forked (unsupported).",
   inputSchema: {
     type: "object",
     required: ["message"],
@@ -28527,8 +28836,8 @@ var forkCodexThreadTool = {
     compaction: out("object", "{mode, compact, compacted, reason, threshold, inputTokens, modelContextWindow, windowBasis, tokenUsage}: the R9.11 decision."),
     reconcile: out(["object", "null"], "When finished: {messageId, delivery: queued|delivered, deliveredVia?, anticipation} of the reconcile message in the original's mailbox."),
     output: out("object", "Only when you forked your own thread and waited: the fork's output as a peer message (envelope plus header fields)."),
-    tokenUsage: out("object", "When finished: {compaction?, task}: the `last` token breakdown plus modelContextWindow of each turn, or null when no notification arrived (token_usage_unavailable)."),
-    archived: out("boolean", "Whether the fork was archived."),
+    tokenUsage: out("object", "When finished: {compaction?, task}. task: the summed `last` breakdown of the task turn's model requests plus modelContextWindow, modelRequests and turnId, or null when no notification arrived (token_usage_unavailable); compaction: {totalTokens}."),
+    archived: out(["boolean", "null"], "Whether the fork was archived; null when a self-fork's result came back before the archive finished."),
     receipt: commonOut.receipt,
     reconcileReceipt: out("object", "The reconcile receipt write result.")
   },
@@ -30937,7 +31246,7 @@ function roleEntries(deps) {
 }
 
 // src/registry/claude.js
-import fs14 from "node:fs";
+import fs15 from "node:fs";
 function isoFromMs(ms) {
   return typeof ms === "number" && Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString() : null;
 }
@@ -30965,7 +31274,7 @@ function toClaudeAgent(session) {
 }
 function exists2(dir) {
   try {
-    return fs14.existsSync(dir);
+    return fs15.existsSync(dir);
   } catch {
     return false;
   }
@@ -31042,7 +31351,7 @@ function makeClaudeProvider({
 }
 
 // src/registry/codex.js
-import fs15 from "node:fs";
+import fs16 from "node:fs";
 import path17 from "node:path";
 var SURFACE_BY_SOURCE = Object.freeze({ vscode: "app", cli: "cli", exec: "cli" });
 var LOADED_STATUS = /* @__PURE__ */ new Set(["idle", "active", "systemError"]);
@@ -31087,7 +31396,7 @@ function codexInstallState() {
   }
   const hasSessions = Boolean(home) && ["sessions", "archived_sessions"].some((dir) => {
     try {
-      return fs15.existsSync(path17.join(
+      return fs16.existsSync(path17.join(
         /** @type {string} */
         home,
         dir
@@ -31574,7 +31883,7 @@ function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries, 
       tags: receiptTags
     });
     if (decision.switches.length) {
-      const next = await firstTurnUsage({ threadId, turnId: summarizedTurn.id, wait, warnings, overrides, settingsMark });
+      const tokenUsageNext = await firstTurnUsage({ threadId, turnId: summarizedTurn.id, wait, warnings, overrides, settingsMark });
       result.switchReceipts = [];
       for (const change of decision.switches) {
         result.switchReceipts.push(await recordActionReceipt({
@@ -31596,7 +31905,7 @@ function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries, 
               grantedBy: change.grantedBy,
               policy: change.policy,
               expectedCost: change.expectedCost,
-              tokenUsage: { next }
+              tokenUsage: tokenUsageNext
             }
           }
         }));
@@ -31605,15 +31914,20 @@ function makeThreadMessaging({ appServer, host, resolveCurrentSession, queries, 
     return result;
   }
   async function firstTurnUsage({ threadId, turnId, wait, warnings, overrides, settingsMark }) {
-    if (!tokenUsage) return null;
-    const ended = wait?.ok === true && wait.timedOut === false;
-    const usage = ended ? await tokenUsage.awaitTurnUsage(threadId, turnId) : null;
-    if (!usage) {
-      warnings.push(tokenUsageUnavailableWarning({ threadId, turnId, purpose: "the first turn on the new setting", reason: ended ? "no_notification" : "not_waited" }));
-    }
+    if (!tokenUsage) return { next: null };
     const mismatch = settingsMismatchWarning({ threadId, requested: { model: overrides.model, effort: overrides.effort, cwd: overrides.cwd }, applied: tokenUsage.settingsSince(threadId, settingsMark) });
     if (mismatch) warnings.push(mismatch);
-    return usage;
+    if (!wait) return { next: null, reason: "not_waited" };
+    if (!(wait.ok === true && wait.timedOut === false)) {
+      warnings.push(tokenUsageUnavailableWarning({ threadId, turnId, purpose: "the first turn on the new setting", reason: "turn_not_ended" }));
+      return { next: null, reason: "turn_not_ended" };
+    }
+    const usage = await tokenUsage.awaitTurnUsage(threadId, turnId);
+    if (!usage) {
+      warnings.push(tokenUsageUnavailableWarning({ threadId, turnId, purpose: "the first turn on the new setting" }));
+      return { next: null, reason: "no_notification" };
+    }
+    return { next: usage };
   }
   function switchResult(change) {
     return {
@@ -32152,7 +32466,7 @@ function makeThreadQueries({ appServer, now = () => Date.now(), wait = sleep2 })
 }
 
 // src/codex/project-orchestrator.js
-import { promises as fs16 } from "node:fs";
+import { promises as fs17 } from "node:fs";
 import path18 from "node:path";
 var PROJECT_ORCHESTRATOR_BINDING_PATH = path18.join(".codex", "project-orchestrator.json");
 var DEFAULT_POLICY_VERSION = "v0";
@@ -32389,7 +32703,7 @@ async function readProjectOrchestratorBinding(projectRoot) {
   const bindingPath = path18.join(requiredString(projectRoot, "projectRoot"), PROJECT_ORCHESTRATOR_BINDING_PATH);
   let raw;
   try {
-    raw = await fs16.readFile(bindingPath, "utf8");
+    raw = await fs17.readFile(bindingPath, "utf8");
   } catch (error2) {
     if (error2.code === "ENOENT") {
       return null;
@@ -33239,7 +33553,7 @@ function createAgentLinkServer({ config: config2 = loadConfig(), appServer, setF
     channelState: () => ({ enabled: channelEnabled, error: channelError }),
     roles,
     roleAdmin: config2.roleAdmin,
-    forkSweep: forks.sweep
+    forkJobs: () => existsSync2(forkJobsPath()) ? forks.jobCounts() : { pending: 0, running: 0, stuck: 0 }
   });
   function projectOrchestratorDeps(args = {}) {
     return {
@@ -33348,7 +33662,7 @@ function createAgentLinkServer({ config: config2 = loadConfig(), appServer, setF
     lifecycle.setChannelBridge(channel.bridge);
     if (config2.codexReminders) startCodexReminders({ appServer: codexAppServer, roles });
     startClaimSweeper({ host: hostInfo.host });
-    startForkSweep(forks);
+    lifecycle.onShutdown(startForkSweep(forks));
     lifecycle.installSignalHandlers();
   }
   return { server, appServer: codexAppServer, registry: registry2, lifecycle, config: config2, start, forks, tokenUsage };
@@ -33377,16 +33691,29 @@ function startClaimSweeper({ host }) {
   timer.unref?.();
 }
 function startForkSweep(forks) {
-  const timer = setTimeout(async () => {
+  let running = false;
+  const run = async () => {
+    if (running) return;
+    running = true;
     try {
       if (!existsSync2(forkJobsPath())) return;
       const result = await forks.sweep();
       if (result.checked) getLogger().info("forks.swept", result);
     } catch (error2) {
       getLogger().warn("forks.sweep_failed", { message: error2 instanceof Error ? error2.message : String(error2) });
+    } finally {
+      running = false;
     }
-  }, 5e3);
+  };
+  const first = setTimeout(run, 5e3);
+  first.unref?.();
+  const timer = setInterval(run, FORK_SWEEP_INTERVAL_MS);
   timer.unref?.();
+  return () => {
+    clearTimeout(first);
+    clearInterval(timer);
+    forks.close();
+  };
 }
 function startCodexReminders({ appServer, roles = null }) {
   const settings = reminderSettings();

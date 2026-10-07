@@ -5,7 +5,7 @@
 // thread/settings/updated. HOME, CODEX_HOME and the state directory are
 // temp; nothing spawns Codex or touches ~/.codex, ~/.claude or ~/.agent-link.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -20,7 +20,10 @@ process.env.AGENT_LINK_STATE_DIR = path.join(tmp, "state");
 // Agent Link's own timers are unref'd (a server process stays alive anyway);
 // keep the test's event loop alive while they run.
 const keepAlive = setInterval(() => {}, 1000);
+/** Every fork-job instance, closed at the end so no watcher outlives the tests. */
+const servers = [];
 test.after(() => {
+  for (const forks of servers) forks.close();
   clearInterval(keepAlive);
   rmSync(tmp, { recursive: true, force: true });
 });
@@ -29,7 +32,10 @@ const { AppServerError, CodexAppServerClient } = await import("../../src/codex/a
 const { makeThreadQueries } = await import("../../src/codex/thread-queries.js");
 const { makeThreadMessaging } = await import("../../src/codex/thread-messaging.js");
 const { COMPACT_FORK_AUTO_FRACTION, FORK_THREAD_SOURCE, FORK_TURN_TRIGGER, decideForkCompaction, makeForkJobs, reconcileBody } = await import("../../src/codex/fork.js");
-const { createForkJobStore } = await import("../../src/codex/fork-jobs.js");
+const { compactForkJobs, createForkJobStore } = await import("../../src/codex/fork-jobs.js");
+const { FORK_START_STALE_MS } = await import("../../src/codex/fork.js");
+const { forkJobCounts } = await import("../../src/server/health.js");
+const { createLifecycle } = await import("../../src/server/lifecycle.js");
 const { createTokenUsageTracker, settingsMismatchWarning } = await import("../../src/codex/token-usage.js");
 const { overrideCostsHealth, OVERRIDE_COSTS } = await import("../../src/codex/override-costs.js");
 const { openMailbox } = await import("../../src/claude/mailbox.js");
@@ -69,7 +75,7 @@ function fakeCodex() {
   const emit = (method, params) => {
     for (const listener of listeners) listener({ method, params });
   };
-  /** @type {{autoComplete: Set<string>, settingsFor?: (threadId: string, params: any) => any, requestsFor?: (threadId: string) => any[], silentSettings?: boolean}} */
+  /** @type {{autoComplete: Set<string>, settingsFor?: (threadId: string, params: any) => any, requestsFor?: (threadId: string) => any[], silentSettings?: boolean, archiveDelayMs?: number, turnStartHang?: false | "created" | "lost", noTurnId?: boolean}} */
   const behavior = { autoComplete: new Set() };
   const fake = {
     requests,
@@ -100,7 +106,8 @@ function fakeCodex() {
       const thread = threads.get(threadId);
       const turn = thread.turns.find((t) => t.id === turnId);
       turn.status = status;
-      turn.items = text ? [{ type: "agentMessage", id: `${turnId}-c`, text: "commentary", phase: "commentary" }, { type: "agentMessage", id: `${turnId}-a`, text, phase: "final_answer" }] : [];
+      const user = turn.items.filter((item) => item.type === "userMessage");
+      turn.items = [...user, ...(text ? [{ type: "agentMessage", id: `${turnId}-c`, text: "commentary", phase: "commentary" }, { type: "agentMessage", id: `${turnId}-a`, text, phase: "final_answer" }] : [])];
       if (error) turn.error = { message: error };
       for (const last of requests ?? []) fake.usage(threadId, turnId, last);
       if (status === "interrupted") fake.usage(threadId, turnId, null, { stale: true });
@@ -123,6 +130,7 @@ function fakeCodex() {
           fake.addThread({
             id,
             forkedFromId: thread.id,
+            threadSource: params.threadSource,
             model: params.model ?? thread.model,
             cwd: params.cwd ?? thread.cwd,
             reasoningEffort: thread.reasoningEffort,
@@ -143,8 +151,14 @@ function fakeCodex() {
           return {};
         }
         case "turn/start": {
+          if (behavior.turnStartHang) {
+            // The request is lost: the turn may or may not exist.
+            if (behavior.turnStartHang === "created") thread.turns.push({ id: `turn-${next++}`, status: "inProgress", items: [{ type: "userMessage", id: "um", clientId: params.clientUserMessageId }] });
+            return await new Promise(() => {});
+          }
           const id = `turn-${next++}`;
-          thread.turns.push({ id, status: "inProgress", items: [] });
+          // clientUserMessageId comes back as clientId on the userMessage item (spike).
+          thread.turns.push({ id, status: "inProgress", items: [{ type: "userMessage", id: `${id}-u`, clientId: params.clientUserMessageId ?? null }] });
           thread.status = { type: "active" };
           // thread/settings/updated only after a turn/start that changes settings (spike).
           const changes = (params.effort && params.effort !== thread.reasoningEffort) || (params.model && params.model !== thread.model) || (params.cwd && params.cwd !== thread.cwd);
@@ -157,9 +171,10 @@ function fakeCodex() {
           if (behavior.autoComplete.has(thread.id)) {
             setTimeout(() => fake.complete(thread.id, id, { text: "done", requests: behavior.requestsFor ? behavior.requestsFor(thread.id) : [LAST(700, 600)] }), 5);
           }
-          return { turn: { id, status: "inProgress", items: [] } };
+          return behavior.noTurnId ? {} : { turn: { id, status: "inProgress", items: [] } };
         }
         case "thread/archive": {
+          if (behavior.archiveDelayMs) await new Promise((r) => setTimeout(r, behavior.archiveDelayMs));
           if (thread.path.includes("/archived_sessions/")) throw new AppServerError(`no rollout found for thread id ${thread.id}`, { code: -32600 });
           thread.path = `/h/archived_sessions/${thread.id}.jsonl`;
           return {};
@@ -174,9 +189,9 @@ function fakeCodex() {
 
 let mailboxSeq = 0;
 /** One "server": messaging, tracker and fork jobs over a shared fake, mailbox and job log. */
-function makeServer(fake, { mailboxPath, store, deliver, wait, host = "codex", graceMs = 50 } = {}) {
+function makeServer(fake, { mailboxPath, store, deliver, wait, host = "codex", graceMs = 50, now } = {}) {
   const tracker = createTokenUsageTracker({ appServer: fake });
-  const tokenUsage = { ...tracker, awaitTurnUsage: (threadId, turnId) => tracker.awaitTurnUsage(threadId, turnId, { graceMs }) };
+  const tokenUsage = { ...tracker, awaitTurnUsage: (threadId, turnId, options) => tracker.awaitTurnUsage(threadId, turnId, { graceMs: options?.graceMs ?? graceMs }) };
   const queries = makeThreadQueries({ appServer: fake, wait: (ms) => new Promise((r) => setTimeout(r, Math.min(ms, 5))) });
   const messaging = makeThreadMessaging({ appServer: fake, host, resolveCurrentSession: () => null, queries, tokenUsage });
   const forks = makeForkJobs({
@@ -190,8 +205,10 @@ function makeServer(fake, { mailboxPath, store, deliver, wait, host = "codex", g
     openMailbox: () => openMailbox({ mailboxPath }),
     wait: wait ?? ((ms) => new Promise((r) => setTimeout(r, Math.min(ms, 5)))),
     pollIntervalMs: 5,
-    tokenUsageGraceMs: graceMs
+    tokenUsageGraceMs: graceMs,
+    ...(now ? { now } : {})
   });
+  servers.push(forks);
   return { tracker, tokenUsage, messaging, forks };
 }
 
@@ -328,7 +345,7 @@ test("T-9.1 fork round trip: fork, task, exactly one reconcile to the original, 
   assert.deepEqual(reconcileReceipt.tokenUsage, { delivery: null });
 
   // A second sweep finds nothing to do.
-  assert.deepEqual(await forks.sweep(), { checked: 0, reconciled: 0, running: 0, errors: 0 });
+  assert.deepEqual(await forks.sweep(), { checked: 0, reconciled: 0, running: 0, failed: 0, errors: 0 });
   assert.equal(rowsTo(original).length, 1);
 });
 
@@ -409,9 +426,11 @@ test("T-9.2 a turn/start failure is reconciled as failed, never silent", async (
 });
 
 test("T-9.2 a job that finished while no server ran is reconciled once at the next startup, even with two servers racing", async () => {
-  const { fake, original, forks, rowsTo, mailboxPath, store } = setup({ wait: () => new Promise(() => {}) });
-  // This server's watcher never polls again: it stands for a server that exited.
+  const { fake, original, forks, rowsTo, mailboxPath, store } = setup();
   const result = await forks.forkThread({ threadId: original, message: "long task", compactFork: "never" }, asCaller());
+  // This server stops watching: it stands for a server that exited.
+  forks.close();
+  await forks.settled();
   fake.complete(result.fork.threadId, result.turn.id, { text: "finished alone" });
   assert.equal(rowsTo(original).length, 0);
 
@@ -430,14 +449,23 @@ test("T-9.2 a job that finished while no server ran is reconciled once at the ne
   assert.equal(rowsTo(original).length, 1);
 });
 
-test("T-9.2 a sweep picks up a running job and reconciles it when its turn ends", async () => {
-  const { fake, original, forks, rowsTo, mailboxPath, store } = setup({ wait: () => new Promise(() => {}) });
+test("T-9.2 a sweep checks a running job cheaply, starts no watcher, and reconciles it on a later sweep", async () => {
+  const { fake, original, forks, rowsTo, mailboxPath, store } = setup();
   const result = await forks.forkThread({ threadId: original, message: "watch me", compactFork: "never" }, asCaller());
+  forks.close();
+  await forks.settled();
   const b = makeServer(fake, { mailboxPath, store });
+  const mark = fake.requests.length;
   const summary = await b.forks.sweep();
   assert.equal(summary.running, 1);
+  // One cheap status read for the running job, no turns read.
+  const reads = fake.requests.slice(mark).filter((r) => r.method === "thread/read" && r.params.threadId === result.fork.threadId);
+  assert.deepEqual(reads.map((r) => r.params.includeTurns), [false]);
+  // Another server's sweep within the lease skips the job.
+  const c = makeServer(fake, { mailboxPath, store });
+  assert.equal((await c.forks.sweep()).checked, 0);
   fake.complete(result.fork.threadId, result.turn.id);
-  await b.forks.settled();
+  assert.equal((await b.forks.sweep()).reconciled, 1);
   assert.equal(rowsTo(original).length, 1);
 });
 
@@ -631,7 +659,7 @@ test("T-9.7 switch receipts: tokenUsage.next equals the first turn's last breakd
   assert.ok(mismatched.warnings.some((w) => w.code === "settings_mismatch"));
 });
 
-test("T-9.7 switch receipts without a notification or without waiting: null plus token_usage_unavailable", async () => {
+test("T-9.7 switch receipts: waited without a notification warns; not waiting reports not_waited without a warning", async () => {
   const { fake, messaging } = setup();
   const thread = fake.addThread({ id: uuid(next++), model: "gpt-a", reasoningEffort: "medium", cwd: project });
   await recordLaunch(thread, `codex:${CALLER}`);
@@ -640,8 +668,10 @@ test("T-9.7 switch receipts without a notification or without waiting: null plus
   const waited = await messaging.messageThread({ threadId: thread, message: "a", effort: "high", waitForReply: true, timeoutMs: 5000 }, asCaller());
   assert.equal(waited.switchReceipts[0].receipt.override.tokenUsage.next, null);
   assert.equal(waited.warnings.find((w) => w.code === "token_usage_unavailable").details.reason, "no_notification");
+  // Not waiting is the caller's choice: no warning, the receipt says why (manager decision).
   const notWaited = await messaging.messageThread({ threadId: thread, message: "b", effort: "low" }, asCaller());
-  assert.equal(notWaited.warnings.find((w) => w.code === "token_usage_unavailable").details.reason, "not_waited");
+  assert.ok(!notWaited.warnings.some((w) => w.code === "token_usage_unavailable"));
+  assert.deepEqual(notWaited.switchReceipts[0].receipt.override.tokenUsage, { next: null, reason: "not_waited" });
 });
 
 test("expectedCost comes from the last recorded usage (R9.4)", async () => {
@@ -765,6 +795,7 @@ test("tracker: a turn's usage is the sum of `last` over its model requests; stal
 
 test("tracker: settings only count after the mark (no thread/settings/updated is not a mismatch); turn/completed is kept", async () => {
   const tracker = createTokenUsageTracker();
+  tracker.watch("s");
   tracker.handle({ method: "thread/settings/updated", params: { threadId: "s", threadSettings: { model: "m", effort: "low" } } });
   const mark = tracker.mark();
   assert.equal(tracker.settingsSince("s", mark), null);
@@ -799,4 +830,271 @@ test("the token usage tracker keeps the summed breakdown plus modelContextWindow
   off();
   client.handleMessage(null, Buffer.from(JSON.stringify({ method: "thread/settings/updated", params: { threadId: "a" } })));
   assert.deepEqual(seen, ["thread/tokenUsage/updated"]);
+});
+
+// ---------------------------------------------------------------------------
+// Review fixes (PR #27 round 2).
+
+const forkOf = (fake, original) => [...fake.threads.values()].find((t) => t.forkedFromId === original);
+const claimNames = (mailboxPath) => {
+  try {
+    return readdirSync(`${mailboxPath}.claims`);
+  } catch {
+    return [];
+  }
+};
+
+test("fix 1: a self-fork whose timeout fires during the archive still returns its output; nothing is pushed", async () => {
+  const delivered = [];
+  const { fake, original, forks, rowsTo } = setup({ deliver: async (record) => (delivered.push(record), { delivery: "delivered" }) });
+  fake.behavior.archiveDelayMs = 300;
+  setTimeout(() => {
+    const fork = forkOf(fake, original);
+    fake.complete(fork.id, fork.turns.at(-1).id, { text: "late but mine" });
+  }, 20);
+  const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never", waitForResult: true, timeoutMs: 150 }, asCaller(original));
+  assert.equal(result.status, "completed");
+  assert.match(result.output.envelope, /<body>\nlate but mine\n<\/body>/);
+  assert.equal(result.reconcile.deliveredVia, "tool-result");
+  await forks.settled();
+  assert.equal(delivered.length, 0);
+  const rows = rowsTo(original);
+  assert.equal(rows.length, 1);
+  assert.ok(rows[0].delivered_at);
+});
+
+test("fix 1: a self-fork whose timeout fires before the reconcile gets it pushed instead", async () => {
+  const delivered = [];
+  const { fake, original, forks, rowsTo } = setup({ deliver: async (record) => (delivered.push(record), { delivery: "delivered" }) });
+  const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never", waitForResult: true, timeoutMs: 100 }, asCaller(original));
+  assert.equal(result.status, "running");
+  assert.equal(result.output, undefined);
+  fake.complete(result.fork.threadId, result.turn.id);
+  await forks.settled();
+  assert.equal(delivered.length, 1);
+  assert.equal(rowsTo(original).length, 1);
+});
+
+test("fix 2: a server that stopped between the mailbox write and `reconciled` is finished by a later sweep, once", async () => {
+  const delivered = [];
+  // Server A writes the message, then never returns from delivery (it stops).
+  const { fake, original, forks, rowsTo, mailboxPath, store } = setup({ deliver: () => new Promise(() => {}) });
+  const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never" }, asCaller());
+  fake.complete(result.fork.threadId, result.turn.id, { text: "written, never finished" });
+  await new Promise((r) => setTimeout(r, 50));
+  forks.close();
+  const job = store.get(result.forkJobId);
+  assert.ok(job.written && !job.reconciled);
+  assert.equal(rowsTo(original).length, 1);
+
+  // Too early: the writer may still be delivering.
+  const early = makeServer(fake, { mailboxPath, store, deliver: async (r) => (delivered.push(r), { delivery: "delivered" }) });
+  await early.forks.sweep();
+  assert.equal(store.get(result.forkJobId).reconciled, null);
+
+  const later = () => Date.now() + 61_000;
+  const b = makeServer(fake, { mailboxPath, store, now: later, deliver: async (r) => (delivered.push(r), { delivery: "delivered" }) });
+  const c = makeServer(fake, { mailboxPath, store, now: later, deliver: async (r) => (delivered.push(r), { delivery: "delivered" }) });
+  await Promise.all([b.forks.sweep(), c.forks.sweep()]);
+  const done = store.get(result.forkJobId);
+  assert.equal(done.reconciled.recovered, true);
+  assert.ok(done.archived);
+  assert.equal(delivered.length, 1, "the undelivered message is delivered once");
+  assert.equal(delivered[0].messageId, done.written.messageId);
+  assert.equal(rowsTo(original).length, 1);
+  assert.equal((await listReceipts({ kind: "reconcile", targetThreadId: original })).data.length, 1);
+  assert.equal((await listReceipts({ kind: "fork", targetThreadId: result.fork.threadId })).data.length, 1);
+  assert.equal(await b.forks.sweep().then((x) => x.checked), 0);
+});
+
+test("fix 3: a job whose turn/start answer was lost finds its task turn by clientUserMessageId", async () => {
+  const { fake, original, forks, rowsTo, mailboxPath, store } = setup();
+  fake.behavior.turnStartHang = "created";
+  forks.forkThread({ threadId: original, message: "x", compactFork: "never" }, asCaller()).catch(() => {});
+  await new Promise((r) => setTimeout(r, 30));
+  forks.close();
+  const job = store.list().at(-1);
+  assert.ok(job.forked && !job.turnStarted);
+  const fork = forkOf(fake, original);
+  const b = makeServer(fake, { mailboxPath, store });
+  assert.equal((await b.forks.sweep()).running, 1);
+  assert.equal(store.get(job.id).turnStarted.recovered, true);
+  fake.complete(fork.id, fork.turns.at(-1).id, { text: "found it" });
+  assert.equal((await b.forks.sweep()).reconciled, 1);
+  assert.equal(rowsTo(original)[0].body, "found it");
+});
+
+test("fix 3: a job whose task never started is failed after the stale timeout and reconciled; the fork is kept", async () => {
+  const { fake, original, forks, rowsTo, mailboxPath, store } = setup();
+  fake.behavior.turnStartHang = "lost";
+  forks.forkThread({ threadId: original, message: "x", compactFork: "never" }, asCaller()).catch(() => {});
+  await new Promise((r) => setTimeout(r, 30));
+  forks.close();
+  const job = store.list().at(-1);
+  const soon = makeServer(fake, { mailboxPath, store });
+  assert.equal((await soon.forks.sweep()).running, 1);
+  assert.equal(rowsTo(original).length, 0);
+  const late = makeServer(fake, { mailboxPath, store, now: () => Date.now() + FORK_START_STALE_MS + 1_000 });
+  const summary = await late.forks.sweep();
+  assert.equal(summary.failed, 1);
+  assert.equal(summary.reconciled, 1);
+  const rows = rowsTo(original);
+  assert.equal(rows.length, 1);
+  assert.match(rows[0].body, /never started/);
+  assert.equal(store.get(job.id).outcome.type, "failed");
+  assert.ok(!fake.requests.some((r) => r.method === "thread/archive"));
+});
+
+test("fix 3: turn/start answering without a turn id finds the turn by clientUserMessageId", async () => {
+  const { fake, original, forks, rowsTo } = setup();
+  fake.behavior.noTurnId = true;
+  const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never" }, asCaller());
+  assert.ok(result.turn.id);
+  fake.complete(result.fork.threadId, result.turn.id);
+  await forks.settled();
+  assert.equal(rowsTo(original).length, 1);
+});
+
+test("fix 4: a sweep claims first and does not wait for usage", async () => {
+  const { fake, original, forks, rowsTo, mailboxPath, store } = setup();
+  const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never" }, asCaller());
+  forks.close();
+  await forks.settled();
+  fake.complete(result.fork.threadId, result.turn.id, { requests: [] });
+  const b = makeServer(fake, { mailboxPath, store, graceMs: 5_000 });
+  const started = Date.now();
+  assert.equal((await b.forks.sweep()).reconciled, 1);
+  assert.ok(Date.now() - started < 2_000, `sweep took ${Date.now() - started} ms`);
+  assert.equal(rowsTo(original).length, 1);
+});
+
+test("fix 5: health reports fork job counts from the log only; shutdown stops the sweeper", async () => {
+  const { fake, original, forks, store } = setup();
+  const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never" }, asCaller());
+  assert.deepEqual(forks.jobCounts(), { pending: 0, running: 1, stuck: 0 });
+  const before = fake.requests.length;
+  const logBefore = statSync(store.path()).size;
+  assert.deepEqual(forkJobCounts(forks.jobCounts), { pending: 0, running: 1, stuck: 0, error: null });
+  assert.equal(fake.requests.length, before, "no app-server reads");
+  assert.equal(statSync(store.path()).size, logBefore, "no writes");
+  assert.deepEqual(forkJobCounts(() => {
+    throw new Error("unreadable");
+  }), { pending: null, running: null, stuck: null, error: "unreadable" });
+  fake.complete(result.fork.threadId, result.turn.id);
+  await forks.settled();
+  assert.deepEqual(forks.jobCounts(), { pending: 0, running: 0, stuck: 0 });
+
+  let stopped = 0;
+  const lifecycle = createLifecycle({ appServer: { close: async () => {}, killManagedSync: () => {} }, exit: () => {} });
+  lifecycle.onShutdown(() => {
+    stopped += 1;
+  });
+  await lifecycle.shutdown(0);
+  assert.equal(stopped, 1);
+});
+
+test("fix 6: the owner polls cheaply while the task runs and reads the turns at most once", async () => {
+  const { fake, original, forks } = setup();
+  const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never" }, asCaller());
+  const forkId = result.fork.threadId;
+  await new Promise((r) => setTimeout(r, 80));
+  fake.complete(forkId, result.turn.id, { notify: false });
+  await forks.settled();
+  const reads = fake.requests.filter((r) => r.method === "thread/read" && r.params.threadId === forkId);
+  assert.ok(reads.filter((r) => !r.params.includeTurns).length >= 2, "status polls");
+  assert.ok(reads.filter((r) => r.params.includeTurns).length <= 2, `turn reads: ${reads.filter((r) => r.params.includeTurns).length}`);
+});
+
+test("fix 7: claims are removed after the reconcile; the job log is compacted", async () => {
+  const { fake, original, forks, mailboxPath } = setup();
+  const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never" }, asCaller());
+  fake.complete(result.fork.threadId, result.turn.id);
+  await forks.settled();
+  assert.deepEqual(claimNames(mailboxPath).filter((name) => name.includes(result.forkJobId)), []);
+
+  const file = path.join(tmp, "compact-forks.jsonl");
+  const old = Date.now() - 8 * 24 * 60 * 60 * 1000;
+  const lines = [
+    { type: "created", jobId: "old", at: old }, { type: "forked", jobId: "old", at: old }, { type: "reconciled", jobId: "old", at: old },
+    { type: "created", jobId: "recent", at: Date.now() }, { type: "reconciled", jobId: "recent", at: Date.now() },
+    { type: "created", jobId: "running", at: old }, { type: "forked", jobId: "running", at: old }, { type: "turn-started", jobId: "running", at: old, turnId: "t" }
+  ];
+  appendFileSync(file, lines.map((line) => JSON.stringify(line)).join("\n") + "\n");
+  assert.deepEqual(compactForkJobs(file, { maxBytes: 1_000_000 }), { compacted: false, dropped: 0 }, "under the size threshold");
+  assert.deepEqual(compactForkJobs(file, { maxBytes: 10 }), { compacted: true, dropped: 1 });
+  const kept = readFileSync(file, "utf8").trim().split("\n").map((line) => JSON.parse(line).jobId);
+  assert.deepEqual([...new Set(kept)], ["recent", "running"]);
+});
+
+test("fix 8: the tracker keeps only small turn records, and only for watched threads", () => {
+  const tracker = createTokenUsageTracker();
+  const items = [{ type: "agentMessage", id: "a", text: "answer", phase: "final_answer" }, { type: "commandExecution", id: "c", command: "x".repeat(1000) }];
+  tracker.handle({ method: "turn/completed", params: { threadId: "unwatched", turn: { id: "t", status: "completed", items } } });
+  assert.deepEqual(tracker.completedTurns("unwatched"), []);
+  tracker.watch("w");
+  tracker.handle({ method: "turn/completed", params: { threadId: "w", turn: { id: "t", status: "completed", items, error: null } } });
+  assert.deepEqual(tracker.completedTurns("w"), [{ turnId: "t", status: "completed", error: null, finalText: "answer" }]);
+  tracker.unwatch("w");
+  assert.deepEqual(tracker.completedTurns("w"), []);
+});
+
+test("fix 9: the fork is archived only when it reports the original as forkedFromId and the fork threadSource", async () => {
+  for (const tamper of [(t) => { t.forkedFromId = uuid(0xbad); }, (t) => { t.threadSource = "user"; }]) {
+    const { fake, original, forks } = setup();
+    const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never" }, asCaller());
+    tamper(fake.threads.get(result.fork.threadId));
+    setTimeout(() => fake.complete(result.fork.threadId, result.turn.id), 10);
+    await forks.settled();
+    assert.ok(!fake.requests.some((r) => r.method === "thread/archive"));
+    const receipt = (await listReceipts({ kind: "reconcile", targetThreadId: original })).data[0];
+    assert.equal(receipt.archived, false);
+  }
+});
+
+test("fix 10: a tracker attached mid-thread does not count an interrupted turn's stale copy; cwd compares by real path", () => {
+  const tracker = createTokenUsageTracker();
+  const send = (turnId, last, total) => tracker.handle({ method: "thread/tokenUsage/updated", params: { threadId: "m", turnId, tokenUsage: { last, ...(total === undefined ? {} : { total: { totalTokens: total } }), modelContextWindow: 258_400 } } });
+  // First notification ever seen: a stale copy for an interrupted turn.
+  send("i1", LAST(300, 250), 900);
+  tracker.handle({ method: "turn/completed", params: { threadId: "m", turn: { id: "i1", status: "interrupted", items: [] } } });
+  assert.equal(tracker.forTurn("m", "i1"), null);
+  // Without a total, a repeated `last` is a stale copy; a new one counts.
+  send("n1", LAST(300, 250));
+  assert.equal(tracker.forTurn("m", "n1"), null);
+  send("n1", LAST(400, 100));
+  assert.equal(tracker.forTurn("m", "n1").inputTokens, 400);
+  // First seen for a completed turn stays counted.
+  const fresh = createTokenUsageTracker();
+  fresh.handle({ method: "thread/tokenUsage/updated", params: { threadId: "f", turnId: "t", tokenUsage: { last: LAST(10), total: { totalTokens: 60 }, modelContextWindow: 258_400 } } });
+  fresh.handle({ method: "turn/completed", params: { threadId: "f", turn: { id: "t", status: "completed", items: [] } } });
+  assert.equal(fresh.forTurn("f", "t").inputTokens, 10);
+
+  const viaSymlink = path.join(project, "escape");
+  assert.equal(settingsMismatchWarning({ threadId: "x", requested: { cwd: outside }, applied: { cwd: viaSymlink } }), null);
+  assert.equal(settingsMismatchWarning({ threadId: "x", requested: { cwd: project }, applied: { cwd: outside } }).code, "settings_mismatch");
+});
+
+test("fix 2: a superseded reconcile claim finds a message its holder wrote without recording it", async () => {
+  const { fake, original, forks, rowsTo, mailboxPath, store } = setup();
+  const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never" }, asCaller());
+  forks.close();
+  await forks.settled();
+  fake.complete(result.fork.threadId, result.turn.id, { text: "orphan" });
+  // A stopped server: it claimed, wrote the message, and recorded nothing else.
+  const mb = openMailbox({ mailboxPath });
+  mb.claim(`fork-reconcile-${result.forkJobId}`, String(Date.now()));
+  const orphan = mb.insertMessage({
+    fromSessionId: CALLER, fromSessionKind: "codex", toSessionId: original, toSessionKind: "codex", body: "orphan",
+    metadata: { fork: { jobId: result.forkJobId, thread: `codex:${result.fork.threadId}`, status: "completed" } }
+  });
+  mb.close?.();
+  store.append("completed", result.forkJobId, { turnId: result.turn.id });
+  const delivered = [];
+  const b = makeServer(fake, { mailboxPath, store, now: () => Date.now() + 61_000, deliver: async (r) => (delivered.push(r), { delivery: "delivered" }) });
+  await b.forks.sweep();
+  assert.equal(rowsTo(original).length, 1, "no second message");
+  const job = store.get(result.forkJobId);
+  assert.equal(job.written.messageId, orphan);
+  assert.ok(job.reconciled);
+  assert.deepEqual(delivered.map((r) => r.messageId), [orphan]);
 });

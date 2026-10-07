@@ -18,7 +18,7 @@ import { COMPACT_FORK_MODES } from "../codex/fork.js";
 /** @type {import("../server/registry.js").ToolDefinition} */
 export const forkCodexThreadTool = {
   name: "fork_codex_thread",
-  description: "Run a task on a fork of an existing Codex thread, then send the fork's final response back to the original thread as a new Agent Link message (a reconcile message with a <fork> element). Use it to run another model, effort, or cwd on a thread's context: an existing thread keeps its model and warm prompt cache, because the cache is per model and a switch re-reads the whole thread uncached. The fork takes the original's completed turns only; the original gets no turn with model, effort, or cwd and is never compacted. Exactly one reconcile message is sent for every outcome (completed, failed, interrupted), even if this server restarts; a completed fork is archived. Claude sessions cannot be forked (unsupported).",
+  description: "Run a task on a fork of an existing Codex thread, then send the fork's final response back to the original thread as a new Agent Link message (a reconcile message with a <fork> element). Use it to run another model, effort, or cwd on a thread's context: an existing thread keeps its model and warm prompt cache, because the cache is per model and a switch re-reads the whole thread uncached. The fork takes the original's completed turns only; the original gets no turn with model, effort, or cwd and is never compacted. One reconcile message is sent per job for every outcome (completed, failed, interrupted, or a task that never started), also when this server stops before the task ends: the sweeper of any Agent Link server finishes the job, as long as one runs. A completed fork is then archived unless archiveFork is false. Claude sessions cannot be forked (unsupported).",
   inputSchema: {
     type: "object",
     required: ["message"],
@@ -59,8 +59,8 @@ export const forkCodexThreadTool = {
     compaction: out("object", "{mode, compact, compacted, reason, threshold, inputTokens, modelContextWindow, windowBasis, tokenUsage}: the R9.11 decision."),
     reconcile: out(["object", "null"], "When finished: {messageId, delivery: queued|delivered, deliveredVia?, anticipation} of the reconcile message in the original's mailbox."),
     output: out("object", "Only when you forked your own thread and waited: the fork's output as a peer message (envelope plus header fields)."),
-    tokenUsage: out("object", "When finished: {compaction?, task}: the `last` token breakdown plus modelContextWindow of each turn, or null when no notification arrived (token_usage_unavailable)."),
-    archived: out("boolean", "Whether the fork was archived."),
+    tokenUsage: out("object", "When finished: {compaction?, task}. task: the summed `last` breakdown of the task turn's model requests plus modelContextWindow, modelRequests and turnId, or null when no notification arrived (token_usage_unavailable); compaction: {totalTokens}."),
+    archived: out(["boolean", "null"], "Whether the fork was archived; null when a self-fork's result came back before the archive finished."),
     receipt: commonOut.receipt,
     reconcileReceipt: out("object", "The reconcile receipt write result.")
   },
