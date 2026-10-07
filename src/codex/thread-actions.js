@@ -124,7 +124,7 @@ export function archiveReceiptEvidence({ loadedCheck, archive, action }) {
  * @param {string | null | undefined} address
  * @returns {string | null}
  */
-function launcherAddress(address) {
+export function launcherAddress(address) {
   return typeof address === "string" && /^(claude|codex):/.test(address) ? address : null;
 }
 

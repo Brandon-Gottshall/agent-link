@@ -219,6 +219,11 @@ function isoTime(value) {
  * address instead.
  */
 function replyLine({ id, from, fromHarness, fromVerified, anticipation, replyBy, reply }) {
+  if (reply === "fork") {
+    // The task of a fork (R9.7): its final response is the result, sent back
+    // to the original thread by Agent Link (R9.8).
+    return FORK_TASK_REPLY;
+  }
   if (reply !== "direct") {
     const by = replyBy ? ` by ${replyBy}` : "";
     if (anticipation === "reply") {
@@ -259,7 +264,8 @@ function replyLine({ id, from, fromHarness, fromVerified, anticipation, replyBy,
  * @param {{name: string, version: number, text?: string}|null} [message.procedure] role procedure (design R1.20)
  * @param {unknown} [message.body]
  * @param {Record<string, unknown>|null} [message.overrides] cwd/model/effort/modelProvider/serviceTier
- * @param {string} [message.reply] "mailbox" (default) or "direct"
+ * @param {{thread?: string, model?: string|null, effort?: string|null, status?: string}|null} [message.fork] reconcile messages only (R9.8)
+ * @param {string} [message.reply] "mailbox" (default), "direct", or "fork" (a fork's task, R9.7)
  * @returns {string}
  */
 export function renderPeerEnvelope(message = {}) {
@@ -285,6 +291,8 @@ export function renderPeerEnvelope(message = {}) {
     .filter((field) => typeof message.overrides?.[field] === "string" && message.overrides[field].trim())
     .map((field) => `${field}="${escapeEnvelopeAttr(message.overrides?.[field])}"`);
   if (overrides.length) lines.push(`<overrides ${overrides.join(" ")}/>`);
+  const forkElement = renderForkElement(message.fork);
+  if (forkElement) lines.push(forkElement);
   const procedureElement = renderProcedureElement(message.procedure);
   if (procedureElement) lines.push(procedureElement);
   lines.push("<body>", escapeEnvelopeBody(message.body), "</body>");
@@ -375,7 +383,8 @@ export function peerMessageFromMailbox(row = {}) {
     inReplyTo: row.reply_to_message_id ?? null,
     body: row.body,
     reply: "mailbox",
-    ...roleFieldsOf(row)
+    ...roleFieldsOf(row),
+    ...forkFieldsOf(row)
   };
 }
 
@@ -509,6 +518,53 @@ function roleFieldsOf(row) {
         ? { procedure: { name: role.procedure.name, version: role.procedure.version, ...(typeof role.procedureText === "string" ? { text: role.procedureText } : {}) } }
         : {})
     };
+  } catch {
+    return {};
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Fork and reconcile (design doc R9.7, R9.8; PR B7b). A reconcile message
+// carries <fork thread model effort status/> after <overrides>; the fork's
+// own task has a fixed reply line, because its final response is the result.
+
+/** The reply line of a fork's task (reply: "fork"). */
+export const FORK_TASK_REPLY = "Your final response is the result of this fork. Agent Link sends it to the original thread as a reconcile message, so no tool call is needed to reply.";
+
+export const FORK_STATUSES = Object.freeze(["completed", "failed", "interrupted"]);
+
+/**
+ * The <fork> element, or "" when the message is not a reconcile message.
+ * `thread` must be an address and `status` one of FORK_STATUSES; model and
+ * effort are shown when present.
+ * @param {unknown} fork  {thread, model?, effort?, status}
+ * @returns {string}
+ */
+export function renderForkElement(fork) {
+  const f = /** @type {{thread?: unknown, model?: unknown, effort?: unknown, status?: unknown} | null | undefined} */ (fork);
+  if (!f || typeof f !== "object") return "";
+  const thread = envelopeAddress(typeof f.thread === "string" ? f.thread : null, "codex");
+  if (!thread.startsWith("codex:")) return "";
+  const status = FORK_STATUSES.includes(/** @type {string} */ (f.status)) ? /** @type {string} */ (f.status) : null;
+  if (!status) return "";
+  const attrs = [["thread", thread]];
+  if (typeof f.model === "string" && f.model.trim()) attrs.push(["model", f.model]);
+  if (typeof f.effort === "string" && f.effort.trim()) attrs.push(["effort", f.effort]);
+  attrs.push(["status", status]);
+  return `<fork ${attrs.map(([k, v]) => `${k}="${escapeEnvelopeAttr(v)}"`).join(" ")}/>`;
+}
+
+/**
+ * The fork fields of a reconcile message's mailbox row (`metadata.fork`).
+ * @param {Record<string, any>} row
+ * @returns {{fork?: {thread: string, model: string | null, effort: string | null, status: string}}}
+ */
+function forkFieldsOf(row) {
+  if (typeof row.metadata_json !== "string" || !row.metadata_json.includes("\"fork\"")) return {};
+  try {
+    const fork = JSON.parse(row.metadata_json)?.fork;
+    if (!fork || typeof fork !== "object" || typeof fork.thread !== "string") return {};
+    return { fork: { thread: fork.thread, model: fork.model ?? null, effort: fork.effort ?? null, status: fork.status } };
   } catch {
     return {};
   }

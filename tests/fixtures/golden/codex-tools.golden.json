@@ -19,7 +19,19 @@
             "/nonexistent/golden/codex-app-server"
           ],
           "reason": "Configured Codex app-server binary does not exist: /nonexistent/golden/codex-app-server",
-          "usedForManagedAppServer": false
+          "usedForManagedAppServer": false,
+          "overrideCosts": {
+            "measured": false,
+            "codexVersion": null,
+            "effortChange": null,
+            "modelSwitch": null,
+            "cwdChange": null,
+            "forkSameModel": null,
+            "forkOtherModel": null,
+            "compactForkAutoFraction": 0.6,
+            "installedVersion": null,
+            "warning": null
+          }
         },
         "appServer": {
           "connected": false,
@@ -173,7 +185,19 @@
             "/nonexistent/golden/codex-app-server"
           ],
           "reason": "Configured Codex app-server binary does not exist: /nonexistent/golden/codex-app-server",
-          "usedForManagedAppServer": false
+          "usedForManagedAppServer": false,
+          "overrideCosts": {
+            "measured": false,
+            "codexVersion": null,
+            "effortChange": null,
+            "modelSwitch": null,
+            "cwdChange": null,
+            "forkSameModel": null,
+            "forkOtherModel": null,
+            "compactForkAutoFraction": 0.6,
+            "installedVersion": null,
+            "warning": null
+          }
         },
         "appServer": {
           "connected": true,
@@ -266,6 +290,12 @@
           "socket": null
         },
         "autoStartEnabled": true,
+        "forkJobs": {
+          "checked": 0,
+          "reconciled": 0,
+          "running": 0,
+          "errors": 0
+        },
         "address": "external",
         "addressSource": "fallback",
         "providers": {
@@ -351,7 +381,19 @@
             "/nonexistent/golden/codex-app-server"
           ],
           "reason": "Configured Codex app-server binary does not exist: /nonexistent/golden/codex-app-server",
-          "usedForManagedAppServer": false
+          "usedForManagedAppServer": false,
+          "overrideCosts": {
+            "measured": false,
+            "codexVersion": null,
+            "effortChange": null,
+            "modelSwitch": null,
+            "cwdChange": null,
+            "forkSameModel": null,
+            "forkOtherModel": null,
+            "compactForkAutoFraction": 0.6,
+            "installedVersion": null,
+            "warning": null
+          }
         },
         "appServer": {
           "connected": true,
@@ -475,6 +517,12 @@
           "socket": null
         },
         "autoStartEnabled": true,
+        "forkJobs": {
+          "checked": 0,
+          "reconciled": 0,
+          "running": 0,
+          "errors": 0
+        },
         "address": "codex:019d3000-0000-7000-8000-000000000002",
         "addressSource": "runtime_context",
         "providers": {
@@ -1880,6 +1928,7 @@
             "targetKind": null,
             "host": null,
             "targetSessionId": null,
+            "kind": null,
             "targetAddress": null,
             "searchTerm": ""
           }
@@ -4526,6 +4575,18 @@
             "code": "deprecated_argument",
             "message": "allowTargetOverride is deprecated and stops granting overrides in 0.7.0 (it is rejected from 0.8.0). Instead: launch a new thread (later: fork it) for a different model, ask the thread's launcher to change effort, or ask the user for an override policy (set_agent_override_policy).",
             "replacement": "a new thread or fork for model; the launcher for effort; set_agent_override_policy otherwise"
+          },
+          {
+            "code": "token_usage_unavailable",
+            "severity": "warning",
+            "message": "Token usage for the first turn on the new setting was not recorded, because the call did not wait for the turn to end.",
+            "details": {
+              "threadId": "019d3000-0000-7000-8000-000000000001",
+              "turnId": "turn-4-001",
+              "purpose": "the first turn on the new setting",
+              "reason": "not_waited"
+            },
+            "hint": "Pass waitForReply:true to record the turn's token usage in the receipt."
           }
         ]
       },
@@ -7221,6 +7282,7 @@
           "targetKind": null,
           "host": null,
           "targetSessionId": null,
+          "kind": null,
           "targetAddress": null,
           "searchTerm": ""
         }
@@ -7520,6 +7582,7 @@
           "targetKind": null,
           "host": null,
           "targetSessionId": null,
+          "kind": null,
           "targetAddress": null,
           "searchTerm": ""
         }
@@ -9967,7 +10030,19 @@
             "/nonexistent/golden/codex-app-server"
           ],
           "reason": "Configured Codex app-server binary does not exist: /nonexistent/golden/codex-app-server",
-          "usedForManagedAppServer": false
+          "usedForManagedAppServer": false,
+          "overrideCosts": {
+            "measured": false,
+            "codexVersion": null,
+            "effortChange": null,
+            "modelSwitch": null,
+            "cwdChange": null,
+            "forkSameModel": null,
+            "forkOtherModel": null,
+            "compactForkAutoFraction": 0.6,
+            "installedVersion": null,
+            "warning": null
+          }
         },
         "appServer": {
           "connected": true,
@@ -11747,6 +11822,7 @@
           "targetKind": null,
           "host": null,
           "targetSessionId": null,
+          "kind": null,
           "targetAddress": "codex:019d3000-0000-7000-8000-000000000003",
           "searchTerm": ""
         }
@@ -12077,7 +12153,19 @@
             "/nonexistent/golden/codex-app-server"
           ],
           "reason": "Configured Codex app-server binary does not exist: /nonexistent/golden/codex-app-server",
-          "usedForManagedAppServer": false
+          "usedForManagedAppServer": false,
+          "overrideCosts": {
+            "measured": false,
+            "codexVersion": null,
+            "effortChange": null,
+            "modelSwitch": null,
+            "cwdChange": null,
+            "forkSameModel": null,
+            "forkOtherModel": null,
+            "compactForkAutoFraction": 0.6,
+            "installedVersion": null,
+            "warning": null
+          }
         },
         "appServer": {
           "connected": false,
