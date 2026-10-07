@@ -20,6 +20,7 @@
 import { envFlag } from "../shared/env.js";
 import { renderReminderNotice } from "../shared/envelope.js";
 import { messageStatus, reminderSettings } from "./message-status.js";
+import { addressNames, handedOverTo } from "./role-handover.js";
 
 export const REMINDER_VIA = Object.freeze({
   prompt: "claude-prompt-hook",
@@ -46,10 +47,12 @@ export function dueReminders(rows, { now = Date.now(), settings = reminderSettin
  * first is skipped, so its reminder is shown once.
  * @param {ReturnType<import("../claude/mailbox.js").openMailbox>} mb
  * @param {Array<Record<string, any>>} rows  due rows (dueReminders)
- * @param {{via: string, now?: number, settings?: import("./message-status.js").ReminderSettings}} options
+ * `to` names the recipient being reminded (recorded on the event; after a
+ * role handover it is the role's new holder, R7.20).
+ * @param {{via: string, to?: string | null, now?: number, settings?: import("./message-status.js").ReminderSettings}} options
  * @returns {{row: Record<string, any>, n: number}[]}
  */
-export function claimReminders(mb, rows, { via, now = Date.now(), settings = reminderSettings() }) {
+export function claimReminders(mb, rows, { via, to = null, now = Date.now(), settings = reminderSettings() }) {
   /** @type {{row: Record<string, any>, n: number}[]} */
   const claimed = [];
   for (const row of rows) {
@@ -57,7 +60,7 @@ export function claimReminders(mb, rows, { via, now = Date.now(), settings = rem
     if (!view.due) continue;
     const n = view.reminders.count + 1;
     if (!mb.claim(`reminder-${row.id}-${n}`)) continue;
-    mb.recordReminder({ messageId: row.id, n, via, at: now });
+    mb.recordReminder({ messageId: row.id, n, via, to, at: now });
     claimed.push({ row, n });
   }
   return claimed;
@@ -76,13 +79,18 @@ export function reminderNoticeFor(claimed, { settings = reminderSettings() } = {
 
 /**
  * The last time the Stop hook blocked for this recipient (a stop-hook
- * reminder on any of its messages), in epoch ms, or null.
+ * reminder on any of its messages), in epoch ms, or null. With
+ * `recipientIds`, a reminder recorded for another recipient (`to`, before a
+ * role handover moved the message) is not this recipient's block.
  * @param {Array<Record<string, any>>} rows  every message addressed to the recipient
+ * @param {Iterable<string> | null} [recipientIds]
  */
-export function lastStopBlockAt(rows) {
+export function lastStopBlockAt(rows, recipientIds = null) {
+  const ids = recipientIds ? new Set(recipientIds) : null;
   let last = null;
   for (const row of rows) {
     for (const reminder of Array.isArray(row.reminders) ? row.reminders : []) {
+      if (ids && typeof reminder?.to === "string" && !addressNames(reminder.to, ids)) continue;
       if (reminder?.via === REMINDER_VIA.stop && Number.isFinite(reminder.at)) {
         last = last === null ? reminder.at : Math.max(last, reminder.at);
       }
@@ -107,17 +115,24 @@ export function codexRemindersEnabled(source = process.env) {
  *   appServer: {request: (method: string, params?: any) => Promise<any>},
  *   mailbox: ReturnType<import("../claude/mailbox.js").openMailbox>,
  *   now?: number,
- *   settings?: import("./message-status.js").ReminderSettings
+ *   settings?: import("./message-status.js").ReminderSettings,
+ *   roleTable?: import("../registry/roles.js").RoleTable | null
  * }} options
  * @returns {Promise<{threadId: string, outcome: "sent" | "busy" | "not_loaded" | "claimed_elsewhere" | "failed", reminders?: number, error?: string}[]>}
  */
-export async function deliverCodexReminders({ appServer, mailbox, now = Date.now(), settings = reminderSettings() }) {
+export async function deliverCodexReminders({ appServer, mailbox, now = Date.now(), settings = reminderSettings(), roleTable = null }) {
+  /** @param {Record<string, any>} row */
+  const codexRecipient = (row) => {
+    const holder = handedOverTo(row, roleTable);
+    if (holder) return holder.startsWith("codex:") ? holder.slice("codex:".length) : null;
+    return row.to_session_kind === "codex" ? String(row.to_session_id).replace(/^codex:/, "") : null;
+  };
   const open = mailbox.inspect({ limit: Number.MAX_SAFE_INTEGER })
-    .filter((row) => row.to_session_kind === "codex");
+    .filter((row) => codexRecipient(row) !== null);
   /** @type {Map<string, Record<string, any>[]>} */
   const byThread = new Map();
   for (const row of dueReminders(open, { now, settings })) {
-    const threadId = String(row.to_session_id).replace(/^codex:/, "");
+    const threadId = /** @type {string} */ (codexRecipient(row));
     if (!byThread.has(threadId)) byThread.set(threadId, []);
     byThread.get(threadId)?.push(row);
   }
@@ -140,7 +155,7 @@ export async function deliverCodexReminders({ appServer, mailbox, now = Date.now
       results.push({ threadId, outcome: "busy" });
       continue;
     }
-    const claimed = claimReminders(mailbox, rows, { via: REMINDER_VIA.codex, now, settings });
+    const claimed = claimReminders(mailbox, rows, { via: REMINDER_VIA.codex, to: `codex:${threadId}`, now, settings });
     const notice = reminderNoticeFor(claimed, { settings });
     if (!notice) {
       results.push({ threadId, outcome: "claimed_elsewhere" });
@@ -180,10 +195,10 @@ export async function deliverCodexReminders({ appServer, mailbox, now = Date.now
  * hook's block), so a forced continuation is blocked again only when this
  * recipient's last recorded block is a full interval old.
  * @param {ReturnType<import("../claude/mailbox.js").openMailbox>} mb
- * @param {{recipientKey: string, open: Array<Record<string, any>>, now: number, settings: import("./message-status.js").ReminderSettings, stopHookActive?: boolean}} options
+ * @param {{recipientKey: string, recipientIds?: Iterable<string> | null, open: Array<Record<string, any>>, now: number, settings: import("./message-status.js").ReminderSettings, stopHookActive?: boolean}} options
  * @returns {boolean} true when this hook may block now
  */
-export function takeStopSlot(mb, { recipientKey, open, now, settings, stopHookActive = false }) {
+export function takeStopSlot(mb, { recipientKey, recipientIds = null, open, now, settings, stopHookActive = false }) {
   const prefix = `stop-${String(recipientKey).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 120)}-`;
   /** @param {string} name */
   const blockTime = (name) => Number(mb.claimContent(name));
@@ -191,7 +206,7 @@ export function takeStopSlot(mb, { recipientKey, open, now, settings, stopHookAc
     .filter((name) => name.startsWith(prefix))
     .map((name) => ({ name, bucket: Number(name.slice(prefix.length)), at: blockTime(name) }))
     .filter((c) => Number.isFinite(c.at) && Number.isFinite(c.bucket));
-  const times = [...others().map((c) => c.at), lastStopBlockAt(open)].filter((t) => t !== null && Number.isFinite(t));
+  const times = [...others().map((c) => c.at), lastStopBlockAt(open, recipientIds)].filter((t) => t !== null && Number.isFinite(t));
   const last = times.length ? Math.max(.../** @type {number[]} */ (times)) : null;
   if (last !== null && Math.abs(now - last) < settings.intervalMs) return false;
   if (stopHookActive && last === null) return false;

@@ -65,7 +65,9 @@ const STATE_VERSION = 1;
 
 /**
  * @typedef {{version: number, sha256: string, updatedAt: string}} ProcedureRecord
- * @typedef {{address: string | string[] | null, assignedAt: string | null}} RoleRecord
+ * @typedef {{address: string | string[] | null, assignedAt: string | null, projects?: Record<string, string>}} RoleRecord
+ *   projects: per-project holders, absolute project root -> address (the
+ *   `orchestrator` role scoped by project root, R1.21)
  * @typedef {{model?: string[], effort?: string[], cwd?: string[]}} PolicyEntry
  * @typedef {{
  *   version: number,
@@ -199,7 +201,22 @@ export function validateRoleTable(raw) {
     } else if (entry.address !== undefined && entry.address !== null) {
       problems.push({ path: `roles.${name}.address`, rule: "type", message: "address must be a string; the role has no holder." });
     }
-    table.roles[name] = { address, assignedAt: isoOrNull(entry.assignedAt) };
+    /** @type {Record<string, string>} */
+    const projects = {};
+    if (entry.projects !== undefined && entry.projects !== null) {
+      if (!isPlainObject(entry.projects)) {
+        problems.push({ path: `roles.${name}.projects`, rule: "type", message: "projects must map absolute project roots to addresses; ignored." });
+      } else {
+        for (const [root, holder] of Object.entries(entry.projects)) {
+          if (!path.isAbsolute(root) || !isAddress(holder)) {
+            problems.push({ path: `roles.${name}.projects`, rule: "format", message: "projects keys are absolute project roots and values claude:<id> or codex:<id> addresses; invalid entries were ignored." });
+            continue;
+          }
+          projects[path.resolve(root)] = holder;
+        }
+      }
+    }
+    table.roles[name] = { address, assignedAt: isoOrNull(entry.assignedAt), ...(Object.keys(projects).length ? { projects } : {}) };
   }
   if (raw.overridePolicy !== undefined && !isPlainObject(raw.overridePolicy)) {
     problems.push({ path: "overridePolicy", rule: "type", message: "overridePolicy must be an object; ignored (nothing is allowed)." });
@@ -647,6 +664,7 @@ export function createRoleStore({ env = process.env, homedir, now = () => Date.n
       roleAddress: `role:${name}`,
       address: role.address,
       assignedAt: role.assignedAt,
+      ...(role.projects ? { projects: { ...role.projects } } : {}),
       procedure: procedureView(name, { includeText: includeProcedureText, ...(state ? { state } : {}) })
     };
   }
@@ -680,16 +698,27 @@ export function createRoleStore({ env = process.env, homedir, now = () => Date.n
   /**
    * Assigns a role (R1.18). `procedureText`, when given, replaces the
    * procedure file; a changed hash is the next version.
-   * @param {{role: string, address: string, procedureText?: string | null}} input
+   * With `projectRoot` (absolute), assigns the holder for that project only
+   * (`projects`, R1.21) and leaves the role's own holder as it is.
+   * @param {{role: string, address: string, procedureText?: string | null, projectRoot?: string | null}} input
    */
-  function set({ role: name, address, procedureText = null }) {
+  function set({ role: name, address, procedureText = null, projectRoot = null }) {
     if (!ROLE_NAME_PATTERN.test(name)) throw new TypeError(`invalid role name ${name}`);
     if (!isAddress(address)) throw new TypeError(`invalid holder address ${address}`);
+    if (projectRoot !== null && !path.isAbsolute(projectRoot)) throw new TypeError(`projectRoot must be absolute: ${projectRoot}`);
+    const root = projectRoot === null ? null : path.resolve(projectRoot);
     let previous = null;
     update((raw, table) => {
+      const entry = isPlainObject(raw.roles[name]) ? raw.roles[name] : {};
+      if (root !== null) {
+        previous = table.roles[name]?.projects?.[root] ?? null;
+        entry.projects = isPlainObject(entry.projects) ? entry.projects : {};
+        entry.projects[root] = address;
+        raw.roles[name] = entry;
+        return;
+      }
       const before = table.roles[name]?.address ?? null;
       previous = typeof before === "string" ? before : null;
-      const entry = isPlainObject(raw.roles[name]) ? raw.roles[name] : {};
       if (entry.address !== address || !isoOrNull(entry.assignedAt)) entry.assignedAt = iso();
       entry.address = address;
       raw.roles[name] = entry;
@@ -712,15 +741,28 @@ export function createRoleStore({ env = process.env, homedir, now = () => Date.n
 
   /**
    * Removes a role's holder. The procedure and its version stay, so a later
-   * holder receives the same procedure.
+   * holder receives the same procedure. With `projectRoot`, removes only
+   * that project's holder (R1.21).
    * @param {string} name
+   * @param {{projectRoot?: string | null}} [options]
    */
-  function clear(name) {
+  function clear(name, { projectRoot = null } = {}) {
     let previous = null;
     let existed = false;
+    const root = projectRoot === null ? null : path.resolve(projectRoot);
     update((raw, table) => {
       if (!table.roles[name] || !isPlainObject(raw.roles[name])) return;
       existed = true;
+      if (root !== null) {
+        previous = table.roles[name].projects?.[root] ?? null;
+        if (isPlainObject(raw.roles[name].projects)) {
+          for (const key of Object.keys(raw.roles[name].projects)) {
+            if (path.isAbsolute(key) && path.resolve(key) === root) delete raw.roles[name].projects[key];
+          }
+          if (Object.keys(raw.roles[name].projects).length === 0) delete raw.roles[name].projects;
+        }
+        return;
+      }
       const before = table.roles[name].address;
       previous = typeof before === "string" ? before : null;
       delete raw.roles[name].address;
@@ -765,7 +807,8 @@ export function createRoleStore({ env = process.env, homedir, now = () => Date.n
    */
   function rolesOf(address, table = read().table) {
     return Object.entries(table.roles)
-      .filter(([, role]) => role.address === address || (Array.isArray(role.address) && role.address.includes(address)))
+      .filter(([, role]) => role.address === address || (Array.isArray(role.address) && role.address.includes(address)) ||
+        Object.values(role.projects ?? {}).includes(address))
       .map(([name]) => name)
       .sort();
   }

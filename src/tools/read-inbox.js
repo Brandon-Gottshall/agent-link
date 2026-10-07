@@ -16,6 +16,7 @@ import { mailboxRowResult } from "../registry/addresses.js";
 import { AgentLinkError } from "../shared/errors.js";
 import { isAnticipating, messageStatus, reminderSettings } from "../delivery/message-status.js";
 import { LIMITS, bool, limit, out } from "../server/schemas.js";
+import { readRoleTable, recipientMatcher } from "../delivery/role-handover.js";
 
 /** @type {import("../server/registry.js").ToolDefinition} */
 export const readInboxTool = {
@@ -58,11 +59,13 @@ export const readInboxTool = {
  *   mailboxOpener?: () => any,
  *   host?: string,
  *   now?: () => number,
- *   reminderSettings?: () => import("../delivery/message-status.js").ReminderSettings
+ *   reminderSettings?: () => import("../delivery/message-status.js").ReminderSettings,
+ *   roles?: import("../registry/roles.js").RoleStore | null
  * }} [deps]
  */
 export function makeReadInboxHandler({
   resolveCurrentSession,
+  roles = null,
   mailboxOpener,
   host = "claude",
   now = () => Date.now(),
@@ -97,14 +100,17 @@ export function makeReadInboxHandler({
 
       // Mail may be addressed to any id form of this session (sidecar id,
       // CLI id, local_<cli>); see claudeSessionAliases().
-      const toSessionIds = claudeSessionAliases(session);
+      // A message sent through role:<name> follows the role: while it is
+      // open, the role's current holder reads it, not the previous one
+      // (R7.20).
+      const recipient = recipientMatcher({ aliases: claudeSessionAliases(session), address: claudeAddress(session), table: readRoleTable(roles) });
       const mb = openMb();
       try {
         // A reply that an in-process wait (message_claude_session with
         // waitForReply, or wait_for_claude_session) is blocked on belongs to
         // that wait, which returns it as its tool result. Same rule as the
         // channel bridge: never drain or show it here, or it arrives twice.
-        const all = mb.listPendingFor({ toSessionIds });
+        const all = mb.listPendingFor({ recipient });
         const pending = all.filter((message) => !isHeldByActiveWait(message));
         // Slice before marking: with `limit`, only the returned messages are
         // marked delivered and the rest stay pending.
@@ -120,8 +126,8 @@ export function makeReadInboxHandler({
         const shownIds = new Set(rows.map((row) => row.id));
         const open = args.includeOpen === false || rows.length >= limit
           ? []
-          : mb.inspect({ toSessionIds, limit: Number.MAX_SAFE_INTEGER })
-            .filter((row) => !shownIds.has(row.id) && row.delivered_at && isAnticipating(row) &&
+          : mb.inspect({ limit: Number.MAX_SAFE_INTEGER })
+            .filter((row) => recipient(row) && !shownIds.has(row.id) && row.delivered_at && isAnticipating(row) &&
               messageStatus(row, { now: at, settings }).status === "pending")
             .sort((a, b) => a.sent_at - b.sent_at)
             .slice(0, limit - rows.length);

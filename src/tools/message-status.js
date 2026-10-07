@@ -11,12 +11,14 @@ import { AgentLinkError } from "../shared/errors.js";
 import { ANTICIPATIONS, MESSAGE_STATUSES, deliveryState, labelFields, reminderSettings } from "../delivery/message-status.js";
 import { settleImplicitReply } from "../delivery/message-wait.js";
 import { enumOf, out, str } from "../server/schemas.js";
+import { handedOverTo, readRoleTable, roleRoute } from "../delivery/role-handover.js";
 
 /** @type {import("../server/registry.js").ToolDefinition} */
 export const messageStatusTool = {
   name: "get_agent_link_message_status",
   description:
-    "Status of one Agent Link message, for its sender or its recipient (anyone else gets permission_denied). " +
+    "Status of one Agent Link message, for its sender or its recipient (anyone else gets permission_denied). For a message sent " +
+    "through role:<name> that is still open after the role moved, the role's current holder is the recipient (holder). " +
     "Returns the labels (from, to, anticipation, replyBy), delivery (queued, delivered, acknowledged), status " +
     "(pending, replied, declined, done, unresolved, expired; null for an fyi message), the resolution " +
     "({kind, by, at, late, replyMessageId} or null), and reminders ({count, limit, lastAt, nextDueAt}). Never returns a " +
@@ -39,7 +41,9 @@ export const messageStatusTool = {
     delivery: enumOf(["queued", "delivered", "acknowledged"], "Delivery state."),
     status: out(["string", "null"], `Resolution status: ${MESSAGE_STATUSES.join(", ")}; null for an fyi message.`),
     resolution: out(["object", "null"], "{kind: reply|decline|done, by, at, late, replyMessageId}, or null."),
-    reminders: out(["object", "null"], "{count, limit, lastAt, nextDueAt} for a reply/action message; null for fyi.")
+    reminders: out(["object", "null"], "{count, limit, lastAt, nextDueAt} for a reply/action message; null for fyi."),
+    via: out("string", "role:<name>; present only when the message was sent through a role."),
+    holder: out(["string", "null"], "With via: the session the message was handed over to after the role moved (the role's current holder while it is open, the holder that resolved it once resolved), else null.")
   },
   annotations: { readOnlyHint: true }
 };
@@ -50,10 +54,12 @@ export const messageStatusTool = {
  *   resolveCurrentSession?: (() => any) | null,
  *   mailboxOpener?: () => any,
  *   now?: () => number,
- *   reminderSettings?: () => import("../delivery/message-status.js").ReminderSettings
+ *   reminderSettings?: () => import("../delivery/message-status.js").ReminderSettings,
+ *   roles?: import("../registry/roles.js").RoleStore | null
  * }} [deps]
  */
 export function makeMessageStatusHandler({
+  roles = null,
   host,
   resolveCurrentSession = null,
   mailboxOpener,
@@ -87,7 +93,10 @@ export function makeMessageStatusHandler({
         });
       }
       const { fromAddress, toAddress } = mailboxRowAddresses(row);
-      if (!isParticipant(caller, row, { fromAddress, toAddress })) {
+      // Role handover (R7.20): the role's current holder is the recipient
+      // of an open message sent through the role.
+      const holder = handedOverTo(row, readRoleTable(roles));
+      if (!isParticipant(caller, row, { fromAddress, toAddress, holder })) {
         throw new AgentLinkError("permission_denied", "Only the sender or the recipient of a message can read its status.", {
           details: { reason: "not_participant", messageId },
           hint: "Ask the sender or the recipient."
@@ -98,13 +107,14 @@ export function makeMessageStatusHandler({
       // Read-only: an older-style reply is reflected without being recorded
       // (waits record it), and status receipts are written elsewhere.
       const settled = settleImplicitReply(mb, row, {
-        fromIds: [row.to_session_id, ...addressAliases(toAddress)],
+        fromIds: [row.to_session_id, ...addressAliases(toAddress), ...(holder ? addressAliases(holder) : [])],
         toIds: [row.from_session_id, ...addressAliases(fromAddress)],
         now: at,
         settings,
         write: false
       });
       const labels = labelFields(settled, { now: at, settings });
+      const via = roleRoute(row)?.via ?? null;
       return {
         messageId: row.id,
         from: fromAddress,
@@ -115,7 +125,9 @@ export function makeMessageStatusHandler({
         delivery: deliveryState(settled),
         status: labels.status,
         resolution: labels.resolution,
-        reminders: labels.reminders
+        reminders: labels.reminders,
+        // Only for a message sent through a role (R7.20).
+        ...(via ? { via, holder } : {})
       };
     } finally {
       mb.close();
@@ -128,13 +140,14 @@ export function makeMessageStatusHandler({
  * never a participant: it is not an identity.
  * @param {{id: string, kind: string, aliases: string[]}} caller
  * @param {Record<string, any>} row
- * @param {{fromAddress: string, toAddress: string}} addresses
+ * @param {{fromAddress: string, toAddress: string, holder?: string | null}} addresses
  */
-function isParticipant(caller, row, { fromAddress, toAddress }) {
+function isParticipant(caller, row, { fromAddress, toAddress, holder = null }) {
   if (caller.id === "external") return false;
   const ids = new Set(caller.aliases);
   if (ids.has(row.from_session_id) || ids.has(row.to_session_id)) return true;
   const callerAddress = storedAddress(caller.id, caller.kind);
+  if (holder && (ids.has(holder) || ids.has(holder.replace(/^(?:claude|codex):/, "")) || callerAddress === holder)) return true;
   return callerAddress.includes(":") && (callerAddress === fromAddress || callerAddress === toAddress);
 }
 

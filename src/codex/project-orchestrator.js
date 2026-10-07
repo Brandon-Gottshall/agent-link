@@ -8,11 +8,29 @@ import { assertPeerBodyWithinLimit } from "../shared/envelope.js";
 export const PROJECT_ORCHESTRATOR_BINDING_PATH = path.join(".codex", "project-orchestrator.json");
 const DEFAULT_POLICY_VERSION = "v0";
 const ALLOWED_RETURN_STATUSES = new Set(["done", "done_with_concerns", "blocked"]);
+// The project-orchestrator binding as a role (design R1.21).
+export const ORCHESTRATOR_ROLE = "orchestrator";
+const ROLE_ADDRESS = /^role:([a-z0-9-]{1,40})$/;
 
 export async function resolveProjectOrchestrator(args = {}, deps = {}) {
   const projectRoot = cleanString(args.projectRoot || args.cwd);
   const explicitThreadId = cleanString(args.orchestratorThreadId || args.threadId);
   const limit = clamp(args.limit ?? 10, 1, 50);
+
+  // orchestratorThreadId may name a role (role:<name>): its holder for this
+  // project, else the role's own holder (R1.21). The holder must be a Codex
+  // thread, because the orchestrator tools send Codex turns.
+  const explicitRole = ROLE_ADDRESS.exec(explicitThreadId)?.[1] ?? null;
+  if (explicitRole) {
+    const held = roleHolder(deps.roles, explicitRole, projectRoot, { scopes: ["project", "role"] });
+    if (!held) {
+      throw new AgentLinkError("not_found", `No Codex thread holds role ${explicitRole}${projectRoot ? ` for ${projectRoot}` : ""}.`, {
+        details: { role: explicitRole, query: explicitThreadId, projectRoot: projectRoot || null, candidates: [] },
+        hint: "Ask the user to assign the role to a Codex thread (set_agent_role, with projectRoot for one project), or call list_agent_roles."
+      });
+    }
+    return await roleResolution(held, { projectRoot, args, deps });
+  }
 
   if (explicitThreadId) {
     const verification = await verifyThreadReadable(explicitThreadId, deps);
@@ -31,6 +49,14 @@ export async function resolveProjectOrchestrator(args = {}, deps = {}) {
       },
       candidates: []
     };
+  }
+
+  // The orchestrator role assigned for this project wins over the project's
+  // binding file: the user moves it with set_agent_role and no repo edit.
+  const scoped = projectRoot ? roleHolder(deps.roles, ORCHESTRATOR_ROLE, projectRoot, { scopes: ["project"] }) : null;
+  if (scoped) {
+    const resolved = await roleResolution(scoped, { projectRoot, args, deps });
+    if (resolved.verification.readable !== false) return resolved;
   }
 
   const binding = projectRoot ? await readProjectOrchestratorBinding(projectRoot) : null;
@@ -54,6 +80,14 @@ export async function resolveProjectOrchestrator(args = {}, deps = {}) {
         candidates: verification.thread ? [verification.thread] : []
       };
     }
+  }
+
+  // A user-assigned orchestrator role with no project scope comes after the
+  // binding and before a search.
+  const unscoped = roleHolder(deps.roles, ORCHESTRATOR_ROLE, projectRoot, { scopes: ["role"] });
+  if (unscoped) {
+    const resolved = await roleResolution(unscoped, { projectRoot, args, deps, binding });
+    if (resolved.verification.readable !== false) return resolved;
   }
 
   const query = buildFallbackQuery({ ...args, projectRoot, binding });
@@ -368,6 +402,63 @@ function throwBindingError(message, details) {
   const error = new Error(`Project-orchestrator binding is corrupt: ${message}`);
   error.details = details;
   throw error;
+}
+
+/**
+ * The Codex thread holding `name` in the role table: the holder for
+ * `projectRoot` (scope "project"), else the role's own holder (scope
+ * "role"), in the order `scopes` lists. Null when there is no role store, the
+ * table cannot be read, or the holder is not one Codex thread.
+ * @param {any} roles
+ * @param {string} name
+ * @param {string} projectRoot
+ * @param {{scopes: ("project" | "role")[]}} options
+ * @returns {{name: string, address: string, threadId: string, scope: "project" | "role", projectRoot: string | null} | null}
+ */
+export function roleHolder(roles, name, projectRoot, { scopes }) {
+  if (!roles || typeof roles.read !== "function") return null;
+  let table;
+  try {
+    const read = roles.read();
+    if (read.error) return null;
+    table = read.table;
+  } catch {
+    return null;
+  }
+  const entry = table?.roles?.[name];
+  if (!entry) return null;
+  const root = projectRoot && path.isAbsolute(projectRoot) ? path.resolve(projectRoot) : null;
+  for (const scope of scopes) {
+    const address = scope === "project" ? (root ? entry.projects?.[root] : null) : entry.address;
+    if (typeof address === "string" && address.startsWith("codex:")) {
+      return { name, address, threadId: address.slice("codex:".length), scope, projectRoot: scope === "project" ? root : null };
+    }
+  }
+  return null;
+}
+
+/**
+ * @param {NonNullable<ReturnType<typeof roleHolder>>} held
+ * @param {{projectRoot: string, args: Record<string, any>, deps: Record<string, any>, binding?: any}} context
+ */
+async function roleResolution(held, { projectRoot, args, deps, binding = null }) {
+  const verification = await verifyThreadReadable(held.threadId, deps);
+  return {
+    ok: true,
+    source: "role",
+    threadId: held.threadId,
+    projectRoot: projectRoot || held.projectRoot || null,
+    projectId: cleanString(args.projectId) || binding?.projectId || null,
+    binding,
+    role: { name: held.name, via: `role:${held.name}`, address: held.address, scope: held.scope, projectRoot: held.projectRoot },
+    verification,
+    selection: {
+      bestId: held.threadId,
+      ambiguous: false,
+      strategy: held.scope === "project" ? `role:${held.name} assigned for this project` : `role:${held.name}`
+    },
+    candidates: verification.thread ? [verification.thread] : []
+  };
 }
 
 async function verifyThreadReadable(threadId, deps) {

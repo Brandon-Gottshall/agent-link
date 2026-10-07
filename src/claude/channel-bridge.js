@@ -3,6 +3,8 @@ import path from "node:path";
 import { mailboxReadPaths, openMailbox } from "./mailbox.js";
 import { isHeldByActiveWait, onActiveWaitEnded } from "./active-waits.js";
 import { claudeSessionAliases } from "./identity.js";
+import { claudeAddress } from "../shared/identity.js";
+import { readRoleTable, recipientMatcher } from "../delivery/role-handover.js";
 import { normalizePeerMessage, peerMessageFromMailbox, renderPeerEnvelope } from "../shared/envelope.js";
 
 // Poll cadence: start at 1s, double on every tick that finds nothing to
@@ -38,11 +40,13 @@ export function renderChannelMessage(message) {
  *   notify?: (notification: {method: string, params: any}) => Promise<void>,
  *   pollIntervalMs?: number,
  *   maxPollIntervalMs?: number,
- *   watch?: boolean
+ *   watch?: boolean,
+ *   roles?: import("../registry/roles.js").RoleStore | null
  * }} [options]
  */
 export function makeAgentLinkChannelBridge({
   resolveCurrentSession,
+  roles = null,
   mailboxOpener,
   mailboxPath,
   notify,
@@ -59,9 +63,13 @@ export function makeAgentLinkChannelBridge({
   // on 0.4.x appends to the legacy file. Resolving them throws a
   // PathConfigError for a relative AGENT_LINK_STATE_DIR/MAILBOX_PATH; the
   // server catches that and runs without the channel.
-  const signaturePaths = mailboxPath
+  // roles.json is part of the signature: a role moving to this session hands
+  // over open messages (R7.20) without any mailbox write.
+  const rolesPath = roles?.paths?.table?.() ?? null;
+  const mailboxPaths = mailboxPath
     ? [mailboxPath]
     : (customOpener ? null : mailboxReadPaths());
+  const signaturePaths = mailboxPaths && rolesPath ? [...mailboxPaths, rolesPath] : mailboxPaths;
   const minDelay = Math.max(1, pollIntervalMs);
   const maxDelay = Math.max(minDelay, maxPollIntervalMs);
 
@@ -124,7 +132,11 @@ export function makeAgentLinkChannelBridge({
     stats.fullChecks += 1;
     const mb = openMb();
     try {
-      const all = mb.listPendingFor({ toSessionIds: claudeSessionAliases(session) });
+      // A message handed over through a role (R7.20) is pushed to the role's
+      // current holder, never to the previous one.
+      const all = mb.listPendingFor({
+        recipient: recipientMatcher({ aliases: claudeSessionAliases(session), address: claudeAddress(session), table: readRoleTable(roles) })
+      });
       // A reply that an in-process wait (message_claude_session with
       // waitForReply, or wait_for_claude_session) is blocked on stays pending
       // for that wait, which returns it as its tool result; pushing it here

@@ -117,15 +117,17 @@ export function reapOrphanedAppServers() {
  * @param {{
  *   enabled: boolean,
  *   server: {notification?: (notification: any) => Promise<void>},
- *   resolveCurrentSession: () => any
+ *   resolveCurrentSession: () => any,
+ *   roles?: import("../registry/roles.js").RoleStore | null
  * }} options
  * @returns {{bridge: StoppableBridge | null, error: string | null}}
  */
-export function startChannelBridge({ enabled, server, resolveCurrentSession }) {
+export function startChannelBridge({ enabled, server, resolveCurrentSession, roles = null }) {
   if (!enabled) return { bridge: null, error: null };
   try {
     const bridge = makeAgentLinkChannelBridge({
       resolveCurrentSession,
+      roles,
       notify: async (notification) => {
         if (typeof server.notification !== "function") {
           throw new Error("MCP server notification API unavailable");

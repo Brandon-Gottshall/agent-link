@@ -4,6 +4,7 @@ import { canonicalClaudeSessionId, claudeSessionAliases } from "../claude/identi
 import { buildReceipt, safeAppendReceipt } from "../shared/receipt-index.js";
 import { assertPeerBodyWithinLimit } from "../shared/envelope.js";
 import { claudeAddress } from "../shared/identity.js";
+import { handedOverTo, readRoleTable, recipientMatcher, roleRoute } from "../delivery/role-handover.js";
 import { AgentLinkError } from "../shared/errors.js";
 import { commonOut, enumOf, out, str } from "../server/schemas.js";
 import {
@@ -66,6 +67,7 @@ export const replyAgentLinkMessageTool = {
  * @property {(receipt: any) => Promise<any>} [appendReceipt]
  * @property {() => number} [now]
  * @property {() => import("../delivery/message-status.js").ReminderSettings} [reminderSettings]
+ * @property {import("../registry/roles.js").RoleStore | null} [roles]  role table (role handover, R7.20)
  */
 
 /** @param {ClaudeReplyDeps} [deps] */
@@ -75,7 +77,8 @@ export function makeReplyAgentLinkMessageHandler({
   host = "claude",
   appendReceipt = safeAppendReceipt,
   now = () => Date.now(),
-  reminderSettings: settingsFn = () => reminderSettings()
+  reminderSettings: settingsFn = () => reminderSettings(),
+  roles = null
 } = {}) {
   const openMb = typeof mailboxOpener === "function"
     ? mailboxOpener
@@ -125,10 +128,16 @@ export function makeReplyAgentLinkMessageHandler({
           });
         }
         // R7.7: only the recipient may reply or resolve. Mail may be
-        // addressed to any id form of this session.
-        if (!claudeSessionAliases(session).includes(original.to_session_id)) {
-          throw new AgentLinkError("wrong_recipient", "That message was not addressed to this session.", {
-            details: { messageId, expected: original.to_session_id, caller: currentSessionId }
+        // addressed to any id form of this session. For a message sent
+        // through role:<name> and still open, the recipient is the role's
+        // current holder (R7.20): the previous holder is refused.
+        const table = readRoleTable(roles);
+        const holder = handedOverTo(original, table);
+        if (!recipientMatcher({ aliases: claudeSessionAliases(session), address: claudeAddress(session), table })(original)) {
+          throw new AgentLinkError("wrong_recipient", holder
+            ? `That message was sent to ${roleRoute(original)?.via ?? "a role"} and has been handed over to ${holder}.`
+            : "That message was not addressed to this session.", {
+            details: { messageId, expected: holder ?? original.to_session_id, caller: currentSessionId, ...(holder ? { via: roleRoute(original)?.via ?? null } : {}) }
           });
         }
         const anticipating = isAnticipating(original);

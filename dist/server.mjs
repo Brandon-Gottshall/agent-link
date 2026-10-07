@@ -3238,8 +3238,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path18) {
-      let input = path18;
+    function removeDotSegments(path19) {
+      let input = path19;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3491,8 +3491,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path18, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path18 && path18 !== "/" ? path18 : void 0;
+        const [path19, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path19 && path19 !== "/" ? path19 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -11261,10 +11261,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path18) {
-  if (!path18)
+function getElementAtPath(obj, path19) {
+  if (!path19)
     return obj;
-  return path18.reduce((acc, key) => acc?.[key], obj);
+  return path19.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -11673,11 +11673,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path18, issues) {
+function prefixIssues(path19, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path18);
+    iss.path.unshift(path19);
     return iss;
   });
 }
@@ -11824,16 +11824,16 @@ function flattenError(error2, mapper = (issue2) => issue2.message) {
 }
 function formatError(error2, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error3, path18 = []) => {
+  const processError = (error3, path19 = []) => {
     for (const issue2 of error3.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path18, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path19, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path18, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path19, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path18, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path19, ...issue2.path]);
       } else {
-        const fullpath = [...path18, ...issue2.path];
+        const fullpath = [...path19, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -19589,16 +19589,16 @@ function typeMatches(actual, wanted) {
 function join(base, key) {
   return base ? `${base}.${key}` : key;
 }
-function validateSchema(schema, value, path18 = "") {
+function validateSchema(schema, value, path19 = "") {
   const problems = [];
   if (!schema || typeof schema !== "object") return problems;
-  const where = path18 || "(arguments)";
+  const where = path19 || "(arguments)";
   if (Array.isArray(schema.oneOf) || Array.isArray(schema.anyOf)) {
     const options = (
       /** @type {JsonSchema[]} */
       schema.oneOf ?? schema.anyOf
     );
-    const matches = options.filter((option) => validateSchema(option, value, path18).length === 0).length;
+    const matches = options.filter((option) => validateSchema(option, value, path19).length === 0).length;
     const ok = schema.oneOf ? matches === 1 : matches >= 1;
     if (!ok) {
       problems.push({ path: where, rule: schema.oneOf ? "oneOf" : "anyOf", expected: options.map(describe2).join(" or ") });
@@ -19640,7 +19640,7 @@ function validateSchema(schema, value, path18 = "") {
           /** @type {JsonSchema} */
           schema.items,
           item,
-          `${path18 || ""}[${index}]`
+          `${path19 || ""}[${index}]`
         ));
       });
     }
@@ -19653,17 +19653,17 @@ function validateSchema(schema, value, path18 = "") {
     const properties = schema.properties ?? {};
     for (const key of schema.required ?? []) {
       if (record2[key] === void 0) {
-        problems.push({ path: join(path18, key), rule: "required", expected: describe2(properties[key]) });
+        problems.push({ path: join(path19, key), rule: "required", expected: describe2(properties[key]) });
       }
     }
     for (const [key, item] of Object.entries(record2)) {
       if (item === void 0) continue;
       if (Object.prototype.hasOwnProperty.call(properties, key)) {
-        problems.push(...validateSchema(properties[key], item, join(path18, key)));
+        problems.push(...validateSchema(properties[key], item, join(path19, key)));
       } else if (schema.additionalProperties === false) {
-        problems.push({ path: join(path18, key), rule: "additionalProperties", expected: "no such property" });
+        problems.push({ path: join(path19, key), rule: "additionalProperties", expected: "no such property" });
       } else if (schema.additionalProperties && typeof schema.additionalProperties === "object") {
-        problems.push(...validateSchema(schema.additionalProperties, item, join(path18, key)));
+        problems.push(...validateSchema(schema.additionalProperties, item, join(path19, key)));
       }
     }
   }
@@ -19710,7 +19710,7 @@ function coerceScalar(schema, text2) {
   if (types.includes("boolean") && (text2 === "true" || text2 === "false")) return text2 === "true";
   return void 0;
 }
-function normalizeArguments(schema, value, notes, path18 = "") {
+function normalizeArguments(schema, value, notes, path19 = "") {
   if (!schema || !value || typeof value !== "object" || Array.isArray(value) || !schema.properties) return value;
   const record2 = (
     /** @type {Record<string, unknown>} */
@@ -19720,7 +19720,7 @@ function normalizeArguments(schema, value, notes, path18 = "") {
   const out2 = {};
   for (const [key, item] of Object.entries(record2)) {
     const property = schema.properties[key];
-    const where = join(path18, key);
+    const where = join(path19, key);
     if (!property) {
       out2[key] = item;
       continue;
@@ -20819,8 +20819,8 @@ function openMailbox(options = {}) {
   function recordResolution({ messageId, kind, by, byAddress = null, late = false, replyMessageId = null, at = Date.now() }) {
     appendEvent({ type: "resolved", at, messageId, kind, by, byAddress, late: late === true, replyMessageId });
   }
-  function recordReminder({ messageId, n, via, at = Date.now() }) {
-    appendEvent({ type: "reminded", at, messageId, n, via });
+  function recordReminder({ messageId, n, via, to = null, at = Date.now() }) {
+    appendEvent({ type: "reminded", at, messageId, n, via, ...typeof to === "string" && to ? { to } : {} });
   }
   function claim(key, content = "") {
     try {
@@ -20871,9 +20871,10 @@ function openMailbox(options = {}) {
   function releaseDelivery({ messageId, releasedAt = Date.now() }) {
     appendEvent({ type: "released", at: releasedAt, messageId });
   }
-  function listPendingFor({ toSessionId, toSessionIds } = {}) {
+  function listPendingFor({ toSessionId, toSessionIds, recipient = null } = {}) {
     const recipients = idSet(toSessionId, toSessionIds);
-    return view().filter((m) => recipients.has(m.to_session_id) && !m.delivered_at).sort((a, b) => a.sent_at - b.sent_at);
+    const isRecipient = typeof recipient === "function" ? recipient : (m) => recipients.has(m.to_session_id);
+    return view().filter((m) => isRecipient(m) && !m.delivered_at).sort((a, b) => a.sent_at - b.sent_at);
   }
   return {
     insertMessage,
@@ -20890,9 +20891,9 @@ function openMailbox(options = {}) {
     listPendingFor,
     // Marks delivered only what it returns: with `limit`, the rest stays
     // pending for the next read.
-    /** @param {{toSessionId?: string, toSessionIds?: string[], limit?: number}} [query] */
-    drainFor({ toSessionId, toSessionIds, limit: limit2 } = {}) {
-      let rows = listPendingFor({ toSessionId, toSessionIds });
+    /** @param {{toSessionId?: string, toSessionIds?: string[], recipient?: ((row: Record<string, any>) => boolean) | null, limit?: number}} [query] */
+    drainFor({ toSessionId, toSessionIds, recipient = null, limit: limit2 } = {}) {
+      let rows = listPendingFor({ toSessionId, toSessionIds, recipient });
       if (Number.isFinite(limit2)) rows = rows.slice(0, Math.max(0, Math.floor(limit2)));
       for (const row of rows) markDelivered({ messageId: row.id });
       return rows;
@@ -21011,7 +21012,8 @@ function mergedView(paths, claimsDir = null) {
         messages.get(event.messageId).reminders.push({
           n,
           via: typeof event.via === "string" ? event.via : null,
-          at: normalizeTimestamp(event.at)
+          at: normalizeTimestamp(event.at),
+          ...typeof event.to === "string" && event.to ? { to: event.to } : {}
         });
       }
     }
@@ -22401,32 +22403,32 @@ function normalizeArchiveScope(args = {}) {
   return args.archived === true ? "archived" : "active";
 }
 function inferArchiveState(threadOrPath) {
-  const path18 = typeof threadOrPath === "string" ? threadOrPath : threadOrPath?.path ?? null;
-  if (!path18) {
+  const path19 = typeof threadOrPath === "string" ? threadOrPath : threadOrPath?.path ?? null;
+  if (!path19) {
     return {
       scope: "unknown",
       inferredFrom: "missingPath",
       path: null
     };
   }
-  if (path18.includes("/archived_sessions/")) {
+  if (path19.includes("/archived_sessions/")) {
     return {
       scope: "archived",
       inferredFrom: "path",
-      path: path18
+      path: path19
     };
   }
-  if (path18.includes("/sessions/")) {
+  if (path19.includes("/sessions/")) {
     return {
       scope: "active",
       inferredFrom: "path",
-      path: path18
+      path: path19
     };
   }
   return {
     scope: "unknown",
     inferredFrom: "path",
-    path: path18
+    path: path19
   };
 }
 function desktopVisibilityContract(appServerSummary = {}) {
@@ -24034,9 +24036,9 @@ function reminderSettings(source = process.env) {
   }
   return { limit: limit2, intervalMs, warnings };
 }
-function invalid(path18, rule, expected, message) {
+function invalid(path19, rule, expected, message) {
   return new AgentLinkError("invalid_arguments", message, {
-    details: { errors: [{ path: path18, rule, expected }] }
+    details: { errors: [{ path: path19, rule, expected }] }
   });
 }
 function resolveLabels({ anticipation, replyBy, waitForReply = false, now = Date.now() } = {}) {
@@ -24149,6 +24151,58 @@ function explicitReplies(mb, messageId, from, to) {
   return mb.inspect({ replyToMessageId: messageId, limit: Number.MAX_SAFE_INTEGER }).filter((m) => fromSet.has(m.from_session_id) && toSet.has(m.to_session_id)).sort((a, b) => a.sent_at - b.sent_at);
 }
 
+// src/delivery/role-handover.js
+var ROLE_VIA = /^role:([a-z0-9-]{1,40})$/;
+var HARNESS_PREFIX = /^(?:claude|codex):/;
+function roleRoute(row) {
+  if (!row || typeof row.metadata_json !== "string" || !row.metadata_json) return null;
+  let meta2;
+  try {
+    meta2 = JSON.parse(row.metadata_json);
+  } catch {
+    return null;
+  }
+  const role = meta2 && typeof meta2 === "object" ? meta2.role : null;
+  if (!role || typeof role !== "object" || typeof role.via !== "string") return null;
+  const match = ROLE_VIA.exec(role.via);
+  if (!match) return null;
+  return { name: match[1], via: role.via, sentTo: typeof role.address === "string" && role.address ? role.address : null };
+}
+function handedOverTo(row, table) {
+  if (!row || !table || !table.roles) return null;
+  if (row.anticipation !== "reply" && row.anticipation !== "action") return null;
+  const route = roleRoute(row);
+  if (!route || !route.sentTo) return null;
+  if (row.resolution) {
+    const by = row.resolution.by;
+    return typeof by === "string" && by.includes(":") && by !== route.sentTo ? by : null;
+  }
+  const entry = table.roles[route.name];
+  const holder = entry && typeof entry.address === "string" ? entry.address : null;
+  if (!holder || holder === route.sentTo) return null;
+  return holder;
+}
+function readRoleTable(roles) {
+  if (!roles || typeof roles.read !== "function") return null;
+  try {
+    const result = roles.read();
+    return result && !result.error ? result.table : null;
+  } catch {
+    return null;
+  }
+}
+function addressNames(address, ids) {
+  return ids.has(address) || ids.has(address.replace(HARNESS_PREFIX, ""));
+}
+function recipientMatcher({ aliases, address = null, table = null }) {
+  const ids = new Set([...aliases].filter((id) => typeof id === "string" && id));
+  if (typeof address === "string" && address) ids.add(address);
+  return (row) => {
+    const holder = handedOverTo(row, table);
+    return holder ? addressNames(holder, ids) : ids.has(row.to_session_id);
+  };
+}
+
 // src/delivery/reminders.js
 var REMINDER_VIA = Object.freeze({
   prompt: "claude-prompt-hook",
@@ -24159,14 +24213,14 @@ var CODEX_REMINDER_TURN_TRIGGER = "agent-link-reminder";
 function dueReminders(rows, { now = Date.now(), settings = reminderSettings() } = {}) {
   return rows.filter((row) => messageStatus(row, { now, settings }).due).sort((a, b) => a.sent_at - b.sent_at);
 }
-function claimReminders(mb, rows, { via, now = Date.now(), settings = reminderSettings() }) {
+function claimReminders(mb, rows, { via, to = null, now = Date.now(), settings = reminderSettings() }) {
   const claimed = [];
   for (const row of rows) {
     const view = messageStatus(row, { now, settings });
     if (!view.due) continue;
     const n = view.reminders.count + 1;
     if (!mb.claim(`reminder-${row.id}-${n}`)) continue;
-    mb.recordReminder({ messageId: row.id, n, via, at: now });
+    mb.recordReminder({ messageId: row.id, n, via, to, at: now });
     claimed.push({ row, n });
   }
   return claimed;
@@ -24179,11 +24233,19 @@ function reminderNoticeFor(claimed, { settings = reminderSettings() } = {}) {
 function codexRemindersEnabled(source = process.env) {
   return envFlag("AGENT_LINK_CODEX_REMINDERS", false, source);
 }
-async function deliverCodexReminders({ appServer, mailbox, now = Date.now(), settings = reminderSettings() }) {
-  const open = mailbox.inspect({ limit: Number.MAX_SAFE_INTEGER }).filter((row) => row.to_session_kind === "codex");
+async function deliverCodexReminders({ appServer, mailbox, now = Date.now(), settings = reminderSettings(), roleTable = null }) {
+  const codexRecipient = (row) => {
+    const holder = handedOverTo(row, roleTable);
+    if (holder) return holder.startsWith("codex:") ? holder.slice("codex:".length) : null;
+    return row.to_session_kind === "codex" ? String(row.to_session_id).replace(/^codex:/, "") : null;
+  };
+  const open = mailbox.inspect({ limit: Number.MAX_SAFE_INTEGER }).filter((row) => codexRecipient(row) !== null);
   const byThread = /* @__PURE__ */ new Map();
   for (const row of dueReminders(open, { now, settings })) {
-    const threadId = String(row.to_session_id).replace(/^codex:/, "");
+    const threadId = (
+      /** @type {string} */
+      codexRecipient(row)
+    );
     if (!byThread.has(threadId)) byThread.set(threadId, []);
     byThread.get(threadId)?.push(row);
   }
@@ -24205,7 +24267,7 @@ async function deliverCodexReminders({ appServer, mailbox, now = Date.now(), set
       results.push({ threadId, outcome: "busy" });
       continue;
     }
-    const claimed = claimReminders(mailbox, rows, { via: REMINDER_VIA.codex, now, settings });
+    const claimed = claimReminders(mailbox, rows, { via: REMINDER_VIA.codex, to: `codex:${threadId}`, now, settings });
     const notice = reminderNoticeFor(claimed, { settings });
     if (!notice) {
       results.push({ threadId, outcome: "claimed_elsewhere" });
@@ -24580,6 +24642,7 @@ function renderChannelMessage(message) {
 }
 function makeAgentLinkChannelBridge({
   resolveCurrentSession,
+  roles = null,
   mailboxOpener,
   mailboxPath: mailboxPath2,
   notify,
@@ -24589,7 +24652,9 @@ function makeAgentLinkChannelBridge({
 } = {}) {
   const customOpener = typeof mailboxOpener === "function";
   const openMb = customOpener ? mailboxOpener : () => openMailbox();
-  const signaturePaths = mailboxPath2 ? [mailboxPath2] : customOpener ? null : mailboxReadPaths();
+  const rolesPath2 = roles?.paths?.table?.() ?? null;
+  const mailboxPaths = mailboxPath2 ? [mailboxPath2] : customOpener ? null : mailboxReadPaths();
+  const signaturePaths = mailboxPaths && rolesPath2 ? [...mailboxPaths, rolesPath2] : mailboxPaths;
   const minDelay = Math.max(1, pollIntervalMs2);
   const maxDelay = Math.max(minDelay, maxPollIntervalMs);
   let timer = null;
@@ -24637,7 +24702,9 @@ function makeAgentLinkChannelBridge({
     stats.fullChecks += 1;
     const mb = openMb();
     try {
-      const all = mb.listPendingFor({ toSessionIds: claudeSessionAliases(session) });
+      const all = mb.listPendingFor({
+        recipient: recipientMatcher({ aliases: claudeSessionAliases(session), address: claudeAddress(session), table: readRoleTable(roles) })
+      });
       const pending = all.filter((message) => !isHeldByActiveWait(message));
       const held = all.length - pending.length;
       lastHadPending = all.length > 0;
@@ -24815,11 +24882,12 @@ function reapOrphanedAppServers() {
   } catch {
   }
 }
-function startChannelBridge({ enabled, server, resolveCurrentSession }) {
+function startChannelBridge({ enabled, server, resolveCurrentSession, roles = null }) {
   if (!enabled) return { bridge: null, error: null };
   try {
     const bridge = makeAgentLinkChannelBridge({
       resolveCurrentSession,
+      roles,
       notify: async (notification) => {
         if (typeof server.notification !== "function") {
           throw new Error("MCP server notification API unavailable");
@@ -25128,7 +25196,7 @@ var wrapperOut = {
 var orchestrationTools = [
   {
     name: "resolve_project_orchestrator",
-    description: "Resolve a project's source-owned orchestrator binding, or fall back to ranked thread search by project cwd/name/preview. The verdict is in status (resolved, ambiguous, not_found); finding nothing is not an error.",
+    description: "Resolve a project's orchestrator: an explicit orchestratorThreadId (a thread id or role:<name>), else the Codex thread holding the orchestrator role for this projectRoot (set_agent_role with projectRoot), else the source-owned .codex/project-orchestrator.json binding, else the orchestrator role's own holder, else ranked thread search by project cwd/name/preview. The verdict is in status (resolved, ambiguous, not_found); finding nothing is not an error.",
     inputSchema: {
       type: "object",
       properties: {
@@ -25139,7 +25207,8 @@ var orchestrationTools = [
     },
     output: {
       status: enumOf(["resolved", "ambiguous", "not_found"], "Verdict."),
-      source: out("string", "explicit, binding, binding-unreadable-search, or search."),
+      source: out("string", "explicit, role (the orchestrator role, R1.21), binding, binding-unreadable-search, or search."),
+      role: out("object", "With source role: {name, via, address, scope: project|role, projectRoot} of the role holder used."),
       threadId: out(["string", "null"], "The orchestrator thread, when resolved."),
       projectRoot: out(["string", "null"], "Project root."),
       projectId: out(["string", "null"], "Project id."),
@@ -25551,6 +25620,84 @@ function claimResolution(mb, messageId, { staleMs = STALE_RESOLUTION_CLAIM_MS } 
   return { ok: false, row: mb.getMessage({ messageId }) };
 }
 
+// src/registry/addresses.js
+var cachedAddress = makeAddressCache({
+  lookupSession: (id) => findClaudeSessionById(id)
+});
+var SESSION_TTL_MS = 3e4;
+var sessionCache = /* @__PURE__ */ new Map();
+function claudeSessionFor(id) {
+  const key = id.replace(/^claude:/, "");
+  const hit = sessionCache.get(key);
+  if (hit && Date.now() - hit.at < SESSION_TTL_MS) return hit.session;
+  let session = null;
+  try {
+    session = findClaudeSessionById(key);
+  } catch {
+    session = null;
+  }
+  if (sessionCache.size >= 2e3) sessionCache.delete(
+    /** @type {string} */
+    sessionCache.keys().next().value
+  );
+  sessionCache.set(key, { session, at: Date.now() });
+  return session;
+}
+function storedAddress(storedId, storedKind) {
+  return cachedAddress(storedId, storedKind);
+}
+var MAILBOX_KINDS = /* @__PURE__ */ new Set(["claude", "codex", "external"]);
+function mailboxKind2(kind) {
+  return typeof kind === "string" && MAILBOX_KINDS.has(kind) ? kind : "claude";
+}
+function mailboxRowAddresses(row = {}) {
+  return {
+    fromAddress: storedAddress(row.from_session_id, mailboxKind2(row.from_session_kind)),
+    toAddress: storedAddress(row.to_session_id, mailboxKind2(row.to_session_kind))
+  };
+}
+function envelopeAddressResolver(storedId, harness) {
+  return storedAddress(storedId, harness);
+}
+function mailboxRowResult(row, { now, ...options } = {}) {
+  return {
+    ...peerMessageResult(peerMessageFromMailbox(row), options),
+    ...mailboxRowAddresses(row),
+    ...labelFields(row, now === void 0 ? {} : { now })
+  };
+}
+function receiptTargetAddress(target) {
+  if (!target || typeof target !== "object") return null;
+  if (typeof target.address === "string" && target.address) {
+    const address = storedAddress(target.address, null);
+    return address.includes(":") ? address : null;
+  }
+  if (typeof target.threadId === "string" && target.threadId && target.kind !== "claude") {
+    return codexAddress(target.threadId);
+  }
+  if (typeof target.sessionId === "string" && target.sessionId) {
+    const address = storedAddress(target.sessionId, isHarness(target.kind) ? target.kind : "claude");
+    return address.includes(":") ? address : null;
+  }
+  return null;
+}
+function addressAliases(address) {
+  const parsed = parseAddress(address);
+  if (!parsed) return [];
+  if (parsed.harness === "codex") return [parsed.id, parsed.address];
+  const session = claudeSessionFor(parsed.id);
+  const ids = session ? claudeSessionAliases(session) : claudeSessionAliases(parsed.id);
+  return [.../* @__PURE__ */ new Set([...ids, ...ids.map((id) => `claude:${id}`), parsed.address])];
+}
+var receiptAddressResolver = {
+  targetAddress: receiptTargetAddress,
+  canonical: (address) => {
+    const value = storedAddress(address, null);
+    return value.includes(":") ? value : null;
+  },
+  aliases: addressAliases
+};
+
 // src/delivery/message-wait.js
 var OUTCOME_FOR_STATUS = Object.freeze({
   replied: "reply",
@@ -25570,7 +25717,8 @@ function checkMessageWait(mb, { messageId, fromIds, toIds, now = Date.now(), set
     const replyId = view.resolution?.replyMessageId;
     if (replyId) {
       const row = mb.getMessage({ messageId: replyId });
-      if (row && from.has(row.from_session_id) && to.has(row.to_session_id)) replyRow = row;
+      const resolver = roleRoute(original) && typeof view.resolution?.by === "string" ? new Set(addressAliases(view.resolution.by)) : null;
+      if (row && (from.has(row.from_session_id) || resolver?.has(row.from_session_id)) && to.has(row.to_session_id)) replyRow = row;
     }
     return {
       outcome: (
@@ -25777,7 +25925,21 @@ function validateRoleTable(raw) {
     } else if (entry.address !== void 0 && entry.address !== null) {
       problems.push({ path: `roles.${name}.address`, rule: "type", message: "address must be a string; the role has no holder." });
     }
-    table.roles[name] = { address, assignedAt: isoOrNull(entry.assignedAt) };
+    const projects = {};
+    if (entry.projects !== void 0 && entry.projects !== null) {
+      if (!isPlainObject5(entry.projects)) {
+        problems.push({ path: `roles.${name}.projects`, rule: "type", message: "projects must map absolute project roots to addresses; ignored." });
+      } else {
+        for (const [root, holder] of Object.entries(entry.projects)) {
+          if (!path13.isAbsolute(root) || !isAddress(holder)) {
+            problems.push({ path: `roles.${name}.projects`, rule: "format", message: "projects keys are absolute project roots and values claude:<id> or codex:<id> addresses; invalid entries were ignored." });
+            continue;
+          }
+          projects[path13.resolve(root)] = holder;
+        }
+      }
+    }
+    table.roles[name] = { address, assignedAt: isoOrNull(entry.assignedAt), ...Object.keys(projects).length ? { projects } : {} };
   }
   if (raw.overridePolicy !== void 0 && !isPlainObject5(raw.overridePolicy)) {
     problems.push({ path: "overridePolicy", rule: "type", message: "overridePolicy must be an object; ignored (nothing is allowed)." });
@@ -26107,6 +26269,7 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
       roleAddress: `role:${name}`,
       address: role.address,
       assignedAt: role.assignedAt,
+      ...role.projects ? { projects: { ...role.projects } } : {},
       procedure: procedureView(name, { includeText: includeProcedureText, ...state ? { state } : {} })
     };
   }
@@ -26128,14 +26291,23 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
     const role = result.table.roles[name];
     return role ? view(name, role, options) : null;
   }
-  function set({ role: name, address, procedureText = null }) {
+  function set({ role: name, address, procedureText = null, projectRoot = null }) {
     if (!ROLE_NAME_PATTERN.test(name)) throw new TypeError(`invalid role name ${name}`);
     if (!isAddress(address)) throw new TypeError(`invalid holder address ${address}`);
+    if (projectRoot !== null && !path13.isAbsolute(projectRoot)) throw new TypeError(`projectRoot must be absolute: ${projectRoot}`);
+    const root = projectRoot === null ? null : path13.resolve(projectRoot);
     let previous = null;
     update((raw, table) => {
+      const entry = isPlainObject5(raw.roles[name]) ? raw.roles[name] : {};
+      if (root !== null) {
+        previous = table.roles[name]?.projects?.[root] ?? null;
+        entry.projects = isPlainObject5(entry.projects) ? entry.projects : {};
+        entry.projects[root] = address;
+        raw.roles[name] = entry;
+        return;
+      }
       const before = table.roles[name]?.address ?? null;
       previous = typeof before === "string" ? before : null;
-      const entry = isPlainObject5(raw.roles[name]) ? raw.roles[name] : {};
       if (entry.address !== address || !isoOrNull(entry.assignedAt)) entry.assignedAt = iso2();
       entry.address = address;
       raw.roles[name] = entry;
@@ -26155,12 +26327,23 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
     const result = read();
     return { previousAddress: previous, role: view(name, result.table.roles[name]) };
   }
-  function clear(name) {
+  function clear(name, { projectRoot = null } = {}) {
     let previous = null;
     let existed = false;
+    const root = projectRoot === null ? null : path13.resolve(projectRoot);
     update((raw, table) => {
       if (!table.roles[name] || !isPlainObject5(raw.roles[name])) return;
       existed = true;
+      if (root !== null) {
+        previous = table.roles[name].projects?.[root] ?? null;
+        if (isPlainObject5(raw.roles[name].projects)) {
+          for (const key of Object.keys(raw.roles[name].projects)) {
+            if (path13.isAbsolute(key) && path13.resolve(key) === root) delete raw.roles[name].projects[key];
+          }
+          if (Object.keys(raw.roles[name].projects).length === 0) delete raw.roles[name].projects;
+        }
+        return;
+      }
       const before = table.roles[name].address;
       previous = typeof before === "string" ? before : null;
       delete raw.roles[name].address;
@@ -26190,7 +26373,7 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
     return entry;
   }
   function rolesOf(address, table = read().table) {
-    return Object.entries(table.roles).filter(([, role]) => role.address === address || Array.isArray(role.address) && role.address.includes(address)).map(([name]) => name).sort();
+    return Object.entries(table.roles).filter(([, role]) => role.address === address || Array.isArray(role.address) && role.address.includes(address) || Object.values(role.projects ?? {}).includes(address)).map(([name]) => name).sort();
   }
   function resolve(roleAddress, { includeProcedureText = true, sync = true } = {}) {
     const name = parseRoleAddress(roleAddress);
@@ -26320,84 +26503,6 @@ function checkRoleAddressing({ mode, senderAddress, targetAddress, via = null, i
     tag: DIRECT_COORDINATION_TAG
   };
 }
-
-// src/registry/addresses.js
-var cachedAddress = makeAddressCache({
-  lookupSession: (id) => findClaudeSessionById(id)
-});
-var SESSION_TTL_MS = 3e4;
-var sessionCache = /* @__PURE__ */ new Map();
-function claudeSessionFor(id) {
-  const key = id.replace(/^claude:/, "");
-  const hit = sessionCache.get(key);
-  if (hit && Date.now() - hit.at < SESSION_TTL_MS) return hit.session;
-  let session = null;
-  try {
-    session = findClaudeSessionById(key);
-  } catch {
-    session = null;
-  }
-  if (sessionCache.size >= 2e3) sessionCache.delete(
-    /** @type {string} */
-    sessionCache.keys().next().value
-  );
-  sessionCache.set(key, { session, at: Date.now() });
-  return session;
-}
-function storedAddress(storedId, storedKind) {
-  return cachedAddress(storedId, storedKind);
-}
-var MAILBOX_KINDS = /* @__PURE__ */ new Set(["claude", "codex", "external"]);
-function mailboxKind2(kind) {
-  return typeof kind === "string" && MAILBOX_KINDS.has(kind) ? kind : "claude";
-}
-function mailboxRowAddresses(row = {}) {
-  return {
-    fromAddress: storedAddress(row.from_session_id, mailboxKind2(row.from_session_kind)),
-    toAddress: storedAddress(row.to_session_id, mailboxKind2(row.to_session_kind))
-  };
-}
-function envelopeAddressResolver(storedId, harness) {
-  return storedAddress(storedId, harness);
-}
-function mailboxRowResult(row, { now, ...options } = {}) {
-  return {
-    ...peerMessageResult(peerMessageFromMailbox(row), options),
-    ...mailboxRowAddresses(row),
-    ...labelFields(row, now === void 0 ? {} : { now })
-  };
-}
-function receiptTargetAddress(target) {
-  if (!target || typeof target !== "object") return null;
-  if (typeof target.address === "string" && target.address) {
-    const address = storedAddress(target.address, null);
-    return address.includes(":") ? address : null;
-  }
-  if (typeof target.threadId === "string" && target.threadId && target.kind !== "claude") {
-    return codexAddress(target.threadId);
-  }
-  if (typeof target.sessionId === "string" && target.sessionId) {
-    const address = storedAddress(target.sessionId, isHarness(target.kind) ? target.kind : "claude");
-    return address.includes(":") ? address : null;
-  }
-  return null;
-}
-function addressAliases(address) {
-  const parsed = parseAddress(address);
-  if (!parsed) return [];
-  if (parsed.harness === "codex") return [parsed.id, parsed.address];
-  const session = claudeSessionFor(parsed.id);
-  const ids = session ? claudeSessionAliases(session) : claudeSessionAliases(parsed.id);
-  return [.../* @__PURE__ */ new Set([...ids, ...ids.map((id) => `claude:${id}`), parsed.address])];
-}
-var receiptAddressResolver = {
-  targetAddress: receiptTargetAddress,
-  canonical: (address) => {
-    const value = storedAddress(address, null);
-    return value.includes(":") ? value : null;
-  },
-  aliases: addressAliases
-};
 
 // src/tools/claude-send.js
 var DEFAULT_WAIT_TIMEOUT_MS = LIMITS.timeoutMs.def;
@@ -26567,7 +26672,7 @@ function makeClaudeSendHandler({
         let answered = null;
         if (replyToMessageId !== void 0 && replyToMessageId !== null) {
           const original = typeof replyToMessageId === "string" ? mb.getMessage({ messageId: replyToMessageId }) : null;
-          if (!original || !caller.aliases.includes(original.to_session_id)) {
+          if (!original || !recipientMatcher({ aliases: caller.aliases, table: readRoleTable(roles) })(original)) {
             throw new AgentLinkError("invalid_arguments", "`replyToMessageId` must reference an Agent Link message addressed to the caller.", {
               details: { errors: [{ path: "replyToMessageId", rule: "reference", expected: "a message addressed to the caller" }] }
             });
@@ -26597,6 +26702,7 @@ function makeClaudeSendHandler({
         const withText = procedureClaim && roles ? roles.claimProcedureDelivery(procedureClaim) : false;
         const roleMetadata = role ? {
           via: role.via,
+          address: role.address,
           procedure: procedure ? { name: procedure.name, version: procedure.version } : null,
           ...withText && procedure ? { procedureText: procedure.text } : {}
         } : null;
@@ -27123,6 +27229,7 @@ var readInboxTool = {
 };
 function makeReadInboxHandler({
   resolveCurrentSession,
+  roles = null,
   mailboxOpener,
   host = "claude",
   now = () => Date.now(),
@@ -27149,10 +27256,10 @@ function makeReadInboxHandler({
       }
       const markAsDelivered = args.markAsDelivered !== false;
       const limit2 = typeof args.limit === "number" ? args.limit : LIMITS.inbox.def;
-      const toSessionIds = claudeSessionAliases(session);
+      const recipient = recipientMatcher({ aliases: claudeSessionAliases(session), address: claudeAddress(session), table: readRoleTable(roles) });
       const mb = openMb();
       try {
-        const all = mb.listPendingFor({ toSessionIds });
+        const all = mb.listPendingFor({ recipient });
         const pending = all.filter((message) => !isHeldByActiveWait(message));
         const rows = pending.slice(0, limit2);
         if (markAsDelivered) {
@@ -27161,7 +27268,7 @@ function makeReadInboxHandler({
         const at = now();
         const settings = settingsFn();
         const shownIds = new Set(rows.map((row) => row.id));
-        const open = args.includeOpen === false || rows.length >= limit2 ? [] : mb.inspect({ toSessionIds, limit: Number.MAX_SAFE_INTEGER }).filter((row) => !shownIds.has(row.id) && row.delivered_at && isAnticipating(row) && messageStatus(row, { now: at, settings }).status === "pending").sort((a, b) => a.sent_at - b.sent_at).slice(0, limit2 - rows.length);
+        const open = args.includeOpen === false || rows.length >= limit2 ? [] : mb.inspect({ limit: Number.MAX_SAFE_INTEGER }).filter((row) => recipient(row) && !shownIds.has(row.id) && row.delivered_at && isAnticipating(row) && messageStatus(row, { now: at, settings }).status === "pending").sort((a, b) => a.sent_at - b.sent_at).slice(0, limit2 - rows.length);
         const shown = [...rows, ...open];
         const peers = shown.map(peerMessageFromMailbox);
         const messages = shown.map((row, index) => ({
@@ -27228,7 +27335,8 @@ function makeReplyAgentLinkMessageHandler({
   host = "claude",
   appendReceipt: appendReceipt2 = safeAppendReceipt,
   now = () => Date.now(),
-  reminderSettings: settingsFn = () => reminderSettings()
+  reminderSettings: settingsFn = () => reminderSettings(),
+  roles = null
 } = {}) {
   const openMb = typeof mailboxOpener === "function" ? mailboxOpener : () => openMailbox();
   return {
@@ -27269,9 +27377,11 @@ function makeReplyAgentLinkMessageHandler({
             hint: "Use the messageId from the <agent-link-message> envelope or read_agent_link_inbox."
           });
         }
-        if (!claudeSessionAliases(session).includes(original.to_session_id)) {
-          throw new AgentLinkError("wrong_recipient", "That message was not addressed to this session.", {
-            details: { messageId, expected: original.to_session_id, caller: currentSessionId }
+        const table = readRoleTable(roles);
+        const holder = handedOverTo(original, table);
+        if (!recipientMatcher({ aliases: claudeSessionAliases(session), address: claudeAddress(session), table })(original)) {
+          throw new AgentLinkError("wrong_recipient", holder ? `That message was sent to ${roleRoute(original)?.via ?? "a role"} and has been handed over to ${holder}.` : "That message was not addressed to this session.", {
+            details: { messageId, expected: holder ?? original.to_session_id, caller: currentSessionId, ...holder ? { via: roleRoute(original)?.via ?? null } : {} }
           });
         }
         const anticipating = isAnticipating(original);
@@ -27368,9 +27478,9 @@ function alreadyResolved(messageId, view) {
     hint: "Send a new message with message_claude_session if there is more to say."
   });
 }
-function invalid2(path18, message) {
+function invalid2(path19, message) {
   return new AgentLinkError("invalid_arguments", message, {
-    details: { errors: [{ path: path18, rule: "required", expected: "non-empty string" }] }
+    details: { errors: [{ path: path19, rule: "required", expected: "non-empty string" }] }
   });
 }
 function replyAgentLinkMessageEntries(deps) {
@@ -27384,7 +27494,7 @@ function replyAgentLinkMessageEntries(deps) {
 // src/tools/message-status.js
 var messageStatusTool = {
   name: "get_agent_link_message_status",
-  description: "Status of one Agent Link message, for its sender or its recipient (anyone else gets permission_denied). Returns the labels (from, to, anticipation, replyBy), delivery (queued, delivered, acknowledged), status (pending, replied, declined, done, unresolved, expired; null for an fyi message), the resolution ({kind, by, at, late, replyMessageId} or null), and reminders ({count, limit, lastAt, nextDueAt}). Never returns a message body: read replies with read_agent_link_inbox or a wait.",
+  description: "Status of one Agent Link message, for its sender or its recipient (anyone else gets permission_denied). For a message sent through role:<name> that is still open after the role moved, the role's current holder is the recipient (holder). Returns the labels (from, to, anticipation, replyBy), delivery (queued, delivered, acknowledged), status (pending, replied, declined, done, unresolved, expired; null for an fyi message), the resolution ({kind, by, at, late, replyMessageId} or null), and reminders ({count, limit, lastAt, nextDueAt}). Never returns a message body: read replies with read_agent_link_inbox or a wait.",
   inputSchema: {
     type: "object",
     properties: {
@@ -27403,11 +27513,14 @@ var messageStatusTool = {
     delivery: enumOf(["queued", "delivered", "acknowledged"], "Delivery state."),
     status: out(["string", "null"], `Resolution status: ${MESSAGE_STATUSES.join(", ")}; null for an fyi message.`),
     resolution: out(["object", "null"], "{kind: reply|decline|done, by, at, late, replyMessageId}, or null."),
-    reminders: out(["object", "null"], "{count, limit, lastAt, nextDueAt} for a reply/action message; null for fyi.")
+    reminders: out(["object", "null"], "{count, limit, lastAt, nextDueAt} for a reply/action message; null for fyi."),
+    via: out("string", "role:<name>; present only when the message was sent through a role."),
+    holder: out(["string", "null"], "With via: the session the message was handed over to after the role moved (the role's current holder while it is open, the holder that resolved it once resolved), else null.")
   },
   annotations: { readOnlyHint: true }
 };
 function makeMessageStatusHandler({
+  roles = null,
   host,
   resolveCurrentSession = null,
   mailboxOpener,
@@ -27437,7 +27550,8 @@ function makeMessageStatusHandler({
         });
       }
       const { fromAddress, toAddress } = mailboxRowAddresses(row);
-      if (!isParticipant(caller, row, { fromAddress, toAddress })) {
+      const holder = handedOverTo(row, readRoleTable(roles));
+      if (!isParticipant(caller, row, { fromAddress, toAddress, holder })) {
         throw new AgentLinkError("permission_denied", "Only the sender or the recipient of a message can read its status.", {
           details: { reason: "not_participant", messageId },
           hint: "Ask the sender or the recipient."
@@ -27446,13 +27560,14 @@ function makeMessageStatusHandler({
       const at = now();
       const settings = settingsFn();
       const settled = settleImplicitReply(mb, row, {
-        fromIds: [row.to_session_id, ...addressAliases(toAddress)],
+        fromIds: [row.to_session_id, ...addressAliases(toAddress), ...holder ? addressAliases(holder) : []],
         toIds: [row.from_session_id, ...addressAliases(fromAddress)],
         now: at,
         settings,
         write: false
       });
       const labels = labelFields(settled, { now: at, settings });
+      const via = roleRoute(row)?.via ?? null;
       return {
         messageId: row.id,
         from: fromAddress,
@@ -27463,18 +27578,21 @@ function makeMessageStatusHandler({
         delivery: deliveryState(settled),
         status: labels.status,
         resolution: labels.resolution,
-        reminders: labels.reminders
+        reminders: labels.reminders,
+        // Only for a message sent through a role (R7.20).
+        ...via ? { via, holder } : {}
       };
     } finally {
       mb.close();
     }
   };
 }
-function isParticipant(caller, row, { fromAddress, toAddress }) {
+function isParticipant(caller, row, { fromAddress, toAddress, holder = null }) {
   if (caller.id === "external") return false;
   const ids = new Set(caller.aliases);
   if (ids.has(row.from_session_id) || ids.has(row.to_session_id)) return true;
   const callerAddress = storedAddress(caller.id, caller.kind);
+  if (holder && (ids.has(holder) || ids.has(holder.replace(/^(?:claude|codex):/, "")) || callerAddress === holder)) return true;
   return callerAddress.includes(":") && (callerAddress === fromAddress || callerAddress === toAddress);
 }
 function messageStatusEntries(deps) {
@@ -27792,11 +27910,13 @@ function agentEntries(deps) {
 }
 
 // src/tools/roles.js
+import path14 from "node:path";
 var READ_ONLY4 = { readOnlyHint: true };
 var ADMIN_WRITE = { readOnlyHint: false, destructiveHint: true };
 var ADMIN_NOTE = "Requires AGENT_LINK_ROLE_ADMIN=1 in this Agent Link server's environment, set by the user; otherwise permission_denied (reason role_admin_disabled). A tool caller cannot enable it.";
 var ROLE_ARG = "Role name: 1 to 40 lowercase letters, digits, or hyphens (role:<name> is also accepted).";
-var ROLE_VIEW = "{role, roleAddress, address (holder, or null), assignedAt, procedure: {name, version, sha256, updatedAt, present} | null}";
+var ROLE_VIEW = "{role, roleAddress, address (holder, or null), assignedAt, projects? ({<absolute project root>: holder address}, when the role has per-project holders), procedure: {name, version, sha256, updatedAt, present} | null}";
+var PROJECT_ROOT_ARG = "Optional absolute project root. Scopes the change to that project's holder of the role (for the orchestrator role, the project orchestrator resolve_project_orchestrator returns, R1.21); the role's own holder is left as it is.";
 var senderList = (description) => ({
   type: "array",
   maxItems: MAX_POLICY_SENDERS,
@@ -27806,31 +27926,33 @@ var senderList = (description) => ({
 var roleTools = [
   {
     name: "set_agent_role",
-    description: "Assign a role to a session, so other sessions can address it as role:<name> (design doc section 1.8). Optionally set the role's procedure: text shown once per version to the role holder with messages sent to the role. A changed procedure gets the next version. A role is a pointer, not a privilege: holding one gives no extra rights. " + ADMIN_NOTE,
+    description: "Assign a role to a session, so other sessions can address it as role:<name> (design doc section 1.8). With projectRoot, assign the role's holder for one project instead (the orchestrator role per project, which resolve_project_orchestrator uses before the project's binding file). Optionally set the role's procedure: text shown once per version to the role holder with messages sent to the role. A changed procedure gets the next version. A role is a pointer, not a privilege: holding one gives no extra rights. " + ADMIN_NOTE,
     inputSchema: {
       type: "object",
       properties: {
         role: str(ROLE_ARG),
         agent: str("The session that holds the role: a claude:<id> or codex:<id> address, or a bare session or thread id."),
-        procedure: str("Optional procedure text (at most 64 KiB) stored in <state>/roles/<name>.md. Omit to keep the current procedure.")
+        procedure: str("Optional procedure text (at most 64 KiB) stored in <state>/roles/<name>.md. Omit to keep the current procedure."),
+        projectRoot: str(PROJECT_ROOT_ARG)
       },
       required: ["role", "agent"],
       additionalProperties: false
     },
     output: {
       role: out("object", `The role after the change: ${ROLE_VIEW}.`),
-      previousAddress: out(["string", "null"], "The previous holder, or null."),
+      previousAddress: out(["string", "null"], "The previous holder (of the project, with projectRoot), or null."),
       holder: out("object", "{address, harness, title} of the new holder. title is untrusted data."),
+      projectRoot: out(["string", "null"], "The project the assignment is scoped to, or null."),
       path: out("string", "Path of roles.json.")
     },
     annotations: ADMIN_WRITE
   },
   {
     name: "clear_agent_role",
-    description: "Remove a role's holder. Messages to role:<name> then fail with not_found until the role is assigned again. The role's procedure and its version are kept. " + ADMIN_NOTE,
+    description: "Remove a role's holder. Messages to role:<name> then fail with not_found until the role is assigned again. The role's procedure and its version are kept. With projectRoot, remove only that project's holder. " + ADMIN_NOTE,
     inputSchema: {
       type: "object",
-      properties: { role: str(ROLE_ARG) },
+      properties: { role: str(ROLE_ARG), projectRoot: str(PROJECT_ROOT_ARG) },
       required: ["role"],
       additionalProperties: false
     },
@@ -27955,12 +28077,14 @@ function makeRoleHandlers({ roles, registry: registry2, admin }) {
         }
         procedure = args.procedure;
       }
+      const projectRoot = optionalProjectRoot(args.projectRoot);
       const session = await registry2.get(agent);
-      const result = roles.set({ role: name, address: session.address, procedureText: procedure });
+      const result = roles.set({ role: name, address: session.address, procedureText: procedure, projectRoot });
       return {
         role: result.role,
         previousAddress: typeof result.previousAddress === "string" ? result.previousAddress : null,
         holder: { address: session.address, harness: session.harness, title: session.title ?? null },
+        projectRoot,
         path: roles.paths.table()
       };
     },
@@ -27968,7 +28092,7 @@ function makeRoleHandlers({ roles, registry: registry2, admin }) {
     clear_agent_role: async (args) => {
       requireAdmin();
       const name = requireRoleName(args.role);
-      const result = roles.clear(name);
+      const result = roles.clear(name, { projectRoot: optionalProjectRoot(args.projectRoot) });
       return {
         cleared: result.existed && typeof result.previousAddress === "string",
         previousAddress: typeof result.previousAddress === "string" ? result.previousAddress : null,
@@ -28042,6 +28166,16 @@ function makeRoleHandlers({ roles, registry: registry2, admin }) {
       return { target, policy: read.table.overridePolicy[target] ?? null, problems: policyProblems };
     }
   };
+}
+function optionalProjectRoot(value) {
+  if (value === void 0 || value === null) return null;
+  const root = typeof value === "string" ? value.trim() : "";
+  if (!root || !path14.isAbsolute(root)) {
+    throw new AgentLinkError("invalid_arguments", "projectRoot must be an absolute path.", {
+      details: { errors: [{ path: "projectRoot", rule: "format", expected: "an absolute path" }] }
+    });
+  }
+  return path14.resolve(root);
 }
 function roleEntries(deps) {
   const handlers = makeRoleHandlers(deps);
@@ -28161,11 +28295,11 @@ function makeClaudeProvider({
 
 // src/registry/codex.js
 import fs13 from "node:fs";
-import path15 from "node:path";
+import path16 from "node:path";
 
 // src/codex/session-index.js
 import { promises as fs12 } from "node:fs";
-import path14 from "node:path";
+import path15 from "node:path";
 var MAX_PREVIEW_CHARS = 500;
 var HEAD_WINDOW_BYTES = 64 * 1024;
 var MAX_HEAD_BYTES = 4 * 1024 * 1024;
@@ -28236,9 +28370,9 @@ async function listLocalThreads(options = {}) {
 async function listLocalThreadIds(options = {}) {
   const codexHome2 = resolveCodexHome(options);
   const out2 = [];
-  for (const root of [path14.join(codexHome2, "sessions"), path14.join(codexHome2, "archived_sessions")]) {
+  for (const root of [path15.join(codexHome2, "sessions"), path15.join(codexHome2, "archived_sessions")]) {
     for (const file of await collectJsonlFiles(root)) {
-      const id = threadIdFromFilename(path14.basename(file));
+      const id = threadIdFromFilename(path15.basename(file));
       if (id) {
         out2.push({ id, path: file });
       }
@@ -28275,7 +28409,7 @@ async function findLocalThreadFile(threadId, options = {}) {
   if (!id || id.includes("/") || id.includes("\\") || id.includes("..")) {
     return null;
   }
-  const roots = options.roots ?? [path14.join(codexHome2, "sessions"), path14.join(codexHome2, "archived_sessions")];
+  const roots = options.roots ?? [path15.join(codexHome2, "sessions"), path15.join(codexHome2, "archived_sessions")];
   const suffix = `-${id}.jsonl`;
   for (const root of roots) {
     const file = await findNewestFirst(root, (name) => name.endsWith(suffix) || name === `${id}.jsonl`, async (candidate) => {
@@ -28299,8 +28433,8 @@ async function findLocalThreadFile(threadId, options = {}) {
 async function archiveLocalThread(threadId, options = {}) {
   const codexHome2 = resolveCodexHome(options);
   const located = await findLocalThread(threadId, { codexHome: codexHome2 });
-  const activeRoot = path14.join(codexHome2, "sessions");
-  const archivedRoot = path14.join(codexHome2, "archived_sessions");
+  const activeRoot = path15.join(codexHome2, "sessions");
+  const archivedRoot = path15.join(codexHome2, "archived_sessions");
   const before = located.thread.archiveState ?? inferArchiveState(located.path);
   if (before.scope === "archived") {
     return {
@@ -28315,12 +28449,12 @@ async function archiveLocalThread(threadId, options = {}) {
       codexHome: codexHome2
     };
   }
-  const relative = path14.relative(activeRoot, located.path);
-  if (relative.startsWith("..") || path14.isAbsolute(relative)) {
+  const relative = path15.relative(activeRoot, located.path);
+  if (relative.startsWith("..") || path15.isAbsolute(relative)) {
     throw new AgentLinkError("permission_denied", `Thread ${threadId} is not under ${activeRoot}; refusing to archive ${located.path}`, { details: { reason: "outside active sessions root" } });
   }
-  const destination = path14.join(archivedRoot, relative);
-  await fs12.mkdir(path14.dirname(destination), { recursive: true });
+  const destination = path15.join(archivedRoot, relative);
+  await fs12.mkdir(path15.dirname(destination), { recursive: true });
   await moveFileWithoutOverwrite(located.path, destination, threadId);
   const afterThread = {
     ...located.thread,
@@ -28398,7 +28532,7 @@ async function findNewestFirst(root, nameMatches, confirm) {
   entries.sort((a, b) => a.name < b.name ? 1 : a.name > b.name ? -1 : 0);
   for (const entry of entries) {
     if (entry.isFile() && entry.name.endsWith(".jsonl") && nameMatches(entry.name)) {
-      const full = path14.join(root, entry.name);
+      const full = path15.join(root, entry.name);
       if (await confirm(full)) {
         return full;
       }
@@ -28406,7 +28540,7 @@ async function findNewestFirst(root, nameMatches, confirm) {
   }
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      const found = await findNewestFirst(path14.join(root, entry.name), nameMatches, confirm);
+      const found = await findNewestFirst(path15.join(root, entry.name), nameMatches, confirm);
       if (found) {
         return found;
       }
@@ -28435,7 +28569,7 @@ async function collectJsonlFiles(root) {
   }
   const out2 = [];
   for (const entry of entries) {
-    const fullPath = path14.join(root, entry.name);
+    const fullPath = path15.join(root, entry.name);
     if (entry.isDirectory()) {
       out2.push(...await collectJsonlFiles(fullPath));
     } else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
@@ -28445,7 +28579,7 @@ async function collectJsonlFiles(root) {
   return out2;
 }
 async function readSessionIndex(codexHome2) {
-  const indexPath = path14.join(codexHome2, "session_index.jsonl");
+  const indexPath = path15.join(codexHome2, "session_index.jsonl");
   let raw;
   try {
     raw = await fs12.readFile(indexPath, "utf8");
@@ -28811,15 +28945,15 @@ function threadMatches(thread, searchTerm) {
 }
 function rootsForArchiveScope(codexHome2, archiveScope2) {
   if (archiveScope2 === "archived") {
-    return [path14.join(codexHome2, "archived_sessions")];
+    return [path15.join(codexHome2, "archived_sessions")];
   }
   if (archiveScope2 === "all") {
     return [
-      path14.join(codexHome2, "sessions"),
-      path14.join(codexHome2, "archived_sessions")
+      path15.join(codexHome2, "sessions"),
+      path15.join(codexHome2, "archived_sessions")
     ];
   }
-  return [path14.join(codexHome2, "sessions")];
+  return [path15.join(codexHome2, "sessions")];
 }
 function normalizeCwdFilter(cwd) {
   if (!cwd) {
@@ -29006,7 +29140,7 @@ function codexInstallState() {
   }
   const hasSessions = Boolean(home) && ["sessions", "archived_sessions"].some((dir) => {
     try {
-      return fs13.existsSync(path15.join(
+      return fs13.existsSync(path16.join(
         /** @type {string} */
         home,
         dir
@@ -29726,7 +29860,7 @@ function makeThreadActions({ appServer, messaging, desktop }) {
 
 // src/delivery/override-policy.js
 import fs14 from "node:fs";
-import path16 from "node:path";
+import path17 from "node:path";
 var OVERRIDE_FIELDS2 = Object.freeze({
   cwd: "cwd",
   model: "model",
@@ -29766,15 +29900,15 @@ function policyAllows(policy, setting, { senderAddress, senderRoles, targetAddre
   return null;
 }
 function resolveRealPath(target) {
-  let current = path16.resolve(target);
+  let current = path17.resolve(target);
   const rest = [];
   for (; ; ) {
     try {
-      return path16.join(fs14.realpathSync(current), ...rest.reverse());
+      return path17.join(fs14.realpathSync(current), ...rest.reverse());
     } catch {
-      const parent = path16.dirname(current);
-      if (parent === current) return path16.resolve(target);
-      rest.push(path16.basename(current));
+      const parent = path17.dirname(current);
+      if (parent === current) return path17.resolve(target);
+      rest.push(path17.basename(current));
       current = parent;
     }
   }
@@ -29783,15 +29917,15 @@ function workspaceRoot(cwd) {
   const start = resolveRealPath(cwd);
   let dir = start;
   for (; ; ) {
-    if (fs14.existsSync(path16.join(dir, ".git"))) return dir;
-    const parent = path16.dirname(dir);
+    if (fs14.existsSync(path17.join(dir, ".git"))) return dir;
+    const parent = path17.dirname(dir);
     if (parent === dir) return start;
     dir = parent;
   }
 }
 function isWithinWorkspace(candidate, root) {
-  const relative = path16.relative(root, resolveRealPath(candidate));
-  return relative === "" || !relative.startsWith("..") && !path16.isAbsolute(relative);
+  const relative = path17.relative(root, resolveRealPath(candidate));
+  return relative === "" || !relative.startsWith("..") && !path17.isAbsolute(relative);
 }
 function sameDirectory(a, b) {
   return resolveRealPath(a) === resolveRealPath(b);
@@ -29818,7 +29952,7 @@ function decideTargetOverrides({ thread, args, steering = false, parties, policy
   for (const field of FIELD_ORDER) {
     const requested = text(args[field]);
     if (!requested) continue;
-    if (field === "cwd" && !path16.isAbsolute(requested)) {
+    if (field === "cwd" && !path17.isAbsolute(requested)) {
       throw new AgentLinkError("invalid_arguments", "cwd must be an absolute path.", {
         details: { errors: [{ path: "cwd", rule: "absolute", expected: "an absolute directory path" }] }
       });
@@ -30895,14 +31029,27 @@ function makeThreadQueries({ appServer, now = () => Date.now(), wait = sleep4 })
 
 // src/codex/project-orchestrator.js
 import { promises as fs15 } from "node:fs";
-import path17 from "node:path";
-var PROJECT_ORCHESTRATOR_BINDING_PATH = path17.join(".codex", "project-orchestrator.json");
+import path18 from "node:path";
+var PROJECT_ORCHESTRATOR_BINDING_PATH = path18.join(".codex", "project-orchestrator.json");
 var DEFAULT_POLICY_VERSION = "v0";
 var ALLOWED_RETURN_STATUSES = /* @__PURE__ */ new Set(["done", "done_with_concerns", "blocked"]);
+var ORCHESTRATOR_ROLE = "orchestrator";
+var ROLE_ADDRESS = /^role:([a-z0-9-]{1,40})$/;
 async function resolveProjectOrchestrator(args = {}, deps = {}) {
   const projectRoot = cleanString(args.projectRoot || args.cwd);
   const explicitThreadId = cleanString(args.orchestratorThreadId || args.threadId);
   const limit2 = clampInt(args.limit ?? 10, 1, 50);
+  const explicitRole = ROLE_ADDRESS.exec(explicitThreadId)?.[1] ?? null;
+  if (explicitRole) {
+    const held = roleHolder(deps.roles, explicitRole, projectRoot, { scopes: ["project", "role"] });
+    if (!held) {
+      throw new AgentLinkError("not_found", `No Codex thread holds role ${explicitRole}${projectRoot ? ` for ${projectRoot}` : ""}.`, {
+        details: { role: explicitRole, query: explicitThreadId, projectRoot: projectRoot || null, candidates: [] },
+        hint: "Ask the user to assign the role to a Codex thread (set_agent_role, with projectRoot for one project), or call list_agent_roles."
+      });
+    }
+    return await roleResolution(held, { projectRoot, args, deps });
+  }
   if (explicitThreadId) {
     const verification2 = await verifyThreadReadable(explicitThreadId, deps);
     return {
@@ -30920,6 +31067,11 @@ async function resolveProjectOrchestrator(args = {}, deps = {}) {
       },
       candidates: []
     };
+  }
+  const scoped = projectRoot ? roleHolder(deps.roles, ORCHESTRATOR_ROLE, projectRoot, { scopes: ["project"] }) : null;
+  if (scoped) {
+    const resolved = await roleResolution(scoped, { projectRoot, args, deps });
+    if (resolved.verification.readable !== false) return resolved;
   }
   const binding = projectRoot ? await readProjectOrchestratorBinding(projectRoot) : null;
   const bindingVerification = binding ? await verifyThreadReadable(binding.orchestratorThreadId, deps) : null;
@@ -30942,6 +31094,11 @@ async function resolveProjectOrchestrator(args = {}, deps = {}) {
         candidates: verification2.thread ? [verification2.thread] : []
       };
     }
+  }
+  const unscoped = roleHolder(deps.roles, ORCHESTRATOR_ROLE, projectRoot, { scopes: ["role"] });
+  if (unscoped) {
+    const resolved = await roleResolution(unscoped, { projectRoot, args, deps, binding });
+    if (resolved.verification.readable !== false) return resolved;
   }
   const query = buildFallbackQuery({ ...args, projectRoot, binding });
   if (!query) {
@@ -31105,7 +31262,7 @@ async function returnProjectWorkResult(args = {}, deps = {}, toolContext = {}) {
   };
 }
 async function readProjectOrchestratorBinding(projectRoot) {
-  const bindingPath = path17.join(requiredString(projectRoot, "projectRoot"), PROJECT_ORCHESTRATOR_BINDING_PATH);
+  const bindingPath = path18.join(requiredString(projectRoot, "projectRoot"), PROJECT_ORCHESTRATOR_BINDING_PATH);
   let raw;
   try {
     raw = await fs15.readFile(bindingPath, "utf8");
@@ -31186,8 +31343,8 @@ function validateBinding(value, { bindingPath, requestedProjectRoot }) {
       throwBindingError(`Binding field ${field} is required`, { bindingPath, field });
     }
   }
-  const resolvedBindingRoot = path17.resolve(value.projectRoot);
-  const resolvedRequestedRoot = path17.resolve(requestedProjectRoot);
+  const resolvedBindingRoot = path18.resolve(value.projectRoot);
+  const resolvedRequestedRoot = path18.resolve(requestedProjectRoot);
   if (resolvedBindingRoot !== resolvedRequestedRoot) {
     throwBindingError("Binding projectRoot does not match the source root that contains it", {
       bindingPath,
@@ -31221,6 +31378,46 @@ function throwBindingError(message, details) {
   const error2 = new Error(`Project-orchestrator binding is corrupt: ${message}`);
   error2.details = details;
   throw error2;
+}
+function roleHolder(roles, name, projectRoot, { scopes }) {
+  if (!roles || typeof roles.read !== "function") return null;
+  let table;
+  try {
+    const read = roles.read();
+    if (read.error) return null;
+    table = read.table;
+  } catch {
+    return null;
+  }
+  const entry = table?.roles?.[name];
+  if (!entry) return null;
+  const root = projectRoot && path18.isAbsolute(projectRoot) ? path18.resolve(projectRoot) : null;
+  for (const scope of scopes) {
+    const address = scope === "project" ? root ? entry.projects?.[root] : null : entry.address;
+    if (typeof address === "string" && address.startsWith("codex:")) {
+      return { name, address, threadId: address.slice("codex:".length), scope, projectRoot: scope === "project" ? root : null };
+    }
+  }
+  return null;
+}
+async function roleResolution(held, { projectRoot, args, deps, binding = null }) {
+  const verification = await verifyThreadReadable(held.threadId, deps);
+  return {
+    ok: true,
+    source: "role",
+    threadId: held.threadId,
+    projectRoot: projectRoot || held.projectRoot || null,
+    projectId: cleanString(args.projectId) || binding?.projectId || null,
+    binding,
+    role: { name: held.name, via: `role:${held.name}`, address: held.address, scope: held.scope, projectRoot: held.projectRoot },
+    verification,
+    selection: {
+      bestId: held.threadId,
+      ambiguous: false,
+      strategy: held.scope === "project" ? `role:${held.name} assigned for this project` : `role:${held.name}`
+    },
+    candidates: verification.thread ? [verification.thread] : []
+  };
 }
 async function verifyThreadReadable(threadId, deps) {
   if (typeof deps.readThread !== "function") {
@@ -31263,7 +31460,7 @@ function buildFallbackQuery(args) {
     return `Project Orchestrator ${projectId}`;
   }
   if (args.projectRoot) {
-    return `${path17.basename(args.projectRoot)} Project Orchestrator`;
+    return `${path18.basename(args.projectRoot)} Project Orchestrator`;
   }
   return "";
 }
@@ -31913,7 +32110,8 @@ function createAgentLinkServer({ config: config2 = loadConfig(), appServer, setF
       }),
       listThreads: queries.listThreads,
       messageThread: messaging.messageThread,
-      launchThread: actions.launchThread
+      launchThread: actions.launchThread,
+      roles
     };
   }
   function dependencyHandoffDeps(args = {}) {
@@ -31979,9 +32177,9 @@ function createAgentLinkServer({ config: config2 = loadConfig(), appServer, setF
     ...mailboxInspectEntries({ ...claudeDeps, inspectAll: config2.inspectAll }),
     ...claudeSendEntries({ ...claudeDeps, roles }),
     ...claudeWaitEntries(claudeDeps),
-    ...readInboxEntries({ resolveCurrentSession: currentClaudeSession, host: hostInfo.host }),
-    ...replyAgentLinkMessageEntries(claudeDeps),
-    ...messageStatusEntries(claudeDeps),
+    ...readInboxEntries({ resolveCurrentSession: currentClaudeSession, host: hostInfo.host, roles }),
+    ...replyAgentLinkMessageEntries({ ...claudeDeps, roles }),
+    ...messageStatusEntries({ ...claudeDeps, roles }),
     // Every tool on every host (R1.16): the Claude listing tools are no
     // longer limited to the Claude host.
     ...claudeListingEntries(),
@@ -32002,11 +32200,12 @@ function createAgentLinkServer({ config: config2 = loadConfig(), appServer, setF
     const channel = startChannelBridge({
       enabled: channelEnabled,
       server,
-      resolveCurrentSession: currentClaudeSession
+      resolveCurrentSession: currentClaudeSession,
+      roles
     });
     if (channel.error !== null) channelError = channel.error;
     lifecycle.setChannelBridge(channel.bridge);
-    if (config2.codexReminders) startCodexReminders({ appServer: codexAppServer });
+    if (config2.codexReminders) startCodexReminders({ appServer: codexAppServer, roles });
     startClaimSweeper({ host: hostInfo.host });
     lifecycle.installSignalHandlers();
   }
@@ -32035,7 +32234,7 @@ function startClaimSweeper({ host }) {
   const timer = setInterval(run, CLAIM_SWEEP_INTERVAL_MS);
   timer.unref?.();
 }
-function startCodexReminders({ appServer }) {
+function startCodexReminders({ appServer, roles = null }) {
   const settings = reminderSettings();
   let running = false;
   const timer = setInterval(async () => {
@@ -32044,7 +32243,7 @@ function startCodexReminders({ appServer }) {
     let mailbox = null;
     try {
       mailbox = openMailbox();
-      const results = await deliverCodexReminders({ appServer, mailbox, settings });
+      const results = await deliverCodexReminders({ appServer, mailbox, settings, roleTable: readRoleTable(roles) });
       if (results.length) getLogger().info("codex_reminders.pass", { results });
     } catch (error2) {
       getLogger().warn("codex_reminders.failed", { message: error2 instanceof Error ? error2.message : String(error2) });

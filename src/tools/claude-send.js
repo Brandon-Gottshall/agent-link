@@ -16,6 +16,7 @@ import { claimResolution } from "../delivery/resolution.js";
 import { claudeAddress, hostIdentity, parseAddress } from "../shared/identity.js";
 import { looksLikeRoleAddress, procedureProblemWarning } from "../registry/roles.js";
 import { checkRoleAddressing } from "../delivery/role-policy.js";
+import { readRoleTable, recipientMatcher } from "../delivery/role-handover.js";
 import { mailboxRowResult } from "../registry/addresses.js";
 import { buildReceipt, normalizeReceiptInput, safeAppendReceipt } from "../shared/receipt-index.js";
 import { AgentLinkError } from "../shared/errors.js";
@@ -241,7 +242,8 @@ export function makeClaudeSendHandler({
         let answered = null;
         if (replyToMessageId !== undefined && replyToMessageId !== null) {
           const original = typeof replyToMessageId === "string" ? mb.getMessage({ messageId: replyToMessageId }) : null;
-          if (!original || !caller.aliases.includes(original.to_session_id)) {
+          // The recipient may be a role's new holder (handover, R7.20).
+          if (!original || !recipientMatcher({ aliases: caller.aliases, table: readRoleTable(roles) })(original)) {
             throw new AgentLinkError("invalid_arguments", "`replyToMessageId` must reference an Agent Link message addressed to the caller.", {
               details: { errors: [{ path: "replyToMessageId", rule: "reference", expected: "a message addressed to the caller" }] }
             });
@@ -273,9 +275,12 @@ export function makeClaudeSendHandler({
         const procedure = role?.procedure ?? null;
         const procedureClaim = procedure && targetAddress ? { role: procedure.name, sha256: procedure.sha256, address: targetAddress } : null;
         const withText = procedureClaim && roles ? roles.claimProcedureDelivery(procedureClaim) : false;
+        // The holder's address at send time (role.address) lets readers tell
+        // when the role has since moved to another session (R7.20).
         const roleMetadata = role
           ? {
               via: role.via,
+              address: role.address,
               procedure: procedure ? { name: procedure.name, version: procedure.version } : null,
               ...(withText && procedure ? { procedureText: procedure.text } : {})
             }

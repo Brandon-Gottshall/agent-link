@@ -215,10 +215,13 @@ export function openMailbox(options = {}) {
 
   // One reminder showing of an open message (R7.17).
   /**
-   * @param {{messageId: string, n: number, via: string, at?: number}} event
+   * `to` is the recipient who was reminded (an address or stored id). It
+   * differs from the stored recipient after a role handover (R7.20), and
+   * keeps one recipient's Stop-hook gate from counting another's blocks.
+   * @param {{messageId: string, n: number, via: string, to?: string | null, at?: number}} event
    */
-  function recordReminder({ messageId, n, via, at = Date.now() }) {
-    appendEvent({ type: "reminded", at, messageId, n, via });
+  function recordReminder({ messageId, n, via, to = null, at = Date.now() }) {
+    appendEvent({ type: "reminded", at, messageId, n, via, ...(typeof to === "string" && to ? { to } : {}) });
   }
 
   // Exactly-once claims across processes (claim-before-notify, P4-10):
@@ -302,12 +305,15 @@ export function openMailbox(options = {}) {
   }
 
   // `toSessionIds` matches any of several ids for one recipient (see
-  // claudeSessionAliases()).
-  /** @param {{toSessionId?: string, toSessionIds?: string[]}} [query] */
-  function listPendingFor({ toSessionId, toSessionIds } = {}) {
+  // claudeSessionAliases()). `recipient`, when given, decides instead
+  // (recipientMatcher in src/delivery/role-handover.js: a message handed
+  // over to a role's new holder, R7.20).
+  /** @param {{toSessionId?: string, toSessionIds?: string[], recipient?: ((row: Record<string, any>) => boolean) | null}} [query] */
+  function listPendingFor({ toSessionId, toSessionIds, recipient = null } = {}) {
     const recipients = idSet(toSessionId, toSessionIds);
+    const isRecipient = typeof recipient === "function" ? recipient : (/** @type {Record<string, any>} */ m) => recipients.has(m.to_session_id);
     return view()
-      .filter((m) => recipients.has(m.to_session_id) && !m.delivered_at)
+      .filter((m) => isRecipient(m) && !m.delivered_at)
       .sort((a, b) => a.sent_at - b.sent_at);
   }
 
@@ -326,9 +332,9 @@ export function openMailbox(options = {}) {
     listPendingFor,
     // Marks delivered only what it returns: with `limit`, the rest stays
     // pending for the next read.
-    /** @param {{toSessionId?: string, toSessionIds?: string[], limit?: number}} [query] */
-    drainFor({ toSessionId, toSessionIds, limit } = {}) {
-      let rows = listPendingFor({ toSessionId, toSessionIds });
+    /** @param {{toSessionId?: string, toSessionIds?: string[], recipient?: ((row: Record<string, any>) => boolean) | null, limit?: number}} [query] */
+    drainFor({ toSessionId, toSessionIds, recipient = null, limit } = {}) {
+      let rows = listPendingFor({ toSessionId, toSessionIds, recipient });
       if (Number.isFinite(limit)) rows = rows.slice(0, Math.max(0, Math.floor(limit)));
       for (const row of rows) markDelivered({ messageId: row.id });
       return rows;
@@ -472,7 +478,8 @@ function mergedView(paths, claimsDir = null) {
         messages.get(event.messageId).reminders.push({
           n,
           via: typeof event.via === "string" ? event.via : null,
-          at: normalizeTimestamp(event.at)
+          at: normalizeTimestamp(event.at),
+          ...(typeof event.to === "string" && event.to ? { to: event.to } : {})
         });
       }
     }

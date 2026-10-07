@@ -2121,7 +2121,7 @@
   },
   {
     "name": "resolve_project_orchestrator",
-    "description": "Resolve a project's source-owned orchestrator binding, or fall back to ranked thread search by project cwd/name/preview. The verdict is in status (resolved, ambiguous, not_found); finding nothing is not an error.",
+    "description": "Resolve a project's orchestrator: an explicit orchestratorThreadId (a thread id or role:<name>), else the Codex thread holding the orchestrator role for this projectRoot (set_agent_role with projectRoot), else the source-owned .codex/project-orchestrator.json binding, else the orchestrator role's own holder, else ranked thread search by project cwd/name/preview. The verdict is in status (resolved, ambiguous, not_found); finding nothing is not an error.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2258,7 +2258,11 @@
         },
         "source": {
           "type": "string",
-          "description": "explicit, binding, binding-unreadable-search, or search."
+          "description": "explicit, role (the orchestrator role, R1.21), binding, binding-unreadable-search, or search."
+        },
+        "role": {
+          "type": "object",
+          "description": "With source role: {name, via, address, scope: project|role, projectRoot} of the role holder used."
         },
         "threadId": {
           "type": [
@@ -4591,7 +4595,7 @@
   },
   {
     "name": "get_agent_link_message_status",
-    "description": "Status of one Agent Link message, for its sender or its recipient (anyone else gets permission_denied). Returns the labels (from, to, anticipation, replyBy), delivery (queued, delivered, acknowledged), status (pending, replied, declined, done, unresolved, expired; null for an fyi message), the resolution ({kind, by, at, late, replyMessageId} or null), and reminders ({count, limit, lastAt, nextDueAt}). Never returns a message body: read replies with read_agent_link_inbox or a wait.",
+    "description": "Status of one Agent Link message, for its sender or its recipient (anyone else gets permission_denied). For a message sent through role:<name> that is still open after the role moved, the role's current holder is the recipient (holder). Returns the labels (from, to, anticipation, replyBy), delivery (queued, delivered, acknowledged), status (pending, replied, declined, done, unresolved, expired; null for an fyi message), the resolution ({kind, by, at, late, replyMessageId} or null), and reminders ({count, limit, lastAt, nextDueAt}). Never returns a message body: read replies with read_agent_link_inbox or a wait.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4744,6 +4748,17 @@
             "null"
           ],
           "description": "{count, limit, lastAt, nextDueAt} for a reply/action message; null for fyi."
+        },
+        "via": {
+          "type": "string",
+          "description": "role:<name>; present only when the message was sent through a role."
+        },
+        "holder": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "With via: the session the message was handed over to after the role moved (the role's current holder while it is open, the holder that resolved it once resolved), else null."
         }
       },
       "required": [
@@ -5549,7 +5564,7 @@
   },
   {
     "name": "set_agent_role",
-    "description": "Assign a role to a session, so other sessions can address it as role:<name> (design doc section 1.8). Optionally set the role's procedure: text shown once per version to the role holder with messages sent to the role. A changed procedure gets the next version. A role is a pointer, not a privilege: holding one gives no extra rights. Requires AGENT_LINK_ROLE_ADMIN=1 in this Agent Link server's environment, set by the user; otherwise permission_denied (reason role_admin_disabled). A tool caller cannot enable it.",
+    "description": "Assign a role to a session, so other sessions can address it as role:<name> (design doc section 1.8). With projectRoot, assign the role's holder for one project instead (the orchestrator role per project, which resolve_project_orchestrator uses before the project's binding file). Optionally set the role's procedure: text shown once per version to the role holder with messages sent to the role. A changed procedure gets the next version. A role is a pointer, not a privilege: holding one gives no extra rights. Requires AGENT_LINK_ROLE_ADMIN=1 in this Agent Link server's environment, set by the user; otherwise permission_denied (reason role_admin_disabled). A tool caller cannot enable it.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -5564,6 +5579,10 @@
         "procedure": {
           "type": "string",
           "description": "Optional procedure text (at most 64 KiB) stored in <state>/roles/<name>.md. Omit to keep the current procedure."
+        },
+        "projectRoot": {
+          "type": "string",
+          "description": "Optional absolute project root. Scopes the change to that project's holder of the role (for the orchestrator role, the project orchestrator resolve_project_orchestrator returns, R1.21); the role's own holder is left as it is."
         }
       },
       "required": [
@@ -5649,18 +5668,25 @@
         },
         "role": {
           "type": "object",
-          "description": "The role after the change: {role, roleAddress, address (holder, or null), assignedAt, procedure: {name, version, sha256, updatedAt, present} | null}."
+          "description": "The role after the change: {role, roleAddress, address (holder, or null), assignedAt, projects? ({<absolute project root>: holder address}, when the role has per-project holders), procedure: {name, version, sha256, updatedAt, present} | null}."
         },
         "previousAddress": {
           "type": [
             "string",
             "null"
           ],
-          "description": "The previous holder, or null."
+          "description": "The previous holder (of the project, with projectRoot), or null."
         },
         "holder": {
           "type": "object",
           "description": "{address, harness, title} of the new holder. title is untrusted data."
+        },
+        "projectRoot": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The project the assignment is scoped to, or null."
         },
         "path": {
           "type": "string",
@@ -5680,13 +5706,17 @@
   },
   {
     "name": "clear_agent_role",
-    "description": "Remove a role's holder. Messages to role:<name> then fail with not_found until the role is assigned again. The role's procedure and its version are kept. Requires AGENT_LINK_ROLE_ADMIN=1 in this Agent Link server's environment, set by the user; otherwise permission_denied (reason role_admin_disabled). A tool caller cannot enable it.",
+    "description": "Remove a role's holder. Messages to role:<name> then fail with not_found until the role is assigned again. The role's procedure and its version are kept. With projectRoot, remove only that project's holder. Requires AGENT_LINK_ROLE_ADMIN=1 in this Agent Link server's environment, set by the user; otherwise permission_denied (reason role_admin_disabled). A tool caller cannot enable it.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "role": {
           "type": "string",
           "description": "Role name: 1 to 40 lowercase letters, digits, or hyphens (role:<name> is also accepted)."
+        },
+        "projectRoot": {
+          "type": "string",
+          "description": "Optional absolute project root. Scopes the change to that project's holder of the role (for the orchestrator role, the project orchestrator resolve_project_orchestrator returns, R1.21); the role's own holder is left as it is."
         }
       },
       "required": [
@@ -5785,7 +5815,7 @@
             "object",
             "null"
           ],
-          "description": "The role after the change, or null when it never existed: {role, roleAddress, address (holder, or null), assignedAt, procedure: {name, version, sha256, updatedAt, present} | null}."
+          "description": "The role after the change, or null when it never existed: {role, roleAddress, address (holder, or null), assignedAt, projects? ({<absolute project root>: holder address}, when the role has per-project holders), procedure: {name, version, sha256, updatedAt, present} | null}."
         }
       },
       "required": [
@@ -5884,7 +5914,7 @@
         },
         "roles": {
           "type": "array",
-          "description": "Roles, by name: {role, roleAddress, address (holder, or null), assignedAt, procedure: {name, version, sha256, updatedAt, present} | null}."
+          "description": "Roles, by name: {role, roleAddress, address (holder, or null), assignedAt, projects? ({<absolute project root>: holder address}, when the role has per-project holders), procedure: {name, version, sha256, updatedAt, present} | null}."
         },
         "enforcement": {
           "type": "object",
@@ -6021,7 +6051,7 @@
         },
         "role": {
           "type": "object",
-          "description": "{role, roleAddress, address (holder, or null), assignedAt, procedure: {name, version, sha256, updatedAt, present} | null}, with procedure.text when includeProcedure is true."
+          "description": "{role, roleAddress, address (holder, or null), assignedAt, projects? ({<absolute project root>: holder address}, when the role has per-project holders), procedure: {name, version, sha256, updatedAt, present} | null}, with procedure.text when includeProcedure is true."
         },
         "overridePolicy": {
           "type": [

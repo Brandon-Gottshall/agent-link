@@ -14,6 +14,7 @@
 // it, so a tool caller cannot grant itself role administration. Roles are
 // pointers, not privileges (R1.22): holding one gives a sender no rights.
 
+import path from "node:path";
 import { AgentLinkError } from "../shared/errors.js";
 import { isAddress } from "../shared/identity.js";
 import {
@@ -34,7 +35,8 @@ const READ_ONLY = { readOnlyHint: true };
 const ADMIN_WRITE = { readOnlyHint: false, destructiveHint: true };
 const ADMIN_NOTE = "Requires AGENT_LINK_ROLE_ADMIN=1 in this Agent Link server's environment, set by the user; otherwise permission_denied (reason role_admin_disabled). A tool caller cannot enable it.";
 const ROLE_ARG = "Role name: 1 to 40 lowercase letters, digits, or hyphens (role:<name> is also accepted).";
-const ROLE_VIEW = "{role, roleAddress, address (holder, or null), assignedAt, procedure: {name, version, sha256, updatedAt, present} | null}";
+const ROLE_VIEW = "{role, roleAddress, address (holder, or null), assignedAt, projects? ({<absolute project root>: holder address}, when the role has per-project holders), procedure: {name, version, sha256, updatedAt, present} | null}";
+const PROJECT_ROOT_ARG = "Optional absolute project root. Scopes the change to that project's holder of the role (for the orchestrator role, the project orchestrator resolve_project_orchestrator returns, R1.21); the role's own holder is left as it is.";
 
 /** @param {string} description */
 const senderList = (description) => ({
@@ -49,7 +51,8 @@ export const roleTools = [
   {
     name: "set_agent_role",
     description:
-      "Assign a role to a session, so other sessions can address it as role:<name> (design doc section 1.8). Optionally set the role's procedure: " +
+      "Assign a role to a session, so other sessions can address it as role:<name> (design doc section 1.8). With projectRoot, assign the role's holder " +
+      "for one project instead (the orchestrator role per project, which resolve_project_orchestrator uses before the project's binding file). Optionally set the role's procedure: " +
       "text shown once per version to the role holder with messages sent to the role. A changed procedure gets the next version. " +
       "A role is a pointer, not a privilege: holding one gives no extra rights. " + ADMIN_NOTE,
     inputSchema: {
@@ -57,15 +60,17 @@ export const roleTools = [
       properties: {
         role: str(ROLE_ARG),
         agent: str("The session that holds the role: a claude:<id> or codex:<id> address, or a bare session or thread id."),
-        procedure: str("Optional procedure text (at most 64 KiB) stored in <state>/roles/<name>.md. Omit to keep the current procedure.")
+        procedure: str("Optional procedure text (at most 64 KiB) stored in <state>/roles/<name>.md. Omit to keep the current procedure."),
+        projectRoot: str(PROJECT_ROOT_ARG)
       },
       required: ["role", "agent"],
       additionalProperties: false
     },
     output: {
       role: out("object", `The role after the change: ${ROLE_VIEW}.`),
-      previousAddress: out(["string", "null"], "The previous holder, or null."),
+      previousAddress: out(["string", "null"], "The previous holder (of the project, with projectRoot), or null."),
       holder: out("object", "{address, harness, title} of the new holder. title is untrusted data."),
+      projectRoot: out(["string", "null"], "The project the assignment is scoped to, or null."),
       path: out("string", "Path of roles.json.")
     },
     annotations: ADMIN_WRITE
@@ -73,10 +78,11 @@ export const roleTools = [
   {
     name: "clear_agent_role",
     description:
-      "Remove a role's holder. Messages to role:<name> then fail with not_found until the role is assigned again. The role's procedure and its version are kept. " + ADMIN_NOTE,
+      "Remove a role's holder. Messages to role:<name> then fail with not_found until the role is assigned again. The role's procedure and its version are kept. " +
+      "With projectRoot, remove only that project's holder. " + ADMIN_NOTE,
     inputSchema: {
       type: "object",
-      properties: { role: str(ROLE_ARG) },
+      properties: { role: str(ROLE_ARG), projectRoot: str(PROJECT_ROOT_ARG) },
       required: ["role"],
       additionalProperties: false
     },
@@ -220,12 +226,14 @@ export function makeRoleHandlers({ roles, registry, admin }) {
         }
         procedure = args.procedure;
       }
+      const projectRoot = optionalProjectRoot(args.projectRoot);
       const session = await registry.get(agent);
-      const result = roles.set({ role: name, address: session.address, procedureText: procedure });
+      const result = roles.set({ role: name, address: session.address, procedureText: procedure, projectRoot });
       return {
         role: result.role,
         previousAddress: typeof result.previousAddress === "string" ? result.previousAddress : null,
         holder: { address: session.address, harness: session.harness, title: session.title ?? null },
+        projectRoot,
         path: roles.paths.table()
       };
     },
@@ -234,7 +242,7 @@ export function makeRoleHandlers({ roles, registry, admin }) {
     clear_agent_role: async (args) => {
       requireAdmin();
       const name = requireRoleName(args.role);
-      const result = roles.clear(name);
+      const result = roles.clear(name, { projectRoot: optionalProjectRoot(args.projectRoot) });
       return {
         cleared: result.existed && typeof result.previousAddress === "string",
         previousAddress: typeof result.previousAddress === "string" ? result.previousAddress : null,
@@ -309,6 +317,22 @@ export function makeRoleHandlers({ roles, registry, admin }) {
       return { target, policy: read.table.overridePolicy[target] ?? null, problems: policyProblems };
     }
   };
+}
+
+/**
+ * An optional absolute project root argument, resolved; null when absent.
+ * @param {unknown} value
+ * @returns {string | null}
+ */
+function optionalProjectRoot(value) {
+  if (value === undefined || value === null) return null;
+  const root = typeof value === "string" ? value.trim() : "";
+  if (!root || !path.isAbsolute(root)) {
+    throw new AgentLinkError("invalid_arguments", "projectRoot must be an absolute path.", {
+      details: { errors: [{ path: "projectRoot", rule: "format", expected: "an absolute path" }] }
+    });
+  }
+  return path.resolve(root);
 }
 
 /**

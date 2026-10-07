@@ -27,6 +27,7 @@ import { readInboxEntries } from "../tools/read-inbox.js";
 import { replyAgentLinkMessageEntries } from "../tools/claude-reply.js";
 import { messageStatusEntries } from "../tools/message-status.js";
 import { deliverCodexReminders } from "../delivery/reminders.js";
+import { readRoleTable } from "../delivery/role-handover.js";
 import { reminderSettings } from "../delivery/message-status.js";
 import { agentEntries } from "../tools/agents.js";
 import { roleEntries } from "../tools/roles.js";
@@ -216,7 +217,8 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
       }),
       listThreads: queries.listThreads,
       messageThread: messaging.messageThread,
-      launchThread: actions.launchThread
+      launchThread: actions.launchThread,
+      roles
     };
   }
 
@@ -292,9 +294,9 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
     ...mailboxInspectEntries({ ...claudeDeps, inspectAll: config.inspectAll }),
     ...claudeSendEntries({ ...claudeDeps, roles }),
     ...claudeWaitEntries(claudeDeps),
-    ...readInboxEntries({ resolveCurrentSession: currentClaudeSession, host: hostInfo.host }),
-    ...replyAgentLinkMessageEntries(claudeDeps),
-    ...messageStatusEntries(claudeDeps),
+    ...readInboxEntries({ resolveCurrentSession: currentClaudeSession, host: hostInfo.host, roles }),
+    ...replyAgentLinkMessageEntries({ ...claudeDeps, roles }),
+    ...messageStatusEntries({ ...claudeDeps, roles }),
     // Every tool on every host (R1.16): the Claude listing tools are no
     // longer limited to the Claude host.
     ...claudeListingEntries(),
@@ -325,12 +327,13 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
     const channel = startChannelBridge({
       enabled: channelEnabled,
       server,
-      resolveCurrentSession: currentClaudeSession
+      resolveCurrentSession: currentClaudeSession,
+      roles
     });
     if (channel.error !== null) channelError = channel.error;
     lifecycle.setChannelBridge(channel.bridge);
 
-    if (config.codexReminders) startCodexReminders({ appServer: codexAppServer });
+    if (config.codexReminders) startCodexReminders({ appServer: codexAppServer, roles });
     startClaimSweeper({ host: hostInfo.host });
 
     lifecycle.installSignalHandlers();
@@ -378,9 +381,9 @@ function startClaimSweeper({ host }) {
  * Off by default until the B7 spike confirms the turn-completion signal
  * (B7b). One pass per reminder interval; the timer never keeps the process
  * alive, and a failed pass is logged and retried on the next tick.
- * @param {{appServer: CodexAppServerClient}} options
+ * @param {{appServer: CodexAppServerClient, roles?: import("../registry/roles.js").RoleStore | null}} options
  */
-function startCodexReminders({ appServer }) {
+function startCodexReminders({ appServer, roles = null }) {
   const settings = reminderSettings();
   let running = false;
   const timer = setInterval(async () => {
@@ -389,7 +392,7 @@ function startCodexReminders({ appServer }) {
     let mailbox = null;
     try {
       mailbox = openMailbox();
-      const results = await deliverCodexReminders({ appServer, mailbox, settings });
+      const results = await deliverCodexReminders({ appServer, mailbox, settings, roleTable: readRoleTable(roles) });
       if (results.length) getLogger().info("codex_reminders.pass", { results });
     } catch (error) {
       getLogger().warn("codex_reminders.failed", { message: error instanceof Error ? error.message : String(error) });

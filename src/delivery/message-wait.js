@@ -13,6 +13,8 @@ import { buildReceipt, safeAppendReceipt } from "../shared/receipt-index.js";
 import { explicitReplies, isAnticipating, isLateResolution, messageStatus, reminderSettings } from "./message-status.js";
 import { claimResolution } from "./resolution.js";
 import { canonicalAddress } from "../shared/identity.js";
+import { addressAliases } from "../registry/addresses.js";
+import { roleRoute } from "./role-handover.js";
 
 const OUTCOME_FOR_STATUS = Object.freeze({
   replied: "reply",
@@ -53,8 +55,11 @@ export function checkMessageWait(mb, { messageId, fromIds, toIds, now = Date.now
     const replyId = view.resolution?.replyMessageId;
     if (replyId) {
       const row = mb.getMessage({ messageId: replyId });
-      // Defense in depth: only a message from the target to the caller.
-      if (row && from.has(row.from_session_id) && to.has(row.to_session_id)) replyRow = row;
+      // Defense in depth: only a message from the target to the caller. For
+      // a message sent through a role, the resolver may be the role's new
+      // holder (handover, R7.20); its reply comes from that session.
+      const resolver = roleRoute(original) && typeof view.resolution?.by === "string" ? new Set(addressAliases(view.resolution.by)) : null;
+      if (row && (from.has(row.from_session_id) || resolver?.has(row.from_session_id)) && to.has(row.to_session_id)) replyRow = row;
     }
     return {
       outcome: /** @type {MessageWaitResult["outcome"]} */ (OUTCOME_FOR_STATUS[/** @type {keyof typeof OUTCOME_FOR_STATUS} */ (view.status)]),

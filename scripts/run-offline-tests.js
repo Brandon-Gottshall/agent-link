@@ -31,6 +31,7 @@ const groups = {
     "tests/claude/reply.test.js",
     "tests/claude/reply-model.test.js",
     "tests/claude/resolution-race.test.js",
+    "tests/claude/role-handover.test.js",
     "tests/claude/send.test.js",
     "tests/claude/session-index.test.js",
     "tests/claude/session-resolver.test.js",
@@ -57,6 +58,7 @@ const groups = {
   ],
   codex: [
     "tests/codex/app-server-client.test.js",
+    "tests/codex/orchestrator-role.test.js",
     "tests/codex/app-server-lifecycle.test.js",
     "tests/codex/app-server-logging.test.js",
     "tests/codex/chat-style-close.test.js",

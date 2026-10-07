@@ -41,7 +41,7 @@ const wrapperOut = {
 export const orchestrationTools = [
   {
     name: "resolve_project_orchestrator",
-    description: "Resolve a project's source-owned orchestrator binding, or fall back to ranked thread search by project cwd/name/preview. The verdict is in status (resolved, ambiguous, not_found); finding nothing is not an error.",
+    description: "Resolve a project's orchestrator: an explicit orchestratorThreadId (a thread id or role:<name>), else the Codex thread holding the orchestrator role for this projectRoot (set_agent_role with projectRoot), else the source-owned .codex/project-orchestrator.json binding, else the orchestrator role's own holder, else ranked thread search by project cwd/name/preview. The verdict is in status (resolved, ambiguous, not_found); finding nothing is not an error.",
     inputSchema: {
       type: "object",
       properties: {
@@ -52,7 +52,8 @@ export const orchestrationTools = [
     },
     output: {
       status: enumOf(["resolved", "ambiguous", "not_found"], "Verdict."),
-      source: out("string", "explicit, binding, binding-unreadable-search, or search."),
+      source: out("string", "explicit, role (the orchestrator role, R1.21), binding, binding-unreadable-search, or search."),
+      role: out("object", "With source role: {name, via, address, scope: project|role, projectRoot} of the role holder used."),
       threadId: out(["string", "null"], "The orchestrator thread, when resolved."),
       projectRoot: out(["string", "null"], "Project root."),
       projectId: out(["string", "null"], "Project id."),

@@ -642,7 +642,7 @@ B7 is split. **B7a** (branch `feat/reply-model`) is the part of section 7 that d
 - `return_project_work_result` with `replyToMessageId` (R7.7) is B7b: it answers a Codex orchestrator turn, which has no mailbox record until then.
 - Not built: a per-sender cap on how many anticipating messages can drive `Stop` blocks. Blocks are already at most one per interval per recipient and at most `limit` per message.
 - Codex reminder turns (R7.14) are built and tested against the stub app-server behind `AGENT_LINK_CODEX_REMINDERS` (default off): only an idle thread gets a turn; an active thread waits; a not-loaded thread is skipped until R1.12a is decided.
-- T-7.9 (role handover) waits for B9 roles.
+- T-7.9 (role handover) waits for B9 roles. It landed after B9; see the role handover notes below.
 
 B9 (branch `feat/roles`, not yet merged) implements section 1.8, the B9 parts of section 9, and the B10 enforcement plumbing with `off` shipped. It differs from the plan above in these ways:
 
@@ -653,6 +653,15 @@ B9 (branch `feat/roles`, not yet merged) implements section 1.8, the B9 parts of
 - `allowTargetOverride` (manager decision during review): this PR keeps the 0.6.0 behavior of R9.13. The flag still grants each requested change (`grantedBy: "allowTargetOverride"`, a switch receipt, a `deprecated_argument` warning naming 0.7.0 and the replacement), checked after the launcher and the policy; a cwd change must still pass the workspace check. The 0.7.0 step (the flag grants nothing) is left for a later PR.
 - Role addressing and the B10 check cover `message_codex_thread` and `message_claude_session` (and the orchestrator and handoff tools built on `message_codex_thread`, for overrides). `message_agent` does not exist until B7; `role:` on the orchestrator tools' thread arguments and R1.21 (the `orchestrator` role) are left to B10.
 - `modelProvider` and `serviceTier` are covered by the policy's `model` setting in the decision code, but `message_codex_thread` still does not accept them as arguments.
+
+Role handover and the `orchestrator` role (branch `feat/role-handover`, R7.20, T-7.9, R1.21) differ from or narrow the plan above in these ways:
+
+- The send records the holder's address at send time (`metadata.role.address`) beside `via`. A message is handed over when it is a `reply` / `action` message, still unresolved, and the role's holder now differs from that address. Everything is derived at read time from the stored line and `roles.json`; no line is rewritten. Messages sent through a role before this change carry no holder address and are never handed over. A cleared role, a role with several holders, or an unreadable table leaves the message with its stored recipient; `fyi` mail never moves.
+- A resolved message stays with the session that resolved it: after a handover the resolver is its recipient (a second attempt is `already_resolved`, a later holder gets `wrong_recipient`). The `resolved` event keeps `by` = the stored recipient id (the view's trust rule) and `byAddress` = the resolver, which the view shows as `by`.
+- `reminded` events gain `to` (the address reminded), so the `Stop` hook's once-per-interval gate is per recipient across a handover. The count and the interval are per message, so the new holder's next reminder waits out the interval that started with the previous holder's.
+- `get_agent_link_message_status` adds `via` and `holder` for messages sent to a role, and the role's current holder is a participant. The channel bridge's change signature includes `roles.json`, so a role moving to a session pushes a still-queued message without a mailbox write.
+- A role moving to a Codex thread hands the message over too: Codex reminder turns (behind `AGENT_LINK_CODEX_REMINDERS`) go to that thread, but it cannot resolve the message until Codex threads get `reply_agent_link_message` in B7b.
+- R1.21: `roles.json` role entries accept `projects: {"<absolute project root>": "<address>"}`, written by `set_agent_role` / `clear_agent_role` with `projectRoot`. `resolve_project_orchestrator` (and `message_project_orchestrator`, `launch_project_worker`, `register_dependency_handoff` through it) uses an explicit `orchestratorThreadId` (which may be `role:<name>`), then the `orchestrator` role's holder for the project, then the binding file, then the role's own holder, then search, with `source: "role"` and `role: {name, via, address, scope, projectRoot}` when a role decided it. Only Codex holders count, and an unreadable holder falls through. Projects with no `orchestrator` assignment resolve as before. Per-project holders count as persistent agents (`rolesOf`). A send to `role:orchestrator` through `message_codex_thread` still resolves the role's own holder; project scoping applies to the orchestrator tools.
 
 ---
 

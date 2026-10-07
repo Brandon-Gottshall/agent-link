@@ -47,6 +47,8 @@ import { renderHookNotice } from "../shared/envelope.js";
 import { isAnticipating, reminderSettings } from "../delivery/message-status.js";
 import { REMINDER_VIA, claimReminders, dueReminders, reminderNoticeFor, takeStopSlot } from "../delivery/reminders.js";
 import { createLogger } from "../shared/log.js";
+import { createRoleStore } from "../registry/roles.js";
+import { addressNames, handedOverTo, readRoleTable } from "../delivery/role-handover.js";
 
 // Hook failures go to stderr (Claude Code shows it in its hook log) and, when
 // the Agent Link log file is on (AGENT_LINK_DEBUG or AGENT_LINK_LOG_FILE), to
@@ -78,7 +80,8 @@ function logHookFailure(line) {
  *   mailboxOpener?: () => any,
  *   log?: (line: string) => void,
  *   now?: () => number,
- *   settings?: import("../delivery/message-status.js").ReminderSettings
+ *   settings?: import("../delivery/message-status.js").ReminderSettings,
+ *   roleTable?: () => import("../registry/roles.js").RoleTable | null
  * }} [options]
  */
 export function runNotifyHook(payload, {
@@ -87,7 +90,8 @@ export function runNotifyHook(payload, {
   mailboxOpener = () => openMailbox(),
   log = logHookFailure,
   now = () => Date.now(),
-  settings = undefined
+  settings = undefined,
+  roleTable = () => readRoleTable(createRoleStore())
 } = {}) {
   const cliSessionId = typeof payload?.session_id === "string" ? payload.session_id : null;
   const hookEvent = typeof payload?.hook_event_name === "string" ? payload.hook_event_name : null;
@@ -118,7 +122,10 @@ export function runNotifyHook(payload, {
     try {
       // One mailbox read per hook run: every later step filters this list.
       const all = mb.inspect({ limit: Number.MAX_SAFE_INTEGER });
-      const mine = mailForSession(all, session, { cliSessionId, findSidecarById });
+      // A role-addressed message handed over to the role's new holder
+      // (R7.20) is the new holder's, read from the current role table.
+      const table = roleTable();
+      const mine = mailForSession(all, session, { cliSessionId, findSidecarById, table });
       if (!isStop) pending = mine.filter((m) => !m.delivered_at);
       if (remind) {
         reminder = remindersFor(mb, all, mine, {
@@ -127,6 +134,7 @@ export function runNotifyHook(payload, {
           settings: reminderConfig,
           recipientIds: [...claudeSessionAliases(session), cliSessionId],
           recipientKey: cliSessionId,
+          recipientAddress: `claude:${cliSessionId}`,
           stopHookActive: payload?.stop_hook_active === true
         });
       }
@@ -157,7 +165,7 @@ export function runNotifyHook(payload, {
 // The reminder notice for this session's due reminders, claimed and
 // recorded, or null. The Stop hook blocks at most once per interval per
 // recipient however many messages are due (R7.14).
-function remindersFor(mb, all, mine, { isStop, now, settings, recipientIds, recipientKey, stopHookActive }) {
+function remindersFor(mb, all, mine, { isStop, now, settings, recipientIds, recipientKey, recipientAddress, stopHookActive }) {
   const open = mine.filter((m) => isAnticipating(m));
   if (!open.length) return null;
   const due0 = dueReminders(open, { now, settings });
@@ -175,9 +183,10 @@ function remindersFor(mb, all, mine, { isStop, now, settings, recipientIds, reci
   }
   const due = due0.filter((m) => !repliedTo.get(m.id)?.has(m.from_session_id));
   if (!due.length) return null;
-  if (isStop && !takeStopSlot(mb, { recipientKey, open, now, settings, stopHookActive })) return null;
+  if (isStop && !takeStopSlot(mb, { recipientKey, recipientIds, open, now, settings, stopHookActive })) return null;
   const claimed = claimReminders(mb, due, {
     via: isStop ? REMINDER_VIA.stop : REMINDER_VIA.prompt,
+    to: recipientAddress,
     now,
     settings
   });
@@ -208,9 +217,11 @@ export function resolveHookSession(cliSessionId, { transcriptPath, ...roots } = 
 // Mail for every id form of this session, oldest first. A session resolved
 // from its transcript alone does not know its Desktop sidecar id, so mail
 // addressed to some other `local_` id is checked against that one sidecar
-// file directly (no walk over every sidecar).
-function mailForSession(all, session, { cliSessionId, findSidecarById }) {
+// file directly (no walk over every sidecar). A message handed over through a
+// role (R7.20) belongs to the role's current holder instead.
+function mailForSession(all, session, { cliSessionId, findSidecarById, table = null }) {
   const aliases = new Set(claudeSessionAliases(session));
+  const holderIds = new Set([...aliases, cliSessionId, `claude:${cliSessionId}`]);
   const checked = new Map();
   const isOurs = (toId) => {
     if (aliases.has(toId)) return true;
@@ -227,7 +238,10 @@ function mailForSession(all, session, { cliSessionId, findSidecarById }) {
     }
     return checked.get(toId);
   };
-  return all.filter((m) => isOurs(m.to_session_id)).sort((a, b) => a.sent_at - b.sent_at);
+  return all.filter((m) => {
+    const holder = handedOverTo(m, table);
+    return holder ? addressNames(holder, holderIds) : isOurs(m.to_session_id);
+  }).sort((a, b) => a.sent_at - b.sent_at);
 }
 
 async function main() {
