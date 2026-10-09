@@ -10910,7 +10910,7 @@ function appendJsonlSync(filePath, records) {
 // src/shared/state.js
 import fs3 from "node:fs";
 function pluginVersion() {
-  if (true) return "0.5.0";
+  if (true) return "0.6.0";
   try {
     const pkg = JSON.parse(fs3.readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
     return typeof pkg.version === "string" ? pkg.version : null;
@@ -20276,7 +20276,7 @@ function normalizeThreadIdArguments(definition, args) {
 // src/server/config.js
 import { readFileSync } from "node:fs";
 function serverVersion() {
-  if (true) return "0.5.0";
+  if (true) return "0.6.0";
   try {
     const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
     return typeof pkg.version === "string" ? pkg.version : "0.0.0-dev";
@@ -21374,7 +21374,7 @@ var DEFAULT_STARTUP_FAILURE_CACHE_MS = 60 * 1e3;
 var MAX_UNIX_SOCKET_PATH_BYTES = 100;
 var RECENT_NOTIFICATIONS = 20;
 var MAX_TRACKED_METHODS = 64;
-var AGENT_LINK_VERSION = true ? "0.5.0" : readPackageVersion();
+var AGENT_LINK_VERSION = true ? "0.6.0" : readPackageVersion();
 var SERVER_REQUEST_DECLINES = Object.freeze({
   "item/commandExecution/requestApproval": { decision: "decline" },
   "item/fileChange/requestApproval": { decision: "decline" },

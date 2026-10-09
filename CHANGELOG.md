@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 - 2026-10-08 Codex inbox and replies, forks, roles, and the Codex prompt hook
+
+**Upgrade:** restart every Claude and Codex session after upgrading. In Codex, trust the new Agent Link prompt hook once (the "Hooks need review" prompt, or `/hooks` in the Codex CLI); until you do, Codex skips it. Codex no longer loads Agent Link's Claude hooks, so their old trust entries no longer apply.
+
+**Breaking:** the argument aliases and duplicated output keys deprecated in 0.5.0 are gone; Codex sends are mailbox-first and return `delivery` as a string (`delivered` or `queued`); a message to a Codex thread held by the Codex or ChatGPT desktop app is queued for its inbox instead of being pushed as a turn; waits on Codex targets end on an explicit reply, not on the turn's final response; Codex reminder turns are on by default; and the peer envelope's notice gains one sentence allowing a reply, decline, or done. Details below.
+
+**New:** Codex threads have an inbox and reply tools; `message_agent` and `wait_for_agent` work for any address (`claude:`, `codex:`, `role:`); `fork_codex_thread` runs a task on another model and reconciles the result; role messages follow the role's holder; the `orchestrator` role can be assigned per project; and a Codex prompt hook tells a desktop-held thread it has mail.
 
 ### Breaking
 
