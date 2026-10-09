@@ -8,7 +8,7 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { alive, readSpawnLog, sleep, stubAppServer, waitFor } from "../helpers/codex-stub.js";
+import { alive, readSpawnLog, sleep, stubAppServer, taggedProcesses, taggedStub, waitFor } from "../helpers/codex-stub.js";
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), "agent-link-lifecycle-"));
 const spawnLog = path.join(tmp, "spawns.log");
@@ -94,16 +94,26 @@ try {
   }
 
   // 8. Startup that never becomes ready is killed, not leaked.
+  // A slow runner can reach the 700 ms startup timeout before the stub writes
+  // its spawn-log line, so the spawn is counted by the client and the
+  // cleanup is checked by argv tag (process group included), not by the log.
   {
     process.env.AGENT_LINK_STUB_NO_READY = "1";
-    const before = readSpawnLog(spawnLog).starts.length;
+    const stub = taggedStub(tmp);
+    process.env.CODEX_AGENT_LINK_APP_SERVER_BIN = stub;
+    const before = readSpawnLog(spawnLog);
     const client = new CodexAppServerClient({ autoStart: true, startupTimeoutMs: 700, killGraceMs: 300, idleTimeoutMs: 0 });
     await assert.rejects(client.request("thread/loaded/list", {}), /did not become ready/);
-    const { starts, grandchildren } = readSpawnLog(spawnLog);
-    assert.equal(starts.length, before + 1);
-    await waitFor(() => !alive(starts.at(-1).pid) && !alive(grandchildren.at(-1).pid), { timeoutMs: 3000, label: "failed-start cleanup" });
+    assert.equal(client.getConnectionSummary().managedSpawnCount, 1, "exactly one spawn attempt");
+    const logged = () => {
+      const { starts, grandchildren } = readSpawnLog(spawnLog);
+      return [...starts.slice(before.starts.length), ...grandchildren.slice(before.grandchildren.length)].map((p) => p.pid);
+    };
+    await waitFor(() => taggedProcesses(stub).length === 0 && !logged().some(alive), { timeoutMs: 3000, label: "failed-start cleanup" });
+    assert.ok(readSpawnLog(spawnLog).starts.length <= before.starts.length + 1, "at most one stub started");
     assert.equal(records().length, 0);
     await client.close();
+    process.env.CODEX_AGENT_LINK_APP_SERVER_BIN = stubAppServer;
     delete process.env.AGENT_LINK_STUB_NO_READY;
   }
 

@@ -50,6 +50,8 @@ const uuid = (n) => `7f000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const CALLER = uuid(0xc1);
 const OTHER = uuid(0xc2);
 let next = 100;
+/** The fake sends thread/settings/updated this long after a turn/start that changes settings. */
+const SETTINGS_DELAY_MS = 2;
 
 const project = path.join(tmp, "project");
 mkdirSync(path.join(project, ".git"), { recursive: true });
@@ -79,7 +81,7 @@ function fakeCodex() {
   const emit = (method, params) => {
     for (const listener of listeners) listener({ method, params });
   };
-  /** @type {{autoComplete: Set<string>, settingsFor?: (threadId: string, params: any) => any, requestsFor?: (threadId: string) => any[], silentSettings?: boolean, archiveDelayMs?: number, turnStartHang?: false | "created" | "lost", noTurnId?: boolean}} */
+  /** @type {{autoComplete: Set<string>, settingsFor?: (threadId: string, params: any) => any, requestsFor?: (threadId: string) => any[], silentSettings?: boolean, archiveHold?: {entered: () => void, gate: Promise<void>}, turnStartHang?: false | "created" | "lost", noTurnId?: boolean}} */
   const behavior = { autoComplete: new Set() };
   const fake = {
     requests,
@@ -105,6 +107,16 @@ function fakeCodex() {
       if (!stale) thread.total += last.totalTokens;
       thread.lastReported = reported;
       emit("thread/tokenUsage/updated", { threadId, turnId, tokenUsage: { total: { ...LAST(0), totalTokens: thread.total }, last: reported, modelContextWindow: 258_400 } });
+    },
+    /** Holds every thread/archive until release(); `entered` resolves when one arrives. */
+    holdArchive() {
+      let entered;
+      let release;
+      const hold = { entered: null, gate: new Promise((r) => { release = r; }) };
+      const reached = new Promise((r) => { entered = r; });
+      hold.entered = entered;
+      behavior.archiveHold = hold;
+      return { entered: reached, release: () => release() };
     },
     complete(threadId, turnId, { status = "completed", text = "fork result", error = null, requests = [LAST(1200, 900)], notify = true } = {}) {
       const thread = threads.get(threadId);
@@ -170,7 +182,7 @@ function fakeCodex() {
           if (params.model) thread.model = params.model;
           if (changes && !behavior.silentSettings) {
             const threadSettings = behavior.settingsFor?.(thread.id, params) ?? { model: thread.model, effort: thread.reasoningEffort, cwd: thread.cwd, modelProvider: "openai" };
-            setTimeout(() => emit("thread/settings/updated", { threadId: thread.id, threadSettings }), 2);
+            setTimeout(() => emit("thread/settings/updated", { threadId: thread.id, threadSettings }), SETTINGS_DELAY_MS);
           }
           if (behavior.autoComplete.has(thread.id)) {
             setTimeout(() => fake.complete(thread.id, id, { text: "done", requests: behavior.requestsFor ? behavior.requestsFor(thread.id) : [LAST(700, 600)] }), 5);
@@ -178,7 +190,10 @@ function fakeCodex() {
           return behavior.noTurnId ? {} : { turn: { id, status: "inProgress", items: [] } };
         }
         case "thread/archive": {
-          if (behavior.archiveDelayMs) await new Promise((r) => setTimeout(r, behavior.archiveDelayMs));
+          if (behavior.archiveHold) {
+            behavior.archiveHold.entered();
+            await behavior.archiveHold.gate;
+          }
           if (thread.path.includes("/archived_sessions/")) throw new AppServerError(`no rollout found for thread id ${thread.id}`, { code: -32600 });
           thread.path = `/h/archived_sessions/${thread.id}.jsonl`;
           return {};
@@ -193,7 +208,7 @@ function fakeCodex() {
 
 let mailboxSeq = 0;
 /** One "server": messaging, tracker and fork jobs over a shared fake, mailbox and job log. */
-function makeServer(fake, { mailboxPath, store, deliver, wait, host = "codex", graceMs = 50, now } = {}) {
+function makeServer(fake, { mailboxPath, store, deliver, wait, deadline, host = "codex", graceMs = 50, now } = {}) {
   const tracker = createTokenUsageTracker({ appServer: fake });
   const tokenUsage = { ...tracker, awaitTurnUsage: (threadId, turnId, options) => tracker.awaitTurnUsage(threadId, turnId, { graceMs: options?.graceMs ?? graceMs }) };
   const queries = makeThreadQueries({ appServer: fake, wait: (ms) => new Promise((r) => setTimeout(r, Math.min(ms, 5))) });
@@ -210,6 +225,7 @@ function makeServer(fake, { mailboxPath, store, deliver, wait, host = "codex", g
     wait: wait ?? ((ms) => new Promise((r) => setTimeout(r, Math.min(ms, 5)))),
     pollIntervalMs: 5,
     tokenUsageGraceMs: graceMs,
+    ...(deadline ? { deadline } : {}),
     ...(now ? { now } : {})
   });
   servers.push(forks);
@@ -250,6 +266,33 @@ const idle = (fake, threadId) => {
   fake.threads.get(threadId).status = { type: "idle" };
 };
 const forkRequestsOn = (fake, threadId) => fake.requests.filter((r) => r.params?.threadId === threadId);
+/** Polls until predicate returns a truthy value (no fixed sleep: a slow runner only takes longer). */
+async function until(predicate, label = "condition", timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = predicate();
+    if (value) return value;
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${label}`);
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+/**
+ * Completes the fork's task turn once turn/start has created it. The fork's
+ * copied turns are all completed; the task turn is the in-progress one, so a
+ * slow runner cannot complete a copied turn by mistake.
+ */
+async function completeTask(fake, original, options, before) {
+  const fork = await until(() => {
+    const thread = [...fake.threads.values()].find((t) => t.forkedFromId === original);
+    return thread?.turns.at(-1)?.status === "inProgress" ? thread : null;
+  }, "the fork's task turn");
+  // Let turn/start's own notifications go first: a timer of the same delay
+  // set later fires later, so thread/settings/updated precedes the completion.
+  await new Promise((r) => setTimeout(r, SETTINGS_DELAY_MS));
+  before?.(fork);
+  fake.complete(fork.id, fork.turns.at(-1).id, options);
+  return fork;
+}
 
 test("T-9.1 fork round trip: fork, task, exactly one reconcile to the original, fork archived, receipts linked", async () => {
   const { fake, original, forks, rowsTo, store } = setup();
@@ -360,11 +403,9 @@ test("waitForResult returns the finished job; the deliver seam gets the mailbox 
     return { delivery: "delivered", deliveredVia: "codex-turn", tokenUsage: RECORDED(300, 290, "deliver-turn") };
   };
   const { fake, original, forks, rowsTo } = setup({ deliver });
-  setTimeout(() => {
-    const fork = [...fake.threads.values()].find((t) => t.forkedFromId === original);
-    fake.complete(fork.id, fork.turns.at(-1).id, { text: "waited answer" });
-  }, 30);
+  const task = completeTask(fake, original, { text: "waited answer" });
   const result = await forks.forkThread({ threadId: original, message: "go", compactFork: "never", waitForResult: true, timeoutMs: 5000 }, asCaller());
+  await task;
   assert.equal(result.status, "completed");
   assert.equal(result.reconcile.delivery, "delivered");
   assert.equal(result.reconcile.deliveredVia, "codex-turn");
@@ -476,11 +517,9 @@ test("T-9.2 a sweep checks a running job cheaply, starts no watcher, and reconci
 test("T-9.8 self-fork with waitForResult: output in the tool result, reconcile recorded as tool-result, no push", async () => {
   const delivered = [];
   const { fake, original, forks, rowsTo } = setup({ deliver: async (record) => (delivered.push(record), { delivery: "delivered" }) });
-  setTimeout(() => {
-    const fork = [...fake.threads.values()].find((t) => t.forkedFromId === original);
-    fake.complete(fork.id, fork.turns.at(-1).id, { text: "self answer" });
-  }, 30);
+  const task = completeTask(fake, original, { text: "self answer" });
   const result = await forks.forkThread({ threadId: original, message: "think again", compactFork: "never", waitForResult: true, timeoutMs: 5000 }, asCaller(original));
+  await task;
   assert.equal(result.status, "completed");
   assert.equal(result.reconcile.deliveredVia, "tool-result");
   assert.equal(result.reconcile.delivery, "delivered");
@@ -509,24 +548,21 @@ test("an interrupted fork reconciles as interrupted, with its stale usage not co
 
 test("a fork whose task changes no setting gets no thread/settings/updated, and that is not a mismatch", async () => {
   const { fake, original, forks } = setup();
-  setTimeout(() => {
-    const fork = [...fake.threads.values()].find((t) => t.forkedFromId === original);
-    fake.complete(fork.id, fork.turns.at(-1).id);
-  }, 20);
+  const task = completeTask(fake, original);
   // effort equal to the inherited one: Codex sends no settings notification.
   const result = await forks.forkThread({ threadId: original, message: "x", effort: "medium", compactFork: "never", waitForResult: true, timeoutMs: 5000 }, asCaller());
+  await task;
   assert.equal(result.status, "completed");
   assert.ok(!result.warnings.some((w) => w.code === "settings_mismatch"));
 });
 
 test("archiving a fork that is already archived (-32600 no rollout found) counts as archived", async () => {
   const { fake, original, forks } = setup();
-  setTimeout(() => {
-    const fork = [...fake.threads.values()].find((t) => t.forkedFromId === original);
+  const task = completeTask(fake, original, undefined, (fork) => {
     fork.path = `/h/archived_sessions/${fork.id}.jsonl`;
-    fake.complete(fork.id, fork.turns.at(-1).id);
-  }, 20);
+  });
   const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never", waitForResult: true, timeoutMs: 5000 }, asCaller());
+  await task;
   assert.equal(result.archived, true);
   assert.ok(!result.warnings.some((w) => w.code === "fork_archive_failed"));
 });
@@ -610,11 +646,9 @@ test("compaction decisions: never, always, auto over and under the threshold", a
 
 test("T-9.7 fork task with no token usage notification: null plus token_usage_unavailable", async () => {
   const { fake, original, forks } = setup();
-  setTimeout(() => {
-    const fork = [...fake.threads.values()].find((t) => t.forkedFromId === original);
-    fake.complete(fork.id, fork.turns.at(-1).id, { requests: [] });
-  }, 20);
+  const task = completeTask(fake, original, { requests: [] });
   const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never", waitForResult: true, timeoutMs: 5000 }, asCaller());
+  await task;
   assert.equal(result.tokenUsage.task, null);
   assert.ok(result.warnings.some((w) => w.code === "token_usage_unavailable"));
   const receipt = (await listReceipts({ kind: "fork", targetThreadId: result.fork.threadId })).data[0];
@@ -624,11 +658,9 @@ test("T-9.7 fork task with no token usage notification: null plus token_usage_un
 test("settings_mismatch on a fork whose applied settings differ from the request", async () => {
   const { fake, original, forks } = setup();
   fake.behavior.settingsFor = () => ({ model: "gpt-b", effort: "low" });
-  setTimeout(() => {
-    const fork = [...fake.threads.values()].find((t) => t.forkedFromId === original);
-    fake.complete(fork.id, fork.turns.at(-1).id);
-  }, 20);
+  const task = completeTask(fake, original);
   const result = await forks.forkThread({ threadId: original, message: "x", model: "gpt-b", effort: "high", compactFork: "never", waitForResult: true, timeoutMs: 5000 }, asCaller());
+  await task;
   const mismatch = result.warnings.find((w) => w.code === "settings_mismatch");
   assert.ok(mismatch);
   assert.deepEqual(mismatch.details.mismatches, [{ setting: "effort", requested: "high", applied: "low" }]);
@@ -719,11 +751,9 @@ test("T-9.5 launcher effort rule unchanged; the fork's caller is the fork's laun
   );
 
   // A finished fork records launchedBy = its caller, so the caller may set its effort.
-  setTimeout(() => {
-    const fork = [...fake.threads.values()].find((t) => t.forkedFromId === original);
-    fake.complete(fork.id, fork.turns.at(-1).id);
-  }, 20);
+  const task = completeTask(fake, original);
   const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never", archiveFork: false, waitForResult: true, timeoutMs: 5000 }, asCaller());
+  await task;
   assert.equal(result.archived, false);
   const onFork = await messaging.messageThread({ threadId: result.fork.threadId, message: "e", effort: "xhigh" }, asCaller());
   assert.equal(onFork.switches[0].grantedBy, "launcher");
@@ -855,13 +885,18 @@ const claimNames = (mailboxPath) => {
 
 test("fix 1: a self-fork whose timeout fires during the archive still returns its output; nothing is pushed", async () => {
   const delivered = [];
-  const { fake, original, forks, rowsTo } = setup({ deliver: async (record) => (delivered.push(record), { delivery: "delivered" }) });
-  fake.behavior.archiveDelayMs = 300;
-  setTimeout(() => {
-    const fork = forkOf(fake, original);
-    fake.complete(fork.id, fork.turns.at(-1).id, { text: "late but mine" });
-  }, 20);
-  const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never", waitForResult: true, timeoutMs: 150 }, asCaller(original));
+  // The caller's deadline fires exactly when the test says: after the reconcile
+  // is written for the tool result, while the archive is still held.
+  let fireDeadline;
+  const deadline = () => new Promise((r) => { fireDeadline = r; });
+  const { fake, original, forks, rowsTo } = setup({ deadline, deliver: async (record) => (delivered.push(record), { delivery: "delivered" }) });
+  const archive = fake.holdArchive();
+  const call = forks.forkThread({ threadId: original, message: "x", compactFork: "never", waitForResult: true, timeoutMs: 150 }, asCaller(original));
+  await completeTask(fake, original, { text: "late but mine" });
+  await archive.entered;
+  fireDeadline();
+  const result = await call;
+  archive.release();
   assert.equal(result.status, "completed");
   assert.match(result.output.envelope, /<body>\nlate but mine\n<\/body>/);
   assert.equal(result.reconcile.deliveredVia, "tool-result");
@@ -890,7 +925,7 @@ test("fix 2: a server that stopped between the mailbox write and `reconciled` is
   const { fake, original, forks, rowsTo, mailboxPath, store } = setup({ deliver: () => new Promise(() => {}) });
   const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never" }, asCaller());
   fake.complete(result.fork.threadId, result.turn.id, { text: "written, never finished" });
-  await new Promise((r) => setTimeout(r, 50));
+  await until(() => store.get(result.forkJobId)?.written, "the reconcile write");
   forks.close();
   const job = store.get(result.forkJobId);
   assert.ok(job.written && !job.reconciled);
@@ -922,7 +957,7 @@ test("fix 3: a job whose turn/start answer was lost finds its task turn by clien
   const { fake, original, forks, rowsTo, mailboxPath, store } = setup();
   fake.behavior.turnStartHang = "created";
   forks.forkThread({ threadId: original, message: "x", compactFork: "never" }, asCaller()).catch(() => {});
-  await new Promise((r) => setTimeout(r, 30));
+  await until(() => fake.requests.some((r) => r.method === "turn/start"), "the lost turn/start");
   forks.close();
   const job = store.list().at(-1);
   assert.ok(job.forked && !job.turnStarted);
@@ -939,7 +974,7 @@ test("fix 3: a job whose task never started is failed after the stale timeout an
   const { fake, original, forks, rowsTo, mailboxPath, store } = setup();
   fake.behavior.turnStartHang = "lost";
   forks.forkThread({ threadId: original, message: "x", compactFork: "never" }, asCaller()).catch(() => {});
-  await new Promise((r) => setTimeout(r, 30));
+  await until(() => fake.requests.some((r) => r.method === "turn/start"), "the lost turn/start");
   forks.close();
   const job = store.list().at(-1);
   const soon = makeServer(fake, { mailboxPath, store });
@@ -1008,7 +1043,8 @@ test("fix 6: the owner polls cheaply while the task runs and reads the turns at 
   const { fake, original, forks } = setup();
   const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never" }, asCaller());
   const forkId = result.fork.threadId;
-  await new Promise((r) => setTimeout(r, 80));
+  const statusPolls = () => fake.requests.filter((r) => r.method === "thread/read" && r.params.threadId === forkId && !r.params.includeTurns).length;
+  await until(() => statusPolls() >= 2, "two status polls");
   fake.complete(forkId, result.turn.id, { notify: false });
   await forks.settled();
   const reads = fake.requests.filter((r) => r.method === "thread/read" && r.params.threadId === forkId);
@@ -1166,7 +1202,7 @@ test("N2: an owner push slower than 60 s is not pushed again by a recovery sweep
   });
   const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never" }, asCaller());
   fake.complete(result.fork.threadId, result.turn.id);
-  await new Promise((r) => setTimeout(r, 50));
+  await until(() => ownerDelivered.length >= 1, "the owner's push");
   assert.equal(ownerDelivered.length, 1);
   const sweeperDelivered = [];
   const b = makeServer(fake, { mailboxPath, store, now: () => Date.now() + 61_000, deliver: async (r) => (sweeperDelivered.push(r), { delivery: "delivered" }) });
@@ -1200,25 +1236,24 @@ test("N3: a returned self-fork result is recorded; one never handed back is rele
   // Returned: the caller got it, `returned` is recorded.
   {
     const { fake, original, forks, store } = setup();
-    setTimeout(() => {
-      const fork = forkOf(fake, original);
-      fake.complete(fork.id, fork.turns.at(-1).id, { text: "mine" });
-    }, 20);
+    const task = completeTask(fake, original, { text: "mine" });
     const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never", waitForResult: true, timeoutMs: 5000 }, asCaller(original));
+    await task;
     assert.ok(result.output);
     assert.equal(store.get(result.forkJobId).returned.messageId, result.reconcile.messageId);
   }
   // Never handed back: the owner stopped after writing it for the tool result.
   {
     const { fake, original, forks, mailboxPath, store, rowsTo } = setup();
-    fake.behavior.archiveDelayMs = 2_000;
+    // The owner stops while the archive is held: after the tool-result
+    // reconcile is written, before the caller gets it back.
+    const archive = fake.holdArchive();
     const call = forks.forkThread({ threadId: original, message: "x", compactFork: "never", waitForResult: true, timeoutMs: 600_000 }, asCaller(original));
     call.catch(() => {});
-    await new Promise((r) => setTimeout(r, 20));
-    const fork = forkOf(fake, original);
-    fake.complete(fork.id, fork.turns.at(-1).id, { text: "lost" });
-    await new Promise((r) => setTimeout(r, 50));
+    await completeTask(fake, original, { text: "lost" });
+    await archive.entered;
     forks.close();
+    archive.release();
     const job = store.list().at(-1);
     assert.equal(job.written.deliveredVia, "tool-result");
     assert.equal(job.returned, null);
@@ -1243,12 +1278,9 @@ test("N3: a returned self-fork result is recorded; one never handed back is rele
 
 test("N4: a failed self-fork returned through its tool result reports archived false", async () => {
   const { fake, original, forks } = setup();
-  fake.behavior.archiveDelayMs = 300;
-  setTimeout(() => {
-    const fork = forkOf(fake, original);
-    fake.complete(fork.id, fork.turns.at(-1).id, { status: "failed", text: null, error: "boom", requests: [] });
-  }, 20);
+  const task = completeTask(fake, original, { status: "failed", text: null, error: "boom", requests: [] });
   const result = await forks.forkThread({ threadId: original, message: "x", compactFork: "never", waitForResult: true, timeoutMs: 5000 }, asCaller(original));
+  await task;
   assert.equal(result.status, "failed");
   assert.equal(result.archived, false);
 });

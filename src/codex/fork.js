@@ -231,6 +231,7 @@ function messageOf(error) {
  *   listReceipts?: (options: Record<string, any>) => Promise<{data?: any[]}>,
  *   now?: () => number,
  *   wait?: (ms: number) => Promise<void>,
+ *   deadline?: (ms: number) => Promise<void>,
  *   pollIntervalMs?: number,
  *   tokenUsageGraceMs?: number
  * }} deps
@@ -248,6 +249,8 @@ export function makeForkJobs({
   listReceipts = defaultListReceipts,
   now = () => Date.now(),
   wait = sleep,
+  // The waitForResult caller's deadline timer (a seam for tests; real by default).
+  deadline = sleep,
   pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
   tokenUsageGraceMs = undefined
 }) {
@@ -438,7 +441,7 @@ export function makeForkJobs({
     if (runtime.waiting) {
       const timeoutMs = Math.min(Math.max(Number(args.timeoutMs ?? LIMITS.timeoutMs.def), LIMITS.timeoutMs.min), LIMITS.timeoutMs.max);
       // A real timer: `wait` paces the watcher's polls, not the caller's deadline.
-      finished = await Promise.race([runtime.promise.catch(() => null), sleep(timeoutMs).then(() => null)]);
+      finished = await Promise.race([runtime.promise.catch(() => null), deadline(timeoutMs).then(() => null)]);
       // Synchronous from here: once waiting is false, a reconcile not yet
       // written is pushed instead. One already written for this tool result
       // (R9.8) is returned even when the archive and receipts are still

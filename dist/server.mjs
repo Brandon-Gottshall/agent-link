@@ -27055,6 +27055,8 @@ function makeForkJobs({
   listReceipts: listReceipts2 = listReceipts,
   now = () => Date.now(),
   wait = sleep3,
+  // The waitForResult caller's deadline timer (a seam for tests; real by default).
+  deadline = sleep3,
   pollIntervalMs: pollIntervalMs2 = DEFAULT_POLL_INTERVAL_MS,
   tokenUsageGraceMs = void 0
 }) {
@@ -27216,7 +27218,7 @@ function makeForkJobs({
     let finished = null;
     if (runtime.waiting) {
       const timeoutMs2 = Math.min(Math.max(Number(args.timeoutMs ?? LIMITS.timeoutMs.def), LIMITS.timeoutMs.min), LIMITS.timeoutMs.max);
-      finished = await Promise.race([runtime.promise.catch(() => null), sleep3(timeoutMs2).then(() => null)]);
+      finished = await Promise.race([runtime.promise.catch(() => null), deadline(timeoutMs2).then(() => null)]);
       runtime.waiting = false;
       if (!finished && runtime.toolResult) finished = runtime.toolResult;
       if (runtime.done) active.delete(jobId);
@@ -27294,9 +27296,9 @@ function makeForkJobs({
     }
   }
   async function waitForCompaction(threadId, seen) {
-    const deadline = now() + COMPACTION_WAIT_MS;
+    const deadline2 = now() + COMPACTION_WAIT_MS;
     let sawActive = false;
-    while (now() < deadline) {
+    while (now() < deadline2) {
       const done = tokenUsage?.completedTurns(threadId).find((turn) => !seen.has(turn.turnId));
       if (done) return done;
       const read = await appServer.request("thread/read", { threadId, includeTurns: false });
