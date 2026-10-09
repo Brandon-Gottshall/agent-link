@@ -37,6 +37,10 @@ The argument aliases and duplicated output keys that 0.5.0 deprecated (with a `d
 
 ### Other changes
 
+- Install fixes from a low-context install WF run:
+  - `package.json` lists no runtime dependencies. `@modelcontextprotocol/sdk` and `ws` are devDependencies: `dist/server.mjs` bundles them, and the hooks use only Node built-ins. Claude Code no longer reports the plugin's packages as "not installed" when its install-time `npm ci` fails. A new offline test, `tests/shipped-plugin.test.js`, runs the server (`initialize` + `tools/list`) and both hooks from a copy of the tracked files with no `node_modules`.
+  - `check:approval-config` requires only the read-only tools (MCP `readOnlyHint`) and reports which side-effecting tools are auto-approved. `--all` keeps the old rule that every tool must be approved.
+  - README: the Quick start states the two first-message limits (Codex desktop threads are mailbox-only; Claude Code needs `--channels` for live delivery) and gives a first test that works every time. The Codex approval snippet is split into read-only and side-effecting tools, with a warning and a note on Claude Code permissions. New Troubleshooting section keyed to `agent_link_health`. Uninstall now covers removing the marketplace and `~/.agent-link`. Desktop-only users get a pointer to the Codex CLI install for the hook-trust steps.
 - Fork and reconcile (design doc section 9.3, R9.7–R9.12; PR B7b fork). Uses the B7 spike results.
   - New tool `fork_codex_thread({threadId | query, message, model?, modelProvider?, serviceTier?, effort?, cwd?, lastTurnId?, compactFork?, reconcile?: {anticipation?, replyBy?}, archiveFork?, waitForResult?, timeoutMs?, receipt?})`. Use it to run another model, effort, or cwd on an existing thread's context.
     - It forks the thread through its latest completed turn (`thread/fork`, `threadSource: "agent-link-fork"`), optionally compacts the fork, and runs the enveloped task on the fork (`turnTrigger: "agent-link-fork"`, `clientUserMessageId` = the fork job id).

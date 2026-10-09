@@ -11,7 +11,7 @@ If you run several coding agents at once, say a Claude Code session refactoring 
 - [Quick start](#quick-start)
 - [Trust model](#trust-model)
 - [Requirements](#requirements)
-- [Install](#install) · [Claude Code](#claude-code) · [Codex](#codex) · [From a clone](#from-a-clone)
+- [Install](#install) · [Claude Code](#claude-code) · [Codex](#codex) · [Uninstall](#update-or-remove) · [Troubleshooting](#troubleshooting) · [From a clone](#from-a-clone)
 - [Tools](#tools)
 - [How it works](#how-it-works)
 - [Configuration](#configuration)
@@ -24,6 +24,17 @@ If you run several coding agents at once, say a Claude Code session refactoring 
 Install the plugin on both hosts ([Install](#install)), then ask an agent in plain words. You don't call the tools yourself; the agent does. This example starts in a Claude Code session:
 
 > Ask the Codex thread working on the billing service whether the invoice API change has landed.
+
+**Before your first message**, know two limits:
+
+- **Codex desktop threads are mailbox-only.** Agent Link cannot start a turn in a thread the Codex desktop app has open. The send returns `delivery: "queued"` with a `codex_desktop_push_disabled` warning, and a wait times out until someone types in that thread. The example below shows a thread Agent Link can push to.
+- **Claude Code needs channels for live delivery.** Start it with `claude --channels plugin:agent-link@agent-link`. Without that, messages wait until the session's next prompt.
+
+For a first test that works every time, have the agent launch a fresh thread and wait:
+
+> Launch a new Codex thread in this folder with the message "Reply with OK", then wait for its reply.
+
+The agent calls `launch_codex_thread` with a `message`, then `wait_for_agent`. To reach a thread already open in the desktop app, send the message, then type anything in that thread: with the prompt hook trusted ([Codex](#codex)), the thread reads its mail and replies.
 
 The agent finds the thread with `list_agents` (both hosts, newest first) or `resolve_agent`:
 
@@ -102,7 +113,7 @@ Agent Link is built for one person running agents on their own Mac. It has no ne
 ## Requirements
 
 - **macOS.** Session discovery reads Claude and Codex state from macOS application folders.
-- **Node.js 20 or later.** The plugin ships a prebuilt server bundle (`dist/server.mjs`), so running it needs no `npm` and no network access.
+- **Node.js 20 or later.** The plugin ships a prebuilt server bundle (`dist/server.mjs`), and its hooks use only Node built-ins, so running it needs no `node_modules`, `npm`, or network access. Claude Code may still run `npm ci` when it installs the plugin, because the repo has a lockfile for its development tools. Agent Link never uses those packages, and it works the same if that step fails.
 - **At least one host:** Claude Code (the `claude` CLI or the Code tab in Claude Desktop), or Codex (the `codex` CLI, or the Codex app bundled in ChatGPT).
 - Codex features need a Codex install that can run `codex app-server`. Agent Link starts and stops that server itself.
 
@@ -146,7 +157,7 @@ Restart Codex. In Codex the plugin is named `codex-agent-link`, a name kept so o
 
 **Trust the prompt hook once.** Agent Link adds one Codex hook, on `UserPromptSubmit`. Codex runs a plugin hook only after you trust it; until then the hook never runs. In the Codex CLI: run `codex` once in a terminal after installing the plugin. When it says hooks need review, choose **Review hooks** (or **Trust all and continue**) and trust the Agent Link hook, or trust it later from `/hooks`. **Continue without trusting** leaves it off. Codex remembers the decision as a hash of the hook entry, so updating Agent Link keeps it unless the hook entry itself changes. `agent_link_health` shows the state as `codex.promptHook.trust`.
 
-Codex desktop app users: the trust prompt inside the desktop app has not been verified for this release, so use the CLI steps above. Codex stores the decision in its `config.toml` under `hooks.state` (verified from the Codex 0.159.2 binary and its `hooks/list`). The desktop app runs its own `codex app-server`, so a decision made in the CLI should apply there too when both use the same `CODEX_HOME` (by default `~/.codex`); that sharing is not verified.
+Codex desktop app users: the trust prompt inside the desktop app has not been verified for this release, so use the CLI steps above. If `codex` is not on your `PATH`, install the Codex CLI (`brew install --cask codex` or `npm install -g @openai/codex`; see [openai/codex](https://github.com/openai/codex)). Codex stores the decision in its `config.toml` under `hooks.state` (verified from the Codex 0.159.2 binary and its `hooks/list`). The desktop app runs its own `codex app-server`, so a decision made in the CLI should apply there too when both use the same `CODEX_HOME` (by default `~/.codex`); that sharing is not verified.
 
 What it does: in a Codex thread that the Codex desktop app holds, Agent Link cannot start a turn (see [Codex side](#codex-side)), so a message only waits in the inbox. With the hook trusted, each time you type a prompt in a thread that has mail, Codex gives the model a short hidden note, for example `Agent Link: 1 pending peer message from claude:<id>. ...`, and the model calls `read_agent_link_inbox`, which shows the messages in the transcript. You do not see the note itself, only that tool call. The note never contains a message body.
 
@@ -165,10 +176,10 @@ Limits of the hook:
 - With a non-POSIX login shell (csh, tcsh, nushell; fish is untested) the hook does nothing: those shells parse the command differently, so its output is discarded. It never blocks your prompt.
 - If your shell startup files turn on strict options (`set -u`, `set -e`), a missing `node` or an unset `PLUGIN_ROOT` shows up as a failed hook in Codex instead of being silent. The prompt still goes through.
 
-**Optional: skip approval prompts.** By default Codex asks before each tool call. To let agents call Agent Link tools without stopping, add this to `~/.codex/config.toml`:
+**Optional: skip approval prompts.** By default Codex asks before each tool call. To let agents call Agent Link tools without stopping, add settings to `~/.codex/config.toml`. Start with the read-only tools; they only look things up.
 
 <details>
-<summary>Approval settings for <code>~/.codex/config.toml</code></summary>
+<summary>Read-only tools (safe to auto-approve)</summary>
 
 ```toml
 [plugins."codex-agent-link@agent-link"]
@@ -180,13 +191,16 @@ approval_mode = "approve"
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.agent_link_mailbox_inspect]
 approval_mode = "approve"
 
-[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.archive_codex_thread]
-approval_mode = "approve"
-
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.check_coordination_obligations]
 approval_mode = "approve"
 
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.get_agent_link_message_status]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.get_agent_override_policy]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.get_agent_role]
 approval_mode = "approve"
 
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.get_claude_session]
@@ -198,13 +212,10 @@ approval_mode = "approve"
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.get_codex_thread]
 approval_mode = "approve"
 
-[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.launch_codex_thread]
-approval_mode = "approve"
-
-[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.launch_project_worker]
-approval_mode = "approve"
-
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.list_agent_link_receipts]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.list_agent_roles]
 approval_mode = "approve"
 
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.list_agents]
@@ -220,6 +231,48 @@ approval_mode = "approve"
 approval_mode = "approve"
 
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.list_loaded_codex_threads]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.resolve_agent]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.resolve_claude_session]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.resolve_codex_thread]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.resolve_project_orchestrator]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.wait_for_agent]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.wait_for_claude_session]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.wait_for_codex_thread]
+approval_mode = "approve"
+```
+
+</details>
+
+**Side-effecting tools.** Approving these lets agents start real Codex turns (using your quota), archive threads, or send messages without asking you. Add them only if you want that.
+
+<details>
+<summary>Side-effecting tools</summary>
+
+```toml
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.archive_codex_thread]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.fork_codex_thread]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.launch_codex_thread]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.launch_project_worker]
 approval_mode = "approve"
 
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.message_agent]
@@ -243,34 +296,15 @@ approval_mode = "approve"
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.reply_agent_link_message]
 approval_mode = "approve"
 
-[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.resolve_agent]
-approval_mode = "approve"
-
-[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.resolve_claude_session]
-approval_mode = "approve"
-
-[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.resolve_codex_thread]
-approval_mode = "approve"
-
-[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.resolve_project_orchestrator]
-approval_mode = "approve"
-
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.return_project_work_result]
-approval_mode = "approve"
-
-[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.wait_for_agent]
-approval_mode = "approve"
-
-[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.wait_for_claude_session]
-approval_mode = "approve"
-
-[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.wait_for_codex_thread]
 approval_mode = "approve"
 ```
 
 </details>
 
-The role tools are not in this list on purpose. The read-only ones (`list_agent_roles`, `get_agent_role`, `get_agent_override_policy`) can be added the same way; leave the role write tools asking. To compare a config with the tool list, run `npm run check:approval-config -- --config <path>`; it reads your real Codex config only through `npm run check:approval-config:real`.
+The role write tools (`set_agent_role`, `clear_agent_role`, `set_agent_override_policy`) are left out on purpose; keep them asking. To compare a config with these lists, run `npm run check:approval-config -- --config <path>`. It requires the read-only tools, lists which side-effecting tools are approved, and with `--all` requires every tool. It reads your real Codex config only through `npm run check:approval-config:real`.
+
+Claude Code also asks before each Agent Link tool call unless your permission mode or settings allow it. To allow a tool, add a rule such as `mcp__plugin_agent-link_codex-agent-link__list_agents` to `permissions.allow`, and use the same split.
 
 ### Check that it works
 
@@ -282,6 +316,29 @@ Ask the agent to call `agent_link_health`. It reports the detected host, the age
 | --- | --- | --- |
 | Claude Code | `claude plugin marketplace update agent-link`, then `claude plugin update agent-link@agent-link`, then restart | `claude plugin uninstall agent-link@agent-link` |
 | Codex | `codex plugin marketplace upgrade agent-link`, then `codex plugin add codex-agent-link@agent-link`, then restart | `codex plugin remove codex-agent-link@agent-link` |
+
+To uninstall completely, also remove the marketplace registration on each host:
+
+```bash
+claude plugin marketplace remove agent-link
+```
+
+```bash
+codex plugin marketplace remove agent-link
+```
+
+Then, if you want, delete the shared state with `rm -rf ~/.agent-link` (mailbox, receipts, logs) and remove any Agent Link approval settings from `~/.codex/config.toml`.
+
+### Troubleshooting
+
+Start with `agent_link_health`; each item below names the field to look at.
+
+- **`codex.promptHook.trust` is `untrusted` or `modified`.** Codex is not running the prompt hook, so a desktop-app thread never hears about its mail. Trust it as described under [Codex](#codex) (`/hooks` in the Codex CLI). `unknown` only means no Codex app-server was connected when health ran.
+- **`codex.available` is `false`, or a Codex tool fails with `codex_unavailable`.** Agent Link found no Codex, or could not start its app-server. Read `hint` and `codex.reason`. If autostart is off (`AGENT_LINK_CODEX_AUTOSTART=0`), unset it or point `AGENT_LINK_CODEX_URL` / `AGENT_LINK_CODEX_SOCK` at a running app-server.
+- **`codex.desktopPush` warns `codex_version_differs`, or `warnings` has `override_costs_version_mismatch`.** Desktop-thread handling and the recorded override costs were verified on Codex 0.159.2. On another version they are unverified: Agent Link still runs, but treat delivery into desktop-app threads and the cost figures with care.
+- **`forkJobs.stuck` is above 0.** A `fork_codex_thread` job never started its task turn, or its result was not sent back. The server's sweeper finishes these on a timer; if the count stays up, restart the session that ran the fork.
+- **A message stays `queued` with `codex_desktop_push_disabled`.** The thread is open in the Codex desktop app. Type in that thread, or use a thread Agent Link launched (see [Quick start](#quick-start)).
+- **Claude Code says the plugin's packages are not installed.** Older versions listed runtime dependencies, so a failed `npm ci` at install time looked like a broken plugin. Since 0.6.0 the plugin lists none, and it never needs them. Update the plugin.
 
 ### From a clone
 

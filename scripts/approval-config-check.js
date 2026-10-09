@@ -15,10 +15,17 @@ const SERVER_ENTRY = "./dist/server.mjs";
 // never read it by accident:
 //   --config <path> or CODEX_CONFIG=<path>        check that file
 //   --real-config or AGENT_LINK_CHECK_REAL_CONFIG=1  check the real config
+// By default only the read-only tools (MCP annotation readOnlyHint) must be
+// auto-approved; side-effecting tools are reported, not required, matching the
+// README's split. --all requires every tool.
 const configPath = resolveConfigPath(process.argv.slice(2), process.env);
+const requireAll = process.argv.includes("--all");
 
 // Derive the tool list from the server itself so it cannot drift from what Codex exposes.
-const tools = await listCodexHostTools(pluginRoot);
+const allTools = await listCodexHostTools(pluginRoot);
+const readOnlyTools = allTools.filter((tool) => tool.readOnly).map((tool) => tool.name);
+const sideEffectTools = allTools.filter((tool) => !tool.readOnly).map((tool) => tool.name);
+const tools = requireAll ? allTools.map((tool) => tool.name) : readOnlyTools;
 
 const source = fs.readFileSync(configPath, "utf8");
 const lines = source.split(/\r?\n/);
@@ -53,13 +60,20 @@ if (failures.length > 0 || envelopeFailures.length > 0) {
     console.error("\nAdd this TOML:");
     console.error(`\n[plugins."${pluginId}"]\nenabled = true`);
     for (const tool of tools) {
-      console.error(`\n[plugins."${pluginId}".mcp_servers.${mcpServer}.tools.${tool}]\napproval_mode = "approve"`);
+      if (failures.includes(`[plugins."${pluginId}".mcp_servers.${mcpServer}.tools.${tool}] approval_mode = "approve"`)) {
+        console.error(`\n[plugins."${pluginId}".mcp_servers.${mcpServer}.tools.${tool}]\napproval_mode = "approve"`);
+      }
     }
   }
   process.exit(1);
 }
 
-console.log(`Codex Agent Link approval config OK in ${configPath}; ${tools.length} MCP tools approved.`);
+const autoApproved = sideEffectTools.filter((tool) =>
+  hasSetting(`plugins."${pluginId}".mcp_servers.${mcpServer}.tools.${tool}`, "approval_mode", "\"approve\""));
+console.log(`Codex Agent Link approval config OK in ${configPath}; ${tools.length} ${requireAll ? "" : "read-only "}MCP tools approved.`);
+if (!requireAll) {
+  console.log(`Side-effecting tools auto-approved (they act without asking): ${autoApproved.length} of ${sideEffectTools.length}${autoApproved.length ? ` (${autoApproved.join(", ")})` : ""}.`);
+}
 
 /**
  * @param {string[]} argv
@@ -170,7 +184,8 @@ function validatePluginEnvelope(root) {
 }
 
 // Start the bundled server as a Codex host would (CODEX_HOME set, no Claude env,
-// no managed app-server) and return the names from its tools/list. Uses raw
+// no managed app-server) and return each tool's name and whether its
+// annotations mark it read-only. Uses raw
 // JSON-RPC over stdio so the check runs in an installed plugin without node_modules.
 async function listCodexHostTools(root) {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "agent-link-approval-check-"));
@@ -225,7 +240,9 @@ async function listCodexHostTools(root) {
             if (message.error) {
               reject(new Error(`tools/list failed: ${message.error.message}`));
             } else {
-              resolve(message.result.tools.map((tool) => tool.name).sort());
+              resolve(message.result.tools
+                .map((tool) => ({ name: tool.name, readOnly: tool.annotations?.readOnlyHint === true }))
+                .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)));
             }
           }
         }

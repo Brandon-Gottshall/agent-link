@@ -36,17 +36,15 @@
     "wf:agent-link:installed-live": "node ./scripts/live-guard.js && CODEX_AGENT_LINK_WF_LIVE=1 CODEX_AGENT_LINK_AUTOSTART=1 node ./scripts/agent-wf-runner.js --suite ./wf/agent-link/suite.json --live --installed-plugin-root",
     "measure:idle-churn": "node ./scripts/idle-churn-measure.js --idle-seconds 120"
   },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "ws": "^8.18.3"
-  },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@types/node": "^20.19.43",
     "esbuild": "0.28.2",
     "eslint": "10.12.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "ws": "^8.18.3"
   }
 }

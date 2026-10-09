@@ -97,7 +97,8 @@ const groups = {
   ],
   manifest: [
     "tests/approval-config-check.test.js",
-    "tests/manifest.test.js"
+    "tests/manifest.test.js",
+    "tests/shipped-plugin.test.js"
   ]
 };
 groups.all = [...groups.manifest, ...groups.claude, ...groups.codex, ...groups.server, ...groups.mcp];
