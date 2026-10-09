@@ -30,7 +30,7 @@
 //   AGENT_LINK_LIVE=1 node scripts/cross-harness-e2e.live.js --yes-real-codex \
 //     [--codex-bin <path>] [--disable-plugin <id>]... [--scenarios 1,2,3] \
 //     [--fork-model <model>] [--effort low] [--keep-state] [--report <file>] \
-//     [--peer-authorization] [--reminder-limit <n>] [--s1-runs <n>]
+//     [--peer-authorization] [--reminder-limit <n>] [--s1-runs <n>] [--setup-only]
 import "./live-guard.js";
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -67,6 +67,7 @@ function parseArgs(argv) {
     else if (a === "--effort") out.effort = next();
     else if (a === "--keep-state") out.keepState = true;
     else if (a === "--peer-authorization") out.peerAuth = true;
+    else if (a === "--setup-only") out.setupOnly = true;
     else if (a === "--no-peer-authorization") out.peerAuth = false;
     else if (a === "--reminder-limit") out.reminderLimit = next();
     else if (a === "--s1-runs") out.s1Runs = Number(next());
@@ -1027,6 +1028,10 @@ async function main() {
 
   await startClaudeSide();
 
+  if (args.setupOnly) {
+    log("setup only:", report.setup.promptHook ?? "no prompt hook (scenario 9 not selected)");
+    return;
+  }
   for (const [n, fn] of [[1, s1], [2, s2], [3, s3], [4, s4], [6, s6], [7, s7], [5, s5], [8, s8], [9, s9]]) {
     if (!want(n)) continue;
     await fn();
