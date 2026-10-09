@@ -29,7 +29,8 @@
 // Usage:
 //   AGENT_LINK_LIVE=1 node scripts/cross-harness-e2e.live.js --yes-real-codex \
 //     [--codex-bin <path>] [--disable-plugin <id>]... [--scenarios 1,2,3] \
-//     [--fork-model <model>] [--effort low] [--keep-state] [--report <file>]
+//     [--fork-model <model>] [--effort low] [--keep-state] [--report <file>] \
+//     [--peer-authorization] [--reminder-limit <n>] [--s1-runs <n>]
 import "./live-guard.js";
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -65,7 +66,10 @@ function parseArgs(argv) {
     else if (a === "--fork-model") out.forkModel = next();
     else if (a === "--effort") out.effort = next();
     else if (a === "--keep-state") out.keepState = true;
-    else if (a === "--no-peer-authorization") out.noPeerAuth = true;
+    else if (a === "--peer-authorization") out.peerAuth = true;
+    else if (a === "--no-peer-authorization") out.peerAuth = false;
+    else if (a === "--reminder-limit") out.reminderLimit = next();
+    else if (a === "--s1-runs") out.s1Runs = Number(next());
     else if (a === "--claude-channel") out.claudeChannel = true;
     else if (a === "--report") out.report = next();
     else if (a === "--help" || a === "-h") out.help = true;
@@ -127,7 +131,7 @@ const sharedAgentLinkEnv = {
   AGENT_LINK_CODEX_AUTOSTART: "0",
   AGENT_LINK_CODEX_BIN: codexBin,
   AGENT_LINK_REMINDER_INTERVAL_MS: "30000",
-  AGENT_LINK_REMINDER_LIMIT: "2",
+  AGENT_LINK_REMINDER_LIMIT: String(args.reminderLimit ?? 2),
   AGENT_LINK_INSPECT_ALL: "1"
 };
 
@@ -403,8 +407,14 @@ const turnCount = (thread) => (thread?.turns || []).length;
 
 const ctx = {};
 
-async function s1() {
-  const s = scenario(1, "Claude -> Codex launch with a reply expected");
+/** The model's final text in each turn before the reply turn (declines). */
+function declineTexts(turns, replyTurn) {
+  const upto = replyTurn >= 0 ? replyTurn : turns.length;
+  return turns.slice(0, upto).map((t, i) => ({ turn: i + 1, user: trim(t.user, 80), agent: t.agent }));
+}
+
+async function s1(run = 1) {
+  const s = scenario(run === 1 ? 1 : `1#${run}`, `Claude -> Codex launch with a reply expected${run === 1 ? "" : ` (repeat ${run})`}`);
   try {
     const cwd = newCwd("s1");
     const launch = await call("launch_codex_thread", {
@@ -417,8 +427,8 @@ async function s1() {
     s.evidence("launch", trim(launch, 1500));
     const threadId = launch.threadId ?? launch.thread?.id;
     const messageId = launch.messageId ?? launch.message?.messageId ?? launch.delivery?.messageId;
-    track(threadId, "A", "s1");
-    ctx.t1 = threadId;
+    track(threadId, "A", run === 1 ? "s1" : `s1#${run}`);
+    if (run === 1) ctx.t1 = threadId;
     s.check("launch returned threadId and messageId", threadId && messageId, { threadId, messageId });
     const wait = await call("wait_for_agent", { agent: `codex:${threadId}`, replyToMessageId: messageId, timeoutMs: 240000 }, 300000);
     s.evidence("wait", trim(wait, 1500));
@@ -436,7 +446,10 @@ async function s1() {
     const replyTurn = turns.findIndex((t) => t.tools.some((x) => x.startsWith(`${MCP_NAME}.reply_agent_link_message`)));
     s.check("thread called reply_agent_link_message on the test server", replyTurn >= 0, turns.map((t) => t.tools));
     s.evidence("replyTurnIndex", replyTurn);
-    if (replyTurn > 0) s.note(`the reply came in turn ${replyTurn + 1}, not the first; turn 1 said: ${trim(turns[0]?.agent, 160)}; turn ${replyTurn + 1} started with: ${trim(turns[replyTurn]?.user, 100)}`);
+    s.check("replied on the first turn or at the latest the first reminder", replyTurn === 0 || replyTurn === 1, replyTurn + 1);
+    const declines = declineTexts(turns, replyTurn);
+    s.evidence("declines", declines);
+    for (const d of declines) s.note(`turn ${d.turn} did not reply; model text: ${JSON.stringify(d.agent)}`);
     ctx.t1Model = thread?.model ?? null;
   } catch (err) {
     s.check("scenario ran without exception", false, err.stack || String(err));
@@ -703,7 +716,102 @@ async function s7() {
     s.check("reply received", wait.outcome === "reply" && /lead-ack/i.test(JSON.stringify(wait.reply ?? "")), wait.outcome);
     const after = await waitIdle(A, ctx.t1, { minTurns: before + 1 });
     s.rec.turns = turnCount(after) - before;
+    const turns = summarizeTurns(after).slice(before);
+    s.evidence("turns", turns);
+    const replyTurn = turns.findIndex((t) => t.tools.some((x) => x.startsWith(`${MCP_NAME}.reply_agent_link_message`)));
+    s.check("replied on the first turn or at the latest the first reminder", replyTurn === 0 || replyTurn === 1, replyTurn + 1);
+    const declines = declineTexts(turns, replyTurn);
+    s.evidence("declines", declines);
+    for (const d of declines) s.note(`turn ${d.turn} did not reply; model text: ${JSON.stringify(d.agent)}`);
     await call("clear_agent_role", { role: "e2e-lead" }).catch(() => null);
+  } catch (err) {
+    s.check("scenario ran without exception", false, err.stack || String(err));
+  }
+  s.finish();
+}
+
+/** Runs the Codex prompt hook by hand, with the isolated env (no turn). */
+function runCodexHook(threadId, cwd) {
+  const payload = { session_id: threadId, turn_id: "manual", transcript_path: null, cwd, hook_event_name: "UserPromptSubmit", model: "manual", permission_mode: "bypassPermissions", prompt: "manual" };
+  const r = spawnSync(process.execPath, [path.join(REPO, "src", "codex", "prompt-hook.js")], {
+    input: JSON.stringify(payload), env: { ...scrubbedEnv(), ...sharedAgentLinkEnv }, encoding: "utf8", timeout: 10000
+  });
+  return { status: r.status, stdout: r.stdout.trim() };
+}
+/** hook/completed runs of the registered Agent Link prompt hook for one turn. */
+function hookRuns(threadId, turnId) {
+  return B.notifications
+    .filter((n) => n.method === "hook/completed" && n.params?.threadId === threadId && (!turnId || n.params?.turnId === turnId))
+    .map((n) => n.params.run)
+    .filter((run) => String(run?.sourcePath ?? "").includes("session-flags") || String(run?.source ?? "") === "sessionFlags")
+    .map((run) => ({ status: run.status, durationMs: run.durationMs === undefined ? null : Number(run.durationMs), entries: run.entries ?? [] }));
+}
+async function humanTurn(threadId, text) {
+  const before = turnCount(await readThread(B, threadId).catch(() => null));
+  const r = await B.request("turn/start", { threadId, input: [{ type: "text", text }] });
+  const thread = await waitIdle(B, threadId, { minTurns: before + 1 });
+  await sleep(1000);
+  return { turnId: r.turn?.id, thread, turn: summarizeTurns(thread)[before] };
+}
+
+async function s9() {
+  const s = scenario(9, "Codex prompt hook on a held thread");
+  try {
+    if (!ctx.hookKey) throw new Error("the prompt hook was not registered in app-server B");
+    s.evidence("hook", { key: ctx.hookKey, trust: ctx.hookTrust });
+    const BODY_TOKEN = "PELICAN-77";
+    const cwd = newCwd("s9");
+    const started = await B.request("thread/start", { cwd, approvalPolicy: "never", sandbox: "read-only" });
+    const threadId = started.thread.id;
+    track(threadId, "B", "s9-held-hook");
+    // Turn 1, empty mailbox: the hook runs and adds nothing.
+    const t1 = await humanTurn(threadId, `${MARK}. Reply with just the word 'ready'. Do not call any tools.`);
+    const runs1 = hookRuns(threadId, t1.turnId);
+    s.evidence("turn1HookRuns", runs1);
+    s.check("turn 1 (no mail): hook ran with no context entry", runs1.length >= 1 && runs1.every((r) => r.entries.length === 0), runs1);
+    // Queue a reply-anticipating message: held, so inbox only.
+    const sent = await call("message_codex_thread", { threadId, message: `${MARK}. Held-thread hook test, body token ${BODY_TOKEN}. Reply 'held-ack' when asked.`, anticipation: "reply" });
+    s.evidence("send", { delivery: sent.delivery, warnings: (sent.warnings ?? []).map((w) => w.code) });
+    s.check("send queued with codex_desktop_push_disabled", sent.delivery === "queued" && /codex_desktop_push_disabled/.test(JSON.stringify(sent.warnings ?? [])), sent.delivery);
+    const messageId = sent.messageId;
+    // Turn 2: the user prompts; the hook says there is mail, without the body.
+    const t2 = await humanTurn(threadId, "Call the agent-link tool read_agent_link_inbox once to see your mail. Do not reply to or resolve any message yet.");
+    const runs2 = hookRuns(threadId, t2.turnId);
+    const text2 = runs2.flatMap((r) => r.entries.map((e) => e.text)).join("\n");
+    s.evidence("turn2HookRuns", runs2);
+    s.evidence("turn2", { tools: t2.turn?.tools, agent: t2.turn?.agent });
+    s.check("turn 2: hook context carries 'Agent Link: 1 pending peer message'", /Agent Link: 1 pending peer message/.test(text2), trim(text2, 300));
+    s.check("turn 2: hook context has no message body", !text2.includes(BODY_TOKEN), text2.includes(BODY_TOKEN));
+    s.check("turn 2: the thread read its inbox", (t2.turn?.tools ?? []).some((x) => x.startsWith(`${MCP_NAME}.read_agent_link_inbox`)), t2.turn?.tools);
+    // Right after the read: delivered, reminder not due yet.
+    const early = runCodexHook(threadId, cwd);
+    s.evidence("manualHookRightAfterRead", early);
+    s.check("before the interval: no reminder", early.status === 0 && early.stdout === "", early.stdout);
+    const st = await call("get_agent_link_message_status", { messageId });
+    s.evidence("statusAfterRead", { delivery: st.delivery, status: st.status, reminders: st.reminders });
+    const dueIn = Math.max(0, Date.parse(st.reminders?.nextDueAt ?? "") - Date.now());
+    await sleep((Number.isFinite(dueIn) ? dueIn : 30000) + 2000);
+    // Turn 3: the reminder notice, once.
+    const t3 = await humanTurn(threadId, "Say 'ok'. Do not call any tools.");
+    const runs3 = hookRuns(threadId, t3.turnId);
+    const text3 = runs3.flatMap((r) => r.entries.map((e) => e.text)).join("\n");
+    s.evidence("turn3HookRuns", runs3);
+    const limit = Number(sharedAgentLinkEnv.AGENT_LINK_REMINDER_LIMIT);
+    s.check(`turn 3: reminder notice (reminder 1 of ${limit})`, text3.includes(`reminder 1 of ${limit}`) && !text3.includes(BODY_TOKEN), trim(text3, 300));
+    // After the cap (limit 1) or the next interval: by hand, no turn.
+    await sleep(32000);
+    const late = runCodexHook(threadId, cwd);
+    s.evidence("manualHookAfterInterval", late);
+    const st2 = await call("get_agent_link_message_status", { messageId });
+    s.evidence("statusAfterCap", { status: st2.status, reminders: st2.reminders });
+    if (limit === 1) {
+      s.check("after the cap: no notice, and the message reads unresolved", late.stdout === "" && st2.status === "unresolved", { stdout: late.stdout, status: st2.status });
+    } else {
+      s.check("next interval: reminder 2 notice", late.stdout.includes(`reminder 2 of ${limit}`), late.stdout);
+    }
+    s.check("reminder events recorded via codex-prompt-hook", mailboxEvents().some((e) => e.type === "reminded" && e.messageId === messageId && e.via === "codex-prompt-hook"), mailboxEvents().filter((e) => e.type === "reminded" && e.messageId === messageId));
+    s.check("the held thread never got a pushed turn", turnCount(await readThread(B, threadId)) === 3, turnCount(await readThread(B, threadId)));
+    s.rec.turns = 3;
   } catch (err) {
     s.check("scenario ran without exception", false, err.stack || String(err));
   }
@@ -777,7 +885,7 @@ async function discoverAgentLinkMcpServers(rpc) {
   }
 }
 
-function appServerArgs(pluginIds, mcpNames, withMcp) {
+function appServerArgs(pluginIds, mcpNames, withMcp, extra = []) {
   const toml = (v) => JSON.stringify(v);
   // Codex splits -c key paths on "." and does not honour TOML quoting
   // (`plugins."a@b".enabled` is silently ignored), so ids go in bare.
@@ -790,10 +898,11 @@ function appServerArgs(pluginIds, mcpNames, withMcp) {
     "-c", `sandbox_mode=${toml("read-only")}`,
     "-c", `model_reasoning_effort=${toml(args.effort)}`
   ];
-  // Without this, a fresh thread may decline peer requests: the envelope
-  // notice says a peer carries no user authority (observed with low effort).
-  // A real user grants it in AGENTS.md or the thread; this is that grant.
-  if (!args.noPeerAuth) out.push("-c", `developer_instructions=${toml(PEER_AUTHORIZATION)}`);
+  // Opt-in (--peer-authorization): a user grant for peer requests, as a
+  // user would give in AGENTS.md. Off by default, since the envelope notice
+  // says replying, declining, or marking done is always allowed; before
+  // that notice, low-effort threads declined to reply without it.
+  if (args.peerAuth) out.push("-c", `developer_instructions=${toml(PEER_AUTHORIZATION)}`);
   for (const id of pluginIds) out.push("-c", `plugins.${key(id)}.enabled=false`);
   for (const name of mcpNames) out.push("-c", `mcp_servers.${key(name)}.enabled=false`);
   if (withMcp) {
@@ -807,7 +916,7 @@ function appServerArgs(pluginIds, mcpNames, withMcp) {
       "-c", `mcp_servers.${MCP_NAME}.startup_timeout_sec=30`
     );
   }
-  return out;
+  return [...out, ...extra];
 }
 
 async function archiveAll() {
@@ -837,6 +946,43 @@ async function shutdown() {
   }
 }
 
+// App-server B stands in for the Codex desktop app: Agent Link is not pointed
+// at it. Its threads get the build under test as their MCP server (same
+// isolated state) and, for scenario 9, the repo's Codex prompt hook,
+// registered and trusted for this process only: -c hooks.UserPromptSubmit,
+// then -c hooks.state.<key>.trusted_hash from hooks/list (design R1.14a).
+async function startHeldAppServer(pluginIds, mcpNames) {
+  const hookEnv = Object.entries(sharedAgentLinkEnv).map(([k, v]) => `${k}=${shq(v)}`).join(" ");
+  const command = `env ${hookEnv} ${shq(process.execPath)} ${shq(path.join(REPO, "src", "codex", "prompt-hook.js"))} 2>/dev/null; exit 0`;
+  const hookArgs = want(9) ? ["-c", `hooks.UserPromptSubmit=[{hooks=[{type="command",command=${JSON.stringify(command)},timeout=10}]}]`] : [];
+  startAppServer("B", P.sockB, appServerArgs(pluginIds, mcpNames, true, hookArgs));
+  await waitForSocket(P.sockB);
+  let rpc = new Rpc(P.sockB, "B");
+  await rpc.open();
+  if (!want(9)) return rpc;
+  const listed = await rpc.request("hooks/list", { cwds: [P.cwds] });
+  const hook = (listed.data ?? []).flatMap((e) => e.hooks ?? []).find((h) => h.source === "sessionFlags" && h.handlerType === "command" && String(h.command).includes("prompt-hook.js"));
+  if (!hook) throw new Error(`the prompt hook is not listed: ${trim(listed, 400)}`);
+  rpc.close();
+  const entry = children.pop();
+  entry.child.kill("SIGTERM");
+  await new Promise((r) => entry.child.once("exit", r));
+  fs.rmSync(P.sockB, { force: true });
+  const trust = ["-c", `hooks.state={${JSON.stringify(hook.key)}={trusted_hash=${JSON.stringify(hook.currentHash)}}}`];
+  startAppServer("B", P.sockB, appServerArgs(pluginIds, mcpNames, true, [...hookArgs, ...trust]));
+  await waitForSocket(P.sockB);
+  rpc = new Rpc(P.sockB, "B");
+  await rpc.open();
+  const relisted = await rpc.request("hooks/list", { cwds: [P.cwds] });
+  const now = (relisted.data ?? []).flatMap((e) => e.hooks ?? []).find((h) => h.key === hook.key);
+  ctx.hookKey = hook.key;
+  ctx.hookTrust = now?.trustStatus ?? null;
+  report.setup.promptHook = { key: hook.key, trustStatus: ctx.hookTrust };
+  if (ctx.hookTrust !== "trusted") throw new Error(`the prompt hook is ${ctx.hookTrust} after hooks.state`);
+  return rpc;
+}
+const shq = (v) => `'${String(v).replace(/'/g, "'\\''")}'`;
+
 async function main() {
   log(`codex ${codexVersion}; temp root ${root}; Claude session ${CLAUDE_SESSION}`);
   writeFakeClaudeTranscript();
@@ -861,12 +1007,10 @@ async function main() {
   report.setup.disabledMcpServers = mcpNames;
 
   startAppServer("A", P.sockA, appServerArgs(pluginIds, mcpNames, true));
-  startAppServer("B", P.sockB, appServerArgs(pluginIds, mcpNames, false));
-  await Promise.all([waitForSocket(P.sockA), waitForSocket(P.sockB)]);
+  await waitForSocket(P.sockA);
   A = new Rpc(P.sockA, "A");
-  B = new Rpc(P.sockB, "B");
   await A.open();
-  await B.open();
+  B = await startHeldAppServer(pluginIds, mcpNames);
 
   // Which MCP servers / tools Codex threads in A get.
   const status = await A.request("mcpServerStatus/list", { detail: "toolsAndAuthOnly" }).catch(() => A.request("mcpServerStatus/list", {}));
@@ -883,8 +1027,10 @@ async function main() {
 
   await startClaudeSide();
 
-  for (const [n, fn] of [[1, s1], [2, s2], [3, s3], [4, s4], [6, s6], [7, s7], [5, s5], [8, s8]]) {
-    if (want(n)) await fn();
+  for (const [n, fn] of [[1, s1], [2, s2], [3, s3], [4, s4], [6, s6], [7, s7], [5, s5], [8, s8], [9, s9]]) {
+    if (!want(n)) continue;
+    await fn();
+    if (n === 1) for (let run = 2; run <= (args.s1Runs ?? 1); run += 1) await s1(run);
   }
 }
 
