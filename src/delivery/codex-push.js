@@ -306,8 +306,9 @@ export function codexTurnText(row, overrides = null) {
  * process other than Agent Link's endpoint? When it is, another app-server
  * (the desktop app's) has the thread loaded, so a push would be a second
  * writer. src/codex/rollout-holders.js builds it; it never blocks when it
- * cannot answer.
- * @typedef {(rolloutPath: string | null | undefined) => Promise<{held: boolean, checked: boolean, reason?: string}>} RolloutCheck
+ * cannot answer. `strict` (a local archive move): an unknown endpoint process
+ * group does not skip the check, and every holder but this process counts.
+ * @typedef {(rolloutPath: string | null | undefined, options?: {strict?: boolean}) => Promise<{held: boolean, checked: boolean, reason?: string}>} RolloutCheck
  */
 
 /** @typedef {ReturnType<typeof makeThreadStatusTracker>} ThreadStatusTracker */

@@ -572,6 +572,8 @@ What each tool does to real state, and what its results do and don't prove.
 - `archive_codex_thread` archives through the app-server when it can. Otherwise it moves the session file locally, with guards.
 - `threadId` is optional when the host supplies the caller's thread, so a thread can archive itself after finishing.
 - The local fallback refuses a loaded thread unless you pass `forceLoaded: true`. If loaded state can't be checked, it proceeds unless `useLocalFallback: false`, and the result says the check was skipped.
+- The local fallback never moves a transcript another process has open, such as a turn running in another Codex app-server (the Codex app, or another tool's app-server). It returns `active_turn_conflict`, and `forceLoaded` doesn't override it. Archive the thread through the app-server that has it loaded, or after that app-server unloads it.
+- The local fallback refuses every thread when Codex keeps a state database (`state_<n>.sqlite` in the Codex home, as current Codex does). It returns `unsupported` (`details.reason: "codex_state_db"`). A transcript moved outside Codex leaves the database pointing at the old path, and every app-server then fails to read the thread ("missing source rollout"). Archive through a Codex app-server instead.
 
 ### Project orchestrators
 

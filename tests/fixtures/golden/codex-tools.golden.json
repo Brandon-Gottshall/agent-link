@@ -6356,6 +6356,10 @@
             "inferredFrom": "path",
             "path": "<TMP>/codex/archived_sessions/2026/05/18/rollout-2026-05-18T10-00-00-019d3000-0000-7000-8000-000000000007.jsonl"
           },
+          "rolloutCheck": {
+            "held": false,
+            "checked": true
+          },
           "codexHome": "<TMP>/codex"
         },
         "stateSemantics": {
@@ -10111,7 +10115,7 @@
             "turnCompletedMethod": "turn/completed",
             "warnings": [],
             "rolloutChecks": {
-              "checked": 0,
+              "checked": 1,
               "held": 0,
               "skipped": {
                 "endpoint_pid_unknown": 9,

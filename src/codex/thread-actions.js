@@ -54,8 +54,11 @@ import { resolveLabels } from "../delivery/message-status.js";
  * @typedef {{
  *   appServer: AppServerLike,
  *   messaging: Pick<ThreadMessaging, "sendToThread" | "recordActionReceipt"> & Partial<Pick<ThreadMessaging, "callerAddress">>,
- *   desktop: Pick<DesktopRouting, "openCodexDesktopThread">
+ *   desktop: Pick<DesktopRouting, "openCodexDesktopThread">,
+ *   rolloutCheck?: import("../delivery/codex-push.js").RolloutCheck | null
  * }} ThreadActionDeps
+ *   rolloutCheck: the deny-only "open elsewhere" check (R1.12a), run strict
+ *   before a local transcript move.
  */
 
 /**
@@ -132,7 +135,7 @@ export function launcherAddress(address) {
 /**
  * @param {ThreadActionDeps} deps
  */
-export function makeThreadActions({ appServer, messaging, desktop }) {
+export function makeThreadActions({ appServer, messaging, desktop, rolloutCheck = null }) {
   const { sendToThread, recordActionReceipt, callerAddress } = messaging;
   const { openCodexDesktopThread } = desktop;
 
@@ -305,6 +308,8 @@ export function makeThreadActions({ appServer, messaging, desktop }) {
       useLocalFallback: args.useLocalFallback
     });
 
+    /** @type {{message: string, rpcCode: number | null} | null} */
+    let appServerError = null;
     if (loadedCheck.checked) {
       try {
         const archive = await archiveThreadViaAppServer(threadId);
@@ -329,6 +334,7 @@ export function makeThreadActions({ appServer, messaging, desktop }) {
           };
           throw error;
         }
+        appServerError = { message: String(error?.message ?? error), rpcCode: typeof error?.code === "number" ? error.code : null };
       }
     }
 
@@ -339,7 +345,18 @@ export function makeThreadActions({ appServer, messaging, desktop }) {
       });
     }
 
-    const archive = await archiveLocalThread(threadId);
+    // The local move refuses a transcript another process holds (even with
+    // forceLoaded) and any thread Codex's state database tracks; say why the
+    // app-server could not archive it.
+    let archive;
+    try {
+      archive = await archiveLocalThread(threadId, { rolloutCheck });
+    } catch (error) {
+      if (error instanceof AgentLinkError && (error.errorCode === "active_turn_conflict" || error.errorCode === "unsupported")) {
+        error.details = { ...(error.details ?? {}), loadedCheck, appServerError };
+      }
+      throw error;
+    }
     const action = archive.alreadyArchived ? "already_archived" : "local_archive_moved";
     return await buildArchiveThreadResult({
       source: "local-jsonl",

@@ -17,6 +17,13 @@
 //     another app-server's);
 //   - lsof is missing, fails, or times out, or the platform is Windows.
 // Never used by the hooks.
+//
+// archive_codex_thread runs it before a local transcript move with
+// `{strict: true}`: an unknown endpoint process group then does not skip the
+// check, and every holder but this process counts, because a move cannot
+// tell its own endpoint's writer from another's and must not guess. A strict
+// check also waits longer (strictTimeoutMs): lsof walks every process, which
+// took about 3 s on a Mac with ~1000 processes, past the 1 s push budget.
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { getLogger } from "../shared/log.js";
@@ -33,6 +40,7 @@ const DARWIN_LSOF = "/usr/sbin/lsof";
  * @param {{
  *   ownProcessGroup: () => number | null,
  *   timeoutMs?: number,
+ *   strictTimeoutMs?: number,
  *   run?: ExecFileLike,
  *   platform?: string,
  *   selfPid?: number,
@@ -43,7 +51,7 @@ const DARWIN_LSOF = "/usr/sbin/lsof";
  *   null when the endpoint is not one Agent Link started
  * @returns {import("../delivery/codex-push.js").RolloutCheck & {stats: () => RolloutCheckStats}}
  */
-export function makeRolloutCheck({ ownProcessGroup, timeoutMs = 1_000, run = /** @type {any} */ (execFile), platform = process.platform, selfPid = process.pid, lsofPath = null, logger = getLogger() }) {
+export function makeRolloutCheck({ ownProcessGroup, timeoutMs = 1_000, strictTimeoutMs = 10_000, run = /** @type {any} */ (execFile), platform = process.platform, selfPid = process.pid, lsofPath = null, logger = getLogger() }) {
   const binary = lsofPath ?? (platform === "darwin" && existsSync(DARWIN_LSOF) ? DARWIN_LSOF : "lsof");
   /** @type {RolloutCheckStats} */
   const stats = { checked: 0, held: 0, skipped: {} };
@@ -61,14 +69,14 @@ export function makeRolloutCheck({ ownProcessGroup, timeoutMs = 1_000, run = /**
     return { held: false, checked: false, reason };
   };
   /** @type {any} */
-  const check = async (/** @type {string | null | undefined} */ rolloutPath) => {
+  const check = async (/** @type {string | null | undefined} */ rolloutPath, /** @type {{strict?: boolean}} */ { strict = false } = {}) => {
     if (typeof rolloutPath !== "string" || !rolloutPath) return skip("no_rollout_path");
     if (platform === "win32") return skip("unsupported_platform");
     const own = ownProcessGroup();
-    if (!own) return skip("endpoint_pid_unknown");
+    if (!own && !strict) return skip("endpoint_pid_unknown");
     const output = await new Promise((resolve) => {
       try {
-        run(binary, ["-F", "pg", "--", rolloutPath], { timeout: timeoutMs }, (error, stdout) => {
+        run(binary, ["-F", "pg", "--", rolloutPath], { timeout: strict ? strictTimeoutMs : timeoutMs }, (error, stdout) => {
           // lsof exits 1 with no output when nobody has the file open.
           if (!error || (error.code === 1 && !String(stdout ?? "").trim())) resolve(String(stdout ?? ""));
           else resolve(error.killed || error.signal === "SIGTERM" ? "\u0000timeout" : null);
@@ -81,7 +89,7 @@ export function makeRolloutCheck({ ownProcessGroup, timeoutMs = 1_000, run = /**
     if (output === null) return skip("lsof_unavailable");
     stats.checked += 1;
     const holders = parseLsofFields(/** @type {string} */ (output));
-    const others = holders.filter((h) => h.pid !== selfPid && h.pid !== own && h.pgid !== own);
+    const others = holders.filter((h) => h.pid !== selfPid && (!own || (h.pid !== own && h.pgid !== own)));
     if (others.length) stats.held += 1;
     return others.length
       ? { held: true, checked: true, reason: "open_in_another_process" }

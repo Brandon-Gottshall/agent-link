@@ -294,7 +294,12 @@ function makeNormalizer() {
       return value;
     }
     if (Array.isArray(value)) {
-      const out = value.map((entry) => walk(entry, key));
+      // The claim sweeper first runs 5 s after start (src/server/index.js),
+      // so whether its event lands in a health call depends on how fast the
+      // replay runs (the archive step's lsof alone takes seconds on a busy
+      // Mac).
+      const kept = key === "recentEvents" ? value.filter((entry) => entry?.event !== "claims.swept") : value;
+      const out = kept.map((entry) => walk(entry, key));
       // Receipts written in the same millisecond list in random order (the
       // tie-break is the random part of their id), so receipt lists are
       // compared in recording order.

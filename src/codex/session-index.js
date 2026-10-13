@@ -175,6 +175,38 @@ export async function findLocalThreadFile(threadId, options = {}) {
   return null;
 }
 
+// Codex keeps every thread's rollout path and archived flag in a state
+// database (<codexHome>/state_<n>.sqlite, state_5 in codex-cli 0.159). Only
+// Codex's own thread/archive updates that row. A transcript moved behind its
+// back leaves archived=0 and the old rollout_path, and from then on every
+// app-server, fresh ones included, fails thread/read ("missing source
+// rollout") and thread/archive ("no rollout found"). So the local move is
+// only for Codex homes without one (older Codex).
+const CODEX_STATE_DB = /^state(_\d+)?\.sqlite$/;
+
+/**
+ * The Codex state database in codexHome, or null when there is none.
+ * @param {string} codexHome
+ * @returns {Promise<string | null>}
+ */
+export async function findCodexStateDb(codexHome) {
+  let names;
+  try {
+    names = await fs.readdir(codexHome);
+  } catch {
+    return null;
+  }
+  const found = names.filter((name) => CODEX_STATE_DB.test(name)).sort();
+  return found.length ? path.join(codexHome, found[0]) : null;
+}
+
+// Moves a transcript from sessions/ to archived_sessions/ without Codex. It
+// refuses (and moves nothing) when:
+//   - options.rolloutCheck (src/codex/rollout-holders.js, run strict) finds
+//     the transcript open in a process other than Agent Link's own
+//     app-server: another live writer, which would keep appending to the
+//     moved file (active_turn_conflict; forceLoaded never overrides it);
+//   - Codex keeps a state database (unsupported, see findCodexStateDb).
 export async function archiveLocalThread(threadId, options = {}) {
   const codexHome = resolveCodexHome(options);
   const located = await findLocalThread(threadId, { codexHome });
@@ -201,6 +233,21 @@ export async function archiveLocalThread(threadId, options = {}) {
     throw new AgentLinkError("permission_denied", `Thread ${threadId} is not under ${activeRoot}; refusing to archive ${located.path}`, { details: { reason: "outside active sessions root" } });
   }
 
+  const rolloutCheck = options.rolloutCheck ? await strictRolloutCheck(options.rolloutCheck, located.path) : null;
+  if (rolloutCheck?.held) {
+    throw new AgentLinkError("active_turn_conflict", `Thread ${threadId}'s transcript is open in another process; refusing to move it.`, {
+      details: { status: "held", activeTurnId: null, reason: rolloutCheck.reason, rolloutPath: located.path },
+      hint: "Another process, usually another Codex app-server with the thread loaded, has its transcript open and may still be writing it. Archive it through that app-server, or after it unloads the thread. forceLoaded does not override this."
+    });
+  }
+  const stateDb = await findCodexStateDb(codexHome);
+  if (stateDb) {
+    throw new AgentLinkError("unsupported", `Codex keeps a state database in ${codexHome}; refusing to move thread ${threadId}'s transcript outside Codex.`, {
+      details: { capability: "local_archive", reason: "codex_state_db", stateDb, rolloutPath: located.path },
+      hint: "A transcript moved outside Codex leaves the state database pointing at the old path, and every app-server then fails to read the thread. Archive it through a Codex app-server: retry when Agent Link's app-server is available, or from the app-server that has the thread loaded."
+    });
+  }
+
   const destination = path.join(archivedRoot, relative);
   await fs.mkdir(path.dirname(destination), { recursive: true });
   await moveFileWithoutOverwrite(located.path, destination, threadId);
@@ -219,8 +266,18 @@ export async function archiveLocalThread(threadId, options = {}) {
     thread: afterThread,
     archiveStateBefore: before,
     archiveStateAfter: afterThread.archiveState,
+    rolloutCheck,
     codexHome
   };
+}
+
+// Deny-only (R1.12a): a check that fails or cannot run never refuses.
+async function strictRolloutCheck(check, rolloutPath) {
+  try {
+    return await check(rolloutPath, { strict: true });
+  } catch {
+    return { held: false, checked: false, reason: "check_failed" };
+  }
 }
 
 // Never replace an existing archive file. The destination name is reserved

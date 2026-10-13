@@ -61,6 +61,7 @@ const groups = {
     "tests/codex/app-server-connection.test.js",
     "tests/codex/orchestrator-role.test.js",
     "tests/codex/app-server-lifecycle.test.js",
+    "tests/codex/archive-guard.test.js",
     "tests/codex/app-server-logging.test.js",
     "tests/codex/chat-style-close.test.js",
     "tests/codex/codex-delivery.test.js",

@@ -451,7 +451,7 @@ Integer limits:
 | `get_codex_sidebar_state` | Missing capability returns `unsupported`, not an ad-hoc object. |
 | `get_codex_thread` | `recentItems` kept (section 5.3). One output shape in the app-server and local paths. `source` label is preserved (W3-01). |
 | `launch_codex_thread` | Output gains `address`. `openInGui` result goes in `gui:{opened, warnings}`. Any caller may choose `model`, `modelProvider`, `serviceTier`, and `effort` (R9.2). B7 records the caller as `launchedBy` (R9.9). |
-| `archive_codex_thread` | `status: "archived" \| "already_archived"`. Loaded thread without `forceLoaded` returns `active_turn_conflict`. |
+| `archive_codex_thread` | `status: "archived" \| "already_archived"`. Loaded thread without `forceLoaded` returns `active_turn_conflict`. The local fallback returns `active_turn_conflict` for a transcript another process has open (R1.12a check, run strict; `forceLoaded` does not override it), and `unsupported` (`capability: "local_archive"`, `reason: "codex_state_db"`) when Codex keeps a state database. |
 | `list_agent_link_receipts` | `limit` per table. `searchTerm` becomes `query`. Target filters accept addresses. |
 | `message_codex_thread` | Writes the mailbox record first (R1.10). Envelope on input (section 2). Overrides need `allowTargetOverride` (shipped in 0.4.0) until section 9 replaces it: model switches go to a fork (R9.1), effort is the launcher's (R9.3), the rest needs the target's opt-in (R9.4). `recentItems`. `replyConfirmation` becomes `wait`. One result builder for steer and start (P2-03). Output `{messageId, delivery, deliveredVia, target, turn, wait?, receipt}`. |
 | `message_project_orchestrator` | As `message_codex_thread`. `cwd` no longer forwarded as turn cwd (W2B-03). |
