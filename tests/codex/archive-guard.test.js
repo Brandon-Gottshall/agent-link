@@ -189,6 +189,23 @@ test("with Codex's state database present, the local fallback refuses and moves 
   }
 });
 
+test("real lsof: a push counts only Codex processes as holders, a strict check counts every process", { skip: process.platform === "win32" }, async () => {
+  const home = codexHomeWithRunningThread();
+  // A node process, not a codex one: like an editor, a `tail -f`, or an
+  // indexer reading the transcript, it is not a second app-server writer.
+  const holder = await holdOpen(home.transcript);
+  try {
+    const check = makeRolloutCheck({ ownProcessGroup: () => OWN_APP_SERVER_PID });
+    assert.deepEqual(await check(home.transcript), { held: false, checked: true }, "a push ignores a holder that is not codex");
+    assert.equal((await check(home.transcript, { strict: true })).held, true, "a move still refuses any holder");
+    const holderIsCodex = makeRolloutCheck({ ownProcessGroup: () => OWN_APP_SERVER_PID, holderCommand: path.basename(process.execPath) });
+    assert.deepEqual(await holderIsCodex(home.transcript), { held: true, checked: true, reason: "open_in_another_process" }, "a holder with the scanned command name is held");
+  } finally {
+    holder.stop();
+    home.cleanup();
+  }
+});
+
 test("strict rollout check: an unknown endpoint process group still runs lsof and counts every other holder", async () => {
   const fakeRun = (/** @type {string} */ stdout) => (/** @type {any} */ _f, /** @type {any} */ _a, /** @type {any} */ _o, /** @type {any} */ cb) => cb(null, stdout);
   const unknown = () => null;
@@ -197,8 +214,9 @@ test("strict rollout check: an unknown endpoint process group still runs lsof an
   assert.deepEqual(await makeRolloutCheck({ ownProcessGroup: unknown, run: fakeRun("p555\ng555\n"), selfPid: 1 })("/r.jsonl", { strict: true }), { held: true, checked: true, reason: "open_in_another_process" });
   assert.deepEqual(await makeRolloutCheck({ ownProcessGroup: unknown, run: fakeRun("p1\ng1\n"), selfPid: 1 })("/r.jsonl", { strict: true }), { held: false, checked: true }, "this process is never a holder");
   assert.deepEqual(await makeRolloutCheck({ ownProcessGroup: () => 100, run: fakeRun("p101\ng100\n"), selfPid: 1 })("/r.jsonl", { strict: true }), { held: false, checked: true }, "our own endpoint's group");
-  // lsof takes seconds on a machine with ~1000 processes: a push keeps its
-  // short budget, a move waits longer before the check gives up.
+  // Scanning every process takes seconds on a machine with ~1000 processes: a
+  // push scans only Codex processes within its short budget, a move scans
+  // every process and waits longer before the check gives up.
   const timeouts = [];
   const timed = makeRolloutCheck({ ownProcessGroup: () => 100, run: (_f, _a, options, cb) => { timeouts.push(options.timeout); cb(null, ""); }, selfPid: 1 });
   await timed("/r.jsonl");

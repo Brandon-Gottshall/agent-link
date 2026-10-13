@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased - 2026-10-13 The push rollout check scans only Codex processes
+
+**Fix: the deny-only R1.12a check before a Codex push runs again.** Before every `turn/start` or `turn/steer`, the check ran `lsof -F pg -- <rollout>`, which reads the open files of every process. On 2026-10-12, on a Mac with about 1,000 processes, that took 2.8–4.0 s, so the 1 s push budget timed out every time (`rolloutChecks.skipped.lsof_timeout`), and pushes relied on the endpoint's loaded state alone. `-O`, `-n -P`, and `fuser` cost the same; `-b` returns at once but no longer matches the path.
+
+- **A push check now runs `lsof -a -c codex -F pg -- <rollout>`.** Only a process whose command name starts with `codex` counts as a holder, because only a Codex process writes a rollout. lsof drops every other process before reading its files, so the check no longer grows with the rest of the machine. A reader of the transcript (an editor, a `tail -f`, an indexer) no longer makes a thread look held. The budget stays 1 s, for interactive sends and background passes alike.
+- Measured on the same Mac after a restart (1,000–1,190 processes, Node `execFile`, a rollout the desktop app's app-server holds): the old full scan took 119–845 ms (median about 300 ms; it grows with uptime, as the 3 s figures above show), and the new probe took 21–45 ms. With 600 extra processes holding 256 files each, the full scan roughly doubled (114 → 240 ms) while the new probe stayed at 22–38 ms. `lsof -a -p <pids>` with pids from `pgrep -f "codex.*app-server"` costs the same as `-c codex` but takes a second process and misses Codex CLI sessions, so it was not used. Both probes return the same verdicts on held and idle rollouts.
+- Not changed: the strict check before a local archive move still scans every process with a 10 s budget, because a move must refuse any holder. Skips are still counted in `health.codex.desktopPush.rolloutChecks`, and a check that cannot run still never blocks a push.
+- `makeRolloutCheck` takes `holderCommand` (default `"codex"`), the command-name prefix a push check scans. New tests: the push and strict lsof arguments and budgets (`tests/codex/codex-delivery.test.js`), and a real `lsof` run in which a non-Codex process holding the transcript is ignored by a push check but still refuses a strict one (`tests/codex/archive-guard.test.js`).
+
 ## 0.6.1 - 2026-10-13 Archive never moves a transcript Codex still owns
 
 **Upgrade:** update the plugin on each host, then restart every Claude and Codex session. Claude Code's plugin update skips a change that keeps the same version number, so 0.6.0 installs did not pick up this fix until this version bump.

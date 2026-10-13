@@ -412,6 +412,25 @@ test("F6 follow-up: lsof by absolute path on darwin, skips counted, first skip l
   assert.deepEqual(linux, ["lsof"]);
 });
 
+test("F6 follow-up: a push asks lsof about Codex processes only; a strict check asks about every process", async () => {
+  /** @type {Array<{args: string[], timeout: number}>} */
+  const calls = [];
+  const run = (/** @type {any} */ _f, /** @type {string[]} */ args, /** @type {any} */ options, /** @type {any} */ cb) => {
+    calls.push({ args, timeout: options.timeout });
+    cb({ code: 1 }, "");
+  };
+  const check = makeRolloutCheck({ ownProcessGroup: () => 100, run, selfPid: 1 });
+  assert.deepEqual(await check("/r.jsonl"), { held: false, checked: true });
+  assert.deepEqual(await check("/r.jsonl", { strict: true }), { held: false, checked: true });
+  // Scanning every process took about 3 s on a Mac with ~1000 processes, so
+  // the push budget timed out every time; one command name is scanned in tens
+  // of milliseconds whatever the machine runs.
+  assert.deepEqual(calls, [
+    { args: ["-a", "-c", "codex", "-F", "pg", "--", "/r.jsonl"], timeout: 1_000 },
+    { args: ["-F", "pg", "--", "/r.jsonl"], timeout: 10_000 }
+  ]);
+});
+
 test("shutdown stops background Codex delivery: timers cleared, listeners removed", async () => {
   const { createLifecycle } = await import("../../src/server/lifecycle.js");
   const { startCodexDelivery } = await import("../../src/delivery/codex-delivery.js");

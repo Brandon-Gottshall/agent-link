@@ -26,7 +26,8 @@
 // included; the message stays queued with a codex_desktop_push_disabled
 // warning. A thread Agent Link launched stays pushable only while it is loaded
 // in that endpoint; after the endpoint restarts it is mailbox-only. lsof on a
-// thread's rollout file is diagnostic only and never a held signal here.
+// thread's rollout file never makes a thread pushable: it only adds the
+// deny-only RolloutCheck below (another Codex process has it open: held).
 //
 // Spike facts this module relies on: turn/start on an ACTIVE thread does not
 // fail, it steers the active turn and returns {turn: {id: <active id>,
@@ -303,11 +304,12 @@ export function codexTurnText(row, overrides = null) {
 
 /**
  * Deny-only check (R1.12a, B7 spike): is the thread's rollout file open in a
- * process other than Agent Link's endpoint? When it is, another app-server
- * (the desktop app's) has the thread loaded, so a push would be a second
- * writer. src/codex/rollout-holders.js builds it; it never blocks when it
- * cannot answer. `strict` (a local archive move): an unknown endpoint process
- * group does not skip the check, and every holder but this process counts.
+ * Codex process other than Agent Link's endpoint? When it is, another
+ * app-server (the desktop app's) has the thread loaded, so a push would be a
+ * second writer. src/codex/rollout-holders.js builds it; it never blocks when
+ * it cannot answer. `strict` (a local archive move): an unknown endpoint
+ * process group does not skip the check, and every holder but this process
+ * counts, Codex or not.
  * @typedef {(rolloutPath: string | null | undefined, options?: {strict?: boolean}) => Promise<{held: boolean, checked: boolean, reason?: string}>} RolloutCheck
  */
 

@@ -31761,7 +31761,7 @@ var DARWIN_LSOF = "/usr/sbin/lsof";
 function makeRolloutCheck({ ownProcessGroup, timeoutMs: timeoutMs2 = 1e3, strictTimeoutMs = 1e4, run = (
   /** @type {any} */
   execFile
-), platform = process.platform, selfPid = process.pid, lsofPath = null, logger = getLogger() }) {
+), platform = process.platform, selfPid = process.pid, lsofPath = null, holderCommand = "codex", logger = getLogger() }) {
   const binary = lsofPath ?? (platform === "darwin" && existsSync3(DARWIN_LSOF) ? DARWIN_LSOF : "lsof");
   const stats = { checked: 0, held: 0, skipped: {} };
   let loggedSkip = false;
@@ -31778,9 +31778,10 @@ function makeRolloutCheck({ ownProcessGroup, timeoutMs: timeoutMs2 = 1e3, strict
     if (platform === "win32") return skip("unsupported_platform");
     const own = ownProcessGroup();
     if (!own && !strict) return skip("endpoint_pid_unknown");
+    const scope = strict ? [] : ["-a", "-c", holderCommand];
     const output = await new Promise((resolve) => {
       try {
-        run(binary, ["-F", "pg", "--", rolloutPath], { timeout: strict ? strictTimeoutMs : timeoutMs2 }, (error2, stdout) => {
+        run(binary, [...scope, "-F", "pg", "--", rolloutPath], { timeout: strict ? strictTimeoutMs : timeoutMs2 }, (error2, stdout) => {
           if (!error2 || error2.code === 1 && !String(stdout ?? "").trim()) resolve(String(stdout ?? ""));
           else resolve(error2.killed || error2.signal === "SIGTERM" ? "\0timeout" : null);
         });
