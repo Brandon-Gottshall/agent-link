@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased - 2026-10-13 Cross-harness E2E starts on Codex 0.162
+
+**Fix (test tooling): the cross-harness live E2E starts again on codex-cli 0.162.1.** It turned off installed Agent Link copies with `-c mcp_servers.<name>.enabled=false` for every Agent Link MCP server that `mcpServerStatus/list` reported, including `codex-agent-link`, which the `codex-agent-link@agent-link` plugin provides. No `mcp_servers` entry in `config.toml` has that name, so the override created one with no command. codex-cli 0.159.2 accepted it; 0.162.1 exits at startup with "invalid transport in `mcp_servers.codex-agent-link`", so app-server A never came up and no scenario ran.
+
+- A server that carries a `pluginId` is now turned off through its plugin (`-c plugins.<id>.enabled=false`). Only a server defined directly under `mcp_servers` is turned off by name. The selection lives in `scripts/e2e-installed-servers.js`.
+- Scenario 5 no longer aborts when codex-cli 0.162.1 refuses `thread/read includeTurns` ("list_turns is not supported yet") during a new thread's first turn: the failed read is recorded as `readErrors` and the poll goes on.
+- New offline test `tests/codex/e2e-installed-servers.test.js`. `docs/testing.md` describes the rule and two codex-cli 0.162.1 behaviors seen on 2026-10-13: a second app-server cannot load a thread another one has loaded (`already has an active writer`), and the transient `list_turns` refusal.
+- Live results on codex-cli 0.162.1 with this fix: scenarios 1, 2, 4, 6, 7 and 9 passed in a full run, and 1, 2, 3 and 5 passed in a rerun. Scenario 8 reports `override_costs_version_mismatch` on both sides, as expected while the override costs are measured on 0.159.2. One scenario 3 turn came back `interrupted` in the full run and did not reproduce in two reruns.
+
 ## 0.6.2 - 2026-10-13 The push rollout check scans only Codex processes
 
 **Upgrade:** update the plugin on each host, then restart every Claude and Codex session. Claude Code's plugin update skips a change that keeps the same version number, so 0.6.1 installs did not pick up this fix until this version bump.

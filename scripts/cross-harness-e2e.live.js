@@ -42,6 +42,7 @@ import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { installedAgentLinkServers } from "./e2e-installed-servers.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SERVER = path.join(REPO, "dist", "server.mjs");
@@ -611,9 +612,14 @@ async function s5() {
     const t0 = Date.now();
     // Interval 30 s, limit 2: watch for ~2.5 minutes.
     const timeline = [];
+    // codex-cli 0.162.1 can refuse thread/read includeTurns ("list_turns is
+    // not supported yet") while a new thread's first turn runs; a later read
+    // works, so a failed read is recorded and the poll goes on.
+    const readErrors = [];
     let last = -1;
     while (Date.now() - t0 < 160000) {
-      const th = await readThread(A, threadId);
+      const th = await readThread(A, threadId).catch((e) => { readErrors.push({ atS: Math.round((Date.now() - t0) / 1000), error: e.message }); return null; });
+      if (!th) { await sleep(3000); continue; }
       const turns = th?.turns || [];
       if (turns.length !== last) {
         last = turns.length;
@@ -624,6 +630,7 @@ async function s5() {
     const thread = await waitIdle(A, threadId, { minTurns: 1 });
     const turns = summarizeTurns(thread);
     s.evidence("timeline", timeline);
+    if (readErrors.length) s.evidence("readErrors", readErrors);
     s.evidence("turns", turns.map((t) => ({ status: t.status, user: trim(t.user, 160), tools: t.tools })));
     const reminderTurns = turns.slice(1).filter((t) => /remind/i.test(t.user));
     s.rec.turns = turns.length;
@@ -876,13 +883,17 @@ async function discoverPluginIds(rpc) {
   }
 }
 
-/** Installed Agent Link MCP servers configured outside plugins (user-level mcp_servers entries). */
+/**
+ * Installed Agent Link MCP servers: config-defined ones by name, and the
+ * plugins that provide the others (scripts/e2e-installed-servers.js).
+ * @returns {Promise<{mcpNames: string[], pluginIds: string[]}>}
+ */
 async function discoverAgentLinkMcpServers(rpc) {
   try {
     const r = await rpc.request("mcpServerStatus/list", { detail: "toolsAndAuthOnly" });
-    return (r.data ?? []).filter((sv) => sv.name !== MCP_NAME && /agent.?link/i.test(sv.name)).map((sv) => sv.name);
+    return installedAgentLinkServers(r.data, { ownName: MCP_NAME });
   } catch {
-    return [];
+    return { mcpNames: [], pluginIds: [] };
   }
 }
 
@@ -996,8 +1007,9 @@ async function main() {
     await waitForSocket(P.sockB);
     const probe = new Rpc(P.sockB, "probe");
     await probe.open();
-    pluginIds = [...new Set([...DEFAULT_PLUGIN_IDS, ...(await discoverPluginIds(probe))])];
-    mcpNames = [...new Set([...mcpNames, ...(await discoverAgentLinkMcpServers(probe))])];
+    const servers = await discoverAgentLinkMcpServers(probe);
+    pluginIds = [...new Set([...DEFAULT_PLUGIN_IDS, ...(await discoverPluginIds(probe)), ...servers.pluginIds])];
+    mcpNames = [...new Set([...mcpNames, ...servers.mcpNames])];
     probe.close();
     const entry = children.pop();
     entry.child.kill("SIGTERM");
