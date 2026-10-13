@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased - 2026-10-12 Archive never moves a transcript Codex still owns
+## 0.6.1 - 2026-10-13 Archive never moves a transcript Codex still owns
+
+**Upgrade:** update the plugin on each host, then restart every Claude and Codex session. Claude Code's plugin update skips a change that keeps the same version number, so 0.6.0 installs did not pick up this fix until this version bump.
 
 **Fix (data loss): `archive_codex_thread`'s local fallback no longer orphans threads.** When Agent Link's own app-server reported a thread not loaded and then failed `thread/archive`, the fallback moved the rollout JSONL from `sessions/` to `archived_sessions/`, even while another Codex app-server was running a turn on it. That other writer kept appending to the moved file. Codex's state database (`state_5.sqlite`, table `threads`) kept `archived=0` and the old `rollout_path`, so from then on every app-server, fresh ones included, failed `thread/read` ("invalid paginated history lineage ... missing source rollout") and `thread/archive` ("no rollout found for thread id"). Seen on 2026-10-12 with computer-use-via-codex executor threads that archived themselves through Agent Link while running in that plugin's own app-server; the same error is in transcripts back to 2026-09-29. This release does not repair threads that are already orphaned.
 
