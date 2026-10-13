@@ -8,9 +8,16 @@
 // second writer, so the thread is treated as held. The absence of other
 // holders proves nothing, so this check can only deny, never allow.
 //
-// One `lsof -F pg -- <path>` per push (/usr/sbin/lsof on macOS), with a
-// timeout. Skips are counted (stats(), shown in agent_link_health) and the
-// first one is logged. It is skipped (never blocks) when:
+// One `lsof -a -c codex -F pg -- <path>` per push (/usr/sbin/lsof on macOS),
+// with a 1 s timeout: only processes whose command name starts with `codex`
+// (holderCommand) count as holders, because only a Codex process writes a
+// rollout. lsof filters by command name before it reads any process's files,
+// so this takes tens of milliseconds whatever else runs. Scanning every
+// process took about 3 s on a Mac with ~1000 processes, which timed out every
+// push check, and it also counted readers (an editor, a `tail -f`, an
+// indexer) as a second writer. Skips are counted (stats(), shown in
+// agent_link_health) and the first one is logged. It is skipped (never
+// blocks) when:
 //   - there is no rollout path (thread/read did not return `path`);
 //   - the endpoint's own process group is unknown (an endpoint configured
 //     with AGENT_LINK_CODEX_URL / _SOCK: its own fd cannot be told apart from
@@ -20,10 +27,10 @@
 //
 // archive_codex_thread runs it before a local transcript move with
 // `{strict: true}`: an unknown endpoint process group then does not skip the
-// check, and every holder but this process counts, because a move cannot
-// tell its own endpoint's writer from another's and must not guess. A strict
-// check also waits longer (strictTimeoutMs): lsof walks every process, which
-// took about 3 s on a Mac with ~1000 processes, past the 1 s push budget.
+// check, and every holder but this process counts, whatever its command name,
+// because a move cannot tell its own endpoint's writer from another's and
+// must not guess. A strict check therefore scans every process and waits
+// longer (strictTimeoutMs, 10 s).
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { getLogger } from "../shared/log.js";
@@ -45,13 +52,15 @@ const DARWIN_LSOF = "/usr/sbin/lsof";
  *   platform?: string,
  *   selfPid?: number,
  *   lsofPath?: string | null,
+ *   holderCommand?: string,
  *   logger?: {warn: (event: string, data?: any) => void}
  * }} options
  *   ownProcessGroup: the managed app-server's process group id (its pid), or
  *   null when the endpoint is not one Agent Link started
+ *   holderCommand: the command-name prefix (lsof -c) a push check scans
  * @returns {import("../delivery/codex-push.js").RolloutCheck & {stats: () => RolloutCheckStats}}
  */
-export function makeRolloutCheck({ ownProcessGroup, timeoutMs = 1_000, strictTimeoutMs = 10_000, run = /** @type {any} */ (execFile), platform = process.platform, selfPid = process.pid, lsofPath = null, logger = getLogger() }) {
+export function makeRolloutCheck({ ownProcessGroup, timeoutMs = 1_000, strictTimeoutMs = 10_000, run = /** @type {any} */ (execFile), platform = process.platform, selfPid = process.pid, lsofPath = null, holderCommand = "codex", logger = getLogger() }) {
   const binary = lsofPath ?? (platform === "darwin" && existsSync(DARWIN_LSOF) ? DARWIN_LSOF : "lsof");
   /** @type {RolloutCheckStats} */
   const stats = { checked: 0, held: 0, skipped: {} };
@@ -74,9 +83,11 @@ export function makeRolloutCheck({ ownProcessGroup, timeoutMs = 1_000, strictTim
     if (platform === "win32") return skip("unsupported_platform");
     const own = ownProcessGroup();
     if (!own && !strict) return skip("endpoint_pid_unknown");
+    // -a: the command name AND the path (lsof ORs its selections otherwise).
+    const scope = strict ? [] : ["-a", "-c", holderCommand];
     const output = await new Promise((resolve) => {
       try {
-        run(binary, ["-F", "pg", "--", rolloutPath], { timeout: strict ? strictTimeoutMs : timeoutMs }, (error, stdout) => {
+        run(binary, [...scope, "-F", "pg", "--", rolloutPath], { timeout: strict ? strictTimeoutMs : timeoutMs }, (error, stdout) => {
           // lsof exits 1 with no output when nobody has the file open.
           if (!error || (error.code === 1 && !String(stdout ?? "").trim())) resolve(String(stdout ?? ""));
           else resolve(error.killed || error.signal === "SIGTERM" ? "\u0000timeout" : null);
