@@ -219,7 +219,7 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
       mailbox.close();
     }
   };
-  const actions = makeThreadActions({ appServer: codexAppServer, messaging, desktop });
+  const actions = makeThreadActions({ appServer: codexAppServer, messaging, desktop, rolloutCheck });
   // Fork and reconcile (section 9.3). `deliver` pushes a reconcile message
   // that is already in the original's mailbox through the same Codex push as
   // every other message (src/delivery/codex-delivery.js makeReconcileDelivery).

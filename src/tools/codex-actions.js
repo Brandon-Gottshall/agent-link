@@ -97,13 +97,13 @@ export const codexActionTools = [
   },
   {
     name: "archive_codex_thread",
-    description: "Archive a Codex thread through the app-server when available, falling back to a guarded local sessions move. status is archived or already_archived. The app-server archive works on loaded threads too; only the local fallback refuses a thread the app-server reports as loaded (active_turn_conflict) unless forceLoaded is true.",
+    description: "Archive a Codex thread through the app-server when available, falling back to a guarded local sessions move. status is archived or already_archived. The app-server archive works on loaded threads too. The local fallback refuses a thread the app-server reports as loaded (active_turn_conflict) unless forceLoaded is true. It always refuses a transcript another process has open, such as a turn running in another Codex app-server (active_turn_conflict; forceLoaded does not override this), and any thread when Codex keeps a state database (unsupported): a move outside Codex leaves the thread unreadable to every app-server.",
     inputSchema: {
       type: "object",
       properties: {
         threadId: str("Codex thread ID to archive. Defaults to the current caller thread when Codex supplies runtime context."),
         reason: str("Short human-readable cleanup reason."),
-        forceLoaded: bool("Allow the local JSONL fallback even if the app-server reports the thread as currently loaded. Native app-server archive does not require this. Defaults to false."),
+        forceLoaded: bool("Allow the local JSONL fallback even if the app-server reports the thread as currently loaded. Native app-server archive does not require this. Never allows moving a transcript another process has open. Defaults to false."),
         useLocalFallback: bool("Allow local JSONL archive when the app-server loaded-state check is unavailable. Defaults to true."),
         receipt: receiptInput
       },

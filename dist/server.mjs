@@ -23547,6 +23547,17 @@ async function findLocalThreadFile(threadId, options = {}) {
   }
   return null;
 }
+var CODEX_STATE_DB = /^state(_\d+)?\.sqlite$/;
+async function findCodexStateDb(codexHome2) {
+  let names;
+  try {
+    names = await fs8.readdir(codexHome2);
+  } catch {
+    return null;
+  }
+  const found = names.filter((name) => CODEX_STATE_DB.test(name)).sort();
+  return found.length ? path10.join(codexHome2, found[0]) : null;
+}
 async function archiveLocalThread(threadId, options = {}) {
   const codexHome2 = resolveCodexHome(options);
   const located = await findLocalThread(threadId, { codexHome: codexHome2 });
@@ -23570,6 +23581,20 @@ async function archiveLocalThread(threadId, options = {}) {
   if (relative.startsWith("..") || path10.isAbsolute(relative)) {
     throw new AgentLinkError("permission_denied", `Thread ${threadId} is not under ${activeRoot}; refusing to archive ${located.path}`, { details: { reason: "outside active sessions root" } });
   }
+  const rolloutCheck = options.rolloutCheck ? await strictRolloutCheck(options.rolloutCheck, located.path) : null;
+  if (rolloutCheck?.held) {
+    throw new AgentLinkError("active_turn_conflict", `Thread ${threadId}'s transcript is open in another process; refusing to move it.`, {
+      details: { status: "held", activeTurnId: null, reason: rolloutCheck.reason, rolloutPath: located.path },
+      hint: "Another process, usually another Codex app-server with the thread loaded, has its transcript open and may still be writing it. Archive it through that app-server, or after it unloads the thread. forceLoaded does not override this."
+    });
+  }
+  const stateDb = await findCodexStateDb(codexHome2);
+  if (stateDb) {
+    throw new AgentLinkError("unsupported", `Codex keeps a state database in ${codexHome2}; refusing to move thread ${threadId}'s transcript outside Codex.`, {
+      details: { capability: "local_archive", reason: "codex_state_db", stateDb, rolloutPath: located.path },
+      hint: "A transcript moved outside Codex leaves the state database pointing at the old path, and every app-server then fails to read the thread. Archive it through a Codex app-server: retry when Agent Link's app-server is available, or from the app-server that has the thread loaded."
+    });
+  }
   const destination = path10.join(archivedRoot, relative);
   await fs8.mkdir(path10.dirname(destination), { recursive: true });
   await moveFileWithoutOverwrite(located.path, destination, threadId);
@@ -23587,8 +23612,16 @@ async function archiveLocalThread(threadId, options = {}) {
     thread: afterThread,
     archiveStateBefore: before,
     archiveStateAfter: afterThread.archiveState,
+    rolloutCheck,
     codexHome: codexHome2
   };
+}
+async function strictRolloutCheck(check, rolloutPath) {
+  try {
+    return await check(rolloutPath, { strict: true });
+  } catch {
+    return { held: false, checked: false, reason: "check_failed" };
+  }
 }
 async function moveFileWithoutOverwrite(source, destination, threadId) {
   let placeholder;
@@ -24848,7 +24881,7 @@ function archiveReceiptEvidence({ loadedCheck, archive, action }) {
 function launcherAddress(address) {
   return typeof address === "string" && /^(claude|codex):/.test(address) ? address : null;
 }
-function makeThreadActions({ appServer, messaging, desktop }) {
+function makeThreadActions({ appServer, messaging, desktop, rolloutCheck = null }) {
   const { sendToThread, recordActionReceipt, callerAddress: callerAddress2 } = messaging;
   const { openCodexDesktopThread } = desktop;
   async function launchThreadTool(args, toolContext = {}) {
@@ -24977,6 +25010,7 @@ function makeThreadActions({ appServer, messaging, desktop }) {
     const loadedCheck = await checkLoadedForArchive(threadId, {
       useLocalFallback: args.useLocalFallback
     });
+    let appServerError = null;
     if (loadedCheck.checked) {
       try {
         const archive2 = await archiveThreadViaAppServer(threadId);
@@ -25001,6 +25035,7 @@ function makeThreadActions({ appServer, messaging, desktop }) {
           };
           throw error2;
         }
+        appServerError = { message: String(error2?.message ?? error2), rpcCode: typeof error2?.code === "number" ? error2.code : null };
       }
     }
     if (loadedCheck.loaded && args.forceLoaded !== true) {
@@ -25009,7 +25044,15 @@ function makeThreadActions({ appServer, messaging, desktop }) {
         hint: "Ask the active thread to finish or switch away before archiving, or set forceLoaded=true only when you intentionally accept that risk."
       });
     }
-    const archive = await archiveLocalThread(threadId);
+    let archive;
+    try {
+      archive = await archiveLocalThread(threadId, { rolloutCheck });
+    } catch (error2) {
+      if (error2 instanceof AgentLinkError && (error2.errorCode === "active_turn_conflict" || error2.errorCode === "unsupported")) {
+        error2.details = { ...error2.details ?? {}, loadedCheck, appServerError };
+      }
+      throw error2;
+    }
     const action = archive.alreadyArchived ? "already_archived" : "local_archive_moved";
     return await buildArchiveThreadResult({
       source: "local-jsonl",
@@ -29585,13 +29628,13 @@ var codexActionTools = [
   },
   {
     name: "archive_codex_thread",
-    description: "Archive a Codex thread through the app-server when available, falling back to a guarded local sessions move. status is archived or already_archived. The app-server archive works on loaded threads too; only the local fallback refuses a thread the app-server reports as loaded (active_turn_conflict) unless forceLoaded is true.",
+    description: "Archive a Codex thread through the app-server when available, falling back to a guarded local sessions move. status is archived or already_archived. The app-server archive works on loaded threads too. The local fallback refuses a thread the app-server reports as loaded (active_turn_conflict) unless forceLoaded is true. It always refuses a transcript another process has open, such as a turn running in another Codex app-server (active_turn_conflict; forceLoaded does not override this), and any thread when Codex keeps a state database (unsupported): a move outside Codex leaves the thread unreadable to every app-server.",
     inputSchema: {
       type: "object",
       properties: {
         threadId: str("Codex thread ID to archive. Defaults to the current caller thread when Codex supplies runtime context."),
         reason: str("Short human-readable cleanup reason."),
-        forceLoaded: bool("Allow the local JSONL fallback even if the app-server reports the thread as currently loaded. Native app-server archive does not require this. Defaults to false."),
+        forceLoaded: bool("Allow the local JSONL fallback even if the app-server reports the thread as currently loaded. Native app-server archive does not require this. Never allows moving a transcript another process has open. Defaults to false."),
         useLocalFallback: bool("Allow local JSONL archive when the app-server loaded-state check is unavailable. Defaults to true."),
         receipt: receiptInput
       },
@@ -31715,7 +31758,7 @@ function makeReconcileDelivery({ appServer, tracker = null, rolloutCheck = null,
 import { execFile } from "node:child_process";
 import { existsSync as existsSync3 } from "node:fs";
 var DARWIN_LSOF = "/usr/sbin/lsof";
-function makeRolloutCheck({ ownProcessGroup, timeoutMs: timeoutMs2 = 1e3, run = (
+function makeRolloutCheck({ ownProcessGroup, timeoutMs: timeoutMs2 = 1e3, strictTimeoutMs = 1e4, run = (
   /** @type {any} */
   execFile
 ), platform = process.platform, selfPid = process.pid, lsofPath = null, logger = getLogger() }) {
@@ -31730,14 +31773,14 @@ function makeRolloutCheck({ ownProcessGroup, timeoutMs: timeoutMs2 = 1e3, run = 
     }
     return { held: false, checked: false, reason };
   };
-  const check = async (rolloutPath) => {
+  const check = async (rolloutPath, { strict = false } = {}) => {
     if (typeof rolloutPath !== "string" || !rolloutPath) return skip("no_rollout_path");
     if (platform === "win32") return skip("unsupported_platform");
     const own = ownProcessGroup();
-    if (!own) return skip("endpoint_pid_unknown");
+    if (!own && !strict) return skip("endpoint_pid_unknown");
     const output = await new Promise((resolve) => {
       try {
-        run(binary, ["-F", "pg", "--", rolloutPath], { timeout: timeoutMs2 }, (error2, stdout) => {
+        run(binary, ["-F", "pg", "--", rolloutPath], { timeout: strict ? strictTimeoutMs : timeoutMs2 }, (error2, stdout) => {
           if (!error2 || error2.code === 1 && !String(stdout ?? "").trim()) resolve(String(stdout ?? ""));
           else resolve(error2.killed || error2.signal === "SIGTERM" ? "\0timeout" : null);
         });
@@ -31752,7 +31795,7 @@ function makeRolloutCheck({ ownProcessGroup, timeoutMs: timeoutMs2 = 1e3, run = 
       /** @type {string} */
       output
     );
-    const others = holders.filter((h) => h.pid !== selfPid && h.pid !== own && h.pgid !== own);
+    const others = holders.filter((h) => h.pid !== selfPid && (!own || h.pid !== own && h.pgid !== own));
     if (others.length) stats.held += 1;
     return others.length ? { held: true, checked: true, reason: "open_in_another_process" } : { held: false, checked: true };
   };
@@ -34844,7 +34887,7 @@ function createAgentLinkServer({ config: config2 = loadConfig(), appServer, setF
       mailbox.close();
     }
   };
-  const actions = makeThreadActions({ appServer: codexAppServer, messaging, desktop });
+  const actions = makeThreadActions({ appServer: codexAppServer, messaging, desktop, rolloutCheck });
   const deliverReconcile = makeReconcileDelivery({ appServer: codexAppServer, tracker: threadStatus, rolloutCheck });
   const forks = makeForkJobs({
     appServer: codexAppServer,
