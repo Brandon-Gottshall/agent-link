@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased - 2026-10-13 The push rollout check scans only Codex processes
+## 0.6.2 - 2026-10-13 The push rollout check scans only Codex processes
+
+**Upgrade:** update the plugin on each host, then restart every Claude and Codex session. Claude Code's plugin update skips a change that keeps the same version number, so 0.6.1 installs did not pick up this fix until this version bump.
 
 **Fix: the deny-only R1.12a check before a Codex push runs again.** Before every `turn/start` or `turn/steer`, the check ran `lsof -F pg -- <rollout>`, which reads the open files of every process. On 2026-10-12, on a Mac with about 1,000 processes, that took 2.8–4.0 s, so the 1 s push budget timed out every time (`rolloutChecks.skipped.lsof_timeout`), and pushes relied on the endpoint's loaded state alone. `-O`, `-n -P`, and `fuser` cost the same; `-b` returns at once but no longer matches the path.
 
