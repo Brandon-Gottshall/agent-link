@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased - 2026-10-13 The skill says wiring a callback is not delegation
+
+**Fix (agent guidance): a session with no manager wires a dependency callback itself.** In the live WF on 2026-10-13, a fresh Codex thread asked to handle a dependency ran `check_coordination_obligations`, got `needs_handoff`, and then declined `register_dependency_handoff`. It cited a machine-wide role rule that reserves coordination for management, even though it had no manager to hand the obligation to. That happened in two runs out of two.
+
+- The `agent-link` skill (Receipts and coordination) now says that `register_dependency_handoff` starts no agent and hands off no work, so it is not delegation. A session with no manager that was asked directly to handle a dependency wires the callback itself. Only a dispatched worker whose instructions route coordination to a manager it can name hands the obligation back, and it says `callback not wired: returned to <manager>`.
+
 ## Unreleased - 2026-10-13 Cross-harness E2E starts on Codex 0.162
 
 **Fix (test tooling): the cross-harness live E2E starts again on codex-cli 0.162.1.** It turned off installed Agent Link copies with `-c mcp_servers.<name>.enabled=false` for every Agent Link MCP server that `mcpServerStatus/list` reported, including `codex-agent-link`, which the `codex-agent-link@agent-link` plugin provides. No `mcp_servers` entry in `config.toml` has that name, so the override created one with no command. codex-cli 0.159.2 accepted it; 0.162.1 exits at startup with "invalid transport in `mcp_servers.codex-agent-link`", so app-server A never came up and no scenario ran.
