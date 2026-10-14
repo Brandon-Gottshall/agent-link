@@ -19,6 +19,7 @@
     "check:dist": "node ./scripts/build.mjs --check",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint .",
+    "install:live": "node ./scripts/install-live.js",
     "check:approval-config": "node ./scripts/approval-config-check.js",
     "check:approval-config:real": "node ./scripts/approval-config-check.js --real-config",
     "test": "node ./scripts/run-offline-tests.js",
