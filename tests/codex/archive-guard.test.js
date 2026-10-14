@@ -189,6 +189,117 @@ test("with Codex's state database present, the local fallback refuses and moves 
   }
 });
 
+test("fail closed: a holder check that cannot run refuses the move, retryably, and moves nothing", async () => {
+  const home = codexHomeWithRunningThread();
+  try {
+    const unchecked = [
+      ["lsof missing or failing", makeRolloutCheck({ ownProcessGroup: () => OWN_APP_SERVER_PID, run: (_f, _a, _o, cb) => cb(Object.assign(new Error("spawn lsof ENOENT"), { code: "ENOENT" }), "") }), "lsof_unavailable"],
+      ["lsof timing out", makeRolloutCheck({ ownProcessGroup: () => OWN_APP_SERVER_PID, run: (_f, _a, _o, cb) => cb(Object.assign(new Error("timed out"), { killed: true, signal: "SIGTERM" }), "") }), "lsof_timeout"],
+      ["unsupported platform", makeRolloutCheck({ ownProcessGroup: () => OWN_APP_SERVER_PID, platform: "win32" }), "unsupported_platform"],
+      ["a check that throws", async () => { throw new Error("boom"); }, "check_failed"],
+      ["a check that answers nothing", async () => undefined, "check_failed"],
+      ["a check that reports checked: false", async () => ({ held: false, checked: false, reason: "no_rollout_path" }), "no_rollout_path"]
+    ];
+    for (const [label, rolloutCheck, checkReason] of unchecked) {
+      await assert.rejects(
+        archiveLocalThread(T, { codexHome: home.codexHome, rolloutCheck: /** @type {any} */ (rolloutCheck) }),
+        (/** @type {any} */ error) => {
+          assert.equal(error.errorCode, "active_turn_conflict", label);
+          assert.equal(error.details.status, "unverified", label);
+          assert.equal(error.details.reason, "holder_check_unavailable", label);
+          assert.equal(error.details.checkReason, checkReason, label);
+          assert.equal(error.details.retryable, true, label);
+          assert.equal(error.details.rolloutPath, home.transcript, label);
+          return true;
+        },
+        label
+      );
+      assert.ok(existsSync(home.transcript), `${label}: the transcript stays put`);
+      assert.deepEqual(archivedFiles(home.codexHome), [], `${label}: nothing is written to archived_sessions`);
+    }
+
+    // Through the tool path, forceLoaded does not override it either.
+    const failing = makeRolloutCheck({ ownProcessGroup: () => OWN_APP_SERVER_PID, run: (_f, _a, _o, cb) => cb(new Error("lsof failed"), "") });
+    const actions = makeThreadActions({
+      appServer: /** @type {any} */ (incidentAppServer()),
+      messaging: /** @type {any} */ ({ sendToThread: async () => { throw new Error("unused"); }, recordActionReceipt: async () => ({ recorded: false }) }),
+      desktop: /** @type {any} */ ({}),
+      rolloutCheck: failing
+    });
+    for (const forceLoaded of [true, false]) {
+      await assert.rejects(
+        actions.archiveThread({ threadId: T, forceLoaded, receipt: { record: false } }),
+        (/** @type {any} */ error) => error.errorCode === "active_turn_conflict" && error.details.reason === "holder_check_unavailable" && error.details.retryable === true && /active writer/.test(error.details.appServerError.message),
+        `forceLoaded=${forceLoaded}`
+      );
+      assert.ok(existsSync(home.transcript));
+    }
+
+    // Retry once the check can run: the move goes ahead.
+    const moved = await archiveLocalThread(T, { codexHome: home.codexHome, rolloutCheck: async () => ({ held: false, checked: true }) });
+    assert.deepEqual(moved.rolloutCheck, { held: false, checked: true });
+    assert.equal(existsSync(home.transcript), false);
+    assert.equal(archivedFiles(home.codexHome).length, 1);
+  } finally {
+    home.cleanup();
+  }
+});
+
+test("a state database under sqlite/ refuses the move like a top-level one", async () => {
+  const home = codexHomeWithRunningThread();
+  try {
+    const clean = async () => ({ held: false, checked: true });
+    mkdirSync(path.join(home.codexHome, "sqlite"));
+    const nested = path.join(home.codexHome, "sqlite", "state_5.sqlite");
+    writeFileSync(nested, "");
+    await assert.rejects(
+      archiveLocalThread(T, { codexHome: home.codexHome, rolloutCheck: clean }),
+      (/** @type {any} */ error) => {
+        assert.equal(error.errorCode, "unsupported");
+        assert.equal(error.details.capability, "local_archive");
+        assert.equal(error.details.reason, "codex_state_db");
+        assert.equal(error.details.stateDb, nested);
+        return true;
+      }
+    );
+    assert.ok(existsSync(home.transcript));
+    assert.deepEqual(archivedFiles(home.codexHome), []);
+
+    // Through the tool path, with the check running for real.
+    const actions = actionsFor(incidentAppServer({ unavailable: true }));
+    await assert.rejects(actions.archiveThread({ threadId: T, receipt: { record: false } }), (/** @type {any} */ error) => error.errorCode === "unsupported" && error.details.stateDb === nested);
+    assert.ok(existsSync(home.transcript));
+
+    // A top-level database is reported first when both exist; names that are not state_<n>.sqlite do not count.
+    const top = path.join(home.codexHome, "state.sqlite");
+    writeFileSync(top, "");
+    await assert.rejects(archiveLocalThread(T, { codexHome: home.codexHome, rolloutCheck: clean }), (/** @type {any} */ error) => error.details.stateDb === top);
+    rmSync(top);
+    rmSync(nested);
+    writeFileSync(path.join(home.codexHome, "sqlite", "logs_1.sqlite"), "");
+    const moved = await archiveLocalThread(T, { codexHome: home.codexHome, rolloutCheck: clean });
+    assert.equal(moved.alreadyArchived, false);
+    assert.equal(existsSync(home.transcript), false);
+  } finally {
+    home.cleanup();
+  }
+});
+
+test("a clean check that ran and found no holder still moves the transcript", async () => {
+  const home = codexHomeWithRunningThread();
+  try {
+    const seen = [];
+    const moved = await archiveLocalThread(T, { codexHome: home.codexHome, rolloutCheck: async (file, options) => { seen.push([file, options]); return { held: false, checked: true }; } });
+    assert.deepEqual(seen, [[home.transcript, { strict: true }]]);
+    assert.equal(moved.alreadyArchived, false);
+    assert.deepEqual(moved.rolloutCheck, { held: false, checked: true });
+    assert.equal(existsSync(home.transcript), false);
+    assert.equal(archivedFiles(home.codexHome).length, 1);
+  } finally {
+    home.cleanup();
+  }
+});
+
 test("real lsof: a push counts only Codex processes as holders, a strict check counts every process", { skip: process.platform === "win32" }, async () => {
   const home = codexHomeWithRunningThread();
   // A node process, not a codex one: like an editor, a `tail -f`, or an

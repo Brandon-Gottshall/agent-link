@@ -345,9 +345,9 @@ export function makeThreadActions({ appServer, messaging, desktop, rolloutCheck 
       });
     }
 
-    // The local move refuses a transcript another process holds (even with
-    // forceLoaded) and any thread Codex's state database tracks; say why the
-    // app-server could not archive it.
+    // The local move refuses a transcript another process holds or whose
+    // holder check could not run (even with forceLoaded) and any thread
+    // Codex's state database tracks; say why the app-server could not archive it.
     let archive;
     try {
       archive = await archiveLocalThread(threadId, { rolloutCheck });

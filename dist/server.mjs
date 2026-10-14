@@ -23549,14 +23549,17 @@ async function findLocalThreadFile(threadId, options = {}) {
 }
 var CODEX_STATE_DB = /^state(_\d+)?\.sqlite$/;
 async function findCodexStateDb(codexHome2) {
-  let names;
-  try {
-    names = await fs8.readdir(codexHome2);
-  } catch {
-    return null;
+  for (const dir of [codexHome2, path10.join(codexHome2, "sqlite")]) {
+    let names;
+    try {
+      names = await fs8.readdir(dir);
+    } catch {
+      continue;
+    }
+    const found = names.filter((name) => CODEX_STATE_DB.test(name)).sort();
+    if (found.length) return path10.join(dir, found[0]);
   }
-  const found = names.filter((name) => CODEX_STATE_DB.test(name)).sort();
-  return found.length ? path10.join(codexHome2, found[0]) : null;
+  return null;
 }
 async function archiveLocalThread(threadId, options = {}) {
   const codexHome2 = resolveCodexHome(options);
@@ -23595,6 +23598,12 @@ async function archiveLocalThread(threadId, options = {}) {
       hint: "A transcript moved outside Codex leaves the state database pointing at the old path, and every app-server then fails to read the thread. Archive it through a Codex app-server: retry when Agent Link's app-server is available, or from the app-server that has the thread loaded."
     });
   }
+  if (rolloutCheck && rolloutCheck.checked !== true) {
+    throw new AgentLinkError("active_turn_conflict", `Could not check whether another process has thread ${threadId}'s transcript open; refusing to move it.`, {
+      details: { status: "unverified", activeTurnId: null, reason: "holder_check_unavailable", checkReason: rolloutCheck.reason ?? null, retryable: true, rolloutPath: located.path },
+      hint: "The check for another process holding the transcript (lsof) did not run or finish, so Agent Link cannot tell that nothing else is writing it. Retry; if it keeps failing, archive the thread through a Codex app-server. forceLoaded does not override this."
+    });
+  }
   const destination = path10.join(archivedRoot, relative);
   await fs8.mkdir(path10.dirname(destination), { recursive: true });
   await moveFileWithoutOverwrite(located.path, destination, threadId);
@@ -23618,7 +23627,8 @@ async function archiveLocalThread(threadId, options = {}) {
 }
 async function strictRolloutCheck(check, rolloutPath) {
   try {
-    return await check(rolloutPath, { strict: true });
+    const result = await check(rolloutPath, { strict: true });
+    return result && typeof result === "object" ? result : { held: false, checked: false, reason: "check_failed" };
   } catch {
     return { held: false, checked: false, reason: "check_failed" };
   }
@@ -29628,13 +29638,13 @@ var codexActionTools = [
   },
   {
     name: "archive_codex_thread",
-    description: "Archive a Codex thread through the app-server when available, falling back to a guarded local sessions move. status is archived or already_archived. The app-server archive works on loaded threads too. The local fallback refuses a thread the app-server reports as loaded (active_turn_conflict) unless forceLoaded is true. It always refuses a transcript another process has open, such as a turn running in another Codex app-server (active_turn_conflict; forceLoaded does not override this), and any thread when Codex keeps a state database (unsupported): a move outside Codex leaves the thread unreadable to every app-server.",
+    description: "Archive a Codex thread through the app-server when available, falling back to a guarded local sessions move. status is archived or already_archived. The app-server archive works on loaded threads too. The local fallback refuses a thread the app-server reports as loaded (active_turn_conflict) unless forceLoaded is true. It moves a transcript only when no Codex state database exists (top level or sqlite/) and its check for other holders ran and found none; a small race remains between check and move. It refuses a transcript another process has open, such as a turn running in another Codex app-server, and one whose holder check could not run (active_turn_conflict, retryable in the unchecked case; forceLoaded overrides neither), and any thread when Codex keeps a state database (unsupported): a move outside Codex leaves the thread unreadable to every app-server.",
     inputSchema: {
       type: "object",
       properties: {
         threadId: str("Codex thread ID to archive. Defaults to the current caller thread when Codex supplies runtime context."),
         reason: str("Short human-readable cleanup reason."),
-        forceLoaded: bool("Allow the local JSONL fallback even if the app-server reports the thread as currently loaded. Native app-server archive does not require this. Never allows moving a transcript another process has open. Defaults to false."),
+        forceLoaded: bool("Allow the local JSONL fallback even if the app-server reports the thread as currently loaded. Native app-server archive does not require this. Never allows moving a transcript another process has open or whose holder check could not run. Defaults to false."),
         useLocalFallback: bool("Allow local JSONL archive when the app-server loaded-state check is unavailable. Defaults to true."),
         receipt: receiptInput
       },

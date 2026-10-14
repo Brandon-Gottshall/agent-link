@@ -176,7 +176,8 @@ export async function findLocalThreadFile(threadId, options = {}) {
 }
 
 // Codex keeps every thread's rollout path and archived flag in a state
-// database (<codexHome>/state_<n>.sqlite, state_5 in codex-cli 0.159). Only
+// database (<codexHome>/state_<n>.sqlite, state_5 in codex-cli 0.159; newer
+// Codex may keep it at <codexHome>/sqlite/state_<n>.sqlite). Only
 // Codex's own thread/archive updates that row. A transcript moved behind its
 // back leaves archived=0 and the old rollout_path, and from then on every
 // app-server, fresh ones included, fails thread/read ("missing source
@@ -185,19 +186,23 @@ export async function findLocalThreadFile(threadId, options = {}) {
 const CODEX_STATE_DB = /^state(_\d+)?\.sqlite$/;
 
 /**
- * The Codex state database in codexHome, or null when there is none.
+ * The Codex state database in codexHome or codexHome/sqlite, or null when
+ * there is none in either place. The top level wins when both have one.
  * @param {string} codexHome
  * @returns {Promise<string | null>}
  */
 export async function findCodexStateDb(codexHome) {
-  let names;
-  try {
-    names = await fs.readdir(codexHome);
-  } catch {
-    return null;
+  for (const dir of [codexHome, path.join(codexHome, "sqlite")]) {
+    let names;
+    try {
+      names = await fs.readdir(dir);
+    } catch {
+      continue;
+    }
+    const found = names.filter((name) => CODEX_STATE_DB.test(name)).sort();
+    if (found.length) return path.join(dir, found[0]);
   }
-  const found = names.filter((name) => CODEX_STATE_DB.test(name)).sort();
-  return found.length ? path.join(codexHome, found[0]) : null;
+  return null;
 }
 
 // Moves a transcript from sessions/ to archived_sessions/ without Codex. It
@@ -206,7 +211,13 @@ export async function findCodexStateDb(codexHome) {
 //     the transcript open in a process other than Agent Link's own
 //     app-server: another live writer, which would keep appending to the
 //     moved file (active_turn_conflict; forceLoaded never overrides it);
+//   - options.rolloutCheck could not run (lsof missing, failed or timed out,
+//     unsupported platform, no rollout path): nothing proves there is no other
+//     writer, so the move fails closed (active_turn_conflict, retryable);
 //   - Codex keeps a state database (unsupported, see findCodexStateDb).
+// The move happens only with no state database and a check that ran and found
+// no other holder. A holder can still open the file between the check and the
+// rename. A caller that passes no rolloutCheck skips the holder check.
 export async function archiveLocalThread(threadId, options = {}) {
   const codexHome = resolveCodexHome(options);
   const located = await findLocalThread(threadId, { codexHome });
@@ -247,6 +258,13 @@ export async function archiveLocalThread(threadId, options = {}) {
       hint: "A transcript moved outside Codex leaves the state database pointing at the old path, and every app-server then fails to read the thread. Archive it through a Codex app-server: retry when Agent Link's app-server is available, or from the app-server that has the thread loaded."
     });
   }
+  // Fail closed: a check that did not run proves nothing about other writers.
+  if (rolloutCheck && rolloutCheck.checked !== true) {
+    throw new AgentLinkError("active_turn_conflict", `Could not check whether another process has thread ${threadId}'s transcript open; refusing to move it.`, {
+      details: { status: "unverified", activeTurnId: null, reason: "holder_check_unavailable", checkReason: rolloutCheck.reason ?? null, retryable: true, rolloutPath: located.path },
+      hint: "The check for another process holding the transcript (lsof) did not run or finish, so Agent Link cannot tell that nothing else is writing it. Retry; if it keeps failing, archive the thread through a Codex app-server. forceLoaded does not override this."
+    });
+  }
 
   const destination = path.join(archivedRoot, relative);
   await fs.mkdir(path.dirname(destination), { recursive: true });
@@ -271,10 +289,13 @@ export async function archiveLocalThread(threadId, options = {}) {
   };
 }
 
-// Deny-only (R1.12a): a check that fails or cannot run never refuses.
+// The push path treats a check that cannot run as "not held" (R1.12a); a move
+// does not: archiveLocalThread refuses unless checked is true. A check that
+// throws or answers with anything but an object counts as not run.
 async function strictRolloutCheck(check, rolloutPath) {
   try {
-    return await check(rolloutPath, { strict: true });
+    const result = await check(rolloutPath, { strict: true });
+    return result && typeof result === "object" ? result : { held: false, checked: false, reason: "check_failed" };
   } catch {
     return { held: false, checked: false, reason: "check_failed" };
   }

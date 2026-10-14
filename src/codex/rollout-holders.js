@@ -30,7 +30,8 @@
 // check, and every holder but this process counts, whatever its command name,
 // because a move cannot tell its own endpoint's writer from another's and
 // must not guess. A strict check therefore scans every process and waits
-// longer (strictTimeoutMs, 10 s).
+// longer (strictTimeoutMs, 10 s). Unlike a push, a move fails closed: when the
+// strict check cannot run (checked: false), archiveLocalThread refuses.
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { getLogger } from "../shared/log.js";

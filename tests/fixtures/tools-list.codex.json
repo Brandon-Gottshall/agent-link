@@ -1482,7 +1482,7 @@
   },
   {
     "name": "archive_codex_thread",
-    "description": "Archive a Codex thread through the app-server when available, falling back to a guarded local sessions move. status is archived or already_archived. The app-server archive works on loaded threads too. The local fallback refuses a thread the app-server reports as loaded (active_turn_conflict) unless forceLoaded is true. It always refuses a transcript another process has open, such as a turn running in another Codex app-server (active_turn_conflict; forceLoaded does not override this), and any thread when Codex keeps a state database (unsupported): a move outside Codex leaves the thread unreadable to every app-server.",
+    "description": "Archive a Codex thread through the app-server when available, falling back to a guarded local sessions move. status is archived or already_archived. The app-server archive works on loaded threads too. The local fallback refuses a thread the app-server reports as loaded (active_turn_conflict) unless forceLoaded is true. It moves a transcript only when no Codex state database exists (top level or sqlite/) and its check for other holders ran and found none; a small race remains between check and move. It refuses a transcript another process has open, such as a turn running in another Codex app-server, and one whose holder check could not run (active_turn_conflict, retryable in the unchecked case; forceLoaded overrides neither), and any thread when Codex keeps a state database (unsupported): a move outside Codex leaves the thread unreadable to every app-server.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1496,7 +1496,7 @@
         },
         "forceLoaded": {
           "type": "boolean",
-          "description": "Allow the local JSONL fallback even if the app-server reports the thread as currently loaded. Native app-server archive does not require this. Never allows moving a transcript another process has open. Defaults to false."
+          "description": "Allow the local JSONL fallback even if the app-server reports the thread as currently loaded. Native app-server archive does not require this. Never allows moving a transcript another process has open or whose holder check could not run. Defaults to false."
         },
         "useLocalFallback": {
           "type": "boolean",
