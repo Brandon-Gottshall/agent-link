@@ -317,13 +317,15 @@ Ask the agent to call `agent_link_health`. It reports the detected host, the age
 | Claude Code | For a cache-based install: `claude plugin marketplace update agent-link`, then `claude plugin update agent-link@agent-link`, then restart. For a directory-marketplace install, see below. | `claude plugin uninstall agent-link@agent-link` |
 | Codex | `codex plugin marketplace upgrade agent-link`, then `codex plugin add codex-agent-link@agent-link`, then restart | `codex plugin remove codex-agent-link@agent-link` |
 
-**Directory-marketplace installs (Claude Code).** If you registered a local folder with `claude plugin marketplace add <plugin-folder>`, Claude Code runs the plugin straight from that folder, and `claude plugin update` does not apply. Update the folder to a released `main` with these steps. The status check must print nothing; if it prints anything, stop and resolve those changes first. Then restart Claude sessions:
+**Directory-marketplace installs.** If you registered a local folder with `claude plugin marketplace add <plugin-folder>` (or `codex plugin marketplace add <plugin-folder>`), Claude Code runs the plugin straight from that folder, Codex copies it into its plugin cache, and `claude plugin update` does not apply. Both hosts take the whole folder and ignore `.gitignore`, so a git clone there would also ship `.git`, `.worktrees/`, and ignored local output. Install the folder from a clean export of a release tag instead. Run this from a clean development checkout of Agent Link that is not the plugin folder:
 
 ```bash
-git -C <plugin-folder> status --porcelain   # must print nothing
-git -C <plugin-folder> switch main
-git -C <plugin-folder> pull --ff-only
+npm run install:live -- --target <plugin-folder> [--tag vX.Y.Z]
 ```
+
+The script refuses, and changes nothing, unless the checkout has no uncommitted tracked changes and the tag (default: the newest `vX.Y.Z` tag) is a release tag reachable from `origin/main` whose `package.json` carries the same version. It exports the tag's tracked files with `git archive`, checks that `dist/server.mjs` is present and matches the version and that the export holds no `.git`, `.worktrees`, `wf-runs`, or local home or session paths, and writes `.agent-link-install.json` (tag, commit, dist hash, install time). It then renames any existing `<plugin-folder>` to `<plugin-folder>.prev-<UTC timestamp>` and renames the export into place, keeping exactly one `.prev-*` folder. An existing git checkout is kept as a `.prev-*` folder and never deleted. Add `--dry-run` to print the plan and checks without changing anything, and `--no-fetch` to skip the `git fetch origin`.
+
+The script does not touch either host. Afterwards, restart Claude sessions; for Codex, reinstall from the local marketplace with `codex plugin add codex-agent-link@<marketplace>` and then restart Codex sessions.
 
 To uninstall completely, also remove the marketplace registration on each host:
 
@@ -360,7 +362,7 @@ The clone already contains the built server, so no install step is needed to run
 
 Then point either host at the folder instead of GitHub: `claude plugin marketplace add ./agent-link` or `codex plugin marketplace add ./agent-link`, followed by the same install command as above. For a single Claude Code session without installing, use `claude --plugin-dir ./agent-link`.
 
-> **Warning:** A folder install uses everything in the folder, including any `.worktrees/` and untracked files. Claude Code runs the plugin from the folder itself, and Codex copies the whole folder into its plugin cache. Keep development checkouts and worktrees outside the installed folder.
+> **Warning:** A folder install uses everything in the folder, including any `.worktrees/` and untracked files. Claude Code runs the plugin from the folder itself, and Codex copies the whole folder into its plugin cache. Keep development checkouts and worktrees outside the installed folder, and install it with `npm run install:live` (see [Update or remove](#update-or-remove)) rather than from a clone.
 
 ## Tools
 
