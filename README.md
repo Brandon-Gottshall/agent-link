@@ -47,7 +47,7 @@ The agent finds the thread with `list_agents` (both hosts, newest first) or `res
     "address": "codex:019a0000-0000-7000-8000-0000000000b1",
     "harness": "codex",
     "title": "Billing service: invoice API",
-    "cwd": "/Users/you/src/billing",
+    "cwd": "<project-folder>/billing",
     "loaded": true,
     "archived": false
   },
@@ -314,8 +314,16 @@ Ask the agent to call `agent_link_health`. It reports the detected host, the age
 
 | Host | Update | Remove |
 | --- | --- | --- |
-| Claude Code | `claude plugin marketplace update agent-link`, then `claude plugin update agent-link@agent-link`, then restart | `claude plugin uninstall agent-link@agent-link` |
+| Claude Code | For a cache-based install: `claude plugin marketplace update agent-link`, then `claude plugin update agent-link@agent-link`, then restart. For a directory-marketplace install, see below. | `claude plugin uninstall agent-link@agent-link` |
 | Codex | `codex plugin marketplace upgrade agent-link`, then `codex plugin add codex-agent-link@agent-link`, then restart | `codex plugin remove codex-agent-link@agent-link` |
+
+**Directory-marketplace installs (Claude Code).** If you registered a local folder with `claude plugin marketplace add <plugin-folder>`, Claude Code runs the plugin straight from that folder, and `claude plugin update` does not apply. Update the folder to a released `main` with these steps. The status check must print nothing; if it prints anything, stop and resolve those changes first. Then restart Claude sessions:
+
+```bash
+git -C <plugin-folder> status --porcelain   # must print nothing
+git -C <plugin-folder> switch main
+git -C <plugin-folder> pull --ff-only
+```
 
 To uninstall completely, also remove the marketplace registration on each host:
 
@@ -351,6 +359,8 @@ git clone https://github.com/Brandon-Gottshall/agent-link.git
 The clone already contains the built server, so no install step is needed to run it. Run `npm ci` only if you plan to change the code or run the tests.
 
 Then point either host at the folder instead of GitHub: `claude plugin marketplace add ./agent-link` or `codex plugin marketplace add ./agent-link`, followed by the same install command as above. For a single Claude Code session without installing, use `claude --plugin-dir ./agent-link`.
+
+> **Warning:** A folder install uses everything in the folder, including any `.worktrees/` and untracked files. Claude Code runs the plugin from the folder itself, and Codex copies the whole folder into its plugin cache. Keep development checkouts and worktrees outside the installed folder.
 
 ## Tools
 
