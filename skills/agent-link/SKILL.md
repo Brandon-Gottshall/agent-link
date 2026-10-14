@@ -70,7 +70,7 @@ The user can assign roles (for example `router`) to sessions. Send to `role:<nam
 - There is no `mode`: messages queue in the local mailbox and are picked up between turns.
 - Label what you expect with `anticipation`: `reply` (an answer is expected), `action` (do it and mark it done), or `fyi` (the default; nothing expected). Add `replyBy` (ISO 8601, at least 30 s ahead) for a deadline. Only ask for a reply or action when you need one: the recipient is reminded until it resolves the message.
 - Pass `waitForReply: true` (implies `anticipation: "reply"`) to block until the recipient resolves the message, or call `wait_for_claude_session` later with the `messageId` you sent as `replyToMessageId`. `wait.outcome` is `reply`, `declined`, `done`, `unresolved` (reminders ran out), `expired` (`replyBy` passed), or `timeout`; `messageStatus` says the same. Only an explicit reply is returned. Check later with `get_agent_link_message_status`.
-- There is no `launch_claude_session` or `archive_claude_session`: Claude owns session creation and archive state.
+- Agent Link does not have `launch_claude_session` or `archive_claude_session` yet, so start or archive Claude sessions in Claude itself. These tools have been deferred since 0.2.0 (see CHANGELOG), and a fresh investigation is pending; this is not a design boundary.
 
 ## Receive messages
 
