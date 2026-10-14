@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { stateDir } from "../src/shared/paths.js";
 
 const runnerRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const installedPluginRoot = process.env.AGENT_LINK_INSTALLED_PLUGIN_ROOT
@@ -92,6 +93,8 @@ function parseArgs(argv) {
       parsed.live = true;
     } else if (arg === "--suite") {
       parsed.suite = requiredArg(argv, ++i, "--suite");
+    } else if (arg === "--report-dir") {
+      parsed.reportDir = requiredArg(argv, ++i, "--report-dir");
     } else if (arg === "--plugin-root") {
       parsed.pluginRoot = requiredArg(argv, ++i, "--plugin-root");
     } else if (arg === "--installed-plugin-root") {
@@ -714,8 +717,17 @@ function cleanupFailed(result) {
   return Array.isArray(result.cleanup) && result.cleanup.some((entry) => entry.ok === false);
 }
 
+// Reports hold local paths and session ids, so they never go inside the plugin
+// folder (both hosts copy that folder whole). Default: <state dir>/wf-runs,
+// with the state dir from AGENT_LINK_STATE_DIR (default ~/.agent-link).
+// --report-dir or AGENT_LINK_WF_RUNS_DIR replaces the wf-runs directory.
+function wfRunsDir() {
+  const override = args.reportDir ?? process.env.AGENT_LINK_WF_RUNS_DIR;
+  return override ? path.resolve(override) : path.join(stateDir(), "wf-runs");
+}
+
 async function writeReports(currentRun) {
-  const reportRoot = path.join(runnerRoot, "wf-runs", currentRun.suiteId);
+  const reportRoot = path.join(wfRunsDir(), currentRun.suiteId);
   await fs.mkdir(reportRoot, { recursive: true });
   const jsonPath = path.join(reportRoot, `${currentRun.runId}.json`);
   const markdownPath = path.join(reportRoot, `${currentRun.runId}.md`);

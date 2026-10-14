@@ -172,7 +172,7 @@ the round-trip. Severity `P1` (audit trail gap).
 
 Use the format below 
 when writing the run record. Save runs under
-`docs/wf-runs/YYYY-MM-DD-claude-receive.md`.
+`~/.agent-link/wf-runs/YYYY-MM-DD-claude-receive.md` (under `$AGENT_LINK_STATE_DIR` if set). Never save it inside the plugin folder: both hosts copy that folder whole.
 
 ```md
 # WF Run Report — Claude Receive
