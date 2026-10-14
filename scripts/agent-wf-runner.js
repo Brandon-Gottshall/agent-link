@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { expandHome, stateDir } from "../src/shared/paths.js";
 
 const runnerRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const installedPluginRoot = process.env.AGENT_LINK_INSTALLED_PLUGIN_ROOT
@@ -24,6 +26,8 @@ const runId = [
   `pid${process.pid}`,
   crypto.randomUUID().slice(0, 8)
 ].join("-");
+
+const reportsRoot = wfRunsDir();
 
 const suite = await readJson(suitePath);
 validateSuite(suite);
@@ -92,6 +96,8 @@ function parseArgs(argv) {
       parsed.live = true;
     } else if (arg === "--suite") {
       parsed.suite = requiredArg(argv, ++i, "--suite");
+    } else if (arg === "--report-dir") {
+      parsed.reportDir = requiredArg(argv, ++i, "--report-dir");
     } else if (arg === "--plugin-root") {
       parsed.pluginRoot = requiredArg(argv, ++i, "--plugin-root");
     } else if (arg === "--installed-plugin-root") {
@@ -714,8 +720,24 @@ function cleanupFailed(result) {
   return Array.isArray(result.cleanup) && result.cleanup.some((entry) => entry.ok === false);
 }
 
+// Reports hold local paths and session ids, so they never go inside the plugin
+// folder (both hosts copy that folder whole). Default: <state dir>/wf-runs,
+// with the state dir from AGENT_LINK_STATE_DIR (default ~/.agent-link).
+// --report-dir or AGENT_LINK_WF_RUNS_DIR replaces the wf-runs directory. Like
+// the Agent Link path settings in src/shared/paths.js it must be absolute
+// (or start with ~), so a relative value cannot land inside the plugin folder.
+function wfRunsDir() {
+  const [source, value] = args.reportDir !== undefined
+    ? ["--report-dir", args.reportDir]
+    : ["AGENT_LINK_WF_RUNS_DIR", process.env.AGENT_LINK_WF_RUNS_DIR?.trim()];
+  if (!value) return path.join(stateDir(), "wf-runs");
+  const expanded = expandHome(value, os.homedir());
+  if (!expanded) throw new Error(`${source} must be an absolute path (or start with ~), got "${value}".`);
+  return expanded;
+}
+
 async function writeReports(currentRun) {
-  const reportRoot = path.join(runnerRoot, "wf-runs", currentRun.suiteId);
+  const reportRoot = path.join(reportsRoot, currentRun.suiteId);
   await fs.mkdir(reportRoot, { recursive: true });
   const jsonPath = path.join(reportRoot, `${currentRun.runId}.json`);
   const markdownPath = path.join(reportRoot, `${currentRun.runId}.md`);

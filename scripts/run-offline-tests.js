@@ -101,8 +101,10 @@ const groups = {
   ],
   manifest: [
     "tests/approval-config-check.test.js",
+    "tests/install-live.test.js",
     "tests/manifest.test.js",
-    "tests/shipped-plugin.test.js"
+    "tests/shipped-plugin.test.js",
+    "tests/wf-runner-location.test.js"
   ]
 };
 groups.all = [...groups.manifest, ...groups.claude, ...groups.codex, ...groups.server, ...groups.mcp];

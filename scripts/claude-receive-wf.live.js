@@ -189,7 +189,7 @@ Next steps (the script stops here — it does not touch the receiver's UI):
   2. Run the WF checklist against that session:
        ${CHECKLIST_PATH}
   3. Record outcomes per item (pass | partial | fail), severity for any
-     non-pass, and save the run report under docs/wf-runs/.
+     non-pass, and save the run report under ~/.agent-link/wf-runs/ (not inside the plugin folder).
 `);
 }
 

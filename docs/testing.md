@@ -18,7 +18,7 @@ Run these from a clone after `npm ci`. Protocol smoke tests are necessary but no
 | `npm run typecheck` | `tsc` checks the JSDoc types in `src/` (`checkJs`, non-strict). Must report 0 errors; CI blocks on it. |
 | `npm run lint` | ESLint guardrails (`eslint.config.js`): in `src/`, no `console` calls and no `process.stdout` (stdout is the MCP protocol; log through `src/shared/log.js`; `src/claude/notify-hook.js` is exempt because its stdout is the hook protocol); everywhere, no empty blocks (an empty `catch` needs a comment saying why the error is safe to ignore), `===`, and `const` for bindings never reassigned. CI blocks on it. |
 | `npm run check:approval-config` | Codex approval settings let the model call every read-only tool without asking, and list which side-effecting tools are auto-approved (`--all` requires every tool). Scripted calls can pass while model-selected calls are still blocked. Set `CODEX_AGENT_LINK_PLUGIN_ID` if you installed from a different marketplace. It reads only the config you name: `npm run check:approval-config -- --config <path>` (or `CODEX_CONFIG=<path>`); with no path it refuses (exit 2). Your real Codex config is read only by `npm run check:approval-config:real` (`--real-config` or `AGENT_LINK_CHECK_REAL_CONFIG=1`), so it is not part of `npm test`. |
-| `npm run wf:agent-link` | WF suite, required tools, and fixture verdict logic, without launching live threads. Writes a report under `wf-runs/`. |
+| `npm run wf:agent-link` | WF suite, required tools, and fixture verdict logic, without launching live threads. Writes a report under `~/.agent-link/wf-runs/` (`AGENT_LINK_STATE_DIR` moves it; `--report-dir` or `AGENT_LINK_WF_RUNS_DIR` overrides the directory). |
 | `npm run measure:idle-churn` | Idle CPU and app-server churn of one server over 120 s, as JSON, against the stub app-server. `scripts/idle-churn-measure.js` also takes `--idle-seconds`, `--plugin-root`, `--real-home`, and `--shutdown`. |
 
 To run one file, call `node --test <file>` (or plain `node <file>`). Pass `node --test` flags through the runner after `--`, for example `npm test -- --test-concurrency=1`.
@@ -47,7 +47,7 @@ These launch real Codex threads or app-servers, focus the GUI, or touch the real
 | `AGENT_LINK_LIVE=1 npm run test:live:launch-thread-gui` | The GUI path builds the `codex://threads/<threadId>` link in dry-run mode. |
 | `AGENT_LINK_LIVE=1 CODEX_AGENT_LINK_SMOKE_OPEN_GUI=1 npm run test:live:launch-thread` | Real macOS deep-link route. May focus Codex Desktop. |
 | `AGENT_LINK_LIVE=1 npm run test:live:claude-receive -- <local_uuid>` | Inserts one test message into the real mailbox for the Claude-receive WF checklist. With no argument it lists candidate sessions. |
-| `AGENT_LINK_LIVE=1 npm run wf:agent-link:live` | Launches disposable Codex threads against this checkout, checks tool choice from transcripts and receipts, writes reports under `wf-runs/`, then archives the threads. |
+| `AGENT_LINK_LIVE=1 npm run wf:agent-link:live` | Launches disposable Codex threads against this checkout, checks tool choice from transcripts and receipts, writes reports under `~/.agent-link/wf-runs/` (same overrides), then archives the threads. |
 | `AGENT_LINK_LIVE=1 AGENT_LINK_INSTALLED_PLUGIN_ROOT=<path> npm run wf:agent-link:installed-live` | Same live suite against an installed plugin cache directory. |
 
 ## Cross-harness live E2E
