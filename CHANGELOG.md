@@ -1,19 +1,36 @@
 # Changelog
 
-## Unreleased - 2026-10-13 The skill says wiring a callback is not delegation
+## 0.6.3 - 2026-10-14 Archive fails closed, and a killed server no longer leaves its app-server running
+
+**Upgrade:** update the plugin on each host, then restart every Claude and Codex session. Claude Code's plugin update skips a change that keeps the same version number, so 0.6.2 installs did not pick up the fixes in this release until this version bump. A directory-marketplace install of Claude Code runs the plugin from its folder, so fast-forward that folder to the released `main` on a clean tree (see the README). Codex reinstalls the plugin from its local marketplace.
+
+**Correction (0.6.1 and 0.6.2): the archive guarantee was overstated.** The 0.6.1 entry, whose code 0.6.2 shipped unchanged, says the local archive fallback "never moves a transcript Codex still owns". That is not what the code guaranteed. A move happens only when no Codex state database exists, the strict holder check ran, and it found no other holder. A small race remains between that check and the move. 0.6.1 and 0.6.2 also treated a holder check that could not run (lsof missing, failing, or timing out) as "no holder", and looked for the state database only at the top level of the Codex home. This release fixes both, and the README, the `agent-link` skill, the tool description and the design doc now state the guarantee in these terms.
+
+**Fix (data loss): the local archive fallback fails closed when the holder check cannot run.** `archiveLocalThread` now refuses to move a transcript when the strict `lsof` check did not run: `lsof` missing, failing or timing out, an unsupported platform, no rollout path, or a check that throws. It throws `active_turn_conflict` with `details: {status: "unverified", reason: "holder_check_unavailable"}` and `retryable: true`; `forceLoaded` does not override it.
+
+- The state-database refusal (`unsupported`, `reason: "codex_state_db"`) now also looks in `sqlite/` under the Codex home, not only at its top level, so a database kept there blocks the move too.
+- New tests in `tests/codex/archive-guard.test.js`. The `tools/list` fixtures are re-recorded for the new `archive_codex_thread` description.
+
+**Fix: a managed Codex app-server no longer outlives a killed Agent Link server.** The managed app-server is spawned detached and leads its own process group, so the host's group signals never reached it. When the server's shutdown stalled past the host's 1 s grace and the host sent SIGKILL, no code ran to stop the app-server. It survived with parent pid 1, along with its managed record and socket.
+
+- The server now spawns a small Node watchdog (`src/codex/app-server-watchdog.js`) as the group leader. The watchdog runs the app-server in its group and holds the server's stdin pipe. When the pipe reaches EOF (the server exited or was SIGKILLed) it sends SIGTERM to the group, SIGKILL after the kill grace, and removes the managed record and endpoint files. If the watchdog itself is killed, the server's exit handler still sweeps the group.
+- **Cost:** each managed Codex app-server now runs under one extra Node process, about 40 MB. `health`'s `managedPid` names the watchdog, which leads the group, not the app-server.
+- New test `tests/codex/managed-app-server-parent-death.test.js` covers a SIGKILLed server and a shutdown stalled past 1 s; it fails on the old code.
+
+**Fix (test tooling): E2E scenario 8 expects the override-cost version warning when Codex differs.** The product warns on purpose: `override_costs_version_mismatch` fires when the detected Codex is not the version the override costs were measured on. Scenario 8 asserted no warnings at all, so a correct warning failed it, and its version check was a loose regex over the whole health text. It now expects no warnings on the measured version and exactly that warning on any other; any other warning still fails. The version check reads `desktopPush.installedCodexVersion` and requires a plain `x.y.z`. The oracle lives in `scripts/e2e-health-oracle.js`, with an offline test in `tests/codex/e2e-health-oracle.test.js`.
+
+**Docs (README):** a directory-marketplace install of Claude Code runs the plugin straight from its folder, so `claude plugin update` does not apply. The README gives clean-tree steps to fast-forward the folder to a released `main`. It also warns that a folder install, and Codex's local-marketplace install, copy everything in the folder, including `.worktrees/` and untracked files, so development checkouts and worktrees belong outside it. A user-home path in the `resolve_agent` example is now a placeholder.
 
 **Fix (agent guidance): a session with no manager wires a dependency callback itself.** In the live WF on 2026-10-13, a fresh Codex thread asked to handle a dependency ran `check_coordination_obligations`, got `needs_handoff`, and then declined `register_dependency_handoff`. It cited a machine-wide role rule that reserves coordination for management, even though it had no manager to hand the obligation to. That happened in two runs out of two.
 
 - The `agent-link` skill (Receipts and coordination) now says that `register_dependency_handoff` starts no agent and hands off no work, so it is not delegation. A session with no manager that was asked directly to handle a dependency wires the callback itself. Only a dispatched worker whose instructions route coordination to a manager it can name hands the obligation back, and it says `callback not wired: returned to <manager>`.
-
-## Unreleased - 2026-10-13 Cross-harness E2E starts on Codex 0.162
+- The skill also no longer says Claude session launch and archive are ruled out. Agent Link has no `launch_claude_session` or `archive_claude_session` yet, so start or archive Claude sessions in Claude itself; the tools have been deferred since 0.2.0 and a fresh investigation is pending.
 
 **Fix (test tooling): the cross-harness live E2E starts again on codex-cli 0.162.1.** It turned off installed Agent Link copies with `-c mcp_servers.<name>.enabled=false` for every Agent Link MCP server that `mcpServerStatus/list` reported, including `codex-agent-link`, which the `codex-agent-link@agent-link` plugin provides. No `mcp_servers` entry in `config.toml` has that name, so the override created one with no command. codex-cli 0.159.2 accepted it; 0.162.1 exits at startup with "invalid transport in `mcp_servers.codex-agent-link`", so app-server A never came up and no scenario ran.
 
 - A server that carries a `pluginId` is now turned off through its plugin (`-c plugins.<id>.enabled=false`). Only a server defined directly under `mcp_servers` is turned off by name. The selection lives in `scripts/e2e-installed-servers.js`.
 - Scenario 5 no longer aborts when codex-cli 0.162.1 refuses `thread/read includeTurns` ("list_turns is not supported yet") during a new thread's first turn: the failed read is recorded as `readErrors` and the poll goes on.
 - New offline test `tests/codex/e2e-installed-servers.test.js`. `docs/testing.md` describes the rule and two codex-cli 0.162.1 behaviors seen on 2026-10-13: a second app-server cannot load a thread another one has loaded (`already has an active writer`), and the transient `list_turns` refusal.
-- Live results on codex-cli 0.162.1 with this fix: scenarios 1, 2, 4, 6, 7 and 9 passed in a full run, and 1, 2, 3 and 5 passed in a rerun. Scenario 8 reports `override_costs_version_mismatch` on both sides, as expected while the override costs are measured on 0.159.2. One scenario 3 turn came back `interrupted` in the full run and did not reproduce in two reruns.
 
 ## 0.6.2 - 2026-10-13 The push rollout check scans only Codex processes
 
