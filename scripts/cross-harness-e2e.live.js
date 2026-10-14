@@ -43,6 +43,7 @@ import WebSocket from "ws";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { installedAgentLinkServers } from "./e2e-installed-servers.js";
+import { checkHealthWarnings, detectedCodexVersion } from "./e2e-health-oracle.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SERVER = path.join(REPO, "dist", "server.mjs");
@@ -827,11 +828,11 @@ async function s9() {
 }
 
 function healthChecks(s, side, h) {
-  const text = JSON.stringify(h);
   s.evidence(`${side}Health`, trim(h, 3000));
   const dp = h.codex?.desktopPush ?? h.desktopPush ?? findKey(h, "desktopPush");
   s.check(`${side}: desktopPush mailbox-only`, /mailbox-only/.test(JSON.stringify(dp ?? "")), dp);
-  s.check(`${side}: desktopPush version 0.159.2`, /0\.159\.2/.test(JSON.stringify(dp ?? "")) || /0\.159\.2/.test(text), (JSON.stringify(dp ?? "").match(/"version[^,}]*/) || [null])[0]);
+  const detected = detectedCodexVersion(dp);
+  s.check(`${side}: desktopPush reports a detected Codex version`, detected !== null, dp?.installedCodexVersion ?? null);
   const oc = findKey(h, "overrideCosts");
   s.check(`${side}: overrideCosts measured`, oc && /measured/.test(JSON.stringify(oc)), oc);
   const fj = findKey(h, "forkJobs");
@@ -840,7 +841,10 @@ function healthChecks(s, side, h) {
   s.check(`${side}: rolloutChecks counts present`, rc && typeof rc === "object", rc);
   const warnings = (h.warnings ?? []).map((w) => w.code ?? w);
   s.evidence(`${side}Warnings`, warnings);
-  s.check(`${side}: no unexpected warnings`, warnings.length === 0, warnings);
+  // The product warns when the detected Codex is not the version the override
+  // costs were measured on, so that one warning is expected then and no other.
+  const w = checkHealthWarnings(h.warnings, detected);
+  s.check(`${side}: warnings are only the expected ones (detected ${detected ?? "none"})`, w.ok, { actual: w.actual, expected: w.expected });
 }
 function findKey(obj, key, depth = 0) {
   if (!obj || typeof obj !== "object" || depth > 5) return undefined;
