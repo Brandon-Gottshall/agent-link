@@ -72,9 +72,11 @@ function makeRepo({ files = {} } = {}) {
   copyFileSync(SCRIPT, path.join(work, "scripts", "install-live.js"));
   writeFileSync(path.join(work, ".gitignore"), "wf-runs/\n.worktrees/\n");
 
+  // "type": "module" like the real package.json: the copied script uses import
+  // statements, which Node 20.9 rejects in a package without it.
   /** @param {string} version @param {Record<string, string>} [extra] @param {string} [distVersion] */
   const write = (version, extra = {}, distVersion = version) => {
-    writeFileSync(path.join(work, "package.json"), `${JSON.stringify({ name: "agent-link", version }, null, 2)}\n`);
+    writeFileSync(path.join(work, "package.json"), `${JSON.stringify({ name: "agent-link", version, type: "module" }, null, 2)}\n`);
     writeFileSync(path.join(work, "dist", "server.mjs"), distFor(distVersion));
     writeFileSync(path.join(work, "README.md"), `readme ${version}\n`);
     for (const [rel, body] of Object.entries(extra)) {
