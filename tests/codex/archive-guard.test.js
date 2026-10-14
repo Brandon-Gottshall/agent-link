@@ -23,7 +23,7 @@ import { makeRolloutCheck } from "../../src/codex/rollout-holders.js";
 import { archiveLocalThread } from "../../src/codex/session-index.js";
 import { makeThreadActions } from "../../src/codex/thread-actions.js";
 
-const T = "01a12eda-b557-7542-9a56-6683ee2485ca";
+const T = "0ffd4e1c-9a3b-7c2e-8f41-5b6d7e8f0004";
 // A process group no test process is in: Agent Link's own managed app-server.
 const OWN_APP_SERVER_PID = 2_000_000_000;
 

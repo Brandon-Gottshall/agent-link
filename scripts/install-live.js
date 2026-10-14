@@ -8,7 +8,10 @@
 // the WHOLE folder and ignore .gitignore, so a git clone there leaks .git,
 // .worktrees/ and ignored wf-runs/ output (local paths, session ids). This
 // script builds the folder from `git archive <tag>` instead, so it holds only
-// tracked files, then swaps it in with two same-volume renames.
+// tracked files, then swaps it in with two same-volume renames. That is not one
+// atomic operation: for a moment between the renames the target does not exist,
+// and a failure of the second rename is rolled back by renaming the old folder
+// back.
 //
 // It refuses (exit 1, nothing changed) unless the repo it runs from is clean,
 // the tag is a vX.Y.Z release tag reachable from origin/main, and package.json
@@ -26,13 +29,43 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 export const MARKER_NAME = ".agent-link-install.json";
 const RELEASE_TAG = /^v(\d+)\.(\d+)\.(\d+)$/;
 const FORBIDDEN_NAMES = new Set([".git", ".worktrees", "wf-runs"]);
-// Placeholder users the repo's own fixtures and tests use. A real machine's
-// home path never matches one of these.
-const SYNTHETIC_USERS = new Set(["example", "x", "me", "someone", "user"]);
+// Placeholder users the repo's own fixtures and tests use (and older tags used).
+// A real machine's home path never matches one of these.
+const SYNTHETIC_USERS = new Set(["example", "x", "me", "someone", "user", "you"]);
+const SYNTHETIC_ALT = [...SYNTHETIC_USERS].join("|");
 const HOME_PATH = /\/(?:Users|home)\/([A-Za-z0-9._-]+)/g;
 const DASH_HOME_PATH = /-Users-([A-Za-z0-9_.]+)-/g;
-const SESSION_PATH = /(?:\.codex\/sessions\/|\.claude\/projects\/)[^\s"'`)]*|rollout-\d{4}-\d{2}-\d{2}T[\d-]+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
-const SESSION_PATH_NAME = /^rollout-\d{4}-\d{2}-\d{2}T[\d-]+-[0-9a-f-]{36}\.jsonl$/;
+// Allowed in front of a session path: a placeholder home, or ~/.
+const SYNTHETIC_PREFIX = new RegExp(`(?:\\/(?:Users|home)\\/(?:${SYNTHETIC_ALT})|-Users-(?:${SYNTHETIC_ALT})-[^\\s"']*)\\/?$|~\\/$`);
+const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+// Outside tests/, a transcript name is never allowed, even after a placeholder.
+const ROLLOUT_NAME = new RegExp(`rollout-\\d{4}-\\d{2}-\\d{2}T[\\d-]+-${UUID}`, "g");
+const SESSION_DIR = /(?:\.codex\/sessions\/|\.claude\/projects\/)[^\s"'`)]*/g;
+// A UUID labelled as a session, thread or conversation id (any case; the label
+// may be separated from the id by a space, backtick or quote), and Claude
+// Desktop's local_<uuid>.
+const LABELLED_ID = new RegExp(`(?:(?:session|thread|conversation)[\\s_-]?id|thread)\\W{0,6}(${UUID})|local_(${UUID})`, "gi");
+const ANY_UUID = new RegExp(`(?<![0-9a-f-])${UUID}(?![0-9a-f-])`, "gi");
+// Test files carry synthetic labelled ids of their own; real-looking (current-era v7) ones are still caught.
+const TEST_FILE = /(?:^|\/)(?:tests\/|[^/]*[-.]test\.[cm]?js$)/;
+/** Placeholder ids such as 019a0000-0000-7000-8000-0000000000b1 have long zero runs; random ones never do. @param {string} id */
+const isPlaceholderId = (id) => /0{8,}/.test(id.replaceAll("-", ""));
+const PLAUSIBLE_FROM = Date.UTC(2023, 0, 1);
+/**
+ * A UUIDv7 whose embedded millisecond timestamp is in the current era
+ * (2023-01-01 to a year from now) could be a real Codex thread, session or
+ * turn id. Synthetic ids use an impossible timestamp or a zero run.
+ * @param {string} id
+ * @param {number} now
+ */
+function isCurrentEraV7(id, now) {
+  const [high, mid, version, variant] = id.toLowerCase().split("-");
+  if (!version.startsWith("7") || !/[89ab]/.test(variant[0])) return false;
+  const ms = parseInt(high + mid, 16);
+  return ms >= PLAUSIBLE_FROM && ms <= now + 366 * 24 * 3600 * 1000;
+}
+const MACHINE_PATH = /\/Volumes\/[^\s/"'`]+|\/var\/folders\b/g;
+const SESSION_PATH_NAME = new RegExp(`^rollout-\\d{4}-\\d{2}-\\d{2}T[\\d-]+-${UUID}\\.jsonl$`);
 
 export class Refusal extends Error {}
 
@@ -73,8 +106,35 @@ function git(args, { cwd = repoRoot } = {}) {
   return result.stdout;
 }
 
+/** @param {string} a @param {string} b */
+function compareVersions(a, b) {
+  const [x, y] = [a, b].map((tag) => /** @type {RegExpExecArray} */ (RELEASE_TAG.exec(tag)).slice(1).map(Number));
+  return x[0] - y[0] || x[1] - y[1] || x[2] - y[2];
+}
+
+/**
+ * Release tags on origin and the commit each points at (peeled for annotated tags).
+ * @param {string} cwd
+ * @param {string} [name] one tag, or all vX.Y.Z-shaped tags when omitted
+ * @returns {Map<string, string>}
+ */
+function remoteTags(cwd, name) {
+  const refs = name ? [`refs/tags/${name}`, `refs/tags/${name}^{}`] : ["refs/tags/v*"];
+  const direct = new Map();
+  const peeled = new Map();
+  for (const line of git(["ls-remote", "origin", ...refs], { cwd }).split("\n")) {
+    const [sha, ref] = line.split("\t");
+    if (!sha || !ref?.startsWith("refs/tags/")) continue;
+    const tagName = ref.slice("refs/tags/".length);
+    if (tagName.endsWith("^{}")) peeled.set(tagName.slice(0, -3), sha);
+    else direct.set(tagName, sha);
+  }
+  return new Map([...direct].map(([tagName, sha]) => [tagName, peeled.get(tagName) ?? sha]));
+}
+
 /**
  * Checks everything that must hold before anything is exported. Throws Refusal.
+ * With a fetch, origin decides which tags exist and what they point at.
  * @param {{ tag: string | null, fetch: boolean }} options
  * @param {string} [cwd]
  * @returns {{ tag: string, commit: string, version: string }}
@@ -87,20 +147,33 @@ export function checkRelease({ tag, fetch }, cwd = repoRoot) {
 
   let chosen = tag;
   if (!chosen) {
-    chosen = git(["tag", "--list", "v*", "--sort=-v:refname"], { cwd })
-      .split("\n").map((line) => line.trim()).find((name) => RELEASE_TAG.test(name)) ?? null;
-    if (!chosen) throw new Refusal("No vX.Y.Z release tag found; pass --tag.");
+    const names = fetch
+      ? [...remoteTags(cwd).keys()]
+      : git(["tag", "--list", "v*"], { cwd }).split("\n").map((line) => line.trim());
+    chosen = names.filter((name) => RELEASE_TAG.test(name)).sort(compareVersions).pop() ?? null;
+    if (!chosen) throw new Refusal(`No vX.Y.Z release tag found${fetch ? " on origin" : ""}; pass --tag.`);
   }
-  const match = RELEASE_TAG.exec(chosen);
-  if (!match) throw new Refusal(`${chosen} is not a release tag of the form vX.Y.Z.`);
+  if (!RELEASE_TAG.test(chosen)) throw new Refusal(`${chosen} is not a release tag of the form vX.Y.Z.`);
 
-  const commit = git(["rev-parse", "--verify", "--quiet", `refs/tags/${chosen}^{commit}`], { cwd }).trim();
+  const local = spawnSync("git", ["rev-parse", "--verify", "--quiet", `refs/tags/${chosen}^{commit}`], { cwd, encoding: "utf8" });
+  if (local.status !== 0) {
+    throw new Refusal(`Tag ${chosen} does not exist in this repo${fetch ? " (run git fetch origin --tags if it is on origin)" : ""}.`);
+  }
+  const commit = local.stdout.trim();
+  if (fetch) {
+    const remote = remoteTags(cwd, chosen).get(chosen);
+    if (!remote) throw new Refusal(`Tag ${chosen} is not on origin.`);
+    if (remote !== commit) {
+      throw new Refusal(`Tag ${chosen} points at ${commit.slice(0, 12)} locally but ${remote.slice(0, 12)} on origin; fix the local tag first.`);
+    }
+  }
   const reachable = spawnSync("git", ["merge-base", "--is-ancestor", commit, "refs/remotes/origin/main"], { cwd });
   if (reachable.status !== 0) {
     throw new Refusal(`${chosen} (${commit.slice(0, 12)}) is not reachable from origin/main${fetch ? "" : " (checked without a fetch)"}.`);
   }
 
-  const version = JSON.parse(git(["show", `${chosen}:package.json`], { cwd })).version;
+  // From here on the commit sha is used, never the tag name.
+  const version = JSON.parse(git(["show", `${commit}:package.json`], { cwd })).version;
   const expected = chosen.slice(1);
   if (version !== expected) {
     throw new Refusal(`package.json at ${chosen} says version ${version}; the tag says ${expected}.`);
@@ -109,16 +182,16 @@ export function checkRelease({ tag, fetch }, cwd = repoRoot) {
 }
 
 /**
- * Extracts `git archive <tag>` into dir (created, must be empty or absent).
- * @param {string} tag
+ * Extracts `git archive <commit>` into dir (created, must be empty or absent).
+ * @param {string} commit
  * @param {string} dir
  * @param {string} [cwd]
  */
-export function exportTag(tag, dir, cwd = repoRoot) {
+export function exportCommit(commit, dir, cwd = repoRoot) {
   fs.mkdirSync(dir, { recursive: true });
   const tar = `${dir}.tar`;
   try {
-    git(["archive", "--format=tar", "-o", tar, tag], { cwd });
+    git(["archive", "--format=tar", "-o", tar, commit], { cwd });
     execFileSync("tar", ["-xf", tar, "-C", dir]);
   } finally {
     fs.rmSync(tar, { force: true });
@@ -139,10 +212,10 @@ function walk(dir, out = [], rel = "") {
  * Looks for anything that must not ship: forbidden directories, absolute local
  * home paths, Codex/Claude session-id paths. Returns human-readable problems.
  * @param {string} dir
- * @param {{ homeDir?: string }} [options]
+ * @param {{ homeDir?: string, now?: number }} [options]
  * @returns {string[]}
  */
-export function scanTree(dir, { homeDir = os.homedir() } = {}) {
+export function scanTree(dir, { homeDir = os.homedir(), now = Date.now() } = {}) {
   const problems = [];
   for (const entry of walk(dir)) {
     const name = path.basename(entry.rel);
@@ -157,19 +230,28 @@ export function scanTree(dir, { homeDir = os.homedir() } = {}) {
       const line = lines[n];
       const at = `${entry.rel}:${n + 1}`;
       if (homeDir && homeDir !== "/" && line.includes(homeDir)) problems.push(`${at}: contains this machine's home directory`);
+      // Matched values are not echoed: the point is to keep them out of logs.
       for (const m of line.matchAll(HOME_PATH)) {
-        if (!SYNTHETIC_USERS.has(m[1])) problems.push(`${at}: absolute home path ${m[0]}`);
+        if (!SYNTHETIC_USERS.has(m[1])) problems.push(`${at}: absolute home path`);
       }
       for (const m of line.matchAll(DASH_HOME_PATH)) {
-        if (!SYNTHETIC_USERS.has(m[1])) problems.push(`${at}: encoded home path ${m[0]}`);
+        if (!SYNTHETIC_USERS.has(m[1])) problems.push(`${at}: encoded home path`);
       }
-      // Test fixtures carry synthetic session-shaped ids with no home prefix;
-      // their real-path leaks are caught by the home-path checks above.
-      if (entry.rel.startsWith("tests/")) continue;
-      for (const m of line.matchAll(SESSION_PATH)) {
-        const before = line.slice(Math.max(0, m.index - 80), m.index);
-        const synthetic = /(?:\/(?:Users|home)\/(?:example|x|me|someone|user)|-Users-(?:example|x|me|someone)-[^\s"']*)\/?$/.test(before) || /~\/$/.test(before);
-        if (!synthetic) problems.push(`${at}: session path ${m[0].slice(0, 60)}`);
+      for (const m of line.matchAll(ANY_UUID)) {
+        if (!isPlaceholderId(m[0]) && isCurrentEraV7(m[0], now)) problems.push(`${at}: current-era UUIDv7 (possible session or thread id)`);
+      }
+      if (MACHINE_PATH.test(line)) problems.push(`${at}: machine-specific path`);
+      MACHINE_PATH.lastIndex = 0;
+      // Test files hold synthetic session-shaped paths and ids (random v4 ids,
+      // not current-era v7); the checks above still apply to them.
+      if (TEST_FILE.test(entry.rel)) continue;
+      for (const m of line.matchAll(LABELLED_ID)) {
+        if (!isPlaceholderId(m[1] ?? m[2])) problems.push(`${at}: session or thread id`);
+      }
+      if (ROLLOUT_NAME.test(line)) problems.push(`${at}: session transcript file name`);
+      ROLLOUT_NAME.lastIndex = 0;
+      for (const m of line.matchAll(SESSION_DIR)) {
+        if (!SYNTHETIC_PREFIX.test(line.slice(Math.max(0, m.index - 80), m.index))) problems.push(`${at}: session path`);
       }
     }
   }
@@ -198,8 +280,10 @@ function utcStamp(date) {
 }
 
 /**
- * Renames target to a .prev-<UTC> sibling, then staging to target. If the second
- * rename fails the first is undone. Returns the .prev path or null.
+ * Two same-volume renames, not one atomic operation: target goes to a
+ * .prev-<UTC> sibling, then staging goes to target. Between them the target does
+ * not exist for a moment. If the second rename fails the first is undone.
+ * Returns the .prev path or null.
  * @param {{ target: string, staging: string, now?: Date, rename?: (from: string, to: string) => void }} options
  */
 export function swapIn({ target, staging, now = new Date(), rename = fs.renameSync }) {
@@ -271,6 +355,25 @@ function realOrSelf(p) {
   }
 }
 
+/** @param {string} p */
+function lstatOrNull(p) {
+  try {
+    return fs.lstatSync(p);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Leftovers of earlier runs that were killed between export and swap.
+ * @param {string} target
+ * @returns {string[]}
+ */
+function staleStaging(target) {
+  const prefix = `${path.basename(target)}.staging-`;
+  return fs.readdirSync(path.dirname(target)).filter((name) => name.startsWith(prefix)).map((name) => path.join(path.dirname(target), name));
+}
+
 /**
  * @param {string[]} argv
  * @param {{ cwd?: string, out?: (line: string) => void }} [options]
@@ -278,23 +381,28 @@ function realOrSelf(p) {
 export function run(argv, { cwd = repoRoot, out = (line) => process.stdout.write(`${line}\n`) } = {}) {
   const args = parseArgs(argv);
   const target = path.resolve(args.target);
+  const existing = lstatOrNull(target);
+  if (existing?.isSymbolicLink()) {
+    throw new Refusal(`--target ${target} is a symlink; pass the real plugin folder it points to.`);
+  }
   const realTarget = realOrSelf(target);
   if (isInside(realOrSelf(cwd), realTarget) || isInside(realTarget, realOrSelf(cwd))) {
     throw new Refusal(`--target ${target} overlaps the repo this script runs from; use a separate plugin folder.`);
   }
   if (!fs.existsSync(path.dirname(target))) throw new Refusal(`The parent of --target does not exist: ${path.dirname(target)}`);
-  const existing = fs.existsSync(target) ? fs.lstatSync(target) : null;
   if (existing && !existing.isDirectory()) throw new Refusal(`--target exists and is not a directory: ${target}`);
 
   const release = checkRelease(args, cwd);
   const targetIsCheckout = Boolean(existing) && fs.existsSync(path.join(target, ".git"));
 
+  const stale = staleStaging(target);
+  if (!args.dryRun) for (const dir of stale) fs.rmSync(dir, { recursive: true, force: true });
   const stamp = `${Date.now().toString(36)}-${process.pid}`;
   const staging = args.dryRun
     ? fs.mkdtempSync(path.join(os.tmpdir(), "agent-link-install-dry-"))
     : `${target}.staging-${stamp}`;
   try {
-    exportTag(release.tag, staging, cwd);
+    exportCommit(release.commit, staging, cwd);
     const dist = verifyDist(staging, release.version);
     const problems = scanTree(staging);
     if (problems.length) {
@@ -308,12 +416,13 @@ export function run(argv, { cwd = repoRoot, out = (line) => process.stdout.write
     out("Verified:  no .git, .worktrees or wf-runs; no absolute home paths or session-id paths");
     if (existing) {
       out(`Target:    ${target} exists${targetIsCheckout ? " and is a git checkout (first-run conversion): it is kept as the .prev folder, not deleted" : ""}`);
-      out(`Plan:      rename it to ${target}.prev-<UTC timestamp>, then rename the export into place`);
+      out(`Plan:      two renames (not atomic; the target is briefly absent, and the first is rolled back if the second fails): ${target} to ${target}.prev-<UTC timestamp>, then the export into place`);
     } else {
       out(`Target:    ${target} does not exist`);
-      out("Plan:      rename the export into place");
+      out("Plan:      rename the export into place (a single rename)");
     }
-    out("Plan:      keep exactly one .prev-* folder (older ones removed; a git checkout is never removed)");
+    out("Plan:      keep one .prev-* folder (older ones removed; a .prev-* git checkout is never removed)");
+    if (stale.length) out(`Plan:      ${args.dryRun ? "remove" : "removed"} ${stale.length} stale ${path.basename(target)}.staging-* leftover(s) from earlier runs`);
 
     if (args.dryRun) {
       out("Dry run: nothing was changed.");

@@ -20,7 +20,11 @@ const RUNNER = path.join(root, "scripts", "agent-wf-runner.js");
 const SUITE = "agent-link-dependency-callback-wf";
 
 const tempDir = () => realpathSync(mkdtempSync(path.join(os.tmpdir(), "agent-link-wf-location-")));
-const repoWfRuns = () => (existsSync(path.join(root, "wf-runs")) ? readdirSync(path.join(root, "wf-runs", SUITE), { recursive: true }).length : 0);
+// Entries under the plugin folder's own wf-runs/<suite>; 0 when either is absent.
+const repoWfRuns = () => {
+  const dir = path.join(root, "wf-runs", SUITE);
+  return existsSync(dir) ? readdirSync(dir, { recursive: true }).length : 0;
+};
 
 /** @param {string[]} args @param {Record<string, string | undefined>} overrides */
 function runDry(args, overrides) {
@@ -73,5 +77,35 @@ test("AGENT_LINK_WF_RUNS_DIR and --report-dir override the directory", () => {
     assert.equal(reportsIn(viaEnv).length, 2, "the flag wins over the environment variable");
   } finally {
     for (const dir of [state, viaEnv, viaFlag]) rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a relative AGENT_LINK_WF_RUNS_DIR or --report-dir is rejected and nothing is written", () => {
+  const state = tempDir();
+  try {
+    const before = repoWfRuns();
+    for (const [args, overrides, source] of [
+      [[], { AGENT_LINK_STATE_DIR: state, AGENT_LINK_WF_RUNS_DIR: "wf-runs" }, "AGENT_LINK_WF_RUNS_DIR"],
+      [["--report-dir", "./out"], { AGENT_LINK_STATE_DIR: state }, "--report-dir"]
+    ]) {
+      const result = spawnSync(process.execPath, [RUNNER, ...args], { cwd: root, env: hermeticEnv({ overrides }), encoding: "utf8" });
+      assert.notEqual(result.status, 0, source);
+      assert.match(result.stderr, new RegExp(`${source} must be an absolute path`), source);
+    }
+    assert.equal(existsSync(path.join(state, "wf-runs")), false);
+    assert.equal(repoWfRuns(), before);
+    assert.equal(existsSync(path.join(root, "out")), false);
+  } finally {
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test("an override starting with ~ expands to the home directory", () => {
+  const home = tempDir();
+  try {
+    runDry(["--report-dir", "~/reports"], { HOME: home, AGENT_LINK_STATE_DIR: path.join(home, "state") });
+    assert.equal(reportsIn(path.join(home, "reports")).length, 2);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
   }
 });

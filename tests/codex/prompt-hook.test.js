@@ -26,8 +26,8 @@ const HOOK = path.join(root, "src/codex/prompt-hook.js");
 const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "agent-link-prompt-hook-")));
 process.once("exit", () => fs.rmSync(tmp, { recursive: true, force: true }));
 
-const THREAD = "01a11760-2a3b-73e3-9838-aac3c6162070";
-const OTHER_THREAD = "01a11760-2a3b-73e3-9838-aac3c61620ff";
+const THREAD = "0ffd4e1c-9a3b-7c2e-8f41-5b6d7e8f0001";
+const OTHER_THREAD = "0ffd4e1c-9a3b-7c2e-8f41-5b6d7e8f0002";
 const SENDER = "7b000000-0000-4000-8000-000000000001";
 const SECRET_BODY = "SECRET-BODY-do-not-leak";
 const SETTINGS = { limit: 3, intervalMs: 30_000, warnings: [] };
@@ -36,8 +36,8 @@ const T0 = Date.UTC(2026, 9, 7, 12, 0, 0);
 // Captured live (codex-cli 0.159.2), scrubbed.
 const PAYLOAD = {
   session_id: THREAD,
-  turn_id: "01a11760-2cd6-79e0-a712-ef8510c8302d",
-  transcript_path: "/home/user/.codex/sessions/2026/10/07/rollout-2026-10-07T13-19-01-01a11760-2a3b-73e3-9838-aac3c6162070.jsonl",
+  turn_id: "0ffd4e1c-9a3b-7c2e-8f41-5b6d7e8f0003",
+  transcript_path: "/home/user/.codex/sessions/2999/01/01/rollout-2999-01-01T00-00-00-0ffd4e1c-9a3b-7c2e-8f41-5b6d7e8f0001.jsonl",
   cwd: "/tmp/probe-cwd",
   hook_event_name: "UserPromptSubmit",
   model: "gpt-6-astra",
