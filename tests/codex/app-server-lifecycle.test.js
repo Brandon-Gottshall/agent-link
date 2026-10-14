@@ -62,7 +62,9 @@ try {
     await waitFor(() => !alive(first) && !alive(firstGrandchild), { timeoutMs: 5000, label: "idle shutdown" });
     assert.equal(client.getConnectionSummary().idleShutdowns, 1);
     assert.equal(client.getConnectionSummary().managedPid, null);
-    assert.equal(records().length, 0, "record removed after idle shutdown");
+    // The group leader is the watchdog around the app-server, so its exit (and
+    // the record removal that follows it) lands just after the app-server's.
+    await waitFor(() => records().length === 0, { timeoutMs: 2000, label: "record removed after idle shutdown" });
 
     // 5. Next real call starts exactly one new app-server.
     await client.request("thread/loaded/list", { limit: 1 });

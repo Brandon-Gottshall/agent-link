@@ -20,7 +20,9 @@ export function taggedStub(dir) {
 // Live processes whose argv contains `tag`, plus every member of their process
 // groups (the stub's grandchild). Reads argv only, never environments.
 export function taggedProcesses(tag) {
-  const result = spawnSync("ps", ["-axo", "pid=,pgid=,args="], { encoding: "utf8" });
+  // A busy machine lists thousands of processes; the default 1 MiB maxBuffer
+  // made spawnSync fail with ENOBUFS, and the callers' cleanup never ran.
+  const result = spawnSync("ps", ["-axo", "pid=,pgid=,args="], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
   if (result.status !== 0) throw new Error(`ps failed: ${result.stderr}`);
   const rows = result.stdout.split("\n").filter(Boolean).map((line) => {
     const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/);

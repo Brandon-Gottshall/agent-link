@@ -16,10 +16,11 @@ import { AgentLinkError } from "../shared/errors.js";
 import { getLogger } from "../shared/log.js";
 import { assertTestSafeWrite, legacyManagedAppServerDirs, managedAppServerDir, stateDir as agentLinkStateDir } from "../shared/paths.js";
 import { ensureStateDir } from "../shared/state.js";
+import { watchdogCommand } from "./app-server-watchdog.js";
 
 /**
  * A spawned app-server tagged with what exit and stop cleanup must remove.
- * @typedef {import("node:child_process").ChildProcessByStdio<null, import("node:stream").Readable, import("node:stream").Readable> & {
+ * @typedef {import("node:child_process").ChildProcessByStdio<import("node:stream").Writable, import("node:stream").Readable, import("node:stream").Readable> & {
  *   __agentLinkEndpoint?: any,
  *   __agentLinkRecordPath?: string | null
  * }} ManagedChildProcess
@@ -641,18 +642,28 @@ export class CodexAppServerClient {
       delete endpoint.pendingPort;
     }
 
-    // detached: the app-server leads its own process group, so shutdown can
-    // signal the whole group (app-server plus anything it launches) instead of
-    // only the direct child.
+    // detached: a watchdog leads its own process group with the app-server in
+    // it, so shutdown can signal the whole group (app-server plus anything it
+    // launches) instead of only the direct child. The watchdog keeps this
+    // stdin pipe: when this server exits or is SIGKILLed the pipe reaches EOF
+    // and the watchdog takes the group down, so the app-server never outlives
+    // the server (see app-server-watchdog.js).
+    const watched = watchdogCommand(launch, ["--listen", endpoint.listen, ...endpoint.args], {
+      graceMs: this.options.killGraceMs,
+      files: [endpoint.socketPath, endpoint.tokenFile],
+      recordDir: this.stateDir()
+    });
     /** @type {ManagedChildProcess} */
-    const child = spawn(launch.command, [...launch.args, "--listen", endpoint.listen, ...endpoint.args], {
-      stdio: ["ignore", "pipe", "pipe"],
+    const child = spawn(watched.command, watched.args, {
+      stdio: ["pipe", "pipe", "pipe"],
       detached: true,
       env: {
         ...managedAppServerEnv(process.env),
         CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "Codex Agent Link"
       }
     });
+    // An EPIPE here only means the watchdog already exited.
+    child.stdin.on("error", () => {});
     child.__agentLinkEndpoint = endpoint;
     this.managedSpawnCount += 1;
     this.managedLaunch = launch;
@@ -689,6 +700,11 @@ export class CodexAppServerClient {
       if (!unexpected) {
         return;
       }
+      // The group leader (the watchdog) is gone; take down anything it left
+      // in the group so a killed leader cannot strand the app-server.
+      if (child.pid) {
+        signalProcessGroup(child, "SIGKILL", { groupOnly: true });
+      }
       if (this.managedProcessExitCleanup) {
         process.removeListener("exit", this.managedProcessExitCleanup);
         this.managedProcessExitCleanup = null;
@@ -722,6 +738,11 @@ export class CodexAppServerClient {
     const checkAbort = () => {
       if (spawnError) {
         return tagged(spawnError, spawnError.code === "ENOENT" ? "codex-binary-not-found" : "spawn-failed");
+      }
+      // The watchdog could not exec the app-server: 127 is a missing command,
+      // 126 anything else (its stderr, kept in logs, has the reason).
+      if (child.exitCode === 127 || child.exitCode === 126) {
+        return tagged(new Error(`app-server could not be executed (exit ${child.exitCode})`), child.exitCode === 127 ? "codex-binary-not-found" : "spawn-failed");
       }
       if (child.exitCode !== null || child.signalCode !== null) {
         return tagged(
@@ -808,6 +829,7 @@ export class CodexAppServerClient {
     }
     removeManagedRecord(child.__agentLinkRecordPath);
     removeEndpointFiles(child.__agentLinkEndpoint);
+    child.stdin?.destroy();
     child.stdout?.destroy();
     child.stderr?.destroy();
     child.unref();

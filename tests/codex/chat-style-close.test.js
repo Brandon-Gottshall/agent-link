@@ -76,11 +76,22 @@ async function chatStyleRun(closeAt) {
     if (child.exitCode === null && child.signalCode === null) {
       try { process.kill(-child.pid, "SIGKILL"); } catch { child.kill("SIGKILL"); }
     }
+    // Kill what the spawn log names first, then whatever ps finds by tag: a
+    // failing ps must not skip the first kills.
     const { starts, grandchildren } = readSpawnLog(spawnLog);
-    for (const pid of [...starts.map((s) => s.pid), ...grandchildren.map((g) => g.pid), ...taggedProcesses(stub)]) {
+    for (const pid of [...starts.map((s) => s.pid), ...grandchildren.map((g) => g.pid)]) {
+      try { process.kill(pid, "SIGKILL"); } catch { /* gone */ }
+    }
+    for (const pid of tryTaggedProcesses(stub)) {
       try { process.kill(pid, "SIGKILL"); } catch { /* gone */ }
     }
   }
+}
+
+// taggedProcesses() throws when ps fails; cleanup and survivor checks fall back
+// to the spawn log rather than skipping their kills.
+function tryTaggedProcesses(stub) {
+  try { return taggedProcesses(stub); } catch { return []; }
 }
 
 async function closeAndCheck({ child, closeAt, response, spawnLog, stub }) {
@@ -110,7 +121,7 @@ async function closeAndCheck({ child, closeAt, response, spawnLog, stub }) {
   // process logged by the stub or carrying this run's stub path in its argv,
   // plus their process groups.
   const { starts, grandchildren } = readSpawnLog(spawnLog);
-  const pids = [...new Set([...starts.map((s) => s.pid), ...grandchildren.map((g) => g.pid), ...taggedProcesses(stub)])];
+  const pids = [...new Set([...starts.map((s) => s.pid), ...grandchildren.map((g) => g.pid), ...tryTaggedProcesses(stub)])];
   await waitFor(() => pids.every((pid) => !alive(pid)), { timeoutMs: 4000, label: `${closeAt}: no app-server outlives the server` })
     .catch(() => {
       const survivors = pids.filter(alive);

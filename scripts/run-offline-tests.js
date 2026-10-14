@@ -64,6 +64,7 @@ const groups = {
     "tests/codex/archive-guard.test.js",
     "tests/codex/app-server-logging.test.js",
     "tests/codex/chat-style-close.test.js",
+    "tests/codex/managed-app-server-parent-death.test.js",
     "tests/codex/codex-delivery.test.js",
     "tests/codex/e2e-health-oracle.test.js",
     "tests/codex/e2e-installed-servers.test.js",

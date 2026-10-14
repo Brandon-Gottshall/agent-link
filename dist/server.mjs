@@ -21365,6 +21365,67 @@ function splitPath(value) {
   return String(value).split(path8.delimiter).filter((dir) => dir && path8.isAbsolute(dir));
 }
 
+// src/codex/app-server-watchdog.js
+var APP_SERVER_WATCHDOG_SOURCE = `
+const { spawn } = require("node:child_process");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const [configJson, command, ...args] = process.argv.slice(1);
+const config = JSON.parse(configJson);
+let parentGone = false;
+// The server signals the whole group on a normal stop, so this process gets
+// the same signal as the app-server: ignore it and wait for the app-server.
+for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(signal, () => {});
+const child = spawn(command, args, { stdio: ["ignore", "inherit", "inherit"] });
+const signalGroup = (signal) => {
+  try {
+    process.kill(-process.pid, signal);
+  } catch {
+    try { child.kill(signal); } catch {}
+  }
+};
+const finish = () => {
+  const files = [...config.files];
+  if (config.recordDir) files.push(path.join(config.recordDir, process.pid + ".json"));
+  for (const file of files) {
+    try { fs.rmSync(file, { force: true }); } catch {}
+  }
+  signalGroup("SIGKILL");
+  process.exit(0);
+};
+child.on("error", (error) => {
+  process.stderr.write("spawn error: " + error.message + "\\n");
+  process.exit(error.code === "ENOENT" ? 127 : 126);
+});
+child.on("exit", (code, signal) => {
+  if (!parentGone) process.exit(code ?? 128 + (os.constants.signals[signal] ?? 0));
+  // The server is gone and the app-server has exited: sweep up what it left.
+  setTimeout(finish, 100);
+});
+const onParentGone = () => {
+  if (parentGone) return;
+  parentGone = true;
+  signalGroup("SIGTERM");
+  setTimeout(finish, config.graceMs).unref();
+};
+process.stdin.on("end", onParentGone);
+process.stdin.on("close", onParentGone);
+process.stdin.on("error", onParentGone);
+process.stdin.resume();
+`;
+function watchdogCommand(launch, appServerArgs, { graceMs, files, recordDir }) {
+  const config2 = {
+    graceMs,
+    files: files.filter((file) => typeof file === "string" && file),
+    recordDir
+  };
+  return {
+    command: process.execPath,
+    args: ["-e", APP_SERVER_WATCHDOG_SOURCE, "--", JSON.stringify(config2), launch.command, ...launch.args, ...appServerArgs]
+  };
+}
+
 // src/codex/app-server-client.js
 var DEFAULT_REQUEST_TIMEOUT_MS = 3e4;
 var DEFAULT_STARTUP_TIMEOUT_MS = 15e3;
@@ -21878,13 +21939,20 @@ var CodexAppServerClient = class {
       endpoint.readyUrl = `http://127.0.0.1:${port}/readyz`;
       delete endpoint.pendingPort;
     }
-    const child = spawn(launch.command, [...launch.args, "--listen", endpoint.listen, ...endpoint.args], {
-      stdio: ["ignore", "pipe", "pipe"],
+    const watched = watchdogCommand(launch, ["--listen", endpoint.listen, ...endpoint.args], {
+      graceMs: this.options.killGraceMs,
+      files: [endpoint.socketPath, endpoint.tokenFile],
+      recordDir: this.stateDir()
+    });
+    const child = spawn(watched.command, watched.args, {
+      stdio: ["pipe", "pipe", "pipe"],
       detached: true,
       env: {
         ...managedAppServerEnv(process.env),
         CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "Codex Agent Link"
       }
+    });
+    child.stdin.on("error", () => {
     });
     child.__agentLinkEndpoint = endpoint;
     this.managedSpawnCount += 1;
@@ -21919,6 +21987,9 @@ var CodexAppServerClient = class {
       if (!unexpected) {
         return;
       }
+      if (child.pid) {
+        signalProcessGroup(child, "SIGKILL", { groupOnly: true });
+      }
       if (this.managedProcessExitCleanup) {
         process.removeListener("exit", this.managedProcessExitCleanup);
         this.managedProcessExitCleanup = null;
@@ -21950,6 +22021,9 @@ var CodexAppServerClient = class {
     const checkAbort = () => {
       if (spawnError) {
         return tagged(spawnError, spawnError.code === "ENOENT" ? "codex-binary-not-found" : "spawn-failed");
+      }
+      if (child.exitCode === 127 || child.exitCode === 126) {
+        return tagged(new Error(`app-server could not be executed (exit ${child.exitCode})`), child.exitCode === 127 ? "codex-binary-not-found" : "spawn-failed");
       }
       if (child.exitCode !== null || child.signalCode !== null) {
         return tagged(
@@ -22033,6 +22107,7 @@ var CodexAppServerClient = class {
     }
     removeManagedRecord(child.__agentLinkRecordPath);
     removeEndpointFiles(child.__agentLinkEndpoint);
+    child.stdin?.destroy();
     child.stdout?.destroy();
     child.stderr?.destroy();
     child.unref();
