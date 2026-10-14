@@ -163,6 +163,9 @@ export function scanTree(dir, { homeDir = os.homedir() } = {}) {
       for (const m of line.matchAll(DASH_HOME_PATH)) {
         if (!SYNTHETIC_USERS.has(m[1])) problems.push(`${at}: encoded home path ${m[0]}`);
       }
+      // Test fixtures carry synthetic session-shaped ids with no home prefix;
+      // their real-path leaks are caught by the home-path checks above.
+      if (entry.rel.startsWith("tests/")) continue;
       for (const m of line.matchAll(SESSION_PATH)) {
         const before = line.slice(Math.max(0, m.index - 80), m.index);
         const synthetic = /(?:\/(?:Users|home)\/(?:example|x|me|someone|user)|-Users-(?:example|x|me|someone)-[^\s"']*)\/?$/.test(before) || /~\/$/.test(before);
