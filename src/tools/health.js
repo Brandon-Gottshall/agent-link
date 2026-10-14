@@ -35,7 +35,7 @@ export const healthTool = {
     providers: out("object", "{claude: {available, reason, searched}, codex: {available, reason, searched}}. list_agents and resolve_agent read both providers on either host; reading Codex threads may start a managed Codex app-server when Codex is installed and autoStartEnabled is true."),
     stateDir: out("object", "{path, source, exists}: where Agent Link keeps its files."),
     env: out("object", "{deprecated: [{name, canonical}], conflicts: [{canonical, winner, ignored}]}: legacy environment variable names in use (names only, never values)."),
-    legacyState: out("object", "{files: [{kind, path, modifiedAt, writtenAfterMigration}], migration, stillWritten, warning}: pre-0.5 state files still present."),
+    legacyState: out("object", "{files: [{kind, path, modifiedAt, writtenAfterMigration, writtenRecently}], migration, stillWritten, lastWrittenAfterMigrationAt, warning, note}: pre-0.5 state files still present. stillWritten/warning only for a post-migration write in the last 24 hours; an older one gives a note."),
     reminders: out("object", "{limit, intervalMs, codexTurns, warnings}: re-surfacing of open reply/action messages (AGENT_LINK_REMINDER_LIMIT, AGENT_LINK_REMINDER_INTERVAL_MS, AGENT_LINK_CODEX_REMINDERS, on by default). warnings lists settings that were ignored."),
     recentEvents: out("array", "Recent log events (most recent last). Stack traces and process output are redacted."),
     codex: out("object", "Codex install: {available, path, source, version, versionProbed, searched, reason, usedForManagedAppServer, overrideCosts, desktopPush}. overrideCosts: {measured, codexVersion, measuredAt, effortChange, modelSwitch, cwdChange, forkSameModel, forkOtherModel (each {cachedShare: [rep1, rep2], cacheNeutral}), compactForkAutoFraction, installedVersion, warning}: the measured prompt-cache effect of overrides and forks (B7 spike, R9.12) and the Codex version it was measured on; warning when the installed version differs, also added to the result's warnings[] (code override_costs_version_mismatch). desktopPush: {mode: mailbox-only|shared-daemon, source, refused, verifiedCodexVersion, installedCodexVersion, heldSignal, turnCompletedMethod, warnings, rolloutChecks: {checked, held, skipped: {<reason>: count}}} (R1.12a): in mailbox-only mode (the B7 spike's result) a thread not loaded in Agent Link's own app-server is treated as held by the Codex desktop app and gets mail by inbox only; warnings name a Codex version that differs from the verified one, and a refused shared-daemon setting (it needs an explicit AGENT_LINK_CODEX_URL or AGENT_LINK_CODEX_SOCK). Also promptHook: {declared, hooksFile, event, trust: trusted|untrusted|modified|managed|not_installed|unknown, trustSource, enabled, pluginId, hint} (R1.14): whether this package declares the Codex UserPromptSubmit hook that tells desktop-held threads they have mail, and the trust state Codex reports through hooks/list when the app-server is connected (otherwise unknown)."),
@@ -145,7 +145,7 @@ export function healthExtras({ codex = {}, source = process.env } = {}) {
   try {
     legacyState = { ...legacyStateReport({ env: source }) };
   } catch (error) {
-    legacyState = { files: [], migration: null, stillWritten: false, warning: null, error: messageOf(error) };
+    legacyState = { files: [], migration: null, stillWritten: false, lastWrittenAfterMigrationAt: null, warning: null, note: null, error: messageOf(error) };
   }
 
   const claudeDir = claudeConfigDir({ env: source });

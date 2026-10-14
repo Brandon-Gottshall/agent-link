@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { LEGACY_STILL_WRITTEN_WARNING, legacyStateReport } from "../../src/shared/legacy-state.js";
+import { LEGACY_ACTIVE_WINDOW_MS, LEGACY_STILL_WRITTEN_WARNING, legacyStateReport } from "../../src/shared/legacy-state.js";
 import { redactEvents } from "../../src/tools/health.js";
 import { reapOrphanedManagedAppServers } from "../../src/codex/app-server-client.js";
 
@@ -16,7 +16,7 @@ const options = { env, homedir: home };
 try {
   // Nothing on disk: no files, no migration record, nothing created.
   let report = legacyStateReport(options);
-  assert.deepEqual(report, { files: [], migration: null, stillWritten: false, warning: null });
+  assert.deepEqual(report, { files: [], migration: null, stillWritten: false, lastWrittenAfterMigrationAt: null, warning: null, note: null });
   assert.equal(fs.existsSync(path.join(home, ".agent-link")), false, "health never creates the state dir");
 
   // Legacy files present, no migration record yet: reported, writtenAfterMigration unknown.
@@ -51,6 +51,24 @@ try {
   assert.equal(report.stillWritten, true);
   assert.equal(report.warning, LEGACY_STILL_WRITTEN_WARNING);
   assert.match(report.warning, /Upgrade the plugin in every harness/);
+  assert.equal(report.note, null);
+
+  // The same post-migration write, seen more than LEGACY_ACTIVE_WINDOW_MS
+  // later: a copy wrote once and has since gone quiet, so it is a note, not a
+  // warning that would otherwise stay on forever.
+  const writtenAt = fs.statSync(legacyMailbox).mtimeMs;
+  report = legacyStateReport({ ...options, now: writtenAt + LEGACY_ACTIVE_WINDOW_MS + 60_000 });
+  const quiet = report.files.find((file) => file.kind === "mailbox");
+  assert.equal(quiet.writtenAfterMigration, true, "the fact of the post-migration write is kept");
+  assert.equal(quiet.writtenRecently, false);
+  assert.equal(report.stillWritten, false);
+  assert.equal(report.warning, null);
+  assert.equal(report.lastWrittenAfterMigrationAt, new Date(writtenAt).toISOString());
+  assert.match(report.note, /more than 24 hours ago/);
+  // Just inside the window it is still a warning.
+  report = legacyStateReport({ ...options, now: writtenAt + LEGACY_ACTIVE_WINDOW_MS - 60_000 });
+  assert.equal(report.stillWritten, true);
+  assert.equal(report.note, null);
 
   // Review I2: this version reaping a stale record in the legacy managed
   // app-server directory (which bumps the directory's mtime) is not "still

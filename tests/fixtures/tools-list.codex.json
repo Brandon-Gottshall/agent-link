@@ -121,7 +121,7 @@
         },
         "legacyState": {
           "type": "object",
-          "description": "{files: [{kind, path, modifiedAt, writtenAfterMigration}], migration, stillWritten, warning}: pre-0.5 state files still present."
+          "description": "{files: [{kind, path, modifiedAt, writtenAfterMigration, writtenRecently}], migration, stillWritten, lastWrittenAfterMigrationAt, warning, note}: pre-0.5 state files still present. stillWritten/warning only for a post-migration write in the last 24 hours; an older one gives a note."
         },
         "reminders": {
           "type": "object",

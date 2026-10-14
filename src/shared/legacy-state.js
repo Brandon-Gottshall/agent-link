@@ -3,8 +3,10 @@
 // health.legacyState (design doc R4.7): which pre-0.5 state files still
 // exist, when each was last modified, and whether one changed after
 // ~/.agent-link/migration.json was written, which means an older plugin copy
-// is still running somewhere and writing to the old location. Read-only:
-// never creates the state directory.
+// ran somewhere and wrote to the old location. Only a recent such write (within
+// LEGACY_ACTIVE_WINDOW_MS) means one is still running; an older one is reported
+// as a note, because the mtime comparison alone stays true forever once any old
+// copy has written once. Read-only: never creates the state directory.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -21,18 +23,31 @@ import {
  * @property {string} path
  * @property {string | null} modifiedAt          ISO 8601
  * @property {boolean | null} writtenAfterMigration   null when there is no migration record
+ * @property {boolean | null} writtenRecently   written after the migration and within LEGACY_ACTIVE_WINDOW_MS
  */
 
 /**
  * @typedef {object} LegacyStateReport
  * @property {LegacyFile[]} files
  * @property {{path: string, at: string | null, version: string | null, from: string[]} | null} migration
- * @property {boolean} stillWritten
+ * @property {boolean} stillWritten          a legacy file was written after the migration within LEGACY_ACTIVE_WINDOW_MS
+ * @property {string | null} lastWrittenAfterMigrationAt   ISO 8601 of the newest post-migration legacy write
  * @property {string | null} warning
+ * @property {string | null} note            post-migration writes exist but none is recent
  */
+
+/** A legacy write newer than this means an older plugin copy is still running. */
+export const LEGACY_ACTIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export const LEGACY_STILL_WRITTEN_WARNING =
   "A legacy Agent Link state file changed after the migration to ~/.agent-link: an older plugin copy is still running. Upgrade the plugin in every harness and restart its sessions.";
+
+/**
+ * @param {string} at   ISO 8601
+ */
+export function legacyQuietNote(at) {
+  return `A legacy Agent Link state file was last written after the migration at ${at}, more than 24 hours ago. No older plugin copy appears to be running now.`;
+}
 
 /**
  * @param {string} file
@@ -87,10 +102,11 @@ function readMigration(options) {
 }
 
 /**
- * @param {import("./paths.js").PathOptions} [options]
+ * @param {import("./paths.js").PathOptions & {now?: number}} [options]   `now` (ms) is for tests
  * @returns {LegacyStateReport}
  */
 export function legacyStateReport(options = {}) {
+  const now = options.now ?? Date.now();
   const migration = readMigration(options);
   const migratedAt = migration?.at ? Date.parse(migration.at) : NaN;
   /** @type {[LegacyFile["kind"], string][]} */
@@ -109,18 +125,28 @@ export function legacyStateReport(options = {}) {
     // own mtimes count: a record newer than the migration was written by a
     // 0.4.x server.
     const mtimeMs = kind === "managedAppServers" ? newestRecordMtimeMs(file) : stat.mtimeMs;
+    const writtenAfterMigration = Number.isFinite(migratedAt) && mtimeMs !== null ? mtimeMs > migratedAt : null;
     files.push({
       kind,
       path: file,
       modifiedAt: mtimeMs === null ? null : new Date(mtimeMs).toISOString(),
-      writtenAfterMigration: Number.isFinite(migratedAt) && mtimeMs !== null ? mtimeMs > migratedAt : null
+      writtenAfterMigration,
+      writtenRecently: writtenAfterMigration === null ? null : writtenAfterMigration && now - /** @type {number} */ (mtimeMs) <= LEGACY_ACTIVE_WINDOW_MS
     });
   }
-  const stillWritten = files.some((file) => file.writtenAfterMigration === true);
+  const stillWritten = files.some((file) => file.writtenRecently === true);
+  const lastWrittenAfterMigrationAt =
+    files
+      .filter((file) => file.writtenAfterMigration === true && file.modifiedAt !== null)
+      .map((file) => /** @type {string} */ (file.modifiedAt))
+      .sort()
+      .at(-1) ?? null;
   return {
     files,
     migration,
     stillWritten,
-    warning: stillWritten ? LEGACY_STILL_WRITTEN_WARNING : null
+    lastWrittenAfterMigrationAt,
+    warning: stillWritten ? LEGACY_STILL_WRITTEN_WARNING : null,
+    note: !stillWritten && lastWrittenAfterMigrationAt ? legacyQuietNote(lastWrittenAfterMigrationAt) : null
   };
 }

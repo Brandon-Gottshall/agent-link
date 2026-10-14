@@ -203,7 +203,9 @@
           "files": [],
           "migration": null,
           "stillWritten": false,
-          "warning": null
+          "lastWrittenAfterMigrationAt": null,
+          "warning": null,
+          "note": null
         },
         "reminders": {
           "limit": 3,
@@ -446,7 +448,9 @@
           "files": [],
           "migration": null,
           "stillWritten": false,
-          "warning": null
+          "lastWrittenAfterMigrationAt": null,
+          "warning": null,
+          "note": null
         },
         "reminders": {
           "limit": 3,
@@ -733,7 +737,9 @@
           "files": [],
           "migration": null,
           "stillWritten": false,
-          "warning": null
+          "lastWrittenAfterMigrationAt": null,
+          "warning": null,
+          "note": null
         },
         "reminders": {
           "limit": 3,
@@ -10255,7 +10261,9 @@
           "files": [],
           "migration": null,
           "stillWritten": false,
-          "warning": null
+          "lastWrittenAfterMigrationAt": null,
+          "warning": null,
+          "note": null
         },
         "reminders": {
           "limit": 3,
@@ -12434,7 +12442,9 @@
           "files": [],
           "migration": null,
           "stillWritten": false,
-          "warning": null
+          "lastWrittenAfterMigrationAt": null,
+          "warning": null,
+          "note": null
         },
         "reminders": {
           "limit": 3,
