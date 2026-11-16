@@ -57,11 +57,13 @@ import { parseAddress } from "../shared/identity.js";
  * @property {JsonSchema} inputSchema
  * @property {Record<string, JsonSchema>} output   success payload keys (the envelope keys are added)
  * @property {ToolAnnotations} annotations
+ * @property {number} [protocolVersion] strict, versioned tool API
  * @property {RemovedArgument[]} [removedArguments]   hint table for arguments removed in 0.6.0
  */
 
 /**
  * @typedef {object} ToolContext
+ * @property {string | null} [desktopSession]   host-injected session transport metadata
  * @property {unknown} [callerContext]           runtime caller context from MCP _meta
  * @property {(warning: Warning) => void} warn    adds a warnings[] entry to the result
  */
@@ -164,7 +166,7 @@ export function createRegistry(entries, options = {}) {
    * Runs one tool and returns the section 3.1 envelope.
    * @param {string} name
    * @param {unknown} rawArgs
-   * @param {{callerContext?: unknown}} [context]
+   * @param {{callerContext?: unknown, desktopSession?: string | null}} [context]
    * @returns {Promise<Record<string, any>>}
    */
   async function invoke(name, rawArgs, context = {}) {
@@ -180,7 +182,8 @@ export function createRegistry(entries, options = {}) {
       }
       // null for an optional property means "not set"; exact-format scalar
       // strings are read as their type with a coerced_argument warning.
-      const args = normalizeArguments(found.tool.inputSchema, rawArgs === undefined || rawArgs === null ? {} : rawArgs, warnings);
+      const supplied = rawArgs ?? {};
+      const args = found.entry.definition.protocolVersion ? supplied : normalizeArguments(found.tool.inputSchema, supplied, warnings);
       const problems = validateSchema(found.tool.inputSchema, args);
       if (problems.length > 0) {
         const removed = removedArgumentHint(found.entry.definition, problems);
@@ -192,11 +195,13 @@ export function createRegistry(entries, options = {}) {
       const resolved = normalizeThreadIdArguments(found.entry.definition, /** @type {Record<string, any>} */ (args));
       const payload = await found.entry.handler(resolved, {
         callerContext: context.callerContext ?? null,
+        desktopSession: context.desktopSession ?? null,
         warn: (warning) => warnings.push(warning)
       });
       return successEnvelope(payload, warnings);
     } catch (error) {
-      return failureEnvelope(error, name);
+      const version = found?.entry.definition.protocolVersion;
+      return { ...failureEnvelope(error, name), ...(version ? { protocol_version: version } : {}) };
     }
   }
 
@@ -204,7 +209,7 @@ export function createRegistry(entries, options = {}) {
    * Runs one tool and returns the MCP CallToolResult.
    * @param {string} name
    * @param {unknown} rawArgs
-   * @param {{callerContext?: unknown}} [context]
+   * @param {{callerContext?: unknown, desktopSession?: string | null}} [context]
    * @returns {Promise<McpCallResult>}
    */
   async function callTool(name, rawArgs, context = {}) {

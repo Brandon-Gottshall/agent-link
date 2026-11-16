@@ -1,6 +1,6 @@
 # Protocol and enrollment · version 1
 
-Every method requires integer protocol_version 1 and rejects unknown fields. On success return {ok, protocol_version, result}; errors carry code and user-readable recovery. Mutations carry immutable request IDs and are deduplicated by principal and ticket (owner controls by control request ID). Canonical payload digests reject conflicting reuse. A receipt records the disposition at that time; status is current.
+Every method requires integer protocol_version 1 and rejects unknown fields. On success return {ok, protocol_version, result}; errors carry code and user-readable recovery. Agent Link MCP maps reserved-screen errors to its existing envelope and includes the precise desktop code in error.details.desktop_code. Mutations carry immutable request IDs and are deduplicated by principal and ticket (owner controls by control request ID). Canonical payload digests reject conflicting reuse. A receipt records the disposition at that time; status is current.
 
 | Desktop tool suffix | Inputs in addition to protocol_version | Scope and result |
 |---|---|---|
@@ -8,7 +8,7 @@ Every method requires integer protocol_version 1 and rejects unknown fields. On 
 | submit | request_id, title, scope_id, start_deadline, capacity_claim_id, capacity_claim_start_by | Scoped task grant plus validated claim; durable ticket, eligibility and next action |
 | status | ticket_id | Own ticket or explicit observer; task, authority, delivery, effect and handover |
 | claim | request_id, ticket_id | First eligible ticket; lease, epoch and expiry if admitted |
-| heartbeat | ticket_id, lease_id, epoch | Live-holder proof; renewed expiry. Cannot mint authority |
+| heartbeat | request_id, ticket_id, lease_id, epoch | Live-holder proof; renewed expiry. Cannot mint authority |
 | observe | ticket_id, lease_id, epoch, scope_id | Current read scope; redacted tree, scoped refs and snapshot |
 | act | request_id, ticket_id, lease_id, epoch, snapshot_id, ref, operation, allowed value | Current effect grant; intent before issuance, delivery and effect state |
 | verify | ticket_id, action_id, scope_id | Fresh separately authorized observation and known/unknown outcome. No action replay |
@@ -20,3 +20,5 @@ Epoch milliseconds express deadlines; 30-second heartbeats and 90-second expiry 
 The installation/controller uses a mode-0600 local secret and a private socket. The broker binds the actual socket peer and inspected host ancestor to process start identities and a server-issued principal. Controller attestation ties that binding to a verified loaded Claude/Codex session and explicitly grants task, read and effect scope. Missing reliable session evidence holds enrollment. Grants live on the enrolled connection and are unavailable to the model; MCP labels, peer-supplied IDs and ordinary task fields carry no authority. A disconnect may make the grant unusable immediately, while the task's authority settles only on confirmed loss, expiry or revoke. Expose stop, reclaim, restore and cancel for the separately authenticated GUI Queue/controller; stop never trusts a displayed lease epoch.
 
 This is a cooperative same-user boundary. Local credentials and the operator path do not establish protection from a hostile shell running as the same macOS user.
+
+[Controller setup, records and command reference](../../operations/reserved-screen.md).

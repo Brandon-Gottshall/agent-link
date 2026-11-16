@@ -1,7 +1,7 @@
 schema_version: 1
 product: Agent Link
 increment: reserved-screen-v1
-gate: G2
+gate: G4
 decision: accepted
 capability: defined
 delivery: not_merged
@@ -15,3 +15,12 @@ verification:
 evidence:
   - docs/specifications/reserved-screen-v1.md
   - product/DECISION-LOG.md
+current_candidate:
+  backend: implemented
+  gui_queue: pending
+  loaded_harness_adoption: pending
+  legacy_cutover: pending
+  evidence:
+    - docs/operations/reserved-screen.md
+    - tests/desktop/broker.test.js
+    - tests/desktop/adapters.test.js

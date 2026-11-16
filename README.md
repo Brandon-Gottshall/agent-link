@@ -4,6 +4,12 @@ Agent Link is an MCP plugin that lets one AI agent find, read, message, and wait
 
 > **Status: preview.** macOS only. Single-user, local trust model (see [Trust model](#trust-model)). The tool API may change between minor versions until 1.0.
 
+## Reserved-screen Computer Use
+
+Claude and Codex use the same `desktop_*` tools for controlled local project previews and owned documents. Begin with `desktop_capabilities` using `protocol_version: 1`. It lists your granted scope, supported operations and current capacity reference. Submit, read ticket status, and claim when eligible. Observe the exact window, use the returned references for one operation at a time, verify effects, and release. GUI Queue shows the turn and lets the owner stop or reclaim it.
+
+Use the broker for this desktop workflow. If enrollment, capacity or exact scope is missing, surface the returned blocker to the responsible controller. Antechamber still owns authenticated browser work. See the [controller setup and recovery guide](docs/operations/reserved-screen.md).
+
 ## What it's for
 
 If you run several coding agents at once, say a Claude Code session refactoring a library and a Codex thread updating the app that uses it, they can't see each other. You end up copying messages between windows. Agent Link gives each agent tools to list the other sessions on your machine, read their status, send them a message, and wait for the answer. Typical uses: asking another agent a question about work it owns, handing off a task, or asking to be called back when a dependency is ready. Everything stays on your machine.
@@ -194,6 +200,18 @@ approval_mode = "approve"
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.check_coordination_obligations]
 approval_mode = "approve"
 
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.desktop_capabilities]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.desktop_observe]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.desktop_status]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.desktop_verify]
+approval_mode = "approve"
+
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.get_agent_link_message_status]
 approval_mode = "approve"
 
@@ -266,6 +284,24 @@ approval_mode = "approve"
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.archive_codex_thread]
 approval_mode = "approve"
 
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.desktop_act]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.desktop_cancel]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.desktop_claim]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.desktop_heartbeat]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.desktop_release]
+approval_mode = "approve"
+
+[plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.desktop_submit]
+approval_mode = "approve"
+
 [plugins."codex-agent-link@agent-link".mcp_servers.codex-agent-link.tools.fork_codex_thread]
 approval_mode = "approve"
 
@@ -323,7 +359,7 @@ Ask the agent to call `agent_link_health`. It reports the detected host, the age
 npm run install:live -- --target <plugin-folder> [--tag vX.Y.Z]
 ```
 
-The script refuses, and changes nothing, unless the checkout has no uncommitted tracked changes and the tag (default: the newest `vX.Y.Z` tag on `origin`) is a release tag whose commit is the same locally and on `origin`, is reachable from `origin/main`, and whose `package.json` carries the same version. It exports that commit's tracked files with `git archive`, checks that `dist/server.mjs` is present and matches the version, and checks that the export holds no `.git`, `.worktrees`, or `wf-runs`, and no local home paths, session or thread ids, or machine-specific paths. It writes `.agent-link-install.json` (tag, commit, dist hash, install time).
+The installer requires the clean primary checkout on `main` at the exact `origin/main` commit, with neither tracked edits nor untracked files. The chosen release tag (newest `vX.Y.Z` on `origin` by default) must name that exact commit locally and on `origin`. The tagged `package.json` must carry the matching version. It exports that commit's tracked files with `git archive`, checks that `dist/server.mjs` is present and matches the version, and checks that the export holds no `.git`, `.worktrees`, or `wf-runs`, and no local home paths, session or thread ids, or machine-specific paths. It writes `.agent-link-install.json` (tag, commit, dist hash, install time).
 
 It then swaps the folder in with two renames on the same volume. This is not atomic: `<plugin-folder>` is renamed to `<plugin-folder>.prev-<UTC timestamp>`, so for a moment `<plugin-folder>` does not exist, then the export is renamed into place. If the second rename fails, the first is undone. The script keeps one `.prev-*` folder and removes older ones, with one exception: a `.prev-*` folder that is a git checkout (the first install over an existing clone) is never deleted automatically, so a later install leaves it in place and tells you to remove it yourself. It also removes stale `<plugin-folder>.staging-*` leftovers from earlier killed runs.
 

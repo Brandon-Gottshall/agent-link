@@ -19,6 +19,8 @@
  * @property {number} [minimum]
  * @property {number} [maximum]
  * @property {number} [minLength]
+ * @property {number} [maxLength]
+ * @property {string} [pattern]
  * @property {number} [minItems]
  * @property {number} [maxItems]
  * @property {string} [description]

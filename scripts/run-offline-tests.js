@@ -91,6 +91,8 @@ const groups = {
     "scripts/mcp-smoke-test.js"
   ],
   server: [
+    "tests/desktop/adapters.test.js",
+    "tests/desktop/broker.test.js",
     "tests/server/guard-imports.test.js",
     "tests/server/registry.test.js",
     "tests/server/removed-arguments.test.js",

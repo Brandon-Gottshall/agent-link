@@ -14,7 +14,7 @@
 // back.
 //
 // It refuses (exit 1, nothing changed) unless the repo it runs from is clean,
-// the tag is a vX.Y.Z release tag reachable from origin/main, and package.json
+// the tag is a vX.Y.Z release tag at the exact clean origin/main HEAD, and package.json
 // at the tag carries that version. It never runs the host-side steps; it prints
 // them.
 import { execFileSync, spawnSync } from "node:child_process";
@@ -140,10 +140,18 @@ function remoteTags(cwd, name) {
  * @returns {{ tag: string, commit: string, version: string }}
  */
 export function checkRelease({ tag, fetch }, cwd = repoRoot) {
-  const dirty = git(["status", "--porcelain", "--untracked-files=no"], { cwd }).trim();
-  if (dirty) throw new Refusal(`The repo has uncommitted tracked changes; commit or discard them first:\n${dirty}`);
+  const dirty = git(["status", "--porcelain", "--untracked-files=normal"], { cwd }).trim();
+  if (dirty) throw new Refusal(`The repo has uncommitted tracked changes or untracked files; commit or discard them first:\n${dirty}`);
 
   if (fetch) git(["fetch", "origin"], { cwd });
+  const head = git(["rev-parse", "HEAD"], { cwd }).trim();
+  const upstreamMain = git(["rev-parse", "--verify", "refs/remotes/origin/main^{commit}"], { cwd }).trim();
+  const branch = spawnSync("git", ["symbolic-ref", "--quiet", "--short", "HEAD"], { cwd, encoding: "utf8" }).stdout.trim();
+  const gitDir = realOrSelf(git(["rev-parse", "--path-format=absolute", "--git-dir"], { cwd }).trim());
+  const commonDir = realOrSelf(git(["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd }).trim());
+  if (head !== upstreamMain || branch !== "main" || gitDir !== commonDir) {
+    throw new Refusal("Live install requires the clean main checkout at the exact origin/main commit.");
+  }
 
   let chosen = tag;
   if (!chosen) {
@@ -170,6 +178,10 @@ export function checkRelease({ tag, fetch }, cwd = repoRoot) {
   const reachable = spawnSync("git", ["merge-base", "--is-ancestor", commit, "refs/remotes/origin/main"], { cwd });
   if (reachable.status !== 0) {
     throw new Refusal(`${chosen} (${commit.slice(0, 12)}) is not reachable from origin/main${fetch ? "" : " (checked without a fetch)"}.`);
+  }
+
+  if (commit !== upstreamMain) {
+    throw new Refusal(`${chosen} is reachable history but does not point at the exact origin/main commit.`);
   }
 
   // From here on the commit sha is used, never the tag name.
@@ -411,7 +423,7 @@ export function run(argv, { cwd = repoRoot, out = (line) => process.stdout.write
     const marker = { tag: release.tag, commit: release.commit, distSha256: dist.sha256, installedAt: new Date().toISOString() };
     const fileCount = walk(staging).filter((entry) => entry.isFile).length;
 
-    out(`Release:   ${release.tag} (${release.commit.slice(0, 12)}), reachable from origin/main, package.json ${release.version}`);
+    out(`Release:   ${release.tag} (${release.commit.slice(0, 12)}), exact clean origin/main, package.json ${release.version}`);
     out(`Export:    ${fileCount} tracked files; dist/server.mjs sha256 ${dist.sha256.slice(0, 16)}...`);
     out("Verified:  no .git, .worktrees or wf-runs; no absolute home paths or session-id paths");
     if (existing) {
@@ -421,6 +433,10 @@ export function run(argv, { cwd = repoRoot, out = (line) => process.stdout.write
       out(`Target:    ${target} does not exist`);
       out("Plan:      rename the export into place (a single rename)");
     }
+    if (fs.existsSync(path.join(staging, "scripts", "reserved-screen.mjs"))) {
+      out("Plan:      reserved-screen host and pinned Vercel artifacts are staged separately under private Agent Link state.");
+      out("           The controller initializes or upgrades the closed broker, binds and verifies the selected display, then enrolls verified loaded sessions.");
+    }
     out("Plan:      keep one .prev-* folder (older ones removed; a .prev-* git checkout is never removed)");
     if (stale.length) out(`Plan:      ${args.dryRun ? "remove" : "removed"} ${stale.length} stale ${path.basename(target)}.staging-* leftover(s) from earlier runs`);
 
@@ -429,6 +445,8 @@ export function run(argv, { cwd = repoRoot, out = (line) => process.stdout.write
       return;
     }
 
+    const checked = checkRelease({ tag: release.tag, fetch: false }, cwd);
+    if (checked.commit !== release.commit) throw new Refusal("Release identity changed before promotion.");
     fs.writeFileSync(path.join(staging, MARKER_NAME), `${JSON.stringify(marker, null, 2)}\n`);
     const prev = swapIn({ target, staging });
     const pruned = prunePrev(target, prev);
