@@ -1,0 +1,17 @@
+schema_version: 1
+product: Agent Link
+increment: reserved-screen-v1
+gate: G2
+decision: accepted
+capability: defined
+delivery: not_merged
+disposition: active
+verification:
+  logic: unrun
+  regression: unrun
+  workflow: unrun
+  audition: unrun
+  live: unrun
+evidence:
+  - docs/specifications/reserved-screen-v1.md
+  - product/DECISION-LOG.md
