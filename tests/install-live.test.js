@@ -147,6 +147,24 @@ test("refuses a dirty work tree and changes nothing", () => {
   });
 });
 
+test("refuses an untracked file and an exact-SHA branch checkout", () => {
+  const repo = makeRepo();
+  withRepo(repo, () => {
+    const scratch = path.join(repo.work, "untracked.txt");
+    writeFileSync(scratch, "untracked\n");
+    const dirty = repo.install(["--target", repo.target]);
+    assert.notEqual(dirty.status, 0);
+    assert.match(dirty.stderr, /untracked files/);
+    rmSync(scratch);
+
+    git(repo.work, ["checkout", "-b", "side"]);
+    const branch = repo.install(["--target", repo.target]);
+    assert.notEqual(branch.status, 0);
+    assert.match(branch.stderr, /clean main checkout at the exact origin\/main commit/);
+    assert.equal(existsSync(repo.target), false);
+  });
+});
+
 test("refuses a tag that is not a vX.Y.Z release tag", () => {
   const repo = makeRepo();
   withRepo(repo, () => {
@@ -303,7 +321,7 @@ test("exports a clean tree with the dist, a marker, and no leaked paths", () => 
   });
 });
 
-test("the default tag is the newest vX.Y.Z tag, ignoring pre-release tags", () => {
+test("the default tag ignores pre-release tags and refuses a tag behind main", () => {
   const repo = makeRepo();
   withRepo(repo, () => {
     repo.write("1.2.10");
@@ -314,19 +332,14 @@ test("the default tag is the newest vX.Y.Z tag, ignoring pre-release tags", () =
     repo.tag("v2.0.0-rc1");
     repo.push();
     const result = repo.install(["--target", repo.target]);
-    assert.equal(result.status, 0, result.stderr);
-    assert.equal(JSON.parse(readFileSync(path.join(repo.target, MARKER_NAME), "utf8")).tag, "v1.2.10");
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /does not point at the exact origin\/main commit/);
   });
 });
 
 test("swaps in two renames and keeps exactly one .prev", () => {
   const repo = makeRepo();
   withRepo(repo, () => {
-    repo.write("1.2.4");
-    repo.commit("1.2.4");
-    repo.tag("v1.2.4");
-    repo.push();
-
     mkdirSync(repo.target);
     writeFileSync(path.join(repo.target, "old.txt"), "old install\n");
 
@@ -335,6 +348,10 @@ test("swaps in two renames and keeps exactly one .prev", () => {
     assert.equal(readFileSync(path.join(repo.target, "README.md"), "utf8"), "readme 1.2.3\n");
     assert.equal(readFileSync(path.join(path.dirname(repo.target), repo.prevs()[0], "old.txt"), "utf8"), "old install\n");
 
+    repo.write("1.2.4");
+    repo.commit("1.2.4");
+    repo.tag("v1.2.4");
+    repo.push();
     assert.equal(repo.install(["--target", repo.target, "--tag", "v1.2.4"]).status, 0);
     assert.equal(repo.prevs().length, 1, "older .prev removed");
     assert.equal(readFileSync(path.join(repo.target, "README.md"), "utf8"), "readme 1.2.4\n");
@@ -342,7 +359,9 @@ test("swaps in two renames and keeps exactly one .prev", () => {
     assert.equal(readFileSync(path.join(prevDir, "README.md"), "utf8"), "readme 1.2.3\n", "the .prev is the install it replaced");
     assert.match(repo.prevs()[0], /^agent-link\.prev-\d{8}T\d{6}Z/);
 
-    assert.equal(repo.install(["--target", repo.target, "--tag", "v1.2.3"]).status, 0);
+    const stale = repo.install(["--target", repo.target, "--tag", "v1.2.3"]);
+    assert.notEqual(stale.status, 0);
+    assert.match(stale.stderr, /does not point at the exact origin\/main commit/);
     assert.equal(repo.prevs().length, 1);
     assert.deepEqual(repo.siblings().filter((name) => !name.startsWith("agent-link.prev-")), ["agent-link"]);
   });
@@ -489,8 +508,8 @@ test("with a fetch, origin decides the default tag; without one, local tags do",
     git(repo.work, ["push", "origin", "main"]);
 
     const fetched = repo.install(["--target", repo.target], { fetch: true });
-    assert.equal(fetched.status, 0, fetched.stderr);
-    assert.equal(JSON.parse(readFileSync(path.join(repo.target, MARKER_NAME), "utf8")).tag, "v1.2.3");
+    assert.notEqual(fetched.status, 0);
+    assert.match(fetched.stderr, /does not point at the exact origin\/main commit/);
 
     const local = repo.install(["--target", repo.target]);
     assert.equal(local.status, 0, local.stderr);
@@ -516,17 +535,16 @@ test("with a fetch, a local tag that points elsewhere than origin's is refused",
   });
 });
 
-test("installs the tag's commit even when HEAD and the tag's package.json have moved on", () => {
+test("refuses historical tags when clean main has advanced", () => {
   const repo = makeRepo();
   withRepo(repo, () => {
     repo.write("9.9.9", { "later.txt": "after the release\n" });
     repo.commit("main moved on");
     git(repo.work, ["push", "origin", "main"]);
     const result = repo.install(["--target", repo.target, "--tag", "v1.2.3"], { fetch: true });
-    assert.equal(result.status, 0, result.stderr);
-    assert.equal(existsSync(path.join(repo.target, "later.txt")), false);
-    assert.equal(readFileSync(path.join(repo.target, "README.md"), "utf8"), "readme 1.2.3\n");
-    assert.equal(JSON.parse(readFileSync(path.join(repo.target, MARKER_NAME), "utf8")).commit, git(repo.work, ["rev-parse", "v1.2.3^{commit}"]));
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /does not point at the exact origin\/main commit/);
+    assert.equal(existsSync(repo.target), false);
   });
 });
 

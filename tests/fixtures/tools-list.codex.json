@@ -7351,5 +7351,1410 @@
       "readOnlyHint": true,
       "openWorldHint": false
     }
+  },
+  {
+    "name": "desktop_capabilities",
+    "description": "Discover the shared reserved-screen queue, your qualified scopes and capacity claims.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "type": "integer",
+          "enum": [
+            1
+          ],
+          "description": "Reserved-screen protocol version. Use 1."
+        }
+      },
+      "required": [
+        "protocol_version"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "true on success, false on failure; isError is set exactly when this is false."
+        },
+        "error": {
+          "type": "object",
+          "description": "Present only when ok is false.",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "invalid_arguments",
+                "unknown_tool",
+                "not_found",
+                "ambiguous",
+                "archived",
+                "wrong_recipient",
+                "already_resolved",
+                "no_current_session",
+                "body_too_large",
+                "permission_denied",
+                "active_turn_conflict",
+                "codex_unavailable",
+                "claude_unavailable",
+                "upstream_error",
+                "unsupported",
+                "state_io_error",
+                "internal_error"
+              ],
+              "description": "Stable error code (design doc section 3.2)."
+            },
+            "message": {
+              "type": "string",
+              "description": "Human-readable description of the failure."
+            },
+            "details": {
+              "type": "object",
+              "description": "Code-specific details, for example errors[] for invalid_arguments or limitBytes/actualBytes for body_too_large."
+            },
+            "hint": {
+              "type": "string",
+              "description": "Suggested next step, when there is one."
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "warnings": {
+          "type": "array",
+          "description": "Non-fatal notices, omitted when empty. Deprecated arguments add {code:'deprecated_argument', message, replacement}.",
+          "items": {
+            "type": "object",
+            "description": "One warning: at least code and message.",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Warning code."
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable warning."
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "protocol_version": {
+          "type": "integer",
+          "enum": [
+            1
+          ],
+          "description": "Reserved-screen protocol version."
+        },
+        "result": {
+          "type": "object",
+          "description": "Scoped reserved-screen result."
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "desktop_submit",
+    "description": "Queue one scoped desktop task with the deadline and finite capacity claim issued by the controller.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "type": "integer",
+          "enum": [
+            1
+          ],
+          "description": "Reserved-screen protocol version. Use 1."
+        },
+        "request_id": {
+          "description": "Immutable ID for this request. Reuse only for the identical payload.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "scope_id": {
+          "description": "Scope ID from your current controller grant.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "title": {
+          "description": "Short task title visible in GUI Queue.",
+          "type": "string",
+          "maxLength": 120,
+          "minLength": 1
+        },
+        "start_deadline": {
+          "description": "Absolute epoch milliseconds for the latest start permitted by the task.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "capacity_claim_id": {
+          "description": "Finite, validated capacity claim ID for this scope.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "capacity_claim_start_by": {
+          "description": "Absolute epoch milliseconds for the capacity start deadline from capabilities.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "protocol_version",
+        "request_id",
+        "scope_id",
+        "title",
+        "start_deadline",
+        "capacity_claim_id",
+        "capacity_claim_start_by"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "true on success, false on failure; isError is set exactly when this is false."
+        },
+        "error": {
+          "type": "object",
+          "description": "Present only when ok is false.",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "invalid_arguments",
+                "unknown_tool",
+                "not_found",
+                "ambiguous",
+                "archived",
+                "wrong_recipient",
+                "already_resolved",
+                "no_current_session",
+                "body_too_large",
+                "permission_denied",
+                "active_turn_conflict",
+                "codex_unavailable",
+                "claude_unavailable",
+                "upstream_error",
+                "unsupported",
+                "state_io_error",
+                "internal_error"
+              ],
+              "description": "Stable error code (design doc section 3.2)."
+            },
+            "message": {
+              "type": "string",
+              "description": "Human-readable description of the failure."
+            },
+            "details": {
+              "type": "object",
+              "description": "Code-specific details, for example errors[] for invalid_arguments or limitBytes/actualBytes for body_too_large."
+            },
+            "hint": {
+              "type": "string",
+              "description": "Suggested next step, when there is one."
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "warnings": {
+          "type": "array",
+          "description": "Non-fatal notices, omitted when empty. Deprecated arguments add {code:'deprecated_argument', message, replacement}.",
+          "items": {
+            "type": "object",
+            "description": "One warning: at least code and message.",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Warning code."
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable warning."
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "protocol_version": {
+          "type": "integer",
+          "enum": [
+            1
+          ],
+          "description": "Reserved-screen protocol version."
+        },
+        "result": {
+          "type": "object",
+          "description": "Scoped reserved-screen result."
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "desktop_status",
+    "description": "Read your ticket's queue, authority, delivery, effect and settlement state.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "type": "integer",
+          "enum": [
+            1
+          ],
+          "description": "Reserved-screen protocol version. Use 1."
+        },
+        "ticket_id": {
+          "description": "Ticket ID from submission.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "ticket_id"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "true on success, false on failure; isError is set exactly when this is false."
+        },
+        "error": {
+          "type": "object",
+          "description": "Present only when ok is false.",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "invalid_arguments",
+                "unknown_tool",
+                "not_found",
+                "ambiguous",
+                "archived",
+                "wrong_recipient",
+                "already_resolved",
+                "no_current_session",
+                "body_too_large",
+                "permission_denied",
+                "active_turn_conflict",
+                "codex_unavailable",
+                "claude_unavailable",
+                "upstream_error",
+                "unsupported",
+                "state_io_error",
+                "internal_error"
+              ],
+              "description": "Stable error code (design doc section 3.2)."
+            },
+            "message": {
+              "type": "string",
+              "description": "Human-readable description of the failure."
+            },
+            "details": {
+              "type": "object",
+              "description": "Code-specific details, for example errors[] for invalid_arguments or limitBytes/actualBytes for body_too_large."
+            },
+            "hint": {
+              "type": "string",
+              "description": "Suggested next step, when there is one."
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "warnings": {
+          "type": "array",
+          "description": "Non-fatal notices, omitted when empty. Deprecated arguments add {code:'deprecated_argument', message, replacement}.",
+          "items": {
+            "type": "object",
+            "description": "One warning: at least code and message.",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Warning code."
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable warning."
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "protocol_version": {
+          "type": "integer",
+          "enum": [
+            1
+          ],
+          "description": "Reserved-screen protocol version."
+        },
+        "result": {
+          "type": "object",
+          "description": "Scoped reserved-screen result."
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "desktop_claim",
+    "description": "Claim your ticket's turn when it is the first eligible ticket. A claim performs no desktop action.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "type": "integer",
+          "enum": [
+            1
+          ],
+          "description": "Reserved-screen protocol version. Use 1."
+        },
+        "request_id": {
+          "description": "Immutable ID for this request. Reuse only for the identical payload.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "ticket_id": {
+          "description": "Ticket ID from submission.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "request_id",
+        "ticket_id"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "true on success, false on failure; isError is set exactly when this is false."
+        },
+        "error": {
+          "type": "object",
+          "description": "Present only when ok is false.",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "invalid_arguments",
+                "unknown_tool",
+                "not_found",
+                "ambiguous",
+                "archived",
+                "wrong_recipient",
+                "already_resolved",
+                "no_current_session",
+                "body_too_large",
+                "permission_denied",
+                "active_turn_conflict",
+                "codex_unavailable",
+                "claude_unavailable",
+                "upstream_error",
+                "unsupported",
+                "state_io_error",
+                "internal_error"
+              ],
+              "description": "Stable error code (design doc section 3.2)."
+            },
+            "message": {
+              "type": "string",
+              "description": "Human-readable description of the failure."
+            },
+            "details": {
+              "type": "object",
+              "description": "Code-specific details, for example errors[] for invalid_arguments or limitBytes/actualBytes for body_too_large."
+            },
+            "hint": {
+              "type": "string",
+              "description": "Suggested next step, when there is one."
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "warnings": {
+          "type": "array",
+          "description": "Non-fatal notices, omitted when empty. Deprecated arguments add {code:'deprecated_argument', message, replacement}.",
+          "items": {
+            "type": "object",
+            "description": "One warning: at least code and message.",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Warning code."
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable warning."
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "protocol_version": {
+          "type": "integer",
+          "enum": [
+            1
+          ],
+          "description": "Reserved-screen protocol version."
+        },
+        "result": {
+          "type": "object",
+          "description": "Scoped reserved-screen result."
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "desktop_heartbeat",
+    "description": "Renew your current lease while working. Use a fresh request ID for each renewal.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "type": "integer",
+          "enum": [
+            1
+          ],
+          "description": "Reserved-screen protocol version. Use 1."
+        },
+        "request_id": {
+          "description": "Immutable ID for this request. Reuse only for the identical payload.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "ticket_id": {
+          "description": "Ticket ID from submission.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "lease_id": {
+          "description": "Current lease ID from claim.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "epoch": {
+          "description": "Current lease epoch from claim.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "protocol_version",
+        "request_id",
+        "ticket_id",
+        "lease_id",
+        "epoch"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "true on success, false on failure; isError is set exactly when this is false."
+        },
+        "error": {
+          "type": "object",
+          "description": "Present only when ok is false.",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "invalid_arguments",
+                "unknown_tool",
+                "not_found",
+                "ambiguous",
+                "archived",
+                "wrong_recipient",
+                "already_resolved",
+                "no_current_session",
+                "body_too_large",
+                "permission_denied",
+                "active_turn_conflict",
+                "codex_unavailable",
+                "claude_unavailable",
+                "upstream_error",
+                "unsupported",
+                "state_io_error",
+                "internal_error"
+              ],
+              "description": "Stable error code (design doc section 3.2)."
+            },
+            "message": {
+              "type": "string",
+              "description": "Human-readable description of the failure."
+            },
+            "details": {
+              "type": "object",
+              "description": "Code-specific details, for example errors[] for invalid_arguments or limitBytes/actualBytes for body_too_large."
+            },
+            "hint": {
+              "type": "string",
+              "description": "Suggested next step, when there is one."
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "warnings": {
+          "type": "array",
+          "description": "Non-fatal notices, omitted when empty. Deprecated arguments add {code:'deprecated_argument', message, replacement}.",
+          "items": {
+            "type": "object",
+            "description": "One warning: at least code and message.",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Warning code."
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable warning."
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "protocol_version": {
+          "type": "integer",
+          "enum": [
+            1
+          ],
+          "description": "Reserved-screen protocol version."
+        },
+        "result": {
+          "type": "object",
+          "description": "Scoped reserved-screen result."
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "desktop_observe",
+    "description": "Observe your owned window and obtain fresh, scoped element references.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "type": "integer",
+          "enum": [
+            1
+          ],
+          "description": "Reserved-screen protocol version. Use 1."
+        },
+        "ticket_id": {
+          "description": "Ticket ID from submission.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "lease_id": {
+          "description": "Current lease ID from claim.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "epoch": {
+          "description": "Current lease epoch from claim.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "scope_id": {
+          "description": "Scope ID from your current controller grant.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "ticket_id",
+        "lease_id",
+        "epoch",
+        "scope_id"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "true on success, false on failure; isError is set exactly when this is false."
+        },
+        "error": {
+          "type": "object",
+          "description": "Present only when ok is false.",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "invalid_arguments",
+                "unknown_tool",
+                "not_found",
+                "ambiguous",
+                "archived",
+                "wrong_recipient",
+                "already_resolved",
+                "no_current_session",
+                "body_too_large",
+                "permission_denied",
+                "active_turn_conflict",
+                "codex_unavailable",
+                "claude_unavailable",
+                "upstream_error",
+                "unsupported",
+                "state_io_error",
+                "internal_error"
+              ],
+              "description": "Stable error code (design doc section 3.2)."
+            },
+            "message": {
+              "type": "string",
+              "description": "Human-readable description of the failure."
+            },
+            "details": {
+              "type": "object",
+              "description": "Code-specific details, for example errors[] for invalid_arguments or limitBytes/actualBytes for body_too_large."
+            },
+            "hint": {
+              "type": "string",
+              "description": "Suggested next step, when there is one."
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "warnings": {
+          "type": "array",
+          "description": "Non-fatal notices, omitted when empty. Deprecated arguments add {code:'deprecated_argument', message, replacement}.",
+          "items": {
+            "type": "object",
+            "description": "One warning: at least code and message.",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Warning code."
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable warning."
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "protocol_version": {
+          "type": "integer",
+          "enum": [
+            1
+          ],
+          "description": "Reserved-screen protocol version."
+        },
+        "result": {
+          "type": "object",
+          "description": "Scoped reserved-screen result."
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "desktop_act",
+    "description": "Issue one qualified semantic operation. Use a new request ID for a new intent and verify effect separately.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "type": "integer",
+          "enum": [
+            1
+          ],
+          "description": "Reserved-screen protocol version. Use 1."
+        },
+        "request_id": {
+          "description": "Immutable ID for this request. Reuse only for the identical payload.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "ticket_id": {
+          "description": "Ticket ID from submission.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "lease_id": {
+          "description": "Current lease ID from claim.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "epoch": {
+          "description": "Current lease epoch from claim.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "snapshot_id": {
+          "description": "Fresh scoped observation ID.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "ref": {
+          "description": "Opaque reference from this exact observation.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "operation": {
+          "description": "Single operation allowed on this reference.",
+          "type": "string",
+          "enum": [
+            "click",
+            "set-value",
+            "close",
+            "place-window"
+          ]
+        },
+        "value": {
+          "description": "Text value for set-value. Omit for click, close and placement.",
+          "type": "string",
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "protocol_version",
+        "request_id",
+        "ticket_id",
+        "lease_id",
+        "epoch",
+        "snapshot_id",
+        "ref",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "true on success, false on failure; isError is set exactly when this is false."
+        },
+        "error": {
+          "type": "object",
+          "description": "Present only when ok is false.",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "invalid_arguments",
+                "unknown_tool",
+                "not_found",
+                "ambiguous",
+                "archived",
+                "wrong_recipient",
+                "already_resolved",
+                "no_current_session",
+                "body_too_large",
+                "permission_denied",
+                "active_turn_conflict",
+                "codex_unavailable",
+                "claude_unavailable",
+                "upstream_error",
+                "unsupported",
+                "state_io_error",
+                "internal_error"
+              ],
+              "description": "Stable error code (design doc section 3.2)."
+            },
+            "message": {
+              "type": "string",
+              "description": "Human-readable description of the failure."
+            },
+            "details": {
+              "type": "object",
+              "description": "Code-specific details, for example errors[] for invalid_arguments or limitBytes/actualBytes for body_too_large."
+            },
+            "hint": {
+              "type": "string",
+              "description": "Suggested next step, when there is one."
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "warnings": {
+          "type": "array",
+          "description": "Non-fatal notices, omitted when empty. Deprecated arguments add {code:'deprecated_argument', message, replacement}.",
+          "items": {
+            "type": "object",
+            "description": "One warning: at least code and message.",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Warning code."
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable warning."
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "protocol_version": {
+          "type": "integer",
+          "enum": [
+            1
+          ],
+          "description": "Reserved-screen protocol version."
+        },
+        "result": {
+          "type": "object",
+          "description": "Scoped reserved-screen result."
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "desktop_verify",
+    "description": "Reconcile an action using its scoped observation and independent effect evidence. Never repeats the action.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "type": "integer",
+          "enum": [
+            1
+          ],
+          "description": "Reserved-screen protocol version. Use 1."
+        },
+        "ticket_id": {
+          "description": "Ticket ID from submission.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "scope_id": {
+          "description": "Scope ID from your current controller grant.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "action_id": {
+          "description": "Action ID to reconcile.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "ticket_id",
+        "scope_id",
+        "action_id"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "true on success, false on failure; isError is set exactly when this is false."
+        },
+        "error": {
+          "type": "object",
+          "description": "Present only when ok is false.",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "invalid_arguments",
+                "unknown_tool",
+                "not_found",
+                "ambiguous",
+                "archived",
+                "wrong_recipient",
+                "already_resolved",
+                "no_current_session",
+                "body_too_large",
+                "permission_denied",
+                "active_turn_conflict",
+                "codex_unavailable",
+                "claude_unavailable",
+                "upstream_error",
+                "unsupported",
+                "state_io_error",
+                "internal_error"
+              ],
+              "description": "Stable error code (design doc section 3.2)."
+            },
+            "message": {
+              "type": "string",
+              "description": "Human-readable description of the failure."
+            },
+            "details": {
+              "type": "object",
+              "description": "Code-specific details, for example errors[] for invalid_arguments or limitBytes/actualBytes for body_too_large."
+            },
+            "hint": {
+              "type": "string",
+              "description": "Suggested next step, when there is one."
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "warnings": {
+          "type": "array",
+          "description": "Non-fatal notices, omitted when empty. Deprecated arguments add {code:'deprecated_argument', message, replacement}.",
+          "items": {
+            "type": "object",
+            "description": "One warning: at least code and message.",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Warning code."
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable warning."
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "protocol_version": {
+          "type": "integer",
+          "enum": [
+            1
+          ],
+          "description": "Reserved-screen protocol version."
+        },
+        "result": {
+          "type": "object",
+          "description": "Scoped reserved-screen result."
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "desktop_cancel",
+    "description": "Cancel your queued ticket or stop new work on your active ticket while its driver settles.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "type": "integer",
+          "enum": [
+            1
+          ],
+          "description": "Reserved-screen protocol version. Use 1."
+        },
+        "request_id": {
+          "description": "Immutable ID for this request. Reuse only for the identical payload.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "ticket_id": {
+          "description": "Ticket ID from submission.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "request_id",
+        "ticket_id"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "true on success, false on failure; isError is set exactly when this is false."
+        },
+        "error": {
+          "type": "object",
+          "description": "Present only when ok is false.",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "invalid_arguments",
+                "unknown_tool",
+                "not_found",
+                "ambiguous",
+                "archived",
+                "wrong_recipient",
+                "already_resolved",
+                "no_current_session",
+                "body_too_large",
+                "permission_denied",
+                "active_turn_conflict",
+                "codex_unavailable",
+                "claude_unavailable",
+                "upstream_error",
+                "unsupported",
+                "state_io_error",
+                "internal_error"
+              ],
+              "description": "Stable error code (design doc section 3.2)."
+            },
+            "message": {
+              "type": "string",
+              "description": "Human-readable description of the failure."
+            },
+            "details": {
+              "type": "object",
+              "description": "Code-specific details, for example errors[] for invalid_arguments or limitBytes/actualBytes for body_too_large."
+            },
+            "hint": {
+              "type": "string",
+              "description": "Suggested next step, when there is one."
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "warnings": {
+          "type": "array",
+          "description": "Non-fatal notices, omitted when empty. Deprecated arguments add {code:'deprecated_argument', message, replacement}.",
+          "items": {
+            "type": "object",
+            "description": "One warning: at least code and message.",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Warning code."
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable warning."
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "protocol_version": {
+          "type": "integer",
+          "enum": [
+            1
+          ],
+          "description": "Reserved-screen protocol version."
+        },
+        "result": {
+          "type": "object",
+          "description": "Scoped reserved-screen result."
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "desktop_release",
+    "description": "Release the current turn after your work. Uncertain effects remain visible.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "type": "integer",
+          "enum": [
+            1
+          ],
+          "description": "Reserved-screen protocol version. Use 1."
+        },
+        "request_id": {
+          "description": "Immutable ID for this request. Reuse only for the identical payload.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "ticket_id": {
+          "description": "Ticket ID from submission.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "lease_id": {
+          "description": "Current lease ID from claim.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "epoch": {
+          "description": "Current lease epoch from claim.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "result": {
+          "description": "Requested terminal disposition. Unknown effects remain partial.",
+          "type": "string",
+          "enum": [
+            "finished",
+            "partial",
+            "blocked"
+          ]
+        }
+      },
+      "required": [
+        "protocol_version",
+        "request_id",
+        "ticket_id",
+        "lease_id",
+        "epoch",
+        "result"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "true on success, false on failure; isError is set exactly when this is false."
+        },
+        "error": {
+          "type": "object",
+          "description": "Present only when ok is false.",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "invalid_arguments",
+                "unknown_tool",
+                "not_found",
+                "ambiguous",
+                "archived",
+                "wrong_recipient",
+                "already_resolved",
+                "no_current_session",
+                "body_too_large",
+                "permission_denied",
+                "active_turn_conflict",
+                "codex_unavailable",
+                "claude_unavailable",
+                "upstream_error",
+                "unsupported",
+                "state_io_error",
+                "internal_error"
+              ],
+              "description": "Stable error code (design doc section 3.2)."
+            },
+            "message": {
+              "type": "string",
+              "description": "Human-readable description of the failure."
+            },
+            "details": {
+              "type": "object",
+              "description": "Code-specific details, for example errors[] for invalid_arguments or limitBytes/actualBytes for body_too_large."
+            },
+            "hint": {
+              "type": "string",
+              "description": "Suggested next step, when there is one."
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "warnings": {
+          "type": "array",
+          "description": "Non-fatal notices, omitted when empty. Deprecated arguments add {code:'deprecated_argument', message, replacement}.",
+          "items": {
+            "type": "object",
+            "description": "One warning: at least code and message.",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Warning code."
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable warning."
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "protocol_version": {
+          "type": "integer",
+          "enum": [
+            1
+          ],
+          "description": "Reserved-screen protocol version."
+        },
+        "result": {
+          "type": "object",
+          "description": "Scoped reserved-screen result."
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
   }
 ]

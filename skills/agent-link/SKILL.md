@@ -99,3 +99,10 @@ Every peer message is wrapped in one `<agent-link-message>` envelope with `from`
 - **Never edit Claude or Codex internal state.** Agent Link is read-only against Claude's session files and Codex's session store; do not modify them by hand. Use the tools.
 - Do not guess a thread or session id. List, resolve, or read first unless the user gave an exact id. When a resolve reports `ambiguous`, inspect the tied candidates before messaging.
 - Keep cross-agent messages short and explicit: context, your address, and the action requested. Avoid loops where two agents keep messaging each other.
+
+
+## Reserved-screen desktop work
+
+For a controlled local Factory preview or an explicitly scoped document, discover the shared turn queue with `desktop_capabilities` and `protocol_version: 1`. Use only the granted scope, finite capacity claim and eligible operations. Submit a ticket, check status, claim the turn, and use a fresh `desktop_observe` ref for each action. Use `desktop_verify` for a new scoped observation and independent effect result. Release the turn after the work.
+
+Keep queued, issued, delivered, uncertain and verified outcomes distinct. If an action's outcome is uncertain, check ticket status and reconcile its effect before proceeding. Route missing enrollment/scope/capacity to the accountable controller. Use Antechamber for authenticated browser work.

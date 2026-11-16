@@ -1076,52 +1076,52 @@ var require_util = __commonJS({
       return hash;
     }
     exports.toHash = toHash;
-    function alwaysValidSchema(it, schema) {
-      if (typeof schema == "boolean")
-        return schema;
-      if (Object.keys(schema).length === 0)
+    function alwaysValidSchema(it, schema2) {
+      if (typeof schema2 == "boolean")
+        return schema2;
+      if (Object.keys(schema2).length === 0)
         return true;
-      checkUnknownRules(it, schema);
-      return !schemaHasRules(schema, it.self.RULES.all);
+      checkUnknownRules(it, schema2);
+      return !schemaHasRules(schema2, it.self.RULES.all);
     }
     exports.alwaysValidSchema = alwaysValidSchema;
-    function checkUnknownRules(it, schema = it.schema) {
+    function checkUnknownRules(it, schema2 = it.schema) {
       const { opts, self } = it;
       if (!opts.strictSchema)
         return;
-      if (typeof schema === "boolean")
+      if (typeof schema2 === "boolean")
         return;
       const rules = self.RULES.keywords;
-      for (const key in schema) {
+      for (const key in schema2) {
         if (!rules[key])
           checkStrictMode(it, `unknown keyword: "${key}"`);
       }
     }
     exports.checkUnknownRules = checkUnknownRules;
-    function schemaHasRules(schema, rules) {
-      if (typeof schema == "boolean")
-        return !schema;
-      for (const key in schema)
+    function schemaHasRules(schema2, rules) {
+      if (typeof schema2 == "boolean")
+        return !schema2;
+      for (const key in schema2)
         if (rules[key])
           return true;
       return false;
     }
     exports.schemaHasRules = schemaHasRules;
-    function schemaHasRulesButRef(schema, RULES) {
-      if (typeof schema == "boolean")
-        return !schema;
-      for (const key in schema)
+    function schemaHasRulesButRef(schema2, RULES) {
+      if (typeof schema2 == "boolean")
+        return !schema2;
+      for (const key in schema2)
         if (key !== "$ref" && RULES.all[key])
           return true;
       return false;
     }
     exports.schemaHasRulesButRef = schemaHasRulesButRef;
-    function schemaRefOrVal({ topSchemaRef, schemaPath }, schema, keyword, $data) {
+    function schemaRefOrVal({ topSchemaRef, schemaPath }, schema2, keyword, $data) {
       if (!$data) {
-        if (typeof schema == "number" || typeof schema == "boolean")
-          return schema;
-        if (typeof schema == "string")
-          return (0, codegen_1._)`${schema}`;
+        if (typeof schema2 == "number" || typeof schema2 == "boolean")
+          return schema2;
+        if (typeof schema2 == "string")
+          return (0, codegen_1._)`${schema2}`;
       }
       return (0, codegen_1._)`${topSchemaRef}${schemaPath}${(0, codegen_1.getProperty)(keyword)}`;
     }
@@ -1402,10 +1402,10 @@ var require_boolSchema = __commonJS({
       message: "boolean schema is false"
     };
     function topBoolOrEmptySchema(it) {
-      const { gen, schema, validateName } = it;
-      if (schema === false) {
+      const { gen, schema: schema2, validateName } = it;
+      if (schema2 === false) {
         falseSchemaError(it, false);
-      } else if (typeof schema == "object" && schema.$async === true) {
+      } else if (typeof schema2 == "object" && schema2.$async === true) {
         gen.return(names_1.default.data);
       } else {
         gen.assign((0, codegen_1._)`${validateName}.errors`, null);
@@ -1414,8 +1414,8 @@ var require_boolSchema = __commonJS({
     }
     exports.topBoolOrEmptySchema = topBoolOrEmptySchema;
     function boolOrEmptySchema(it, valid) {
-      const { gen, schema } = it;
-      if (schema === false) {
+      const { gen, schema: schema2 } = it;
+      if (schema2 === false) {
         gen.var(valid, false);
         falseSchemaError(it);
       } else {
@@ -1477,18 +1477,18 @@ var require_applicability = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.shouldUseRule = exports.shouldUseGroup = exports.schemaHasRulesForType = void 0;
-    function schemaHasRulesForType({ schema, self }, type) {
+    function schemaHasRulesForType({ schema: schema2, self }, type) {
       const group = self.RULES.types[type];
-      return group && group !== true && shouldUseGroup(schema, group);
+      return group && group !== true && shouldUseGroup(schema2, group);
     }
     exports.schemaHasRulesForType = schemaHasRulesForType;
-    function shouldUseGroup(schema, group) {
-      return group.rules.some((rule) => shouldUseRule(schema, rule));
+    function shouldUseGroup(schema2, group) {
+      return group.rules.some((rule) => shouldUseRule(schema2, rule));
     }
     exports.shouldUseGroup = shouldUseGroup;
-    function shouldUseRule(schema, rule) {
+    function shouldUseRule(schema2, rule) {
       var _a3;
-      return schema[rule.keyword] !== void 0 || ((_a3 = rule.definition.implements) === null || _a3 === void 0 ? void 0 : _a3.some((kwd) => schema[kwd] !== void 0));
+      return schema2[rule.keyword] !== void 0 || ((_a3 = rule.definition.implements) === null || _a3 === void 0 ? void 0 : _a3.some((kwd) => schema2[kwd] !== void 0));
     }
     exports.shouldUseRule = shouldUseRule;
   }
@@ -1510,17 +1510,17 @@ var require_dataType = __commonJS({
       DataType2[DataType2["Correct"] = 0] = "Correct";
       DataType2[DataType2["Wrong"] = 1] = "Wrong";
     })(DataType || (exports.DataType = DataType = {}));
-    function getSchemaTypes(schema) {
-      const types = getJSONTypes(schema.type);
+    function getSchemaTypes(schema2) {
+      const types = getJSONTypes(schema2.type);
       const hasNull = types.includes("null");
       if (hasNull) {
-        if (schema.nullable === false)
+        if (schema2.nullable === false)
           throw new Error("type: null contradicts nullable: false");
       } else {
-        if (!types.length && schema.nullable !== void 0) {
+        if (!types.length && schema2.nullable !== void 0) {
           throw new Error('"nullable" cannot be used without "type"');
         }
-        if (schema.nullable === true)
+        if (schema2.nullable === true)
           types.push("null");
       }
       return types;
@@ -1652,8 +1652,8 @@ var require_dataType = __commonJS({
     }
     exports.checkDataTypes = checkDataTypes;
     var typeError = {
-      message: ({ schema }) => `must be ${schema}`,
-      params: ({ schema, schemaValue }) => typeof schema == "string" ? (0, codegen_1._)`{type: ${schema}}` : (0, codegen_1._)`{type: ${schemaValue}}`
+      message: ({ schema: schema2 }) => `must be ${schema2}`,
+      params: ({ schema: schema2, schemaValue }) => typeof schema2 == "string" ? (0, codegen_1._)`{type: ${schema2}}` : (0, codegen_1._)`{type: ${schemaValue}}`
     };
     function reportTypeError(it) {
       const cxt = getTypeErrorContext(it);
@@ -1661,16 +1661,16 @@ var require_dataType = __commonJS({
     }
     exports.reportTypeError = reportTypeError;
     function getTypeErrorContext(it) {
-      const { gen, data, schema } = it;
-      const schemaCode = (0, util_1.schemaRefOrVal)(it, schema, "type");
+      const { gen, data, schema: schema2 } = it;
+      const schemaCode = (0, util_1.schemaRefOrVal)(it, schema2, "type");
       return {
         gen,
         keyword: "type",
         data,
-        schema: schema.type,
+        schema: schema2.type,
         schemaCode,
         schemaValue: schemaCode,
-        parentSchema: schema,
+        parentSchema: schema2,
         params: {},
         it
       };
@@ -1823,15 +1823,15 @@ var require_code2 = __commonJS({
     }
     exports.validateArray = validateArray;
     function validateUnion(cxt) {
-      const { gen, schema, keyword, it } = cxt;
-      if (!Array.isArray(schema))
+      const { gen, schema: schema2, keyword, it } = cxt;
+      if (!Array.isArray(schema2))
         throw new Error("ajv implementation error");
-      const alwaysValid = schema.some((sch) => (0, util_1.alwaysValidSchema)(it, sch));
+      const alwaysValid = schema2.some((sch) => (0, util_1.alwaysValidSchema)(it, sch));
       if (alwaysValid && !it.opts.unevaluated)
         return;
       const valid = gen.let("valid", false);
       const schValid = gen.name("_valid");
-      gen.block(() => schema.forEach((_sch, i) => {
+      gen.block(() => schema2.forEach((_sch, i) => {
         const schCxt = cxt.subschema({
           keyword,
           schemaProp: i,
@@ -1859,8 +1859,8 @@ var require_keyword = __commonJS({
     var code_1 = require_code2();
     var errors_1 = require_errors();
     function macroKeywordCode(cxt, def) {
-      const { gen, keyword, schema, parentSchema, it } = cxt;
-      const macroSchema = def.macro.call(it.self, schema, parentSchema, it);
+      const { gen, keyword, schema: schema2, parentSchema, it } = cxt;
+      const macroSchema = def.macro.call(it.self, schema2, parentSchema, it);
       const schemaRef = useKeyword(gen, keyword, macroSchema);
       if (it.opts.validateSchema !== false)
         it.self.validateSchema(macroSchema, true);
@@ -1877,9 +1877,9 @@ var require_keyword = __commonJS({
     exports.macroKeywordCode = macroKeywordCode;
     function funcKeywordCode(cxt, def) {
       var _a3;
-      const { gen, keyword, schema, parentSchema, $data, it } = cxt;
+      const { gen, keyword, schema: schema2, parentSchema, $data, it } = cxt;
       checkAsyncKeyword(it, def);
-      const validate = !$data && def.compile ? def.compile.call(it.self, schema, parentSchema, it) : def.validate;
+      const validate = !$data && def.compile ? def.compile.call(it.self, schema2, parentSchema, it) : def.validate;
       const validateRef = useKeyword(gen, keyword, validate);
       const valid = gen.let("valid");
       cxt.block$data(valid, validateKeyword);
@@ -1939,20 +1939,20 @@ var require_keyword = __commonJS({
         throw new Error(`keyword "${keyword}" failed to compile`);
       return gen.scopeValue("keyword", typeof result == "function" ? { ref: result } : { ref: result, code: (0, codegen_1.stringify)(result) });
     }
-    function validSchemaType(schema, schemaType, allowUndefined = false) {
-      return !schemaType.length || schemaType.some((st) => st === "array" ? Array.isArray(schema) : st === "object" ? schema && typeof schema == "object" && !Array.isArray(schema) : typeof schema == st || allowUndefined && typeof schema == "undefined");
+    function validSchemaType(schema2, schemaType, allowUndefined = false) {
+      return !schemaType.length || schemaType.some((st) => st === "array" ? Array.isArray(schema2) : st === "object" ? schema2 && typeof schema2 == "object" && !Array.isArray(schema2) : typeof schema2 == st || allowUndefined && typeof schema2 == "undefined");
     }
     exports.validSchemaType = validSchemaType;
-    function validateKeywordUsage({ schema, opts, self, errSchemaPath }, def, keyword) {
+    function validateKeywordUsage({ schema: schema2, opts, self, errSchemaPath }, def, keyword) {
       if (Array.isArray(def.keyword) ? !def.keyword.includes(keyword) : def.keyword !== keyword) {
         throw new Error("ajv implementation error");
       }
       const deps = def.dependencies;
-      if (deps === null || deps === void 0 ? void 0 : deps.some((kwd) => !Object.prototype.hasOwnProperty.call(schema, kwd))) {
+      if (deps === null || deps === void 0 ? void 0 : deps.some((kwd) => !Object.prototype.hasOwnProperty.call(schema2, kwd))) {
         throw new Error(`parent schema must have dependencies of ${keyword}: ${deps.join(",")}`);
       }
       if (def.validateSchema) {
-        const valid = def.validateSchema(schema[keyword]);
+        const valid = def.validateSchema(schema2[keyword]);
         if (!valid) {
           const msg = `keyword "${keyword}" value is invalid at path "${errSchemaPath}": ` + self.errorsText(def.validateSchema.errors);
           if (opts.validateSchema === "log")
@@ -1974,8 +1974,8 @@ var require_subschema = __commonJS({
     exports.extendSubschemaMode = exports.extendSubschemaData = exports.getSubschema = void 0;
     var codegen_1 = require_codegen();
     var util_1 = require_util();
-    function getSubschema(it, { keyword, schemaProp, schema, schemaPath, errSchemaPath, topSchemaRef }) {
-      if (keyword !== void 0 && schema !== void 0) {
+    function getSubschema(it, { keyword, schemaProp, schema: schema2, schemaPath, errSchemaPath, topSchemaRef }) {
+      if (keyword !== void 0 && schema2 !== void 0) {
         throw new Error('both "keyword" and "schema" passed, only one allowed');
       }
       if (keyword !== void 0) {
@@ -1990,12 +1990,12 @@ var require_subschema = __commonJS({
           errSchemaPath: `${it.errSchemaPath}/${keyword}/${(0, util_1.escapeFragment)(schemaProp)}`
         };
       }
-      if (schema !== void 0) {
+      if (schema2 !== void 0) {
         if (schemaPath === void 0 || errSchemaPath === void 0 || topSchemaRef === void 0) {
           throw new Error('"schemaPath", "errSchemaPath" and "topSchemaRef" are required with "schema"');
         }
         return {
-          schema,
+          schema: schema2,
           schemaPath,
           topSchemaRef,
           errSchemaPath
@@ -2088,7 +2088,7 @@ var require_fast_deep_equal = __commonJS({
 var require_json_schema_traverse = __commonJS({
   "node_modules/json-schema-traverse/index.js"(exports, module) {
     "use strict";
-    var traverse = module.exports = function(schema, opts, cb) {
+    var traverse = module.exports = function(schema2, opts, cb) {
       if (typeof opts == "function") {
         cb = opts;
         opts = {};
@@ -2098,7 +2098,7 @@ var require_json_schema_traverse = __commonJS({
       };
       var post = cb.post || function() {
       };
-      _traverse(opts, pre, post, schema, "", schema);
+      _traverse(opts, pre, post, schema2, "", schema2);
     };
     traverse.keywords = {
       additionalItems: true,
@@ -2144,26 +2144,26 @@ var require_json_schema_traverse = __commonJS({
       maxProperties: true,
       minProperties: true
     };
-    function _traverse(opts, pre, post, schema, jsonPtr, rootSchema, parentJsonPtr, parentKeyword, parentSchema, keyIndex) {
-      if (schema && typeof schema == "object" && !Array.isArray(schema)) {
-        pre(schema, jsonPtr, rootSchema, parentJsonPtr, parentKeyword, parentSchema, keyIndex);
-        for (var key in schema) {
-          var sch = schema[key];
+    function _traverse(opts, pre, post, schema2, jsonPtr, rootSchema, parentJsonPtr, parentKeyword, parentSchema, keyIndex) {
+      if (schema2 && typeof schema2 == "object" && !Array.isArray(schema2)) {
+        pre(schema2, jsonPtr, rootSchema, parentJsonPtr, parentKeyword, parentSchema, keyIndex);
+        for (var key in schema2) {
+          var sch = schema2[key];
           if (Array.isArray(sch)) {
             if (key in traverse.arrayKeywords) {
               for (var i = 0; i < sch.length; i++)
-                _traverse(opts, pre, post, sch[i], jsonPtr + "/" + key + "/" + i, rootSchema, jsonPtr, key, schema, i);
+                _traverse(opts, pre, post, sch[i], jsonPtr + "/" + key + "/" + i, rootSchema, jsonPtr, key, schema2, i);
             }
           } else if (key in traverse.propsKeywords) {
             if (sch && typeof sch == "object") {
               for (var prop in sch)
-                _traverse(opts, pre, post, sch[prop], jsonPtr + "/" + key + "/" + escapeJsonPtr(prop), rootSchema, jsonPtr, key, schema, prop);
+                _traverse(opts, pre, post, sch[prop], jsonPtr + "/" + key + "/" + escapeJsonPtr(prop), rootSchema, jsonPtr, key, schema2, prop);
             }
           } else if (key in traverse.keywords || opts.allKeys && !(key in traverse.skipKeywords)) {
-            _traverse(opts, pre, post, sch, jsonPtr + "/" + key, rootSchema, jsonPtr, key, schema);
+            _traverse(opts, pre, post, sch, jsonPtr + "/" + key, rootSchema, jsonPtr, key, schema2);
           }
         }
-        post(schema, jsonPtr, rootSchema, parentJsonPtr, parentKeyword, parentSchema, keyIndex);
+        post(schema2, jsonPtr, rootSchema, parentJsonPtr, parentKeyword, parentSchema, keyIndex);
       }
     }
     function escapeJsonPtr(str2) {
@@ -2199,14 +2199,14 @@ var require_resolve = __commonJS({
       "enum",
       "const"
     ]);
-    function inlineRef(schema, limit2 = true) {
-      if (typeof schema == "boolean")
+    function inlineRef(schema2, limit2 = true) {
+      if (typeof schema2 == "boolean")
         return true;
       if (limit2 === true)
-        return !hasRef(schema);
+        return !hasRef(schema2);
       if (!limit2)
         return false;
-      return countKeys(schema) <= limit2;
+      return countKeys(schema2) <= limit2;
     }
     exports.inlineRef = inlineRef;
     var REF_KEYWORDS = /* @__PURE__ */ new Set([
@@ -2216,11 +2216,11 @@ var require_resolve = __commonJS({
       "$dynamicRef",
       "$dynamicAnchor"
     ]);
-    function hasRef(schema) {
-      for (const key in schema) {
+    function hasRef(schema2) {
+      for (const key in schema2) {
         if (REF_KEYWORDS.has(key))
           return true;
-        const sch = schema[key];
+        const sch = schema2[key];
         if (Array.isArray(sch) && sch.some(hasRef))
           return true;
         if (typeof sch == "object" && hasRef(sch))
@@ -2228,26 +2228,26 @@ var require_resolve = __commonJS({
       }
       return false;
     }
-    function countKeys(schema) {
+    function countKeys(schema2) {
       let count = 0;
-      for (const key in schema) {
+      for (const key in schema2) {
         if (key === "$ref")
           return Infinity;
         count++;
         if (SIMPLE_INLINED.has(key))
           continue;
-        if (typeof schema[key] == "object") {
-          (0, util_1.eachItem)(schema[key], (sch) => count += countKeys(sch));
+        if (typeof schema2[key] == "object") {
+          (0, util_1.eachItem)(schema2[key], (sch) => count += countKeys(sch));
         }
         if (count === Infinity)
           return Infinity;
       }
       return count;
     }
-    function getFullPath(resolver, id = "", normalize) {
+    function getFullPath(resolver, id2 = "", normalize) {
       if (normalize !== false)
-        id = normalizeId2(id);
-      const p = resolver.parse(id);
+        id2 = normalizeId2(id2);
+      const p = resolver.parse(id2);
       return _getFullPath(resolver, p);
     }
     exports.getFullPath = getFullPath;
@@ -2257,26 +2257,26 @@ var require_resolve = __commonJS({
     }
     exports._getFullPath = _getFullPath;
     var TRAILING_SLASH_HASH = /#\/?$/;
-    function normalizeId2(id) {
-      return id ? id.replace(TRAILING_SLASH_HASH, "") : "";
+    function normalizeId2(id2) {
+      return id2 ? id2.replace(TRAILING_SLASH_HASH, "") : "";
     }
     exports.normalizeId = normalizeId2;
-    function resolveUrl(resolver, baseId, id) {
-      id = normalizeId2(id);
-      return resolver.resolve(baseId, id);
+    function resolveUrl(resolver, baseId, id2) {
+      id2 = normalizeId2(id2);
+      return resolver.resolve(baseId, id2);
     }
     exports.resolveUrl = resolveUrl;
     var ANCHOR = /^[a-z_][-a-z0-9._]*$/i;
-    function getSchemaRefs(schema, baseId) {
-      if (typeof schema == "boolean")
+    function getSchemaRefs(schema2, baseId) {
+      if (typeof schema2 == "boolean")
         return {};
       const { schemaId, uriResolver } = this.opts;
-      const schId = normalizeId2(schema[schemaId] || baseId);
+      const schId = normalizeId2(schema2[schemaId] || baseId);
       const baseIds = { "": schId };
       const pathPrefix = getFullPath(uriResolver, schId, false);
       const localRefs = {};
       const schemaRefs = /* @__PURE__ */ new Set();
-      traverse(schema, { allKeys: true }, (sch, jsonPtr, _, parentJsonPtr) => {
+      traverse(schema2, { allKeys: true }, (sch, jsonPtr, _, parentJsonPtr) => {
         if (parentJsonPtr === void 0)
           return;
         const fullPath = pathPrefix + jsonPtr;
@@ -2357,15 +2357,15 @@ var require_validate = __commonJS({
       validateFunction(it, () => (0, boolSchema_1.topBoolOrEmptySchema)(it));
     }
     exports.validateFunctionCode = validateFunctionCode;
-    function validateFunction({ gen, validateName, schema, schemaEnv, opts }, body) {
+    function validateFunction({ gen, validateName, schema: schema2, schemaEnv, opts }, body) {
       if (opts.code.es5) {
         gen.func(validateName, (0, codegen_1._)`${names_1.default.data}, ${names_1.default.valCxt}`, schemaEnv.$async, () => {
-          gen.code((0, codegen_1._)`"use strict"; ${funcSourceUrl(schema, opts)}`);
+          gen.code((0, codegen_1._)`"use strict"; ${funcSourceUrl(schema2, opts)}`);
           destructureValCxtES5(gen, opts);
           gen.code(body);
         });
       } else {
-        gen.func(validateName, (0, codegen_1._)`${names_1.default.data}, ${destructureValCxt(opts)}`, schemaEnv.$async, () => gen.code(funcSourceUrl(schema, opts)).code(body));
+        gen.func(validateName, (0, codegen_1._)`${names_1.default.data}, ${destructureValCxt(opts)}`, schemaEnv.$async, () => gen.code(funcSourceUrl(schema2, opts)).code(body));
       }
     }
     function destructureValCxt(opts) {
@@ -2389,9 +2389,9 @@ var require_validate = __commonJS({
       });
     }
     function topSchemaObjCode(it) {
-      const { schema, opts, gen } = it;
+      const { schema: schema2, opts, gen } = it;
       validateFunction(it, () => {
-        if (opts.$comment && schema.$comment)
+        if (opts.$comment && schema2.$comment)
           commentKeyword(it);
         checkNoDefault(it);
         gen.let(names_1.default.vErrors, null);
@@ -2409,8 +2409,8 @@ var require_validate = __commonJS({
       gen.if((0, codegen_1._)`${it.evaluated}.dynamicProps`, () => gen.assign((0, codegen_1._)`${it.evaluated}.props`, (0, codegen_1._)`undefined`));
       gen.if((0, codegen_1._)`${it.evaluated}.dynamicItems`, () => gen.assign((0, codegen_1._)`${it.evaluated}.items`, (0, codegen_1._)`undefined`));
     }
-    function funcSourceUrl(schema, opts) {
-      const schId = typeof schema == "object" && schema[opts.schemaId];
+    function funcSourceUrl(schema2, opts) {
+      const schId = typeof schema2 == "object" && schema2[opts.schemaId];
       return schId && (opts.code.source || opts.code.process) ? (0, codegen_1._)`/*# sourceURL=${schId} */` : codegen_1.nil;
     }
     function subschemaCode(it, valid) {
@@ -2423,10 +2423,10 @@ var require_validate = __commonJS({
       }
       (0, boolSchema_1.boolOrEmptySchema)(it, valid);
     }
-    function schemaCxtHasRules({ schema, self }) {
-      if (typeof schema == "boolean")
-        return !schema;
-      for (const key in schema)
+    function schemaCxtHasRules({ schema: schema2, self }) {
+      if (typeof schema2 == "boolean")
+        return !schema2;
+      for (const key in schema2)
         if (self.RULES.all[key])
           return true;
       return false;
@@ -2435,8 +2435,8 @@ var require_validate = __commonJS({
       return typeof it.schema != "boolean";
     }
     function subSchemaObjCode(it, valid) {
-      const { schema, gen, opts } = it;
-      if (opts.$comment && schema.$comment)
+      const { schema: schema2, gen, opts } = it;
+      if (opts.$comment && schema2.$comment)
         commentKeyword(it);
       updateContext(it);
       checkAsyncSchema(it);
@@ -2456,14 +2456,14 @@ var require_validate = __commonJS({
       schemaKeywords(it, types, !checkedTypes, errsCount);
     }
     function checkRefsAndKeywords(it) {
-      const { schema, errSchemaPath, opts, self } = it;
-      if (schema.$ref && opts.ignoreKeywordsWithRef && (0, util_1.schemaHasRulesButRef)(schema, self.RULES)) {
+      const { schema: schema2, errSchemaPath, opts, self } = it;
+      if (schema2.$ref && opts.ignoreKeywordsWithRef && (0, util_1.schemaHasRulesButRef)(schema2, self.RULES)) {
         self.logger.warn(`$ref: keywords ignored in schema at path "${errSchemaPath}"`);
       }
     }
     function checkNoDefault(it) {
-      const { schema, opts } = it;
-      if (schema.default !== void 0 && opts.useDefaults && opts.strictSchema) {
+      const { schema: schema2, opts } = it;
+      if (schema2.default !== void 0 && opts.useDefaults && opts.strictSchema) {
         (0, util_1.checkStrictMode)(it, "default is ignored in the schema root");
       }
     }
@@ -2476,8 +2476,8 @@ var require_validate = __commonJS({
       if (it.schema.$async && !it.schemaEnv.$async)
         throw new Error("async schema in sync schema");
     }
-    function commentKeyword({ gen, schemaEnv, schema, errSchemaPath, opts }) {
-      const msg = schema.$comment;
+    function commentKeyword({ gen, schemaEnv, schema: schema2, errSchemaPath, opts }) {
+      const msg = schema2.$comment;
       if (opts.$comment === true) {
         gen.code((0, codegen_1._)`${names_1.default.self}.logger.log(${msg})`);
       } else if (typeof opts.$comment == "function") {
@@ -2504,9 +2504,9 @@ var require_validate = __commonJS({
         gen.assign((0, codegen_1._)`${evaluated}.items`, items);
     }
     function schemaKeywords(it, types, typeErrors, errsCount) {
-      const { gen, schema, data, allErrors, opts, self } = it;
+      const { gen, schema: schema2, data, allErrors, opts, self } = it;
       const { RULES } = self;
-      if (schema.$ref && (opts.ignoreKeywordsWithRef || !(0, util_1.schemaHasRulesButRef)(schema, RULES))) {
+      if (schema2.$ref && (opts.ignoreKeywordsWithRef || !(0, util_1.schemaHasRulesButRef)(schema2, RULES))) {
         gen.block(() => keywordCode(it, "$ref", RULES.all.$ref.definition));
         return;
       }
@@ -2518,7 +2518,7 @@ var require_validate = __commonJS({
         groupKeywords(RULES.post);
       });
       function groupKeywords(group) {
-        if (!(0, applicability_1.shouldUseGroup)(schema, group))
+        if (!(0, applicability_1.shouldUseGroup)(schema2, group))
           return;
         if (group.type) {
           gen.if((0, dataType_2.checkDataType)(group.type, data, opts.strictNumbers));
@@ -2536,12 +2536,12 @@ var require_validate = __commonJS({
       }
     }
     function iterateKeywords(it, group) {
-      const { gen, schema, opts: { useDefaults } } = it;
+      const { gen, schema: schema2, opts: { useDefaults } } = it;
       if (useDefaults)
         (0, defaults_1.assignDefaults)(it, group.type);
       gen.block(() => {
         for (const rule of group.rules) {
-          if ((0, applicability_1.shouldUseRule)(schema, rule)) {
+          if ((0, applicability_1.shouldUseRule)(schema2, rule)) {
             keywordCode(it, rule.keyword, rule.definition, group.type);
           }
         }
@@ -2886,17 +2886,17 @@ var require_compile = __commonJS({
         var _a3;
         this.refs = {};
         this.dynamicAnchors = {};
-        let schema;
+        let schema2;
         if (typeof env2.schema == "object")
-          schema = env2.schema;
+          schema2 = env2.schema;
         this.schema = env2.schema;
         this.schemaId = env2.schemaId;
         this.root = env2.root || this;
-        this.baseId = (_a3 = env2.baseId) !== null && _a3 !== void 0 ? _a3 : (0, resolve_1.normalizeId)(schema === null || schema === void 0 ? void 0 : schema[env2.schemaId || "$id"]);
+        this.baseId = (_a3 = env2.baseId) !== null && _a3 !== void 0 ? _a3 : (0, resolve_1.normalizeId)(schema2 === null || schema2 === void 0 ? void 0 : schema2[env2.schemaId || "$id"]);
         this.schemaPath = env2.schemaPath;
         this.localRefs = env2.localRefs;
         this.meta = env2.meta;
-        this.$async = schema === null || schema === void 0 ? void 0 : schema.$async;
+        this.$async = schema2 === null || schema2 === void 0 ? void 0 : schema2.$async;
         this.refs = {};
       }
     };
@@ -2995,10 +2995,10 @@ var require_compile = __commonJS({
         return schOrFunc;
       let _sch = resolve.call(this, root, ref);
       if (_sch === void 0) {
-        const schema = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref];
+        const schema2 = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref];
         const { schemaId } = this.opts;
-        if (schema)
-          _sch = new SchemaEnv({ schema, schemaId, root, baseId });
+        if (schema2)
+          _sch = new SchemaEnv({ schema: schema2, schemaId, root, baseId });
       }
       if (_sch === void 0)
         return;
@@ -3033,8 +3033,8 @@ var require_compile = __commonJS({
       if (Object.keys(root.schema).length > 0 && refPath === baseId) {
         return getJsonPointer.call(this, p, root);
       }
-      const id = (0, resolve_1.normalizeId)(refPath);
-      const schOrRef = this.refs[id] || this.schemas[id];
+      const id2 = (0, resolve_1.normalizeId)(refPath);
+      const schOrRef = this.refs[id2] || this.schemas[id2];
       if (typeof schOrRef == "string") {
         const sch = resolveSchema.call(this, root, schOrRef);
         if (typeof (sch === null || sch === void 0 ? void 0 : sch.schema) !== "object")
@@ -3045,13 +3045,13 @@ var require_compile = __commonJS({
         return;
       if (!schOrRef.validate)
         compileSchema.call(this, schOrRef);
-      if (id === (0, resolve_1.normalizeId)(ref)) {
-        const { schema } = schOrRef;
+      if (id2 === (0, resolve_1.normalizeId)(ref)) {
+        const { schema: schema2 } = schOrRef;
         const { schemaId } = this.opts;
-        const schId = schema[schemaId];
+        const schId = schema2[schemaId];
         if (schId)
           baseId = (0, resolve_1.resolveUrl)(this.opts.uriResolver, baseId, schId);
-        return new SchemaEnv({ schema, schemaId, root, baseId });
+        return new SchemaEnv({ schema: schema2, schemaId, root, baseId });
       }
       return getJsonPointer.call(this, p, schOrRef);
     }
@@ -3063,29 +3063,29 @@ var require_compile = __commonJS({
       "dependencies",
       "definitions"
     ]);
-    function getJsonPointer(parsedRef, { baseId, schema, root }) {
+    function getJsonPointer(parsedRef, { baseId, schema: schema2, root }) {
       var _a3;
       if (((_a3 = parsedRef.fragment) === null || _a3 === void 0 ? void 0 : _a3[0]) !== "/")
         return;
       for (const part of parsedRef.fragment.slice(1).split("/")) {
-        if (typeof schema === "boolean")
+        if (typeof schema2 === "boolean")
           return;
-        const partSchema = schema[(0, util_1.unescapeFragment)(part)];
+        const partSchema = schema2[(0, util_1.unescapeFragment)(part)];
         if (partSchema === void 0)
           return;
-        schema = partSchema;
-        const schId = typeof schema === "object" && schema[this.opts.schemaId];
+        schema2 = partSchema;
+        const schId = typeof schema2 === "object" && schema2[this.opts.schemaId];
         if (!PREVENT_SCOPE_CHANGE.has(part) && schId) {
           baseId = (0, resolve_1.resolveUrl)(this.opts.uriResolver, baseId, schId);
         }
       }
       let env2;
-      if (typeof schema != "boolean" && schema.$ref && !(0, util_1.schemaHasRulesButRef)(schema, this.RULES)) {
-        const $ref = (0, resolve_1.resolveUrl)(this.opts.uriResolver, baseId, schema.$ref);
+      if (typeof schema2 != "boolean" && schema2.$ref && !(0, util_1.schemaHasRulesButRef)(schema2, this.RULES)) {
+        const $ref = (0, resolve_1.resolveUrl)(this.opts.uriResolver, baseId, schema2.$ref);
         env2 = resolveSchema.call(this, root, $ref);
       }
       const { schemaId } = this.opts;
-      env2 = env2 || new SchemaEnv({ schema, schemaId, root, baseId });
+      env2 = env2 || new SchemaEnv({ schema: schema2, schemaId, root, baseId });
       if (env2.schema !== env2.root.schema)
         return env2;
       return void 0;
@@ -3238,8 +3238,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path22) {
-      let input = path22;
+    function removeDotSegments(path24) {
+      let input = path24;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3491,8 +3491,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path22, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path22 && path22 !== "/" ? path22 : void 0;
+        const [path24, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path24 && path24 !== "/" ? path24 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -4101,16 +4101,16 @@ var require_core = __commonJS({
           this.errors = v.errors;
         return valid;
       }
-      compile(schema, _meta) {
-        const sch = this._addSchema(schema, _meta);
+      compile(schema2, _meta) {
+        const sch = this._addSchema(schema2, _meta);
         return sch.validate || this._compileSchemaEnv(sch);
       }
-      compileAsync(schema, meta2) {
+      compileAsync(schema2, meta2) {
         if (typeof this.opts.loadSchema != "function") {
           throw new Error("options.loadSchema should be a function");
         }
         const { loadSchema } = this.opts;
-        return runCompileAsync.call(this, schema, meta2);
+        return runCompileAsync.call(this, schema2, meta2);
         async function runCompileAsync(_schema, _meta) {
           await loadMetaSchema.call(this, _schema.$schema);
           const sch = this._addSchema(_schema, _meta);
@@ -4156,37 +4156,37 @@ var require_core = __commonJS({
         }
       }
       // Adds schema to the instance
-      addSchema(schema, key, _meta, _validateSchema = this.opts.validateSchema) {
-        if (Array.isArray(schema)) {
-          for (const sch of schema)
+      addSchema(schema2, key, _meta, _validateSchema = this.opts.validateSchema) {
+        if (Array.isArray(schema2)) {
+          for (const sch of schema2)
             this.addSchema(sch, void 0, _meta, _validateSchema);
           return this;
         }
-        let id;
-        if (typeof schema === "object") {
+        let id2;
+        if (typeof schema2 === "object") {
           const { schemaId } = this.opts;
-          id = schema[schemaId];
-          if (id !== void 0 && typeof id != "string") {
+          id2 = schema2[schemaId];
+          if (id2 !== void 0 && typeof id2 != "string") {
             throw new Error(`schema ${schemaId} must be string`);
           }
         }
-        key = (0, resolve_1.normalizeId)(key || id);
+        key = (0, resolve_1.normalizeId)(key || id2);
         this._checkUnique(key);
-        this.schemas[key] = this._addSchema(schema, _meta, key, _validateSchema, true);
+        this.schemas[key] = this._addSchema(schema2, _meta, key, _validateSchema, true);
         return this;
       }
       // Add schema that will be used to validate other schemas
       // options in META_IGNORE_OPTIONS are alway set to false
-      addMetaSchema(schema, key, _validateSchema = this.opts.validateSchema) {
-        this.addSchema(schema, key, true, _validateSchema);
+      addMetaSchema(schema2, key, _validateSchema = this.opts.validateSchema) {
+        this.addSchema(schema2, key, true, _validateSchema);
         return this;
       }
       //  Validate schema against its meta-schema
-      validateSchema(schema, throwOrLogError) {
-        if (typeof schema == "boolean")
+      validateSchema(schema2, throwOrLogError) {
+        if (typeof schema2 == "boolean")
           return true;
         let $schema;
-        $schema = schema.$schema;
+        $schema = schema2.$schema;
         if ($schema !== void 0 && typeof $schema != "string") {
           throw new Error("$schema must be a string");
         }
@@ -4196,7 +4196,7 @@ var require_core = __commonJS({
           this.errors = null;
           return true;
         }
-        const valid = this.validate($schema, schema);
+        const valid = this.validate($schema, schema2);
         if (!valid && throwOrLogError) {
           const message = "schema is invalid: " + this.errorsText();
           if (this.opts.validateSchema === "log")
@@ -4249,11 +4249,11 @@ var require_core = __commonJS({
           case "object": {
             const cacheKey = schemaKeyRef;
             this._cache.delete(cacheKey);
-            let id = schemaKeyRef[this.opts.schemaId];
-            if (id) {
-              id = (0, resolve_1.normalizeId)(id);
-              delete this.schemas[id];
-              delete this.refs[id];
+            let id2 = schemaKeyRef[this.opts.schemaId];
+            if (id2) {
+              id2 = (0, resolve_1.normalizeId)(id2);
+              delete this.schemas[id2];
+              delete this.refs[id2];
             }
             return this;
           }
@@ -4324,7 +4324,7 @@ var require_core = __commonJS({
       errorsText(errors = this.errors, { separator = ", ", dataVar = "data" } = {}) {
         if (!errors || errors.length === 0)
           return "No errors";
-        return errors.map((e) => `${dataVar}${e.instancePath} ${e.message}`).reduce((text2, msg) => text2 + separator + msg);
+        return errors.map((e) => `${dataVar}${e.instancePath} ${e.message}`).reduce((text3, msg) => text3 + separator + msg);
       }
       $dataMetaSchema(metaSchema, keywordsJsonPointers) {
         const rules = this.RULES.all;
@@ -4339,9 +4339,9 @@ var require_core = __commonJS({
             if (typeof rule != "object")
               continue;
             const { $data } = rule.definition;
-            const schema = keywords[key];
-            if ($data && schema)
-              keywords[key] = schemaOrData(schema);
+            const schema2 = keywords[key];
+            if ($data && schema2)
+              keywords[key] = schemaOrData(schema2);
           }
         }
         return metaSchema;
@@ -4359,23 +4359,23 @@ var require_core = __commonJS({
           }
         }
       }
-      _addSchema(schema, meta2, baseId, validateSchema2 = this.opts.validateSchema, addSchema = this.opts.addUsedSchema) {
-        let id;
+      _addSchema(schema2, meta2, baseId, validateSchema2 = this.opts.validateSchema, addSchema = this.opts.addUsedSchema) {
+        let id2;
         const { schemaId } = this.opts;
-        if (typeof schema == "object") {
-          id = schema[schemaId];
+        if (typeof schema2 == "object") {
+          id2 = schema2[schemaId];
         } else {
           if (this.opts.jtd)
             throw new Error("schema must be object");
-          else if (typeof schema != "boolean")
+          else if (typeof schema2 != "boolean")
             throw new Error("schema must be object or boolean");
         }
-        let sch = this._cache.get(schema);
+        let sch = this._cache.get(schema2);
         if (sch !== void 0)
           return sch;
-        baseId = (0, resolve_1.normalizeId)(id || baseId);
-        const localRefs = resolve_1.getSchemaRefs.call(this, schema, baseId);
-        sch = new compile_1.SchemaEnv({ schema, schemaId, meta: meta2, baseId, localRefs });
+        baseId = (0, resolve_1.normalizeId)(id2 || baseId);
+        const localRefs = resolve_1.getSchemaRefs.call(this, schema2, baseId);
+        sch = new compile_1.SchemaEnv({ schema: schema2, schemaId, meta: meta2, baseId, localRefs });
         this._cache.set(sch.schema, sch);
         if (addSchema && !baseId.startsWith("#")) {
           if (baseId)
@@ -4383,12 +4383,12 @@ var require_core = __commonJS({
           this.refs[baseId] = sch;
         }
         if (validateSchema2)
-          this.validateSchema(schema, true);
+          this.validateSchema(schema2, true);
         return sch;
       }
-      _checkUnique(id) {
-        if (this.schemas[id] || this.refs[id]) {
-          throw new Error(`schema with key or id "${id}" already exists`);
+      _checkUnique(id2) {
+        if (this.schemas[id2] || this.refs[id2]) {
+          throw new Error(`schema with key or id "${id2}" already exists`);
         }
       }
       _compileSchemaEnv(sch) {
@@ -4537,8 +4537,8 @@ var require_core = __commonJS({
     var $dataRef = {
       $ref: "https://raw.githubusercontent.com/ajv-validator/ajv/master/lib/refs/data.json#"
     };
-    function schemaOrData(schema) {
-      return { anyOf: [schema, $dataRef] };
+    function schemaOrData(schema2) {
+      return { anyOf: [schema2, $dataRef] };
     }
   }
 });
@@ -4838,7 +4838,7 @@ var require_pattern = __commonJS({
       $data: true,
       error: error2,
       code(cxt) {
-        const { gen, data, $data, schema, schemaCode, it } = cxt;
+        const { gen, data, $data, schema: schema2, schemaCode, it } = cxt;
         const u = it.opts.unicodeRegExp ? "u" : "";
         if ($data) {
           const { regExp } = it.opts.code;
@@ -4847,7 +4847,7 @@ var require_pattern = __commonJS({
           gen.try(() => gen.assign(valid, (0, codegen_1._)`${regExpCode}(${schemaCode}, ${u}).test(${data})`), () => gen.assign(valid, false));
           cxt.fail$data((0, codegen_1._)`!${valid}`);
         } else {
-          const regExp = (0, code_1.usePattern)(cxt, schema);
+          const regExp = (0, code_1.usePattern)(cxt, schema2);
           cxt.fail$data((0, codegen_1._)`!${regExp}.test(${data})`);
         }
       }
@@ -4904,11 +4904,11 @@ var require_required = __commonJS({
       $data: true,
       error: error2,
       code(cxt) {
-        const { gen, schema, schemaCode, data, $data, it } = cxt;
+        const { gen, schema: schema2, schemaCode, data, $data, it } = cxt;
         const { opts } = it;
-        if (!$data && schema.length === 0)
+        if (!$data && schema2.length === 0)
           return;
-        const useLoop = schema.length >= opts.loopRequired;
+        const useLoop = schema2.length >= opts.loopRequired;
         if (it.allErrors)
           allErrorsMode();
         else
@@ -4916,7 +4916,7 @@ var require_required = __commonJS({
         if (opts.strictRequired) {
           const props = cxt.parentSchema.properties;
           const { definedProperties } = cxt.it;
-          for (const requiredKey of schema) {
+          for (const requiredKey of schema2) {
             if ((props === null || props === void 0 ? void 0 : props[requiredKey]) === void 0 && !definedProperties.has(requiredKey)) {
               const schemaPath = it.schemaEnv.baseId + it.errSchemaPath;
               const msg = `required property "${requiredKey}" is not defined at "${schemaPath}" (strictRequired)`;
@@ -4928,7 +4928,7 @@ var require_required = __commonJS({
           if (useLoop || $data) {
             cxt.block$data(codegen_1.nil, loopAllRequired);
           } else {
-            for (const prop of schema) {
+            for (const prop of schema2) {
               (0, code_1.checkReportMissingProp)(cxt, prop);
             }
           }
@@ -4940,7 +4940,7 @@ var require_required = __commonJS({
             cxt.block$data(valid, () => loopUntilMissing(missing, valid));
             cxt.ok(valid);
           } else {
-            gen.if((0, code_1.checkMissingProp)(cxt, schema, missing));
+            gen.if((0, code_1.checkMissingProp)(cxt, schema2, missing));
             (0, code_1.reportMissingProp)(cxt, missing);
             gen.else();
           }
@@ -5027,8 +5027,8 @@ var require_uniqueItems = __commonJS({
       $data: true,
       error: error2,
       code(cxt) {
-        const { gen, data, $data, schema, parentSchema, schemaCode, it } = cxt;
-        if (!$data && !schema)
+        const { gen, data, $data, schema: schema2, parentSchema, schemaCode, it } = cxt;
+        if (!$data && !schema2)
           return;
         const valid = gen.let("valid");
         const itemTypes = parentSchema.items ? (0, dataType_1.getSchemaTypes)(parentSchema.items) : [];
@@ -5091,11 +5091,11 @@ var require_const = __commonJS({
       $data: true,
       error: error2,
       code(cxt) {
-        const { gen, data, $data, schemaCode, schema } = cxt;
-        if ($data || schema && typeof schema == "object") {
+        const { gen, data, $data, schemaCode, schema: schema2 } = cxt;
+        if ($data || schema2 && typeof schema2 == "object") {
           cxt.fail$data((0, codegen_1._)`!${(0, util_1.useFunc)(gen, equal_1.default)}(${data}, ${schemaCode})`);
         } else {
-          cxt.fail((0, codegen_1._)`${schema} !== ${data}`);
+          cxt.fail((0, codegen_1._)`${schema2} !== ${data}`);
         }
       }
     };
@@ -5121,10 +5121,10 @@ var require_enum = __commonJS({
       $data: true,
       error: error2,
       code(cxt) {
-        const { gen, data, $data, schema, schemaCode, it } = cxt;
-        if (!$data && schema.length === 0)
+        const { gen, data, $data, schema: schema2, schemaCode, it } = cxt;
+        if (!$data && schema2.length === 0)
           throw new Error("enum must have non-empty array");
-        const useLoop = schema.length >= it.opts.loopEnum;
+        const useLoop = schema2.length >= it.opts.loopEnum;
         let eql;
         const getEql = () => eql !== null && eql !== void 0 ? eql : eql = (0, util_1.useFunc)(gen, equal_1.default);
         let valid;
@@ -5132,10 +5132,10 @@ var require_enum = __commonJS({
           valid = gen.let("valid");
           cxt.block$data(valid, loopEnum);
         } else {
-          if (!Array.isArray(schema))
+          if (!Array.isArray(schema2))
             throw new Error("ajv implementation error");
           const vSchema = gen.const("vSchema", schemaCode);
-          valid = (0, codegen_1.or)(...schema.map((_x, i) => equalCode(vSchema, i)));
+          valid = (0, codegen_1.or)(...schema2.map((_x, i) => equalCode(vSchema, i)));
         }
         cxt.pass(valid);
         function loopEnum() {
@@ -5143,7 +5143,7 @@ var require_enum = __commonJS({
           gen.forOf("v", schemaCode, (v) => gen.if((0, codegen_1._)`${getEql()}(${data}, ${v})`, () => gen.assign(valid, true).break()));
         }
         function equalCode(vSchema, i) {
-          const sch = schema[i];
+          const sch = schema2[i];
           return typeof sch === "object" && sch !== null ? (0, codegen_1._)`${getEql()}(${data}, ${vSchema}[${i}])` : (0, codegen_1._)`${data} === ${sch}`;
         }
       }
@@ -5219,13 +5219,13 @@ var require_additionalItems = __commonJS({
       }
     };
     function validateAdditionalItems(cxt, items) {
-      const { gen, schema, data, keyword, it } = cxt;
+      const { gen, schema: schema2, data, keyword, it } = cxt;
       it.items = true;
       const len = gen.const("len", (0, codegen_1._)`${data}.length`);
-      if (schema === false) {
+      if (schema2 === false) {
         cxt.setParams({ len: items.length });
         cxt.pass((0, codegen_1._)`${len} <= ${items.length}`);
-      } else if (typeof schema == "object" && !(0, util_1.alwaysValidSchema)(it, schema)) {
+      } else if (typeof schema2 == "object" && !(0, util_1.alwaysValidSchema)(it, schema2)) {
         const valid = gen.var("valid", (0, codegen_1._)`${len} <= ${items.length}`);
         gen.if((0, codegen_1.not)(valid), () => validateItems(valid));
         cxt.ok(valid);
@@ -5258,11 +5258,11 @@ var require_items = __commonJS({
       schemaType: ["object", "array", "boolean"],
       before: "uniqueItems",
       code(cxt) {
-        const { schema, it } = cxt;
-        if (Array.isArray(schema))
-          return validateTuple(cxt, "additionalItems", schema);
+        const { schema: schema2, it } = cxt;
+        if (Array.isArray(schema2))
+          return validateTuple(cxt, "additionalItems", schema2);
         it.items = true;
-        if ((0, util_1.alwaysValidSchema)(it, schema))
+        if ((0, util_1.alwaysValidSchema)(it, schema2))
           return;
         cxt.ok((0, code_1.validateArray)(cxt));
       }
@@ -5337,10 +5337,10 @@ var require_items2020 = __commonJS({
       before: "uniqueItems",
       error: error2,
       code(cxt) {
-        const { schema, parentSchema, it } = cxt;
+        const { schema: schema2, parentSchema, it } = cxt;
         const { prefixItems } = parentSchema;
         it.items = true;
-        if ((0, util_1.alwaysValidSchema)(it, schema))
+        if ((0, util_1.alwaysValidSchema)(it, schema2))
           return;
         if (prefixItems)
           (0, additionalItems_1.validateAdditionalItems)(cxt, prefixItems);
@@ -5371,7 +5371,7 @@ var require_contains = __commonJS({
       trackErrors: true,
       error: error2,
       code(cxt) {
-        const { gen, schema, parentSchema, data, it } = cxt;
+        const { gen, schema: schema2, parentSchema, data, it } = cxt;
         let min;
         let max;
         const { minContains, maxContains } = parentSchema;
@@ -5392,7 +5392,7 @@ var require_contains = __commonJS({
           cxt.fail();
           return;
         }
-        if ((0, util_1.alwaysValidSchema)(it, schema)) {
+        if ((0, util_1.alwaysValidSchema)(it, schema2)) {
           let cond = (0, codegen_1._)`${len} >= ${min}`;
           if (max !== void 0)
             cond = (0, codegen_1._)`${cond} && ${len} <= ${max}`;
@@ -5477,14 +5477,14 @@ var require_dependencies = __commonJS({
         validateSchemaDeps(cxt, schDeps);
       }
     };
-    function splitDependencies({ schema }) {
+    function splitDependencies({ schema: schema2 }) {
       const propertyDeps = {};
       const schemaDeps = {};
-      for (const key in schema) {
+      for (const key in schema2) {
         if (key === "__proto__")
           continue;
-        const deps = Array.isArray(schema[key]) ? propertyDeps : schemaDeps;
-        deps[key] = schema[key];
+        const deps = Array.isArray(schema2[key]) ? propertyDeps : schemaDeps;
+        deps[key] = schema2[key];
       }
       return [propertyDeps, schemaDeps];
     }
@@ -5557,8 +5557,8 @@ var require_propertyNames = __commonJS({
       schemaType: ["object", "boolean"],
       error: error2,
       code(cxt) {
-        const { gen, schema, data, it } = cxt;
-        if ((0, util_1.alwaysValidSchema)(it, schema))
+        const { gen, schema: schema2, data, it } = cxt;
+        if ((0, util_1.alwaysValidSchema)(it, schema2))
           return;
         const valid = gen.name("valid");
         gen.forIn("key", data, (key) => {
@@ -5604,12 +5604,12 @@ var require_additionalProperties = __commonJS({
       trackErrors: true,
       error: error2,
       code(cxt) {
-        const { gen, schema, parentSchema, data, errsCount, it } = cxt;
+        const { gen, schema: schema2, parentSchema, data, errsCount, it } = cxt;
         if (!errsCount)
           throw new Error("ajv implementation error");
         const { allErrors, opts } = it;
         it.props = true;
-        if (opts.removeAdditional !== "all" && (0, util_1.alwaysValidSchema)(it, schema))
+        if (opts.removeAdditional !== "all" && (0, util_1.alwaysValidSchema)(it, schema2))
           return;
         const props = (0, code_1.allSchemaProperties)(parentSchema.properties);
         const patProps = (0, code_1.allSchemaProperties)(parentSchema.patternProperties);
@@ -5642,18 +5642,18 @@ var require_additionalProperties = __commonJS({
           gen.code((0, codegen_1._)`delete ${data}[${key}]`);
         }
         function additionalPropertyCode(key) {
-          if (opts.removeAdditional === "all" || opts.removeAdditional && schema === false) {
+          if (opts.removeAdditional === "all" || opts.removeAdditional && schema2 === false) {
             deleteAdditional(key);
             return;
           }
-          if (schema === false) {
+          if (schema2 === false) {
             cxt.setParams({ additionalProperty: key });
             cxt.error();
             if (!allErrors)
               gen.break();
             return;
           }
-          if (typeof schema == "object" && !(0, util_1.alwaysValidSchema)(it, schema)) {
+          if (typeof schema2 == "object" && !(0, util_1.alwaysValidSchema)(it, schema2)) {
             const valid = gen.name("valid");
             if (opts.removeAdditional === "failing") {
               applyAdditionalSchema(key, valid, false);
@@ -5703,18 +5703,18 @@ var require_properties = __commonJS({
       type: "object",
       schemaType: "object",
       code(cxt) {
-        const { gen, schema, parentSchema, data, it } = cxt;
+        const { gen, schema: schema2, parentSchema, data, it } = cxt;
         if (it.opts.removeAdditional === "all" && parentSchema.additionalProperties === void 0) {
           additionalProperties_1.default.code(new validate_1.KeywordCxt(it, additionalProperties_1.default, "additionalProperties"));
         }
-        const allProps = (0, code_1.allSchemaProperties)(schema);
+        const allProps = (0, code_1.allSchemaProperties)(schema2);
         for (const prop of allProps) {
           it.definedProperties.add(prop);
         }
         if (it.opts.unevaluated && allProps.length && it.props !== true) {
           it.props = util_1.mergeEvaluated.props(gen, (0, util_1.toHash)(allProps), it.props);
         }
-        const properties = allProps.filter((p) => !(0, util_1.alwaysValidSchema)(it, schema[p]));
+        const properties = allProps.filter((p) => !(0, util_1.alwaysValidSchema)(it, schema2[p]));
         if (properties.length === 0)
           return;
         const valid = gen.name("valid");
@@ -5732,7 +5732,7 @@ var require_properties = __commonJS({
           cxt.ok(valid);
         }
         function hasDefault(prop) {
-          return it.opts.useDefaults && !it.compositeRule && schema[prop].default !== void 0;
+          return it.opts.useDefaults && !it.compositeRule && schema2[prop].default !== void 0;
         }
         function applyPropertySchema(prop) {
           cxt.subschema({
@@ -5761,10 +5761,10 @@ var require_patternProperties = __commonJS({
       type: "object",
       schemaType: "object",
       code(cxt) {
-        const { gen, schema, data, parentSchema, it } = cxt;
+        const { gen, schema: schema2, data, parentSchema, it } = cxt;
         const { opts } = it;
-        const patterns = (0, code_1.allSchemaProperties)(schema);
-        const alwaysValidPatterns = patterns.filter((p) => (0, util_1.alwaysValidSchema)(it, schema[p]));
+        const patterns = (0, code_1.allSchemaProperties)(schema2);
+        const alwaysValidPatterns = patterns.filter((p) => (0, util_1.alwaysValidSchema)(it, schema2[p]));
         if (patterns.length === 0 || alwaysValidPatterns.length === patterns.length && (!it.opts.unevaluated || it.props === true)) {
           return;
         }
@@ -5832,8 +5832,8 @@ var require_not = __commonJS({
       schemaType: ["object", "boolean"],
       trackErrors: true,
       code(cxt) {
-        const { gen, schema, it } = cxt;
-        if ((0, util_1.alwaysValidSchema)(it, schema)) {
+        const { gen, schema: schema2, it } = cxt;
+        if ((0, util_1.alwaysValidSchema)(it, schema2)) {
           cxt.fail();
           return;
         }
@@ -5886,12 +5886,12 @@ var require_oneOf = __commonJS({
       trackErrors: true,
       error: error2,
       code(cxt) {
-        const { gen, schema, parentSchema, it } = cxt;
-        if (!Array.isArray(schema))
+        const { gen, schema: schema2, parentSchema, it } = cxt;
+        if (!Array.isArray(schema2))
           throw new Error("ajv implementation error");
         if (it.opts.discriminator && parentSchema.discriminator)
           return;
-        const schArr = schema;
+        const schArr = schema2;
         const valid = gen.let("valid", false);
         const passing = gen.let("passing", null);
         const schValid = gen.name("_valid");
@@ -5937,11 +5937,11 @@ var require_allOf = __commonJS({
       keyword: "allOf",
       schemaType: "array",
       code(cxt) {
-        const { gen, schema, it } = cxt;
-        if (!Array.isArray(schema))
+        const { gen, schema: schema2, it } = cxt;
+        if (!Array.isArray(schema2))
           throw new Error("ajv implementation error");
         const valid = gen.name("valid");
-        schema.forEach((sch, i) => {
+        schema2.forEach((sch, i) => {
           if ((0, util_1.alwaysValidSchema)(it, sch))
             return;
           const schCxt = cxt.subschema({ keyword: "allOf", schemaProp: i }, valid);
@@ -6016,8 +6016,8 @@ var require_if = __commonJS({
       }
     };
     function hasSchema(it, keyword) {
-      const schema = it.schema[keyword];
-      return schema !== void 0 && !(0, util_1.alwaysValidSchema)(it, schema);
+      const schema2 = it.schema[keyword];
+      return schema2 !== void 0 && !(0, util_1.alwaysValidSchema)(it, schema2);
     }
     exports.default = def;
   }
@@ -6106,7 +6106,7 @@ var require_format = __commonJS({
       $data: true,
       error: error2,
       code(cxt, ruleType) {
-        const { gen, data, $data, schema, schemaCode, it } = cxt;
+        const { gen, data, $data, schema: schema2, schemaCode, it } = cxt;
         const { opts, errSchemaPath, schemaEnv, self } = it;
         if (!opts.validateFormats)
           return;
@@ -6136,7 +6136,7 @@ var require_format = __commonJS({
           }
         }
         function validateFormat() {
-          const formatDef = self.formats[schema];
+          const formatDef = self.formats[schema2];
           if (!formatDef) {
             unknownFormat();
             return;
@@ -6153,12 +6153,12 @@ var require_format = __commonJS({
             }
             throw new Error(unknownMsg());
             function unknownMsg() {
-              return `unknown format "${schema}" ignored in schema at path "${errSchemaPath}"`;
+              return `unknown format "${schema2}" ignored in schema at path "${errSchemaPath}"`;
             }
           }
           function getFormat(fmtDef) {
-            const code = fmtDef instanceof RegExp ? (0, codegen_1.regexpCode)(fmtDef) : opts.code.formats ? (0, codegen_1._)`${opts.code.formats}${(0, codegen_1.getProperty)(schema)}` : void 0;
-            const fmt = gen.scopeValue("formats", { key: schema, ref: fmtDef, code });
+            const code = fmtDef instanceof RegExp ? (0, codegen_1.regexpCode)(fmtDef) : opts.code.formats ? (0, codegen_1._)`${opts.code.formats}${(0, codegen_1.getProperty)(schema2)}` : void 0;
+            const fmt = gen.scopeValue("formats", { key: schema2, ref: fmtDef, code });
             if (typeof fmtDef == "object" && !(fmtDef instanceof RegExp)) {
               return [fmtDef.type || "string", fmtDef.validate, (0, codegen_1._)`${fmt}.validate`];
             }
@@ -6269,15 +6269,15 @@ var require_discriminator = __commonJS({
       schemaType: "object",
       error: error2,
       code(cxt) {
-        const { gen, data, schema, parentSchema, it } = cxt;
+        const { gen, data, schema: schema2, parentSchema, it } = cxt;
         const { oneOf } = parentSchema;
         if (!it.opts.discriminator) {
           throw new Error("discriminator: requires discriminator option");
         }
-        const tagName = schema.propertyName;
+        const tagName = schema2.propertyName;
         if (typeof tagName != "string")
           throw new Error("discriminator: requires propertyName");
-        if (schema.mapping)
+        if (schema2.mapping)
           throw new Error("discriminator: mapping is not supported");
         if (!oneOf)
           throw new Error("discriminator: requires oneOf keyword");
@@ -6885,12 +6885,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs21, exportName) {
+    function addFormats(ajv, list, fs22, exportName) {
       var _a3;
       var _b;
       (_a3 = (_b = ajv.opts.code).formats) !== null && _a3 !== void 0 ? _a3 : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs21[f]);
+        ajv.addFormat(f, fs22[f]);
     }
     module.exports = exports = formatsPlugin;
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -7314,9 +7314,9 @@ var require_permessage_deflate = __commonJS({
        * @private
        */
       _decompress(data, fin, callback) {
-        const endpoint = this._isServer ? "client" : "server";
+        const endpoint2 = this._isServer ? "client" : "server";
         if (!this._inflate) {
-          const key = `${endpoint}_max_window_bits`;
+          const key = `${endpoint2}_max_window_bits`;
           const windowBits = typeof this.params[key] !== "number" ? zlib.Z_DEFAULT_WINDOWBITS : this.params[key];
           this._inflate = zlib.createInflateRaw({
             ...this._options.zlibInflateOptions,
@@ -7349,7 +7349,7 @@ var require_permessage_deflate = __commonJS({
           } else {
             this._inflate[kTotalLength] = 0;
             this._inflate[kBuffers] = [];
-            if (fin && this.params[`${endpoint}_no_context_takeover`]) {
+            if (fin && this.params[`${endpoint2}_no_context_takeover`]) {
               this._inflate.reset();
             }
           }
@@ -7365,9 +7365,9 @@ var require_permessage_deflate = __commonJS({
        * @private
        */
       _compress(data, fin, callback) {
-        const endpoint = this._isServer ? "server" : "client";
+        const endpoint2 = this._isServer ? "server" : "client";
         if (!this._deflate) {
-          const key = `${endpoint}_max_window_bits`;
+          const key = `${endpoint2}_max_window_bits`;
           const windowBits = typeof this.params[key] !== "number" ? zlib.Z_DEFAULT_WINDOWBITS : this.params[key];
           this._deflate = zlib.createDeflateRaw({
             ...this._options.zlibDeflateOptions,
@@ -7393,7 +7393,7 @@ var require_permessage_deflate = __commonJS({
           this._deflate[kCallback] = null;
           this._deflate[kTotalLength] = 0;
           this._deflate[kBuffers] = [];
-          if (fin && this.params[`${endpoint}_no_context_takeover`]) {
+          if (fin && this.params[`${endpoint2}_no_context_takeover`]) {
             this._deflate.reset();
           }
           callback(null, data2);
@@ -9099,9 +9099,9 @@ var require_websocket = __commonJS({
     var EventEmitter = __require("events");
     var https = __require("https");
     var http2 = __require("http");
-    var net2 = __require("net");
+    var net3 = __require("net");
     var tls = __require("tls");
-    var { randomBytes: randomBytes2, createHash } = __require("crypto");
+    var { randomBytes: randomBytes3, createHash } = __require("crypto");
     var { Duplex, Readable } = __require("stream");
     var { URL: URL2 } = __require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
@@ -9631,8 +9631,8 @@ var require_websocket = __commonJS({
         }
       }
       const defaultPort = isSecure ? 443 : 80;
-      const key = randomBytes2(16).toString("base64");
-      const request = isSecure ? https.request : http2.request;
+      const key = randomBytes3(16).toString("base64");
+      const request2 = isSecure ? https.request : http2.request;
       const protocolSet = /* @__PURE__ */ new Set();
       let perMessageDeflate;
       opts.createConnection = opts.createConnection || (isSecure ? tlsConnect : netConnect);
@@ -9659,13 +9659,13 @@ var require_websocket = __commonJS({
         });
       }
       if (protocols.length) {
-        for (const protocol of protocols) {
-          if (typeof protocol !== "string" || !subprotocolRegex.test(protocol) || protocolSet.has(protocol)) {
+        for (const protocol2 of protocols) {
+          if (typeof protocol2 !== "string" || !subprotocolRegex.test(protocol2) || protocolSet.has(protocol2)) {
             throw new SyntaxError(
               "An invalid or duplicated subprotocol was specified"
             );
           }
-          protocolSet.add(protocol);
+          protocolSet.add(protocol2);
         }
         opts.headers["Sec-WebSocket-Protocol"] = protocols.join(",");
       }
@@ -9709,12 +9709,12 @@ var require_websocket = __commonJS({
         if (opts.auth && !options.headers.authorization) {
           options.headers.authorization = "Basic " + Buffer.from(opts.auth).toString("base64");
         }
-        req = websocket._req = request(opts);
+        req = websocket._req = request2(opts);
         if (websocket._redirects) {
           websocket.emit("redirect", websocket.url, req);
         }
       } else {
-        req = websocket._req = request(opts);
+        req = websocket._req = request2(opts);
       }
       if (opts.timeout) {
         req.on("timeout", () => {
@@ -9761,8 +9761,8 @@ var require_websocket = __commonJS({
           abortHandshake(websocket, socket, "Invalid Upgrade header");
           return;
         }
-        const digest = createHash("sha1").update(key + GUID).digest("base64");
-        if (res.headers["sec-websocket-accept"] !== digest) {
+        const digest2 = createHash("sha1").update(key + GUID).digest("base64");
+        if (res.headers["sec-websocket-accept"] !== digest2) {
           abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
           return;
         }
@@ -9833,12 +9833,12 @@ var require_websocket = __commonJS({
     }
     function netConnect(options) {
       options.path = options.socketPath;
-      return net2.connect(options);
+      return net3.connect(options);
     }
     function tlsConnect(options) {
       options.path = void 0;
       if (!options.servername && options.servername !== "") {
-        options.servername = net2.isIP(options.host) ? "" : options.host;
+        options.servername = net3.isIP(options.host) ? "" : options.host;
       }
       return tls.connect(options);
     }
@@ -10097,11 +10097,11 @@ var require_subprotocol = __commonJS({
             throw new SyntaxError(`Unexpected character at index ${i}`);
           }
           if (end === -1) end = i;
-          const protocol2 = header.slice(start, end);
-          if (protocols.has(protocol2)) {
-            throw new SyntaxError(`The "${protocol2}" subprotocol is duplicated`);
+          const protocol3 = header.slice(start, end);
+          if (protocols.has(protocol3)) {
+            throw new SyntaxError(`The "${protocol3}" subprotocol is duplicated`);
           }
-          protocols.add(protocol2);
+          protocols.add(protocol3);
           start = end = -1;
         } else {
           throw new SyntaxError(`Unexpected character at index ${i}`);
@@ -10110,11 +10110,11 @@ var require_subprotocol = __commonJS({
       if (start === -1 || end !== -1) {
         throw new SyntaxError("Unexpected end of input");
       }
-      const protocol = header.slice(start, i);
-      if (protocols.has(protocol)) {
-        throw new SyntaxError(`The "${protocol}" subprotocol is duplicated`);
+      const protocol2 = header.slice(start, i);
+      if (protocols.has(protocol2)) {
+        throw new SyntaxError(`The "${protocol2}" subprotocol is duplicated`);
       }
-      protocols.add(protocol);
+      protocols.add(protocol2);
       return protocols;
     }
     module.exports = { parse: parse3 };
@@ -10429,19 +10429,19 @@ var require_websocket_server = __commonJS({
           );
         }
         if (this._state > RUNNING) return abortHandshake(socket, 503);
-        const digest = createHash("sha1").update(key + GUID).digest("base64");
+        const digest2 = createHash("sha1").update(key + GUID).digest("base64");
         const headers = [
           "HTTP/1.1 101 Switching Protocols",
           "Upgrade: websocket",
           "Connection: Upgrade",
-          `Sec-WebSocket-Accept: ${digest}`
+          `Sec-WebSocket-Accept: ${digest2}`
         ];
         const ws = new this.options.WebSocket(null, void 0, this.options);
         if (protocols.size) {
-          const protocol = this.options.handleProtocols ? this.options.handleProtocols(protocols, req) : protocols.values().next().value;
-          if (protocol) {
-            headers.push(`Sec-WebSocket-Protocol: ${protocol}`);
-            ws._protocol = protocol;
+          const protocol2 = this.options.handleProtocols ? this.options.handleProtocols(protocols, req) : protocols.values().next().value;
+          if (protocol2) {
+            headers.push(`Sec-WebSocket-Protocol: ${protocol2}`);
+            ws._protocol = protocol2;
           }
         }
         if (extensions[PerMessageDeflate2.extensionName]) {
@@ -10585,9 +10585,9 @@ function envValue(name, fallback = void 0, source = process.env) {
 function envFlag(name, fallback, source = process.env) {
   const raw = env(name, source).value;
   if (raw === void 0) return fallback;
-  const text2 = raw.trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(text2)) return true;
-  if (["0", "false", "no", "off"].includes(text2)) return false;
+  const text3 = raw.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(text3)) return true;
+  if (["0", "false", "no", "off"].includes(text3)) return false;
   return fallback;
 }
 function envReport(source = process.env) {
@@ -10896,15 +10896,15 @@ function toJsonl(records) {
 `).join("");
 }
 async function appendJsonl(filePath, records) {
-  const text2 = toJsonl(Array.isArray(records) ? records : [records]);
+  const text3 = toJsonl(Array.isArray(records) ? records : [records]);
   await fsp.mkdir(path2.dirname(filePath), { recursive: true, mode: DIR_MODE });
-  await fsp.appendFile(filePath, text2, { encoding: "utf8", mode: FILE_MODE });
+  await fsp.appendFile(filePath, text3, { encoding: "utf8", mode: FILE_MODE });
 }
 function appendJsonlSync(filePath, records) {
-  const text2 = toJsonl(Array.isArray(records) ? records : [records]);
+  const text3 = toJsonl(Array.isArray(records) ? records : [records]);
   assertTestSafeWrite(filePath);
   fs2.mkdirSync(path2.dirname(filePath), { recursive: true, mode: DIR_MODE });
-  fs2.appendFileSync(filePath, text2, { encoding: "utf8", mode: FILE_MODE });
+  fs2.appendFileSync(filePath, text3, { encoding: "utf8", mode: FILE_MODE });
 }
 
 // src/shared/state.js
@@ -11334,13 +11334,13 @@ function mergeDefs(...defs) {
   }
   return Object.defineProperties({}, mergedDescriptors);
 }
-function cloneDef(schema) {
-  return mergeDefs(schema._zod.def);
+function cloneDef(schema2) {
+  return mergeDefs(schema2._zod.def);
 }
-function getElementAtPath(obj, path22) {
-  if (!path22)
+function getElementAtPath(obj, path24) {
+  if (!path24)
     return obj;
-  return path22.reduce((acc, key) => acc?.[key], obj);
+  return path24.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -11557,14 +11557,14 @@ var BIGINT_FORMAT_RANGES = {
   int64: [/* @__PURE__ */ BigInt("-9223372036854775808"), /* @__PURE__ */ BigInt("9223372036854775807")],
   uint64: [/* @__PURE__ */ BigInt(0), /* @__PURE__ */ BigInt("18446744073709551615")]
 };
-function pick(schema, mask) {
-  const currDef = schema._zod.def;
+function pick(schema2, mask) {
+  const currDef = schema2._zod.def;
   const checks = currDef.checks;
   const hasChecks = checks && checks.length > 0;
   if (hasChecks) {
     throw new Error(".pick() cannot be used on object schemas containing refinements");
   }
-  const def = mergeDefs(schema._zod.def, {
+  const def = mergeDefs(schema2._zod.def, {
     get shape() {
       const newShape = {};
       for (const key in mask) {
@@ -11580,18 +11580,18 @@ function pick(schema, mask) {
     },
     checks: []
   });
-  return clone(schema, def);
+  return clone(schema2, def);
 }
-function omit(schema, mask) {
-  const currDef = schema._zod.def;
+function omit(schema2, mask) {
+  const currDef = schema2._zod.def;
   const checks = currDef.checks;
   const hasChecks = checks && checks.length > 0;
   if (hasChecks) {
     throw new Error(".omit() cannot be used on object schemas containing refinements");
   }
-  const def = mergeDefs(schema._zod.def, {
+  const def = mergeDefs(schema2._zod.def, {
     get shape() {
-      const newShape = { ...schema._zod.def.shape };
+      const newShape = { ...schema2._zod.def.shape };
       for (const key in mask) {
         if (!(key in currDef.shape)) {
           throw new Error(`Unrecognized key: "${key}"`);
@@ -11605,43 +11605,43 @@ function omit(schema, mask) {
     },
     checks: []
   });
-  return clone(schema, def);
+  return clone(schema2, def);
 }
-function extend(schema, shape) {
+function extend(schema2, shape) {
   if (!isPlainObject(shape)) {
     throw new Error("Invalid input to extend: expected a plain object");
   }
-  const checks = schema._zod.def.checks;
+  const checks = schema2._zod.def.checks;
   const hasChecks = checks && checks.length > 0;
   if (hasChecks) {
-    const existingShape = schema._zod.def.shape;
+    const existingShape = schema2._zod.def.shape;
     for (const key in shape) {
       if (Object.getOwnPropertyDescriptor(existingShape, key) !== void 0) {
         throw new Error("Cannot overwrite keys on object schemas containing refinements. Use `.safeExtend()` instead.");
       }
     }
   }
-  const def = mergeDefs(schema._zod.def, {
+  const def = mergeDefs(schema2._zod.def, {
     get shape() {
-      const _shape = { ...schema._zod.def.shape, ...shape };
+      const _shape = { ...schema2._zod.def.shape, ...shape };
       assignProp(this, "shape", _shape);
       return _shape;
     }
   });
-  return clone(schema, def);
+  return clone(schema2, def);
 }
-function safeExtend(schema, shape) {
+function safeExtend(schema2, shape) {
   if (!isPlainObject(shape)) {
     throw new Error("Invalid input to safeExtend: expected a plain object");
   }
-  const def = mergeDefs(schema._zod.def, {
+  const def = mergeDefs(schema2._zod.def, {
     get shape() {
-      const _shape = { ...schema._zod.def.shape, ...shape };
+      const _shape = { ...schema2._zod.def.shape, ...shape };
       assignProp(this, "shape", _shape);
       return _shape;
     }
   });
-  return clone(schema, def);
+  return clone(schema2, def);
 }
 function merge(a, b) {
   if (a._zod.def.checks?.length) {
@@ -11660,16 +11660,16 @@ function merge(a, b) {
   });
   return clone(a, def);
 }
-function partial(Class2, schema, mask) {
-  const currDef = schema._zod.def;
+function partial(Class2, schema2, mask) {
+  const currDef = schema2._zod.def;
   const checks = currDef.checks;
   const hasChecks = checks && checks.length > 0;
   if (hasChecks) {
     throw new Error(".partial() cannot be used on object schemas containing refinements");
   }
-  const def = mergeDefs(schema._zod.def, {
+  const def = mergeDefs(schema2._zod.def, {
     get shape() {
-      const oldShape = schema._zod.def.shape;
+      const oldShape = schema2._zod.def.shape;
       const shape = { ...oldShape };
       if (mask) {
         for (const key in mask) {
@@ -11696,12 +11696,12 @@ function partial(Class2, schema, mask) {
     },
     checks: []
   });
-  return clone(schema, def);
+  return clone(schema2, def);
 }
-function required(Class2, schema, mask) {
-  const def = mergeDefs(schema._zod.def, {
+function required(Class2, schema2, mask) {
+  const def = mergeDefs(schema2._zod.def, {
     get shape() {
-      const oldShape = schema._zod.def.shape;
+      const oldShape = schema2._zod.def.shape;
       const shape = { ...oldShape };
       if (mask) {
         for (const key in mask) {
@@ -11727,7 +11727,7 @@ function required(Class2, schema, mask) {
       return shape;
     }
   });
-  return clone(schema, def);
+  return clone(schema2, def);
 }
 function aborted(x, startIndex = 0) {
   if (x.aborted === true)
@@ -11749,11 +11749,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path22, issues) {
+function prefixIssues(path24, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path22);
+    iss.path.unshift(path24);
     return iss;
   });
 }
@@ -11900,16 +11900,16 @@ function flattenError(error2, mapper = (issue2) => issue2.message) {
 }
 function formatError(error2, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error3, path22 = []) => {
+  const processError = (error3, path24 = []) => {
     for (const issue2 of error3.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path22, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path24, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path22, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path24, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path22, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path24, ...issue2.path]);
       } else {
-        const fullpath = [...path22, ...issue2.path];
+        const fullpath = [...path24, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -11936,9 +11936,9 @@ function formatError(error2, mapper = (issue2) => issue2.message) {
 }
 
 // node_modules/zod/v4/core/parse.js
-var _parse = (_Err) => (schema, value, _ctx, _params) => {
+var _parse = (_Err) => (schema2, value, _ctx, _params) => {
   const ctx = _ctx ? { ..._ctx, async: false } : { async: false };
-  const result = schema._zod.run({ value, issues: [] }, ctx);
+  const result = schema2._zod.run({ value, issues: [] }, ctx);
   if (result instanceof Promise) {
     throw new $ZodAsyncError();
   }
@@ -11949,9 +11949,9 @@ var _parse = (_Err) => (schema, value, _ctx, _params) => {
   }
   return result.value;
 };
-var _parseAsync = (_Err) => async (schema, value, _ctx, params) => {
+var _parseAsync = (_Err) => async (schema2, value, _ctx, params) => {
   const ctx = _ctx ? { ..._ctx, async: true } : { async: true };
-  let result = schema._zod.run({ value, issues: [] }, ctx);
+  let result = schema2._zod.run({ value, issues: [] }, ctx);
   if (result instanceof Promise)
     result = await result;
   if (result.issues.length) {
@@ -11961,9 +11961,9 @@ var _parseAsync = (_Err) => async (schema, value, _ctx, params) => {
   }
   return result.value;
 };
-var _safeParse = (_Err) => (schema, value, _ctx) => {
+var _safeParse = (_Err) => (schema2, value, _ctx) => {
   const ctx = _ctx ? { ..._ctx, async: false } : { async: false };
-  const result = schema._zod.run({ value, issues: [] }, ctx);
+  const result = schema2._zod.run({ value, issues: [] }, ctx);
   if (result instanceof Promise) {
     throw new $ZodAsyncError();
   }
@@ -11973,9 +11973,9 @@ var _safeParse = (_Err) => (schema, value, _ctx) => {
   } : { success: true, data: result.value };
 };
 var safeParse = /* @__PURE__ */ _safeParse($ZodRealError);
-var _safeParseAsync = (_Err) => async (schema, value, _ctx) => {
+var _safeParseAsync = (_Err) => async (schema2, value, _ctx) => {
   const ctx = _ctx ? { ..._ctx, async: true } : { async: true };
-  let result = schema._zod.run({ value, issues: [] }, ctx);
+  let result = schema2._zod.run({ value, issues: [] }, ctx);
   if (result instanceof Promise)
     result = await result;
   return result.issues.length ? {
@@ -11984,33 +11984,33 @@ var _safeParseAsync = (_Err) => async (schema, value, _ctx) => {
   } : { success: true, data: result.value };
 };
 var safeParseAsync = /* @__PURE__ */ _safeParseAsync($ZodRealError);
-var _encode = (_Err) => (schema, value, _ctx) => {
+var _encode = (_Err) => (schema2, value, _ctx) => {
   const ctx = _ctx ? { ..._ctx, direction: "backward" } : { direction: "backward" };
-  return _parse(_Err)(schema, value, ctx);
+  return _parse(_Err)(schema2, value, ctx);
 };
-var _decode = (_Err) => (schema, value, _ctx) => {
-  return _parse(_Err)(schema, value, _ctx);
+var _decode = (_Err) => (schema2, value, _ctx) => {
+  return _parse(_Err)(schema2, value, _ctx);
 };
-var _encodeAsync = (_Err) => async (schema, value, _ctx) => {
+var _encodeAsync = (_Err) => async (schema2, value, _ctx) => {
   const ctx = _ctx ? { ..._ctx, direction: "backward" } : { direction: "backward" };
-  return _parseAsync(_Err)(schema, value, ctx);
+  return _parseAsync(_Err)(schema2, value, ctx);
 };
-var _decodeAsync = (_Err) => async (schema, value, _ctx) => {
-  return _parseAsync(_Err)(schema, value, _ctx);
+var _decodeAsync = (_Err) => async (schema2, value, _ctx) => {
+  return _parseAsync(_Err)(schema2, value, _ctx);
 };
-var _safeEncode = (_Err) => (schema, value, _ctx) => {
+var _safeEncode = (_Err) => (schema2, value, _ctx) => {
   const ctx = _ctx ? { ..._ctx, direction: "backward" } : { direction: "backward" };
-  return _safeParse(_Err)(schema, value, ctx);
+  return _safeParse(_Err)(schema2, value, ctx);
 };
-var _safeDecode = (_Err) => (schema, value, _ctx) => {
-  return _safeParse(_Err)(schema, value, _ctx);
+var _safeDecode = (_Err) => (schema2, value, _ctx) => {
+  return _safeParse(_Err)(schema2, value, _ctx);
 };
-var _safeEncodeAsync = (_Err) => async (schema, value, _ctx) => {
+var _safeEncodeAsync = (_Err) => async (schema2, value, _ctx) => {
   const ctx = _ctx ? { ..._ctx, direction: "backward" } : { direction: "backward" };
-  return _safeParseAsync(_Err)(schema, value, ctx);
+  return _safeParseAsync(_Err)(schema2, value, ctx);
 };
-var _safeDecodeAsync = (_Err) => async (schema, value, _ctx) => {
-  return _safeParseAsync(_Err)(schema, value, _ctx);
+var _safeDecodeAsync = (_Err) => async (schema2, value, _ctx) => {
+  return _safeParseAsync(_Err)(schema2, value, _ctx);
 };
 
 // node_modules/zod/v4/core/regexes.js
@@ -13206,42 +13206,42 @@ var $ZodObjectJIT = /* @__PURE__ */ $constructor("$ZodObjectJIT", (inst, def) =>
     }
     doc.write(`const newResult = {};`);
     for (const key of normalized.keys) {
-      const id = ids[key];
+      const id2 = ids[key];
       const k = esc(key);
-      const schema = shape[key];
-      const isOptionalIn = schema?._zod?.optin === "optional";
-      const isOptionalOut = schema?._zod?.optout === "optional";
-      doc.write(`const ${id} = ${parseStr(key)};`);
+      const schema2 = shape[key];
+      const isOptionalIn = schema2?._zod?.optin === "optional";
+      const isOptionalOut = schema2?._zod?.optout === "optional";
+      doc.write(`const ${id2} = ${parseStr(key)};`);
       if (isOptionalIn && isOptionalOut) {
         doc.write(`
-        if (${id}.issues.length) {
+        if (${id2}.issues.length) {
           if (${k} in input) {
-            payload.issues = payload.issues.concat(${id}.issues.map(iss => ({
+            payload.issues = payload.issues.concat(${id2}.issues.map(iss => ({
               ...iss,
               path: iss.path ? [${k}, ...iss.path] : [${k}]
             })));
           }
         }
         
-        if (${id}.value === undefined) {
+        if (${id2}.value === undefined) {
           if (${k} in input) {
             newResult[${k}] = undefined;
           }
         } else {
-          newResult[${k}] = ${id}.value;
+          newResult[${k}] = ${id2}.value;
         }
         
       `);
       } else if (!isOptionalIn) {
         doc.write(`
-        const ${id}_present = ${k} in input;
-        if (${id}.issues.length) {
-          payload.issues = payload.issues.concat(${id}.issues.map(iss => ({
+        const ${id2}_present = ${k} in input;
+        if (${id2}.issues.length) {
+          payload.issues = payload.issues.concat(${id2}.issues.map(iss => ({
             ...iss,
             path: iss.path ? [${k}, ...iss.path] : [${k}]
           })));
         }
-        if (!${id}_present && !${id}.issues.length) {
+        if (!${id2}_present && !${id2}.issues.length) {
           payload.issues.push({
             code: "invalid_type",
             expected: "nonoptional",
@@ -13250,30 +13250,30 @@ var $ZodObjectJIT = /* @__PURE__ */ $constructor("$ZodObjectJIT", (inst, def) =>
           });
         }
 
-        if (${id}_present) {
-          if (${id}.value === undefined) {
+        if (${id2}_present) {
+          if (${id2}.value === undefined) {
             newResult[${k}] = undefined;
           } else {
-            newResult[${k}] = ${id}.value;
+            newResult[${k}] = ${id2}.value;
           }
         }
 
       `);
       } else {
         doc.write(`
-        if (${id}.issues.length) {
-          payload.issues = payload.issues.concat(${id}.issues.map(iss => ({
+        if (${id2}.issues.length) {
+          payload.issues = payload.issues.concat(${id2}.issues.map(iss => ({
             ...iss,
             path: iss.path ? [${k}, ...iss.path] : [${k}]
           })));
         }
         
-        if (${id}.value === undefined) {
+        if (${id2}.value === undefined) {
           if (${k} in input) {
             newResult[${k}] = undefined;
           }
         } else {
-          newResult[${k}] = ${id}.value;
+          newResult[${k}] = ${id2}.value;
         }
         
       `);
@@ -14100,11 +14100,11 @@ var $ZodRegistry = class {
     this._map = /* @__PURE__ */ new WeakMap();
     this._idmap = /* @__PURE__ */ new Map();
   }
-  add(schema, ..._meta) {
+  add(schema2, ..._meta) {
     const meta2 = _meta[0];
-    this._map.set(schema, meta2);
+    this._map.set(schema2, meta2);
     if (meta2 && typeof meta2 === "object" && "id" in meta2) {
-      this._idmap.set(meta2.id, schema);
+      this._idmap.set(meta2.id, schema2);
     }
     return this;
   }
@@ -14113,26 +14113,26 @@ var $ZodRegistry = class {
     this._idmap = /* @__PURE__ */ new Map();
     return this;
   }
-  remove(schema) {
-    const meta2 = this._map.get(schema);
+  remove(schema2) {
+    const meta2 = this._map.get(schema2);
     if (meta2 && typeof meta2 === "object" && "id" in meta2) {
       this._idmap.delete(meta2.id);
     }
-    this._map.delete(schema);
+    this._map.delete(schema2);
     return this;
   }
-  get(schema) {
-    const p = schema._zod.parent;
+  get(schema2) {
+    const p = schema2._zod.parent;
     if (p) {
       const pm = { ...this.get(p) ?? {} };
       delete pm.id;
-      const f = { ...pm, ...this._map.get(schema) };
+      const f = { ...pm, ...this._map.get(schema2) };
       return Object.keys(f).length ? f : void 0;
     }
-    return this._map.get(schema);
+    return this._map.get(schema2);
   }
-  has(schema) {
-    return this._map.has(schema);
+  has(schema2) {
+    return this._map.has(schema2);
   }
 };
 function registry() {
@@ -14620,23 +14620,23 @@ function _array(Class2, element, params) {
 function _custom(Class2, fn, _params) {
   const norm2 = normalizeParams(_params);
   norm2.abort ?? (norm2.abort = true);
-  const schema = new Class2({
+  const schema2 = new Class2({
     type: "custom",
     check: "custom",
     fn,
     ...norm2
   });
-  return schema;
+  return schema2;
 }
 // @__NO_SIDE_EFFECTS__
 function _refine(Class2, fn, _params) {
-  const schema = new Class2({
+  const schema2 = new Class2({
     type: "custom",
     check: "custom",
     fn,
     ...normalizeParams(_params)
   });
-  return schema;
+  return schema2;
 }
 // @__NO_SIDE_EFFECTS__
 function _superRefine(fn, params) {
@@ -14691,40 +14691,40 @@ function initializeContext(params) {
     external: params?.external ?? void 0
   };
 }
-function process2(schema, ctx, _params = { path: [], schemaPath: [] }) {
+function process2(schema2, ctx, _params = { path: [], schemaPath: [] }) {
   var _a3;
-  const def = schema._zod.def;
-  const seen = ctx.seen.get(schema);
+  const def = schema2._zod.def;
+  const seen = ctx.seen.get(schema2);
   if (seen) {
     seen.count++;
-    const isCycle = _params.schemaPath.includes(schema);
+    const isCycle = _params.schemaPath.includes(schema2);
     if (isCycle) {
       seen.cycle = _params.path;
     }
     return seen.schema;
   }
   const result = { schema: {}, count: 1, cycle: void 0, path: _params.path };
-  ctx.seen.set(schema, result);
-  const overrideSchema = schema._zod.toJSONSchema?.();
+  ctx.seen.set(schema2, result);
+  const overrideSchema = schema2._zod.toJSONSchema?.();
   if (overrideSchema) {
     result.schema = overrideSchema;
   } else {
     const params = {
       ..._params,
-      schemaPath: [..._params.schemaPath, schema],
+      schemaPath: [..._params.schemaPath, schema2],
       path: _params.path
     };
-    if (schema._zod.processJSONSchema) {
-      schema._zod.processJSONSchema(ctx, result.schema, params);
+    if (schema2._zod.processJSONSchema) {
+      schema2._zod.processJSONSchema(ctx, result.schema, params);
     } else {
       const _json = result.schema;
       const processor = ctx.processors[def.type];
       if (!processor) {
         throw new Error(`[toJSONSchema]: Non-representable type encountered: ${def.type}`);
       }
-      processor(schema, ctx, _json, params);
+      processor(schema2, ctx, _json, params);
     }
-    const parent = schema._zod.parent;
+    const parent = schema2._zod.parent;
     if (parent) {
       if (!result.ref)
         result.ref = parent;
@@ -14732,45 +14732,45 @@ function process2(schema, ctx, _params = { path: [], schemaPath: [] }) {
       ctx.seen.get(parent).isParent = true;
     }
   }
-  const meta2 = ctx.metadataRegistry.get(schema);
+  const meta2 = ctx.metadataRegistry.get(schema2);
   if (meta2)
     Object.assign(result.schema, meta2);
-  if (ctx.io === "input" && isTransforming(schema)) {
+  if (ctx.io === "input" && isTransforming(schema2)) {
     delete result.schema.examples;
     delete result.schema.default;
   }
   if (ctx.io === "input" && "_prefault" in result.schema)
     (_a3 = result.schema).default ?? (_a3.default = result.schema._prefault);
   delete result.schema._prefault;
-  const _result = ctx.seen.get(schema);
+  const _result = ctx.seen.get(schema2);
   return _result.schema;
 }
-function extractDefs(ctx, schema) {
-  const root = ctx.seen.get(schema);
+function extractDefs(ctx, schema2) {
+  const root = ctx.seen.get(schema2);
   if (!root)
     throw new Error("Unprocessed schema. This is a bug in Zod.");
   const idToSchema = /* @__PURE__ */ new Map();
   for (const entry of ctx.seen.entries()) {
-    const id = ctx.metadataRegistry.get(entry[0])?.id;
-    if (id) {
-      const existing = idToSchema.get(id);
+    const id2 = ctx.metadataRegistry.get(entry[0])?.id;
+    if (id2) {
+      const existing = idToSchema.get(id2);
       if (existing && existing !== entry[0]) {
-        throw new Error(`Duplicate schema id "${id}" detected during JSON Schema conversion. Two different schemas cannot share the same id when converted together.`);
+        throw new Error(`Duplicate schema id "${id2}" detected during JSON Schema conversion. Two different schemas cannot share the same id when converted together.`);
       }
-      idToSchema.set(id, entry[0]);
+      idToSchema.set(id2, entry[0]);
     }
   }
   const makeURI = (entry) => {
     const defsSegment = ctx.target === "draft-2020-12" ? "$defs" : "definitions";
     if (ctx.external) {
       const externalId = ctx.external.registry.get(entry[0])?.id;
-      const uriGenerator = ctx.external.uri ?? ((id2) => id2);
+      const uriGenerator = ctx.external.uri ?? ((id3) => id3);
       if (externalId) {
         return { ref: uriGenerator(externalId) };
       }
-      const id = entry[1].defId ?? entry[1].schema.id ?? `schema${ctx.counter++}`;
-      entry[1].defId = id;
-      return { defId: id, ref: `${uriGenerator("__shared")}#/${defsSegment}/${id}` };
+      const id2 = entry[1].defId ?? entry[1].schema.id ?? `schema${ctx.counter++}`;
+      entry[1].defId = id2;
+      return { defId: id2, ref: `${uriGenerator("__shared")}#/${defsSegment}/${id2}` };
     }
     if (entry[1] === root) {
       return { ref: "#" };
@@ -14789,11 +14789,11 @@ function extractDefs(ctx, schema) {
     seen.def = { ...seen.schema };
     if (defId)
       seen.defId = defId;
-    const schema2 = seen.schema;
-    for (const key in schema2) {
-      delete schema2[key];
+    const schema3 = seen.schema;
+    for (const key in schema3) {
+      delete schema3[key];
     }
-    schema2.$ref = ref;
+    schema3.$ref = ref;
   };
   if (ctx.cycles === "throw") {
     for (const entry of ctx.seen.entries()) {
@@ -14807,19 +14807,19 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   }
   for (const entry of ctx.seen.entries()) {
     const seen = entry[1];
-    if (schema === entry[0]) {
+    if (schema2 === entry[0]) {
       extractToDef(entry);
       continue;
     }
     if (ctx.external) {
       const ext = ctx.external.registry.get(entry[0])?.id;
-      if (schema !== entry[0] && ext) {
+      if (schema2 !== entry[0] && ext) {
         extractToDef(entry);
         continue;
       }
     }
-    const id = ctx.metadataRegistry.get(entry[0])?.id;
-    if (id) {
+    const id2 = ctx.metadataRegistry.get(entry[0])?.id;
+    if (id2) {
       extractToDef(entry);
       continue;
     }
@@ -14835,16 +14835,16 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
     }
   }
 }
-function finalize(ctx, schema) {
-  const root = ctx.seen.get(schema);
+function finalize(ctx, schema2) {
+  const root = ctx.seen.get(schema2);
   if (!root)
     throw new Error("Unprocessed schema. This is a bug in Zod.");
   const flattenRef = (zodSchema) => {
     const seen = ctx.seen.get(zodSchema);
     if (seen.ref === null)
       return;
-    const schema2 = seen.def ?? seen.schema;
-    const _cached = { ...schema2 };
+    const schema3 = seen.def ?? seen.schema;
+    const _cached = { ...schema3 };
     const ref = seen.ref;
     seen.ref = null;
     if (ref) {
@@ -14852,28 +14852,28 @@ function finalize(ctx, schema) {
       const refSeen = ctx.seen.get(ref);
       const refSchema = refSeen.schema;
       if (refSchema.$ref && (ctx.target === "draft-07" || ctx.target === "draft-04" || ctx.target === "openapi-3.0")) {
-        schema2.allOf = schema2.allOf ?? [];
-        schema2.allOf.push(refSchema);
+        schema3.allOf = schema3.allOf ?? [];
+        schema3.allOf.push(refSchema);
       } else {
-        Object.assign(schema2, refSchema);
+        Object.assign(schema3, refSchema);
       }
-      Object.assign(schema2, _cached);
+      Object.assign(schema3, _cached);
       const isParentRef = zodSchema._zod.parent === ref;
       if (isParentRef) {
-        for (const key in schema2) {
+        for (const key in schema3) {
           if (key === "$ref" || key === "allOf")
             continue;
           if (!(key in _cached)) {
-            delete schema2[key];
+            delete schema3[key];
           }
         }
       }
       if (refSchema.$ref && refSeen.def) {
-        for (const key in schema2) {
+        for (const key in schema3) {
           if (key === "$ref" || key === "allOf")
             continue;
-          if (key in refSeen.def && JSON.stringify(schema2[key]) === JSON.stringify(refSeen.def[key])) {
-            delete schema2[key];
+          if (key in refSeen.def && JSON.stringify(schema3[key]) === JSON.stringify(refSeen.def[key])) {
+            delete schema3[key];
           }
         }
       }
@@ -14883,13 +14883,13 @@ function finalize(ctx, schema) {
       flattenRef(parent);
       const parentSeen = ctx.seen.get(parent);
       if (parentSeen?.schema.$ref) {
-        schema2.$ref = parentSeen.schema.$ref;
+        schema3.$ref = parentSeen.schema.$ref;
         if (parentSeen.def) {
-          for (const key in schema2) {
+          for (const key in schema3) {
             if (key === "$ref" || key === "allOf")
               continue;
-            if (key in parentSeen.def && JSON.stringify(schema2[key]) === JSON.stringify(parentSeen.def[key])) {
-              delete schema2[key];
+            if (key in parentSeen.def && JSON.stringify(schema3[key]) === JSON.stringify(parentSeen.def[key])) {
+              delete schema3[key];
             }
           }
         }
@@ -14897,7 +14897,7 @@ function finalize(ctx, schema) {
     }
     ctx.override({
       zodSchema,
-      jsonSchema: schema2,
+      jsonSchema: schema3,
       path: seen.path ?? []
     });
   };
@@ -14915,13 +14915,13 @@ function finalize(ctx, schema) {
   } else {
   }
   if (ctx.external?.uri) {
-    const id = ctx.external.registry.get(schema)?.id;
-    if (!id)
+    const id2 = ctx.external.registry.get(schema2)?.id;
+    if (!id2)
       throw new Error("Schema is missing an `id` property");
-    result.$id = ctx.external.uri(id);
+    result.$id = ctx.external.uri(id2);
   }
   Object.assign(result, root.def ?? root.schema);
-  const rootMetaId = ctx.metadataRegistry.get(schema)?.id;
+  const rootMetaId = ctx.metadataRegistry.get(schema2)?.id;
   if (rootMetaId !== void 0 && result.id === rootMetaId)
     delete result.id;
   const defs = ctx.external?.defs ?? {};
@@ -14947,10 +14947,10 @@ function finalize(ctx, schema) {
     const finalized = JSON.parse(JSON.stringify(result));
     Object.defineProperty(finalized, "~standard", {
       value: {
-        ...schema["~standard"],
+        ...schema2["~standard"],
         jsonSchema: {
-          input: createStandardJSONSchemaMethod(schema, "input", ctx.processors),
-          output: createStandardJSONSchemaMethod(schema, "output", ctx.processors)
+          input: createStandardJSONSchemaMethod(schema2, "input", ctx.processors),
+          output: createStandardJSONSchemaMethod(schema2, "output", ctx.processors)
         }
       },
       enumerable: false,
@@ -15014,18 +15014,18 @@ function isTransforming(_schema, _ctx) {
   }
   return false;
 }
-var createToJSONSchemaMethod = (schema, processors = {}) => (params) => {
+var createToJSONSchemaMethod = (schema2, processors = {}) => (params) => {
   const ctx = initializeContext({ ...params, processors });
-  process2(schema, ctx);
-  extractDefs(ctx, schema);
-  return finalize(ctx, schema);
+  process2(schema2, ctx);
+  extractDefs(ctx, schema2);
+  return finalize(ctx, schema2);
 };
-var createStandardJSONSchemaMethod = (schema, io, processors = {}) => (params) => {
+var createStandardJSONSchemaMethod = (schema2, io, processors = {}) => (params) => {
   const { libraryOptions, target } = params ?? {};
   const ctx = initializeContext({ ...libraryOptions ?? {}, target, io, processors });
-  process2(schema, ctx);
-  extractDefs(ctx, schema);
-  return finalize(ctx, schema);
+  process2(schema2, ctx);
+  extractDefs(ctx, schema2);
+  return finalize(ctx, schema2);
 };
 
 // node_modules/zod/v4/core/json-schema-processors.js
@@ -15037,10 +15037,10 @@ var formatMap = {
   regex: ""
   // do not set
 };
-var stringProcessor = (schema, ctx, _json, _params) => {
+var stringProcessor = (schema2, ctx, _json, _params) => {
   const json = _json;
   json.type = "string";
-  const { minimum, maximum, format, patterns, contentEncoding } = schema._zod.bag;
+  const { minimum, maximum, format, patterns, contentEncoding } = schema2._zod.bag;
   if (typeof minimum === "number")
     json.minLength = minimum;
   if (typeof maximum === "number")
@@ -15069,9 +15069,9 @@ var stringProcessor = (schema, ctx, _json, _params) => {
     }
   }
 };
-var numberProcessor = (schema, ctx, _json, _params) => {
+var numberProcessor = (schema2, ctx, _json, _params) => {
   const json = _json;
-  const { minimum, maximum, format, multipleOf, exclusiveMaximum, exclusiveMinimum } = schema._zod.bag;
+  const { minimum, maximum, format, multipleOf, exclusiveMaximum, exclusiveMinimum } = schema2._zod.bag;
   if (typeof format === "string" && format.includes("int"))
     json.type = "integer";
   else
@@ -15119,8 +15119,8 @@ var neverProcessor = (_schema, _ctx, json, _params) => {
 };
 var unknownProcessor = (_schema, _ctx, _json, _params) => {
 };
-var enumProcessor = (schema, _ctx, json, _params) => {
-  const def = schema._zod.def;
+var enumProcessor = (schema2, _ctx, json, _params) => {
+  const def = schema2._zod.def;
   const values = getEnumValues(def.entries);
   if (values.every((v) => typeof v === "number"))
     json.type = "number";
@@ -15128,8 +15128,8 @@ var enumProcessor = (schema, _ctx, json, _params) => {
     json.type = "string";
   json.enum = values;
 };
-var literalProcessor = (schema, ctx, json, _params) => {
-  const def = schema._zod.def;
+var literalProcessor = (schema2, ctx, json, _params) => {
+  const def = schema2._zod.def;
   const vals = [];
   for (const val of def.values) {
     if (val === void 0) {
@@ -15178,10 +15178,10 @@ var transformProcessor = (_schema, ctx, _json, _params) => {
     throw new Error("Transforms cannot be represented in JSON Schema");
   }
 };
-var arrayProcessor = (schema, ctx, _json, params) => {
+var arrayProcessor = (schema2, ctx, _json, params) => {
   const json = _json;
-  const def = schema._zod.def;
-  const { minimum, maximum } = schema._zod.bag;
+  const def = schema2._zod.def;
+  const { minimum, maximum } = schema2._zod.bag;
   if (typeof minimum === "number")
     json.minItems = minimum;
   if (typeof maximum === "number")
@@ -15192,9 +15192,9 @@ var arrayProcessor = (schema, ctx, _json, params) => {
     path: [...params.path, "items"]
   });
 };
-var objectProcessor = (schema, ctx, _json, params) => {
+var objectProcessor = (schema2, ctx, _json, params) => {
   const json = _json;
-  const def = schema._zod.def;
+  const def = schema2._zod.def;
   json.type = "object";
   json.properties = {};
   const shape = def.shape;
@@ -15228,8 +15228,8 @@ var objectProcessor = (schema, ctx, _json, params) => {
     });
   }
 };
-var unionProcessor = (schema, ctx, json, params) => {
-  const def = schema._zod.def;
+var unionProcessor = (schema2, ctx, json, params) => {
+  const def = schema2._zod.def;
   const isExclusive = def.inclusive === false;
   const options = def.options.map((x, i) => process2(x, ctx, {
     ...params,
@@ -15241,8 +15241,8 @@ var unionProcessor = (schema, ctx, json, params) => {
     json.anyOf = options;
   }
 };
-var intersectionProcessor = (schema, ctx, json, params) => {
-  const def = schema._zod.def;
+var intersectionProcessor = (schema2, ctx, json, params) => {
+  const def = schema2._zod.def;
   const a = process2(def.left, ctx, {
     ...params,
     path: [...params.path, "allOf", 0]
@@ -15258,9 +15258,9 @@ var intersectionProcessor = (schema, ctx, json, params) => {
   ];
   json.allOf = allOf;
 };
-var recordProcessor = (schema, ctx, _json, params) => {
+var recordProcessor = (schema2, ctx, _json, params) => {
   const json = _json;
-  const def = schema._zod.def;
+  const def = schema2._zod.def;
   json.type = "object";
   const keyType = def.keyType;
   const keyBag = keyType._zod.bag;
@@ -15294,10 +15294,10 @@ var recordProcessor = (schema, ctx, _json, params) => {
     }
   }
 };
-var nullableProcessor = (schema, ctx, json, params) => {
-  const def = schema._zod.def;
+var nullableProcessor = (schema2, ctx, json, params) => {
+  const def = schema2._zod.def;
   const inner = process2(def.innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
+  const seen = ctx.seen.get(schema2);
   if (ctx.target === "openapi-3.0") {
     seen.ref = def.innerType;
     json.nullable = true;
@@ -15305,31 +15305,31 @@ var nullableProcessor = (schema, ctx, json, params) => {
     json.anyOf = [inner, { type: "null" }];
   }
 };
-var nonoptionalProcessor = (schema, ctx, _json, params) => {
-  const def = schema._zod.def;
+var nonoptionalProcessor = (schema2, ctx, _json, params) => {
+  const def = schema2._zod.def;
   process2(def.innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
+  const seen = ctx.seen.get(schema2);
   seen.ref = def.innerType;
 };
-var defaultProcessor = (schema, ctx, json, params) => {
-  const def = schema._zod.def;
+var defaultProcessor = (schema2, ctx, json, params) => {
+  const def = schema2._zod.def;
   process2(def.innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
+  const seen = ctx.seen.get(schema2);
   seen.ref = def.innerType;
   json.default = JSON.parse(JSON.stringify(def.defaultValue));
 };
-var prefaultProcessor = (schema, ctx, json, params) => {
-  const def = schema._zod.def;
+var prefaultProcessor = (schema2, ctx, json, params) => {
+  const def = schema2._zod.def;
   process2(def.innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
+  const seen = ctx.seen.get(schema2);
   seen.ref = def.innerType;
   if (ctx.io === "input")
     json._prefault = JSON.parse(JSON.stringify(def.defaultValue));
 };
-var catchProcessor = (schema, ctx, json, params) => {
-  const def = schema._zod.def;
+var catchProcessor = (schema2, ctx, json, params) => {
+  const def = schema2._zod.def;
   process2(def.innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
+  const seen = ctx.seen.get(schema2);
   seen.ref = def.innerType;
   let catchValue;
   try {
@@ -15339,51 +15339,51 @@ var catchProcessor = (schema, ctx, json, params) => {
   }
   json.default = catchValue;
 };
-var pipeProcessor = (schema, ctx, _json, params) => {
-  const def = schema._zod.def;
+var pipeProcessor = (schema2, ctx, _json, params) => {
+  const def = schema2._zod.def;
   const inIsTransform = def.in._zod.traits.has("$ZodTransform");
   const innerType = ctx.io === "input" ? inIsTransform ? def.out : def.in : def.out;
   process2(innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
+  const seen = ctx.seen.get(schema2);
   seen.ref = innerType;
 };
-var readonlyProcessor = (schema, ctx, json, params) => {
-  const def = schema._zod.def;
+var readonlyProcessor = (schema2, ctx, json, params) => {
+  const def = schema2._zod.def;
   process2(def.innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
+  const seen = ctx.seen.get(schema2);
   seen.ref = def.innerType;
   json.readOnly = true;
 };
-var optionalProcessor = (schema, ctx, _json, params) => {
-  const def = schema._zod.def;
+var optionalProcessor = (schema2, ctx, _json, params) => {
+  const def = schema2._zod.def;
   process2(def.innerType, ctx, params);
-  const seen = ctx.seen.get(schema);
+  const seen = ctx.seen.get(schema2);
   seen.ref = def.innerType;
 };
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-compat.js
 function isZ4Schema(s) {
-  const schema = s;
-  return !!schema._zod;
+  const schema2 = s;
+  return !!schema2._zod;
 }
-function safeParse2(schema, data) {
-  if (isZ4Schema(schema)) {
-    const result2 = safeParse(schema, data);
+function safeParse2(schema2, data) {
+  if (isZ4Schema(schema2)) {
+    const result2 = safeParse(schema2, data);
     return result2;
   }
-  const v3Schema = schema;
+  const v3Schema = schema2;
   const result = v3Schema.safeParse(data);
   return result;
 }
-function getObjectShape(schema) {
-  if (!schema)
+function getObjectShape(schema2) {
+  if (!schema2)
     return void 0;
   let rawShape;
-  if (isZ4Schema(schema)) {
-    const v4Schema = schema;
+  if (isZ4Schema(schema2)) {
+    const v4Schema = schema2;
     rawShape = v4Schema._zod?.def?.shape;
   } else {
-    const v3Schema = schema;
+    const v3Schema = schema2;
     rawShape = v3Schema.shape;
   }
   if (!rawShape)
@@ -15397,9 +15397,9 @@ function getObjectShape(schema) {
   }
   return rawShape;
 }
-function getLiteralValue(schema) {
-  if (isZ4Schema(schema)) {
-    const v4Schema = schema;
+function getLiteralValue(schema2) {
+  if (isZ4Schema(schema2)) {
+    const v4Schema = schema2;
     const def2 = v4Schema._zod?.def;
     if (def2) {
       if (def2.value !== void 0)
@@ -15409,7 +15409,7 @@ function getLiteralValue(schema) {
       }
     }
   }
-  const v3Schema = schema;
+  const v3Schema = schema2;
   const def = v3Schema._def;
   if (def) {
     if (def.value !== void 0)
@@ -15418,7 +15418,7 @@ function getLiteralValue(schema) {
       return def.values[0];
     }
   }
-  const directValue = schema.value;
+  const directValue = schema2.value;
   if (directValue !== void 0)
     return directValue;
   return void 0;
@@ -15520,7 +15520,7 @@ var safeDecodeAsync2 = /* @__PURE__ */ _safeDecodeAsync(ZodRealError);
 
 // node_modules/zod/v4/classic/schemas.js
 var _installedGroups = /* @__PURE__ */ new WeakMap();
-function _installLazyMethods(inst, group, methods) {
+function _installLazyMethods(inst, group, methods2) {
   const proto = Object.getPrototypeOf(inst);
   let installed = _installedGroups.get(proto);
   if (!installed) {
@@ -15530,8 +15530,8 @@ function _installLazyMethods(inst, group, methods) {
   if (installed.has(group))
     return;
   installed.add(group);
-  for (const key in methods) {
-    const fn = methods[key];
+  for (const key in methods2) {
+    const fn = methods2[key];
     Object.defineProperty(proto, key, {
       configurable: true,
       enumerable: false,
@@ -16350,11 +16350,11 @@ function refine(fn, _params = {}) {
 function superRefine(fn, params) {
   return _superRefine(fn, params);
 }
-function preprocess(fn, schema) {
+function preprocess(fn, schema2) {
   return new ZodPreprocess({
     type: "pipe",
     in: transform(fn),
-    out: schema
+    out: schema2
   });
 }
 
@@ -17889,8 +17889,8 @@ function isTerminal(status) {
 var ALPHA_NUMERIC = new Set("ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvxyz0123456789");
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-json-schema-compat.js
-function getMethodLiteral(schema) {
-  const shape = getObjectShape(schema);
+function getMethodLiteral(schema2) {
+  const shape = getObjectShape(schema2);
   const methodSchema = shape?.method;
   if (!methodSchema) {
     throw new Error("Schema is missing a method literal");
@@ -17901,8 +17901,8 @@ function getMethodLiteral(schema) {
   }
   return value;
 }
-function parseWithCompat(schema, data) {
-  const result = safeParse2(schema, data);
+function parseWithCompat(schema2, data) {
+  const result = safeParse2(schema2, data);
   if (!result.success) {
     throw result.error;
   }
@@ -17938,8 +17938,8 @@ var Protocol = class {
     this._taskStore = _options?.taskStore;
     this._taskMessageQueue = _options?.taskMessageQueue;
     if (this._taskStore) {
-      this.setRequestHandler(GetTaskRequestSchema, async (request, extra) => {
-        const task = await this._taskStore.getTask(request.params.taskId, extra.sessionId);
+      this.setRequestHandler(GetTaskRequestSchema, async (request2, extra) => {
+        const task = await this._taskStore.getTask(request2.params.taskId, extra.sessionId);
         if (!task) {
           throw new McpError(ErrorCode.InvalidParams, "Failed to retrieve task: Task not found");
         }
@@ -17947,9 +17947,9 @@ var Protocol = class {
           ...task
         };
       });
-      this.setRequestHandler(GetTaskPayloadRequestSchema, async (request, extra) => {
+      this.setRequestHandler(GetTaskPayloadRequestSchema, async (request2, extra) => {
         const handleTaskResult = async () => {
-          const taskId = request.params.taskId;
+          const taskId = request2.params.taskId;
           if (this._taskMessageQueue) {
             let queuedMessage;
             while (queuedMessage = await this._taskMessageQueue.dequeue(taskId, extra.sessionId)) {
@@ -18000,9 +18000,9 @@ var Protocol = class {
         };
         return await handleTaskResult();
       });
-      this.setRequestHandler(ListTasksRequestSchema, async (request, extra) => {
+      this.setRequestHandler(ListTasksRequestSchema, async (request2, extra) => {
         try {
-          const { tasks, nextCursor } = await this._taskStore.listTasks(request.params?.cursor, extra.sessionId);
+          const { tasks, nextCursor } = await this._taskStore.listTasks(request2.params?.cursor, extra.sessionId);
           return {
             tasks,
             nextCursor,
@@ -18012,20 +18012,20 @@ var Protocol = class {
           throw new McpError(ErrorCode.InvalidParams, `Failed to list tasks: ${error2 instanceof Error ? error2.message : String(error2)}`);
         }
       });
-      this.setRequestHandler(CancelTaskRequestSchema, async (request, extra) => {
+      this.setRequestHandler(CancelTaskRequestSchema, async (request2, extra) => {
         try {
-          const task = await this._taskStore.getTask(request.params.taskId, extra.sessionId);
+          const task = await this._taskStore.getTask(request2.params.taskId, extra.sessionId);
           if (!task) {
-            throw new McpError(ErrorCode.InvalidParams, `Task not found: ${request.params.taskId}`);
+            throw new McpError(ErrorCode.InvalidParams, `Task not found: ${request2.params.taskId}`);
           }
           if (isTerminal(task.status)) {
             throw new McpError(ErrorCode.InvalidParams, `Cannot cancel task in terminal status: ${task.status}`);
           }
-          await this._taskStore.updateTaskStatus(request.params.taskId, "cancelled", "Client cancelled task execution.", extra.sessionId);
-          this._clearTaskQueue(request.params.taskId);
-          const cancelledTask = await this._taskStore.getTask(request.params.taskId, extra.sessionId);
+          await this._taskStore.updateTaskStatus(request2.params.taskId, "cancelled", "Client cancelled task execution.", extra.sessionId);
+          this._clearTaskQueue(request2.params.taskId);
+          const cancelledTask = await this._taskStore.getTask(request2.params.taskId, extra.sessionId);
           if (!cancelledTask) {
-            throw new McpError(ErrorCode.InvalidParams, `Task not found after cancellation: ${request.params.taskId}`);
+            throw new McpError(ErrorCode.InvalidParams, `Task not found after cancellation: ${request2.params.taskId}`);
           }
           return {
             _meta: {},
@@ -18146,14 +18146,14 @@ var Protocol = class {
     }
     Promise.resolve().then(() => handler2(notification)).catch((error2) => this._onerror(new Error(`Uncaught error in notification handler: ${error2}`)));
   }
-  _onrequest(request, extra) {
-    const handler2 = this._requestHandlers.get(request.method) ?? this.fallbackRequestHandler;
+  _onrequest(request2, extra) {
+    const handler2 = this._requestHandlers.get(request2.method) ?? this.fallbackRequestHandler;
     const capturedTransport = this._transport;
-    const relatedTaskId = request.params?._meta?.[RELATED_TASK_META_KEY]?.taskId;
+    const relatedTaskId = request2.params?._meta?.[RELATED_TASK_META_KEY]?.taskId;
     if (handler2 === void 0) {
       const errorResponse = {
         jsonrpc: "2.0",
-        id: request.id,
+        id: request2.id,
         error: {
           code: ErrorCode.MethodNotFound,
           message: "Method not found"
@@ -18171,17 +18171,17 @@ var Protocol = class {
       return;
     }
     const abortController = new AbortController();
-    this._requestHandlerAbortControllers.set(request.id, abortController);
-    const taskCreationParams = isTaskAugmentedRequestParams(request.params) ? request.params.task : void 0;
-    const taskStore = this._taskStore ? this.requestTaskStore(request, capturedTransport?.sessionId) : void 0;
+    this._requestHandlerAbortControllers.set(request2.id, abortController);
+    const taskCreationParams = isTaskAugmentedRequestParams(request2.params) ? request2.params.task : void 0;
+    const taskStore = this._taskStore ? this.requestTaskStore(request2, capturedTransport?.sessionId) : void 0;
     const fullExtra = {
       signal: abortController.signal,
       sessionId: capturedTransport?.sessionId,
-      _meta: request.params?._meta,
+      _meta: request2.params?._meta,
       sendNotification: async (notification) => {
         if (abortController.signal.aborted)
           return;
-        const notificationOptions = { relatedRequestId: request.id };
+        const notificationOptions = { relatedRequestId: request2.id };
         if (relatedTaskId) {
           notificationOptions.relatedTask = { taskId: relatedTaskId };
         }
@@ -18191,7 +18191,7 @@ var Protocol = class {
         if (abortController.signal.aborted) {
           throw new McpError(ErrorCode.ConnectionClosed, "Request was cancelled");
         }
-        const requestOptions = { ...options, relatedRequestId: request.id };
+        const requestOptions = { ...options, relatedRequestId: request2.id };
         if (relatedTaskId && !requestOptions.relatedTask) {
           requestOptions.relatedTask = { taskId: relatedTaskId };
         }
@@ -18202,7 +18202,7 @@ var Protocol = class {
         return await this.request(r, resultSchema, requestOptions);
       },
       authInfo: extra?.authInfo,
-      requestId: request.id,
+      requestId: request2.id,
       requestInfo: extra?.requestInfo,
       taskId: relatedTaskId,
       taskStore,
@@ -18212,16 +18212,16 @@ var Protocol = class {
     };
     Promise.resolve().then(() => {
       if (taskCreationParams) {
-        this.assertTaskHandlerCapability(request.method);
+        this.assertTaskHandlerCapability(request2.method);
       }
-    }).then(() => handler2(request, fullExtra)).then(async (result) => {
+    }).then(() => handler2(request2, fullExtra)).then(async (result) => {
       if (abortController.signal.aborted) {
         return;
       }
       const response = {
         result,
         jsonrpc: "2.0",
-        id: request.id
+        id: request2.id
       };
       if (relatedTaskId && this._taskMessageQueue) {
         await this._enqueueTaskMessage(relatedTaskId, {
@@ -18238,7 +18238,7 @@ var Protocol = class {
       }
       const errorResponse = {
         jsonrpc: "2.0",
-        id: request.id,
+        id: request2.id,
         error: {
           code: Number.isSafeInteger(error2["code"]) ? error2["code"] : ErrorCode.InternalError,
           message: error2.message ?? "Internal error",
@@ -18255,8 +18255,8 @@ var Protocol = class {
         await capturedTransport?.send(errorResponse);
       }
     }).catch((error2) => this._onerror(new Error(`Failed to send response: ${error2}`))).finally(() => {
-      if (this._requestHandlerAbortControllers.get(request.id) === abortController) {
-        this._requestHandlerAbortControllers.delete(request.id);
+      if (this._requestHandlerAbortControllers.get(request2.id) === abortController) {
+        this._requestHandlerAbortControllers.delete(request2.id);
       }
     });
   }
@@ -18360,11 +18360,11 @@ var Protocol = class {
    *
    * @experimental Use `client.experimental.tasks.requestStream()` to access this method.
    */
-  async *requestStream(request, resultSchema, options) {
+  async *requestStream(request2, resultSchema, options) {
     const { task } = options ?? {};
     if (!task) {
       try {
-        const result = await this.request(request, resultSchema, options);
+        const result = await this.request(request2, resultSchema, options);
         yield { type: "result", result };
       } catch (error2) {
         yield {
@@ -18376,7 +18376,7 @@ var Protocol = class {
     }
     let taskId;
     try {
-      const createResult = await this.request(request, CreateTaskResultSchema, options);
+      const createResult = await this.request(request2, CreateTaskResultSchema, options);
       if (createResult.task) {
         taskId = createResult.task.taskId;
         yield { type: "taskCreated", task: createResult.task };
@@ -18424,7 +18424,7 @@ var Protocol = class {
    *
    * Do not use this method to emit notifications! Use notification() instead.
    */
-  request(request, resultSchema, options) {
+  request(request2, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
     return new Promise((resolve, reject) => {
       const earlyReject = (error2) => {
@@ -18436,9 +18436,9 @@ var Protocol = class {
       }
       if (this._options?.enforceStrictCapabilities === true) {
         try {
-          this.assertCapabilityForMethod(request.method);
+          this.assertCapabilityForMethod(request2.method);
           if (task) {
-            this.assertTaskCapability(request.method);
+            this.assertTaskCapability(request2.method);
           }
         } catch (e) {
           earlyReject(e);
@@ -18448,16 +18448,16 @@ var Protocol = class {
       options?.signal?.throwIfAborted();
       const messageId = this._requestMessageId++;
       const jsonrpcRequest = {
-        ...request,
+        ...request2,
         jsonrpc: "2.0",
         id: messageId
       };
       if (options?.onprogress) {
         this._progressHandlers.set(messageId, options.onprogress);
         jsonrpcRequest.params = {
-          ...request.params,
+          ...request2.params,
           _meta: {
-            ...request.params?._meta || {},
+            ...request2.params?._meta || {},
             progressToken: messageId
           }
         };
@@ -18661,8 +18661,8 @@ var Protocol = class {
   setRequestHandler(requestSchema, handler2) {
     const method = getMethodLiteral(requestSchema);
     this.assertRequestHandlerCapability(method);
-    this._requestHandlers.set(method, (request, extra) => {
-      const parsed = parseWithCompat(requestSchema, request);
+    this._requestHandlers.set(method, (request2, extra) => {
+      const parsed = parseWithCompat(requestSchema, request2);
       return Promise.resolve(handler2(parsed, extra));
     });
   }
@@ -18777,19 +18777,19 @@ var Protocol = class {
       }, { once: true });
     });
   }
-  requestTaskStore(request, sessionId) {
+  requestTaskStore(request2, sessionId) {
     const taskStore = this._taskStore;
     if (!taskStore) {
       throw new Error("No task store configured");
     }
     return {
       createTask: async (taskParams) => {
-        if (!request) {
+        if (!request2) {
           throw new Error("No request provided");
         }
-        return await taskStore.createTask(taskParams, request.id, {
-          method: request.method,
-          params: request.params
+        return await taskStore.createTask(taskParams, request2.id, {
+          method: request2.method,
+          params: request2.params
         }, sessionId);
       },
       getTask: async (taskId) => {
@@ -18910,8 +18910,8 @@ var AjvJsonSchemaValidator = class {
    * @param schema - Standard JSON Schema object
    * @returns A validator function that validates input data
    */
-  getValidator(schema) {
-    const ajvValidator = "$id" in schema && typeof schema.$id === "string" ? this._ajv.getSchema(schema.$id) ?? this._ajv.compile(schema) : this._ajv.compile(schema);
+  getValidator(schema2) {
+    const ajvValidator = "$id" in schema2 && typeof schema2.$id === "string" ? this._ajv.getSchema(schema2.$id) ?? this._ajv.compile(schema2) : this._ajv.compile(schema2);
     return (input) => {
       const valid = ajvValidator(input);
       if (valid) {
@@ -18950,8 +18950,8 @@ var ExperimentalServerTasks = class {
    *
    * @experimental
    */
-  requestStream(request, resultSchema, options) {
-    return this._server.requestStream(request, resultSchema, options);
+  requestStream(request2, resultSchema, options) {
+    return this._server.requestStream(request2, resultSchema, options);
   }
   /**
    * Sends a sampling request and returns an AsyncGenerator that yields response messages.
@@ -19019,7 +19019,7 @@ var ExperimentalServerTasks = class {
       if (hasPreviousToolUse) {
         const toolUseIds = new Set(previousContent.filter((c) => c.type === "tool_use").map((c) => c.id));
         const toolResultIds = new Set(lastContent.filter((c) => c.type === "tool_result").map((c) => c.toolUseId));
-        if (toolUseIds.size !== toolResultIds.size || ![...toolUseIds].every((id) => toolResultIds.has(id))) {
+        if (toolUseIds.size !== toolResultIds.size || ![...toolUseIds].every((id2) => toolResultIds.has(id2))) {
           throw new Error("ids of tool_result blocks and tool_use blocks from previous message do not match");
         }
       }
@@ -19196,12 +19196,12 @@ var Server = class extends Protocol {
     this._capabilities = options?.capabilities ?? {};
     this._instructions = options?.instructions;
     this._jsonSchemaValidator = options?.jsonSchemaValidator ?? new AjvJsonSchemaValidator();
-    this.setRequestHandler(InitializeRequestSchema, (request) => this._oninitialize(request));
+    this.setRequestHandler(InitializeRequestSchema, (request2) => this._oninitialize(request2));
     this.setNotificationHandler(InitializedNotificationSchema, () => this.oninitialized?.());
     if (this._capabilities.logging) {
-      this.setRequestHandler(SetLevelRequestSchema, async (request, extra) => {
+      this.setRequestHandler(SetLevelRequestSchema, async (request2, extra) => {
         const transportSessionId = extra.sessionId || extra.requestInfo?.headers["mcp-session-id"] || void 0;
-        const { level } = request.params;
+        const { level } = request2.params;
         const parseResult = LoggingLevelSchema.safeParse(level);
         if (parseResult.success) {
           this._loggingLevels.set(transportSessionId, parseResult.data);
@@ -19260,14 +19260,14 @@ var Server = class extends Protocol {
     }
     const method = methodValue;
     if (method === "tools/call") {
-      const wrappedHandler = async (request, extra) => {
-        const validatedRequest = safeParse2(CallToolRequestSchema, request);
+      const wrappedHandler = async (request2, extra) => {
+        const validatedRequest = safeParse2(CallToolRequestSchema, request2);
         if (!validatedRequest.success) {
           const errorMessage = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
           throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${errorMessage}`);
         }
         const { params } = validatedRequest.data;
-        const result = await Promise.resolve(handler2(request, extra));
+        const result = await Promise.resolve(handler2(request2, extra));
         if (params.task) {
           const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
           if (!taskValidationResult.success) {
@@ -19398,10 +19398,10 @@ var Server = class extends Protocol {
     }
     assertToolsCallTaskCapability(this._capabilities.tasks?.requests, method, "Server");
   }
-  async _oninitialize(request) {
-    const requestedVersion = request.params.protocolVersion;
-    this._clientCapabilities = request.params.capabilities;
-    this._clientVersion = request.params.clientInfo;
+  async _oninitialize(request2) {
+    const requestedVersion = request2.params.protocolVersion;
+    this._clientCapabilities = request2.params.capabilities;
+    this._clientVersion = request2.params.clientInfo;
     const protocolVersion = SUPPORTED_PROTOCOL_VERSIONS.includes(requestedVersion) ? requestedVersion : LATEST_PROTOCOL_VERSION;
     return {
       protocolVersion,
@@ -19453,7 +19453,7 @@ var Server = class extends Protocol {
       if (hasPreviousToolUse) {
         const toolUseIds = new Set(previousContent.filter((c) => c.type === "tool_use").map((c) => c.id));
         const toolResultIds = new Set(lastContent.filter((c) => c.type === "tool_result").map((c) => c.toolUseId));
-        if (toolUseIds.size !== toolResultIds.size || ![...toolUseIds].every((id) => toolResultIds.has(id))) {
+        if (toolUseIds.size !== toolResultIds.size || ![...toolUseIds].every((id2) => toolResultIds.has(id2))) {
           throw new Error("ids of tool_result blocks and tool_use blocks from previous message do not match");
         }
       }
@@ -19665,58 +19665,58 @@ function typeMatches(actual, wanted) {
 function join(base, key) {
   return base ? `${base}.${key}` : key;
 }
-function validateSchema(schema, value, path22 = "") {
+function validateSchema(schema2, value, path24 = "") {
   const problems = [];
-  if (!schema || typeof schema !== "object") return problems;
-  const where = path22 || "(arguments)";
-  if (Array.isArray(schema.oneOf) || Array.isArray(schema.anyOf)) {
+  if (!schema2 || typeof schema2 !== "object") return problems;
+  const where = path24 || "(arguments)";
+  if (Array.isArray(schema2.oneOf) || Array.isArray(schema2.anyOf)) {
     const options = (
       /** @type {JsonSchema[]} */
-      schema.oneOf ?? schema.anyOf
+      schema2.oneOf ?? schema2.anyOf
     );
-    const matches = options.filter((option) => validateSchema(option, value, path22).length === 0).length;
-    const ok = schema.oneOf ? matches === 1 : matches >= 1;
+    const matches = options.filter((option) => validateSchema(option, value, path24).length === 0).length;
+    const ok = schema2.oneOf ? matches === 1 : matches >= 1;
     if (!ok) {
-      problems.push({ path: where, rule: schema.oneOf ? "oneOf" : "anyOf", expected: options.map(describe2).join(" or ") });
+      problems.push({ path: where, rule: schema2.oneOf ? "oneOf" : "anyOf", expected: options.map(describe2).join(" or ") });
       return problems;
     }
   }
-  if (schema.type !== void 0) {
-    const wanted = Array.isArray(schema.type) ? schema.type : [schema.type];
+  if (schema2.type !== void 0) {
+    const wanted = Array.isArray(schema2.type) ? schema2.type : [schema2.type];
     const actual = typeOf(value);
     if (!wanted.some((type) => typeMatches(actual, type))) {
       problems.push({ path: where, rule: "type", expected: wanted.join(" or ") });
       return problems;
     }
   }
-  if (Array.isArray(schema.enum) && !schema.enum.some((option) => Object.is(option, value))) {
-    problems.push({ path: where, rule: "enum", expected: `one of ${schema.enum.map((option) => JSON.stringify(option)).join(", ")}` });
+  if (Array.isArray(schema2.enum) && !schema2.enum.some((option) => Object.is(option, value))) {
+    problems.push({ path: where, rule: "enum", expected: `one of ${schema2.enum.map((option) => JSON.stringify(option)).join(", ")}` });
     return problems;
   }
   if (typeof value === "number") {
-    const min = schema.minimum;
-    const max = schema.maximum;
+    const min = schema2.minimum;
+    const max = schema2.maximum;
     if (min !== void 0 && value < min || max !== void 0 && value > max) {
-      problems.push({ path: where, rule: "range", expected: rangeText(schema) });
+      problems.push({ path: where, rule: "range", expected: rangeText(schema2) });
     }
   }
-  if (typeof value === "string" && schema.minLength !== void 0 && value.length < schema.minLength) {
-    problems.push({ path: where, rule: "minLength", expected: `at least ${schema.minLength} character(s)` });
+  if (typeof value === "string" && schema2.minLength !== void 0 && value.length < schema2.minLength) {
+    problems.push({ path: where, rule: "minLength", expected: `at least ${schema2.minLength} character(s)` });
   }
   if (Array.isArray(value)) {
-    if (schema.minItems !== void 0 && value.length < schema.minItems) {
-      problems.push({ path: where, rule: "minItems", expected: `at least ${schema.minItems} item(s)` });
+    if (schema2.minItems !== void 0 && value.length < schema2.minItems) {
+      problems.push({ path: where, rule: "minItems", expected: `at least ${schema2.minItems} item(s)` });
     }
-    if (schema.maxItems !== void 0 && value.length > schema.maxItems) {
-      problems.push({ path: where, rule: "maxItems", expected: `at most ${schema.maxItems} item(s)` });
+    if (schema2.maxItems !== void 0 && value.length > schema2.maxItems) {
+      problems.push({ path: where, rule: "maxItems", expected: `at most ${schema2.maxItems} item(s)` });
     }
-    if (schema.items) {
+    if (schema2.items) {
       value.forEach((item, index) => {
         problems.push(...validateSchema(
           /** @type {JsonSchema} */
-          schema.items,
+          schema2.items,
           item,
-          `${path22 || ""}[${index}]`
+          `${path24 || ""}[${index}]`
         ));
       });
     }
@@ -19726,77 +19726,77 @@ function validateSchema(schema, value, path22 = "") {
       /** @type {Record<string, unknown>} */
       value
     );
-    const properties = schema.properties ?? {};
-    for (const key of schema.required ?? []) {
+    const properties = schema2.properties ?? {};
+    for (const key of schema2.required ?? []) {
       if (record2[key] === void 0) {
-        problems.push({ path: join(path22, key), rule: "required", expected: describe2(properties[key]) });
+        problems.push({ path: join(path24, key), rule: "required", expected: describe2(properties[key]) });
       }
     }
     for (const [key, item] of Object.entries(record2)) {
       if (item === void 0) continue;
       if (Object.prototype.hasOwnProperty.call(properties, key)) {
-        problems.push(...validateSchema(properties[key], item, join(path22, key)));
-      } else if (schema.additionalProperties === false) {
-        problems.push({ path: join(path22, key), rule: "additionalProperties", expected: "no such property" });
-      } else if (schema.additionalProperties && typeof schema.additionalProperties === "object") {
-        problems.push(...validateSchema(schema.additionalProperties, item, join(path22, key)));
+        problems.push(...validateSchema(properties[key], item, join(path24, key)));
+      } else if (schema2.additionalProperties === false) {
+        problems.push({ path: join(path24, key), rule: "additionalProperties", expected: "no such property" });
+      } else if (schema2.additionalProperties && typeof schema2.additionalProperties === "object") {
+        problems.push(...validateSchema(schema2.additionalProperties, item, join(path24, key)));
       }
     }
   }
   return problems;
 }
-function rangeText(schema) {
-  const kind = schema.type === "integer" ? "integer" : "number";
-  if (schema.minimum !== void 0 && schema.maximum !== void 0) return `${kind} ${schema.minimum}..${schema.maximum}`;
-  if (schema.minimum !== void 0) return `${kind} >= ${schema.minimum}`;
-  return `${kind} <= ${schema.maximum}`;
+function rangeText(schema2) {
+  const kind = schema2.type === "integer" ? "integer" : "number";
+  if (schema2.minimum !== void 0 && schema2.maximum !== void 0) return `${kind} ${schema2.minimum}..${schema2.maximum}`;
+  if (schema2.minimum !== void 0) return `${kind} >= ${schema2.minimum}`;
+  return `${kind} <= ${schema2.maximum}`;
 }
-function describe2(schema) {
-  if (!schema) return "a value";
-  if (Array.isArray(schema.enum)) return `one of ${schema.enum.map((option) => JSON.stringify(option)).join(", ")}`;
-  if (schema.minimum !== void 0 || schema.maximum !== void 0) return rangeText(schema);
-  if (Array.isArray(schema.oneOf)) return schema.oneOf.map(describe2).join(" or ");
-  if (Array.isArray(schema.type)) return schema.type.join(" or ");
-  if (schema.type === "array" && schema.items) return `array of ${describe2(schema.items)}`;
-  return schema.type ?? "a value";
+function describe2(schema2) {
+  if (!schema2) return "a value";
+  if (Array.isArray(schema2.enum)) return `one of ${schema2.enum.map((option) => JSON.stringify(option)).join(", ")}`;
+  if (schema2.minimum !== void 0 || schema2.maximum !== void 0) return rangeText(schema2);
+  if (Array.isArray(schema2.oneOf)) return schema2.oneOf.map(describe2).join(" or ");
+  if (Array.isArray(schema2.type)) return schema2.type.join(" or ");
+  if (schema2.type === "array" && schema2.items) return `array of ${describe2(schema2.items)}`;
+  return schema2.type ?? "a value";
 }
-function typesOf(schema) {
-  if (!schema || schema.type === void 0) return [];
-  return Array.isArray(schema.type) ? schema.type : [schema.type];
+function typesOf(schema2) {
+  if (!schema2 || schema2.type === void 0) return [];
+  return Array.isArray(schema2.type) ? schema2.type : [schema2.type];
 }
-function allowsNull(schema) {
-  if (!schema) return true;
-  if (typesOf(schema).includes("null")) return true;
-  if (Array.isArray(schema.enum) && schema.enum.includes(null)) return true;
-  const options = schema.oneOf ?? schema.anyOf;
+function allowsNull(schema2) {
+  if (!schema2) return true;
+  if (typesOf(schema2).includes("null")) return true;
+  if (Array.isArray(schema2.enum) && schema2.enum.includes(null)) return true;
+  const options = schema2.oneOf ?? schema2.anyOf;
   return Array.isArray(options) && options.some(allowsNull);
 }
 var INTEGER_TEXT = /^-?\d+$/;
-function coerceScalar(schema, text2) {
-  const types = typesOf(schema);
+function coerceScalar(schema2, text3) {
+  const types = typesOf(schema2);
   if (types.length === 0 || types.includes("string")) return void 0;
-  if (types.includes("integer") && INTEGER_TEXT.test(text2)) {
-    const n = Number(text2);
+  if (types.includes("integer") && INTEGER_TEXT.test(text3)) {
+    const n = Number(text3);
     if (Number.isSafeInteger(n)) return n;
   }
-  if (types.includes("number") && text2 !== "" && text2.trim() === text2) {
-    const n = Number(text2);
+  if (types.includes("number") && text3 !== "" && text3.trim() === text3) {
+    const n = Number(text3);
     if (Number.isFinite(n)) return n;
   }
-  if (types.includes("boolean") && (text2 === "true" || text2 === "false")) return text2 === "true";
+  if (types.includes("boolean") && (text3 === "true" || text3 === "false")) return text3 === "true";
   return void 0;
 }
-function normalizeArguments(schema, value, notes, path22 = "") {
-  if (!schema || !value || typeof value !== "object" || Array.isArray(value) || !schema.properties) return value;
+function normalizeArguments(schema2, value, notes, path24 = "") {
+  if (!schema2 || !value || typeof value !== "object" || Array.isArray(value) || !schema2.properties) return value;
   const record2 = (
     /** @type {Record<string, unknown>} */
     value
   );
-  const required2 = new Set(schema.required ?? []);
+  const required2 = new Set(schema2.required ?? []);
   const out2 = {};
   for (const [key, item] of Object.entries(record2)) {
-    const property = schema.properties[key];
-    const where = join(path22, key);
+    const property = schema2.properties[key];
+    const where = join(path24, key);
     if (!property) {
       out2[key] = item;
       continue;
@@ -20018,27 +20018,27 @@ function parseAddress(value) {
     match[1]
   ), id: match[2], address: value };
 }
-function formatAddress(harness, id) {
-  if (!isHarness(harness) || typeof id !== "string" || !ID_PATTERN.test(id)) return null;
-  return `${harness}:${id}`;
+function formatAddress(harness, id2) {
+  if (!isHarness(harness) || typeof id2 !== "string" || !ID_PATTERN.test(id2)) return null;
+  return `${harness}:${id2}`;
 }
 function canonicalizeClaudeId(value, { lookupSession = null } = {}) {
   if (typeof value !== "string") return null;
-  let id = value.trim();
-  if (id.startsWith("claude:")) id = id.slice("claude:".length);
-  if (!id) return null;
+  let id2 = value.trim();
+  if (id2.startsWith("claude:")) id2 = id2.slice("claude:".length);
+  if (!id2) return null;
   let session = null;
   if (typeof lookupSession === "function") {
     try {
-      session = lookupSession(id);
+      session = lookupSession(id2);
     } catch {
       session = null;
     }
   }
   const cli = typeof session?.cliSessionId === "string" ? session.cliSessionId.trim() : "";
   if (cli && ID_PATTERN.test(cli)) return cli;
-  if (id.startsWith(LOCAL_PREFIX)) id = id.slice(LOCAL_PREFIX.length);
-  return ID_PATTERN.test(id) ? id : null;
+  if (id2.startsWith(LOCAL_PREFIX)) id2 = id2.slice(LOCAL_PREFIX.length);
+  return ID_PATTERN.test(id2) ? id2 : null;
 }
 function claudeAddress(sessionOrId, options = {}) {
   if (sessionOrId && typeof sessionOrId === "object") {
@@ -20050,24 +20050,24 @@ function claudeAddress(sessionOrId, options = {}) {
     if (fromCli) return formatAddress("claude", fromCli);
     return formatAddress("claude", canonicalizeClaudeId(session.sessionId) ?? "");
   }
-  const id = canonicalizeClaudeId(sessionOrId, options);
-  return id ? formatAddress("claude", id) : null;
+  const id2 = canonicalizeClaudeId(sessionOrId, options);
+  return id2 ? formatAddress("claude", id2) : null;
 }
 function codexAddress(threadId) {
   if (typeof threadId !== "string") return null;
-  const id = threadId.trim().startsWith("codex:") ? threadId.trim().slice("codex:".length) : threadId.trim();
-  return formatAddress("codex", id);
+  const id2 = threadId.trim().startsWith("codex:") ? threadId.trim().slice("codex:".length) : threadId.trim();
+  return formatAddress("codex", id2);
 }
 function canonicalAddress(storedId, storedKind, options = {}) {
   if (typeof storedId !== "string") return INVALID_ADDRESS;
-  const id = storedId.trim();
-  if (id === EXTERNAL_ADDRESS) return EXTERNAL_ADDRESS;
-  const parsed = parseAddress(id);
+  const id2 = storedId.trim();
+  if (id2 === EXTERNAL_ADDRESS) return EXTERNAL_ADDRESS;
+  const parsed = parseAddress(id2);
   if (parsed) {
     return parsed.harness === "claude" ? claudeAddress(parsed.address, options) ?? INVALID_ADDRESS : parsed.address;
   }
-  if (storedKind === "codex") return codexAddress(id) ?? INVALID_ADDRESS;
-  if (storedKind === "claude" || id.startsWith(LOCAL_PREFIX)) return claudeAddress(id, options) ?? INVALID_ADDRESS;
+  if (storedKind === "codex") return codexAddress(id2) ?? INVALID_ADDRESS;
+  if (storedKind === "claude" || id2.startsWith(LOCAL_PREFIX)) return claudeAddress(id2, options) ?? INVALID_ADDRESS;
   return INVALID_ADDRESS;
 }
 function makeAddressCache({ lookupSession = null, ttlMs = 3e4, maxEntries = 2e3, now = () => Date.now() } = {}) {
@@ -20167,7 +20167,8 @@ function createRegistry(entries, options = {}) {
           hint: "Call tools/list for the available tools."
         });
       }
-      const args = normalizeArguments(found.tool.inputSchema, rawArgs === void 0 || rawArgs === null ? {} : rawArgs, warnings);
+      const supplied = rawArgs ?? {};
+      const args = found.entry.definition.protocolVersion ? supplied : normalizeArguments(found.tool.inputSchema, supplied, warnings);
       const problems = validateSchema(found.tool.inputSchema, args);
       if (problems.length > 0) {
         const removed = removedArgumentHint(found.entry.definition, problems);
@@ -20183,11 +20184,13 @@ function createRegistry(entries, options = {}) {
       );
       const payload = await found.entry.handler(resolved, {
         callerContext: context.callerContext ?? null,
+        desktopSession: context.desktopSession ?? null,
         warn: (warning) => warnings.push(warning)
       });
       return successEnvelope(payload, warnings);
     } catch (error2) {
-      return failureEnvelope(error2, name);
+      const version2 = found?.entry.definition.protocolVersion;
+      return { ...failureEnvelope(error2, name), ...version2 ? { protocol_version: version2 } : {} };
     }
   }
   async function callTool(name, rawArgs, context = {}) {
@@ -20273,6 +20276,324 @@ function normalizeThreadIdArguments(definition, args) {
   return out2;
 }
 
+// src/desktop/transport.js
+import net from "node:net";
+import path6 from "node:path";
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+
+// src/desktop/protocol.js
+var VERSION = 1;
+var OPERATIONS = ["click", "set-value", "close", "place-window"];
+var id = { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" };
+var text = { type: "string", maxLength: 4096 };
+var timestamp = { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER };
+var protocol = { type: "integer", enum: [VERSION], description: "Reserved-screen protocol version. Use 1." };
+var descriptions = {
+  request_id: "Immutable ID for this request. Reuse only for the identical payload.",
+  control_request_id: "Immutable ID for this control request.",
+  ticket_id: "Ticket ID from submission.",
+  scope_id: "Scope ID from your current controller grant.",
+  lease_id: "Current lease ID from claim.",
+  epoch: "Current lease epoch from claim.",
+  title: "Short task title visible in GUI Queue.",
+  start_deadline: "Absolute epoch milliseconds for the latest start permitted by the task.",
+  capacity_claim_id: "Finite, validated capacity claim ID for this scope.",
+  capacity_claim_start_by: "Absolute epoch milliseconds for the capacity start deadline from capabilities.",
+  snapshot_id: "Fresh scoped observation ID.",
+  ref: "Opaque reference from this exact observation.",
+  operation: "Single operation allowed on this reference.",
+  value: "Text value for set-value. Omit for click, close and placement.",
+  action_id: "Action ID to reconcile.",
+  result: "Requested terminal disposition. Unknown effects remain partial.",
+  binding_id: "Currently selected display binding ID.",
+  principal_id: "Enrolled connection principal ID."
+};
+var scoped = { scope_id: id };
+var ticket = { ticket_id: id };
+var lease = { ...ticket, lease_id: id, epoch: timestamp };
+var request = { request_id: id };
+var control = { control_request_id: id };
+var methods = Object.freeze({
+  capabilities: {
+    schema: schema({}),
+    description: "Discover the shared reserved-screen queue, your qualified scopes and capacity claims.",
+    readOnly: true
+  },
+  submit: {
+    schema: schema({ ...request, ...scoped, title: { ...text, minLength: 1, maxLength: 120 }, start_deadline: timestamp, capacity_claim_id: id, capacity_claim_start_by: timestamp }),
+    description: "Queue one scoped desktop task with the deadline and finite capacity claim issued by the controller."
+  },
+  status: {
+    schema: schema(ticket),
+    description: "Read your ticket's queue, authority, delivery, effect and settlement state.",
+    readOnly: true
+  },
+  claim: {
+    schema: schema({ ...request, ...ticket }),
+    description: "Claim your ticket's turn when it is the first eligible ticket. A claim performs no desktop action."
+  },
+  heartbeat: {
+    schema: schema({ ...request, ...lease }),
+    description: "Renew your current lease while working. Use a fresh request ID for each renewal."
+  },
+  observe: {
+    schema: schema({ ...lease, ...scoped }),
+    description: "Observe your owned window and obtain fresh, scoped element references.",
+    readOnly: true
+  },
+  act: {
+    schema: schema({ ...request, ...lease, snapshot_id: id, ref: id, operation: { type: "string", enum: OPERATIONS }, value: text }, ["value"]),
+    description: "Issue one qualified semantic operation. Use a new request ID for a new intent and verify effect separately."
+  },
+  verify: {
+    schema: schema({ ...ticket, ...scoped, action_id: id }),
+    description: "Reconcile an action using its scoped observation and independent effect evidence. Never repeats the action.",
+    readOnly: true
+  },
+  cancel: {
+    schema: schema({ ...request, ...ticket }),
+    description: "Cancel your queued ticket or stop new work on your active ticket while its driver settles."
+  },
+  release: {
+    schema: schema({ ...request, ...lease, result: { type: "string", enum: ["finished", "partial", "blocked"] } }),
+    description: "Release the current turn after your work. Uncertain effects remain visible."
+  }
+});
+var controls = Object.freeze({
+  "owner-status": schema({}),
+  stop: schema(control),
+  reclaim: schema(control),
+  restore: schema({ ...control, binding_id: id }),
+  "owner-cancel": schema({ ...control, ...ticket }),
+  "recover-settling": schema(control),
+  "pending-connections": schema({}),
+  "revoke-claim": schema({ ...control, capacity_claim_id: id }),
+  "revoke-session": schema({ ...control, principal_id: id })
+});
+function schema(props, optional2 = []) {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      protocol_version: protocol,
+      ...Object.fromEntries(Object.entries(props).map(([key, value]) => [key, { description: descriptions[key], ...value }]))
+    },
+    required: ["protocol_version", ...Object.keys(props).filter((key) => !optional2.includes(key))]
+  };
+}
+var DesktopError = class extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+  }
+};
+function refuse(code, message) {
+  throw new DesktopError(code, message);
+}
+
+// src/desktop/journal.js
+import fs5 from "node:fs";
+import path5 from "node:path";
+var SECRET = "controller-key";
+var IDENTITY = "installation-id";
+var MAX_JOURNAL_BYTES = 32 * 1024 * 1024;
+function privateFile(file, { max = MAX_JOURNAL_BYTES } = {}) {
+  const fd = fs5.openSync(file, fs5.constants.O_RDONLY | fs5.constants.O_NOFOLLOW | fs5.constants.O_NONBLOCK);
+  try {
+    const stat = fs5.fstatSync(fd);
+    if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid?.() || (stat.mode & 511) !== 384 || stat.size > max) {
+      refuse("desktop_private_file_invalid", "The reserved-screen private file has unexpected ownership, permissions or size.");
+    }
+    return fs5.readFileSync(fd, "utf8");
+  } finally {
+    fs5.closeSync(fd);
+  }
+}
+function privateDirectory(directory) {
+  const stat = fs5.lstatSync(directory);
+  if (!stat.isDirectory() || stat.uid !== process.getuid?.() || (stat.mode & 511) !== 448) {
+    refuse("desktop_storage_invalid", "The reserved-screen directory must be a private directory owned by this user.");
+  }
+}
+function loadIdentity(directory) {
+  privateDirectory(directory);
+  const installation = privateFile(path5.join(directory, IDENTITY), { max: 64 });
+  if (!/^[a-f0-9-]{36}$/.test(installation)) refuse("desktop_installation_invalid", "The reserved-screen installation marker is invalid.");
+  return installation;
+}
+function controllerKey(directory) {
+  loadIdentity(directory);
+  const value = privateFile(path5.join(directory, SECRET), { max: 64 });
+  if (!/^[a-f0-9]{64}$/.test(value)) refuse("desktop_installation_invalid", "The reserved-screen controller credential is invalid.");
+  return value;
+}
+
+// src/desktop/host.js
+var MAX_PROBE_BYTES = 48 * 1024;
+
+// src/desktop/transport.js
+var MAX_REQUEST_BYTES = 96 * 1024;
+var MAX_REPLY_BYTES = 4 * 1024 * 1024;
+var SOCKET_MAX_BYTES = 103;
+function desktopDirectory() {
+  return path6.join(stateDir(), "desktop");
+}
+function endpoint(directory) {
+  const socket = path6.join(directory, "broker.sock");
+  if (Buffer.byteLength(socket) > SOCKET_MAX_BYTES) refuse("desktop_socket_path_too_long", "The reserved-screen state path exceeds the local socket limit.");
+  return socket;
+}
+function attachReader(socket, onMessage, limit2) {
+  let buffer = "";
+  socket.setEncoding("utf8");
+  socket.on("data", (chunk) => {
+    buffer += chunk;
+    while (true) {
+      const delimiter = buffer.indexOf("\n");
+      if (delimiter < 0) break;
+      if (Buffer.byteLength(buffer.slice(0, delimiter)) > limit2) return socket.destroy();
+      let message;
+      try {
+        message = JSON.parse(buffer.slice(0, delimiter));
+      } catch {
+        return socket.destroy();
+      }
+      buffer = buffer.slice(delimiter + 1);
+      onMessage(message);
+    }
+    if (Buffer.byteLength(buffer) > limit2) socket.destroy();
+  });
+}
+function write(socket, value) {
+  if (!socket.destroyed) socket.write(JSON.stringify(value) + "\n");
+}
+function controlProof(secret, challenge) {
+  return createHmac("sha256", Buffer.from(secret, "hex")).update("agent-link-reserved-screen-v1:" + challenge).digest("hex");
+}
+async function openClient(directory, mode) {
+  const socket = net.createConnection(endpoint(directory));
+  let alive = true;
+  let challengeResolve;
+  const challenge = new Promise((resolve) => {
+    challengeResolve = resolve;
+  });
+  const pending = /* @__PURE__ */ new Map();
+  function lost() {
+    alive = false;
+    challengeResolve(null);
+    for (const { resolve } of pending.values()) resolve(null);
+    pending.clear();
+  }
+  socket.on("error", lost);
+  socket.on("close", lost);
+  attachReader(socket, (msg) => {
+    if (msg?.protocol_version === VERSION && /^[a-f0-9]{64}$/.test(msg.challenge ?? "")) challengeResolve(msg.challenge);
+    else if (msg?.id && pending.has(msg.id)) {
+      const { resolve } = pending.get(msg.id);
+      pending.delete(msg.id);
+      resolve(msg);
+    }
+  }, MAX_REPLY_BYTES);
+  function call(fields, timeout = 24e3) {
+    if (!alive) return Promise.resolve(null);
+    const id2 = randomUUID();
+    return new Promise((resolve) => {
+      const timer2 = setTimeout(() => socket.destroy(), timeout);
+      pending.set(id2, { resolve: (value) => {
+        clearTimeout(timer2);
+        resolve(value);
+      } });
+      write(socket, { id: id2, ...fields });
+    });
+  }
+  const timer = setTimeout(() => socket.destroy(), 3e3);
+  const nonce = await challenge;
+  clearTimeout(timer);
+  if (!nonce) {
+    socket.destroy();
+    refuse("desktop_broker_unavailable", "The shared reserved-screen broker is unavailable. Ask its controller for current status.");
+  }
+  try {
+    const hello = mode === "controller" ? { mode, proof: controlProof(controllerKey(directory), nonce) } : { mode };
+    const handshake = await call(hello, 4e3);
+    if (!handshake?.ok) {
+      if (handshake?.error) refuse(handshake.error.code, handshake.error.message);
+      refuse("desktop_connection_refused", "The reserved-screen connection could not be authenticated.");
+    }
+  } catch (error2) {
+    socket.destroy();
+    throw error2;
+  }
+  socket.unref();
+  return {
+    alive: () => alive,
+    async call(method, params, runtimeSession = null) {
+      const message = await call({ method, params, ...mode === "desktop" ? { runtime_session: runtimeSession } : {} });
+      if (!message) refuse("desktop_connection_lost", "The broker reply was lost. Check ticket status before taking further action.");
+      if (!message.ok) refuse(message.error.code, message.error.message);
+      return message.result;
+    },
+    close: () => socket.destroy()
+  };
+}
+function createDesktopClient(directory) {
+  let opened;
+  return {
+    async call(method, params, sessionId) {
+      opened ??= openClient(directory(), "desktop");
+      let client;
+      try {
+        client = await opened;
+      } catch (error2) {
+        opened = null;
+        throw error2;
+      }
+      if (!client.alive()) {
+        opened = null;
+        refuse("desktop_connection_lost", "The enrolled connection has closed. The controller must confirm the old outcome before reenrollment.");
+      }
+      return client.call(method, params, sessionId);
+    },
+    close() {
+      void opened?.then((client) => client.close(), () => {
+      });
+    }
+  };
+}
+
+// src/desktop/tools.js
+function runtimeDesktopSession(request2) {
+  const meta2 = request2?.params?._meta;
+  const fields = [meta2?.callerThreadId, meta2?.["openai/codex"]?.callerThreadId, meta2?.["claudecode/sessionId"]];
+  const supplied = fields.filter((value2) => value2 !== void 0);
+  if (!supplied.length) return null;
+  const [value] = supplied;
+  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value) && supplied.every((field) => field === value) ? value : "";
+}
+function desktopEntries(client) {
+  return Object.entries(methods).map(([method, spec]) => ({
+    definition: {
+      name: "desktop_" + method,
+      description: spec.description,
+      inputSchema: spec.schema,
+      protocolVersion: VERSION,
+      output: {
+        protocol_version: { type: "integer", enum: [VERSION], description: "Reserved-screen protocol version." },
+        result: { type: "object", description: "Scoped reserved-screen result." }
+      },
+      annotations: { readOnlyHint: "readOnly" in spec && spec.readOnly === true, destructiveHint: method === "act", idempotentHint: !["act", "observe", "verify"].includes(method) }
+    },
+    async handler(params, context) {
+      try {
+        return { protocol_version: VERSION, result: await client.call(method, params, context.desktopSession ?? null) };
+      } catch (error2) {
+        if (error2 instanceof DesktopError) throw new AgentLinkError("unsupported", error2.message, { details: { desktop_code: error2.code } });
+        throw error2;
+      }
+    }
+  }));
+}
+
 // src/server/config.js
 import { readFileSync } from "node:fs";
 function serverVersion() {
@@ -20304,18 +20625,18 @@ function loadConfig(source = process.env) {
 }
 
 // src/claude/session-index.js
-import fs6 from "node:fs";
-import path6 from "node:path";
+import fs7 from "node:fs";
+import path8 from "node:path";
 import { homedir as homedir2 } from "node:os";
 import { spawnSync } from "node:child_process";
 
 // src/claude/desktop-registry.js
-import fs5 from "node:fs";
-import path5 from "node:path";
+import fs6 from "node:fs";
+import path7 from "node:path";
 import { homedir } from "node:os";
 var DEFAULT_SIDECAR_ROOTS = [
-  path5.join(homedir(), "Library/Application Support/Claude/local-agent-mode-sessions"),
-  path5.join(homedir(), "Library/Application Support/Claude/claude-code-sessions")
+  path7.join(homedir(), "Library/Application Support/Claude/local-agent-mode-sessions"),
+  path7.join(homedir(), "Library/Application Support/Claude/claude-code-sessions")
 ];
 var REQUIRED = ["sessionId"];
 var OPTIONAL = [
@@ -20334,7 +20655,7 @@ var OPTIONAL = [
   "slashCommands"
 ];
 function parseSidecar(filePath) {
-  const raw = JSON.parse(fs5.readFileSync(filePath, "utf8"));
+  const raw = JSON.parse(fs6.readFileSync(filePath, "utf8"));
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new Error(`sidecar ${filePath} is not a JSON object`);
   }
@@ -20351,8 +20672,8 @@ function parseSidecar(filePath) {
 }
 
 // src/claude/session-index.js
-var DEFAULT_DESKTOP_ROOT = path6.join(homedir2(), "Library/Application Support/Claude/local-agent-mode-sessions");
-var DEFAULT_CODE_ROOT = path6.join(homedir2(), "Library/Application Support/Claude/claude-code-sessions");
+var DEFAULT_DESKTOP_ROOT = path8.join(homedir2(), "Library/Application Support/Claude/local-agent-mode-sessions");
+var DEFAULT_CODE_ROOT = path8.join(homedir2(), "Library/Application Support/Claude/claude-code-sessions");
 function defaultProjectsRoot() {
   return claudeProjectsRoot();
 }
@@ -20381,13 +20702,13 @@ function listClaudeSessions({
     loaded: isLoaded(ps, session.cliSessionId)
   })).filter((session) => surface2 === "all" || session.surface === surface2).filter((session) => includeArchived || !session.isArchived).sort((a, b) => (b.lastActivityAt ?? 0) - (a.lastActivityAt ?? 0));
 }
-function findClaudeSessionById(id, {
+function findClaudeSessionById(id2, {
   desktopRoot = DEFAULT_DESKTOP_ROOT,
   codeRoot = DEFAULT_CODE_ROOT,
   projectsRoot = defaultProjectsRoot(),
   transcriptPath
 } = {}) {
-  const value = typeof id === "string" ? id.trim() : "";
+  const value = typeof id2 === "string" ? id2.trim() : "";
   if (!value) return null;
   const roots = [[desktopRoot, "desktop"], [codeRoot, "code"]];
   if (value.startsWith("local_")) {
@@ -20429,7 +20750,7 @@ function isClaudeSessionLoaded(cliSessionId, { psOutput } = {}) {
 function findTranscriptSessionByCliId(cliSessionId, { transcriptPath, projectsRoot = defaultProjectsRoot() } = {}) {
   if (!cliSessionId) return null;
   let file = null;
-  if (transcriptPath && path6.basename(transcriptPath, ".jsonl") === cliSessionId && fs6.existsSync(transcriptPath)) {
+  if (transcriptPath && path8.basename(transcriptPath, ".jsonl") === cliSessionId && fs7.existsSync(transcriptPath)) {
     file = transcriptPath;
   } else {
     file = findTranscriptFileByCliId(cliSessionId, projectsRoot);
@@ -20437,7 +20758,7 @@ function findTranscriptSessionByCliId(cliSessionId, { transcriptPath, projectsRo
   if (!file) return null;
   let lastActivityAt = null;
   try {
-    lastActivityAt = fs6.statSync(file).mtimeMs;
+    lastActivityAt = fs7.statSync(file).mtimeMs;
   } catch {
   }
   return {
@@ -20458,19 +20779,19 @@ function findTranscriptSessionByCliId(cliSessionId, { transcriptPath, projectsRo
   };
 }
 function findTranscriptFileByCliId(cliSessionId, projectsRoot) {
-  if (!projectsRoot || !fs6.existsSync(projectsRoot)) return null;
+  if (!projectsRoot || !fs7.existsSync(projectsRoot)) return null;
   let entries;
   try {
-    entries = fs6.readdirSync(projectsRoot, { withFileTypes: true });
+    entries = fs7.readdirSync(projectsRoot, { withFileTypes: true });
   } catch {
     return null;
   }
   const target = `${cliSessionId}.jsonl`;
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    const candidate = path6.join(projectsRoot, entry.name, target);
+    const candidate = path8.join(projectsRoot, entry.name, target);
     try {
-      if (fs6.existsSync(candidate)) return candidate;
+      if (fs7.existsSync(candidate)) return candidate;
     } catch {
     }
   }
@@ -20485,21 +20806,21 @@ function findSidecarFileById(root, sessionId, { maxDepth = 3 } = {}) {
   if (!root || !sessionId || !/^local_[0-9A-Za-z-]+$/.test(sessionId)) return null;
   const name = `${sessionId}.json`;
   const visit = (dir, depth) => {
-    const direct = path6.join(dir, name);
+    const direct = path8.join(dir, name);
     try {
-      if (fs6.statSync(direct).isFile()) return direct;
+      if (fs7.statSync(direct).isFile()) return direct;
     } catch {
     }
     if (depth >= maxDepth) return null;
     let entries;
     try {
-      entries = fs6.readdirSync(dir, { withFileTypes: true });
+      entries = fs7.readdirSync(dir, { withFileTypes: true });
     } catch {
       return null;
     }
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
-      const found = visit(path6.join(dir, entry.name), depth + 1);
+      const found = visit(path8.join(dir, entry.name), depth + 1);
       if (found) return found;
     }
     return null;
@@ -20507,7 +20828,7 @@ function findSidecarFileById(root, sessionId, { maxDepth = 3 } = {}) {
   return visit(root, 0);
 }
 function findSidecar(root, predicate) {
-  if (!root || !fs6.existsSync(root)) return null;
+  if (!root || !fs7.existsSync(root)) return null;
   let found = null;
   walk(root, (file) => {
     if (found || !isSidecarFile(file)) return;
@@ -20517,7 +20838,7 @@ function findSidecar(root, predicate) {
   return found;
 }
 function filterSidecars(root, predicate) {
-  if (!root || !fs6.existsSync(root)) return [];
+  if (!root || !fs7.existsSync(root)) return [];
   const out2 = [];
   walk(root, (file) => {
     if (!isSidecarFile(file)) return;
@@ -20527,10 +20848,10 @@ function filterSidecars(root, predicate) {
   return out2;
 }
 function isSidecarFile(file) {
-  return /^local_[0-9a-zA-Z-]+\.json$/.test(path6.basename(file));
+  return /^local_[0-9a-zA-Z-]+\.json$/.test(path8.basename(file));
 }
 function listSidecarSessions(root, surface2) {
-  if (!root || !fs6.existsSync(root)) return [];
+  if (!root || !fs7.existsSync(root)) return [];
   const out2 = [];
   walk(root, (file) => {
     if (!isSidecarFile(file)) return;
@@ -20542,7 +20863,7 @@ function listSidecarSessions(root, surface2) {
 function parseSidecarCached(file) {
   let stat;
   try {
-    stat = fs6.statSync(file);
+    stat = fs7.statSync(file);
   } catch {
     return null;
   }
@@ -20570,26 +20891,26 @@ function normalizeSidecar(session, surface2) {
   };
 }
 function listTranscriptSessions(projectsRoot) {
-  if (!projectsRoot || !fs6.existsSync(projectsRoot)) return [];
+  if (!projectsRoot || !fs7.existsSync(projectsRoot)) return [];
   const out2 = [];
   let projects;
   try {
-    projects = fs6.readdirSync(projectsRoot, { withFileTypes: true });
+    projects = fs7.readdirSync(projectsRoot, { withFileTypes: true });
   } catch {
     return [];
   }
   for (const project of projects) {
     if (!project.isDirectory()) continue;
-    const dir = path6.join(projectsRoot, project.name);
+    const dir = path8.join(projectsRoot, project.name);
     let entries;
     try {
-      entries = fs6.readdirSync(dir, { withFileTypes: true });
+      entries = fs7.readdirSync(dir, { withFileTypes: true });
     } catch {
       continue;
     }
     for (const entry of entries) {
       if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
-      const session = parseTranscriptSummary(path6.join(dir, entry.name), projectsRoot);
+      const session = parseTranscriptSummary(path8.join(dir, entry.name), projectsRoot);
       if (session) out2.push(session);
     }
   }
@@ -20601,7 +20922,7 @@ function summarizeTranscriptSession(file, { projectsRoot = defaultProjectsRoot()
 function parseTranscriptSummary(file, projectsRoot) {
   let stat;
   try {
-    stat = fs6.statSync(file);
+    stat = fs7.statSync(file);
   } catch {
     return null;
   }
@@ -20621,7 +20942,7 @@ function parseTranscriptSummary(file, projectsRoot) {
 function readPrefixLines(fd, size, limit2) {
   const length = Math.min(limit2, size);
   const buf = Buffer.allocUnsafe(length);
-  if (length) fs6.readSync(fd, buf, 0, length, 0);
+  if (length) fs7.readSync(fd, buf, 0, length, 0);
   const lines = buf.toString("utf8").split("\n");
   const atEof = length >= size;
   if (!atEof) lines.pop();
@@ -20630,7 +20951,7 @@ function readPrefixLines(fd, size, limit2) {
 function buildTranscriptSummary(file, projectsRoot, stat) {
   let firstRecord = null;
   try {
-    const fd = fs6.openSync(file, "r");
+    const fd = fs7.openSync(file, "r");
     try {
       for (let limit2 = TRANSCRIPT_PREFIX_BYTES; ; limit2 *= 2) {
         const { lines, atEof } = readPrefixLines(fd, stat.size, limit2);
@@ -20646,22 +20967,22 @@ function buildTranscriptSummary(file, projectsRoot, stat) {
         if (firstRecord || atEof || limit2 >= TRANSCRIPT_PREFIX_MAX_BYTES) break;
       }
     } finally {
-      fs6.closeSync(fd);
+      fs7.closeSync(fd);
     }
   } catch {
     return null;
   }
-  const cliSessionId = path6.basename(file, ".jsonl");
+  const cliSessionId = path8.basename(file, ".jsonl");
   if (!cliSessionId) return null;
   const cwd = firstRecord?.cwd ?? inferCwdFromProjectPath(file, projectsRoot);
   const createdAt = Date.parse(firstRecord?.timestamp ?? firstRecord?.createdAt ?? "");
   return {
     sessionId: cliSessionId.startsWith("local_") ? cliSessionId : `local_${cliSessionId}`,
     cliSessionId,
-    processName: path6.basename(path6.dirname(file)),
+    processName: path8.basename(path8.dirname(file)),
     cwd,
     model: firstRecord?.model ?? "unknown",
-    title: firstRecord?.title ?? firstRecord?.content?.title ?? path6.basename(path6.dirname(file)),
+    title: firstRecord?.title ?? firstRecord?.content?.title ?? path8.basename(path8.dirname(file)),
     isArchived: false,
     createdAt: Number.isFinite(createdAt) ? createdAt : null,
     lastActivityAt: stat.mtimeMs,
@@ -20675,7 +20996,7 @@ function buildTranscriptSummary(file, projectsRoot, stat) {
   };
 }
 function inferCwdFromProjectPath(file, projectsRoot) {
-  const rel = path6.relative(projectsRoot, path6.dirname(file));
+  const rel = path8.relative(projectsRoot, path8.dirname(file));
   if (!rel || rel.startsWith("..")) return "";
   return rel.replace(/-/g, "/");
 }
@@ -20748,21 +21069,21 @@ function isLoaded(psLines, cliSessionId) {
 function walk(dir, visit, stop = () => false) {
   let entries;
   try {
-    entries = fs6.readdirSync(dir, { withFileTypes: true });
+    entries = fs7.readdirSync(dir, { withFileTypes: true });
   } catch {
     return;
   }
   for (const entry of entries) {
     if (stop()) return;
-    const fp = path6.join(dir, entry.name);
+    const fp = path8.join(dir, entry.name);
     if (entry.isDirectory()) walk(fp, visit, stop);
     else if (entry.isFile()) visit(fp);
   }
 }
 
 // src/claude/mailbox.js
-import path7 from "node:path";
-import fs7 from "node:fs";
+import path9 from "node:path";
+import fs8 from "node:fs";
 import crypto from "node:crypto";
 var MAX_MESSAGE_BODY_BYTES = 64 * 1024;
 var MAX_EVENT_LINE_BYTES = 512 * 1024;
@@ -20793,22 +21114,22 @@ function mailboxReadPaths(options = {}) {
   return [...legacyMailboxPaths(), writePath];
 }
 function isDefaultMailbox(mailboxPath2) {
-  return path7.resolve(mailboxPath2) === path7.resolve(stateDir(), "mailbox.jsonl");
+  return path9.resolve(mailboxPath2) === path9.resolve(stateDir(), "mailbox.jsonl");
 }
 function ensurePrivateMailbox(mailboxPath2) {
   if (isDefaultMailbox(mailboxPath2)) {
     ensureStateDir();
   } else {
     assertTestSafeWrite(mailboxPath2);
-    fs7.mkdirSync(path7.dirname(mailboxPath2), { recursive: true, mode: DIR_MODE2 });
+    fs8.mkdirSync(path9.dirname(mailboxPath2), { recursive: true, mode: DIR_MODE2 });
   }
   tightenMode(mailboxPath2, FILE_MODE2);
 }
 function mailboxStatus(options = {}) {
   const mailboxPath2 = resolveMailboxPath(options);
   const readPaths = mailboxReadPaths(options);
-  const exists3 = fs7.existsSync(mailboxPath2);
-  const legacyReadPaths = readPaths.filter((p) => p !== mailboxPath2 && fs7.existsSync(p));
+  const exists3 = fs8.existsSync(mailboxPath2);
+  const legacyReadPaths = readPaths.filter((p) => p !== mailboxPath2 && fs8.existsSync(p));
   let pendingMessagesCount = 0;
   let readable = true;
   if (exists3 || legacyReadPaths.length) {
@@ -20823,23 +21144,23 @@ function mailboxStatus(options = {}) {
     path: mailboxPath2,
     exists: exists3,
     readable,
-    writable: canWrite(exists3 ? mailboxPath2 : path7.dirname(mailboxPath2)),
+    writable: canWrite(exists3 ? mailboxPath2 : path9.dirname(mailboxPath2)),
     pendingMessagesCount,
     legacyReadPaths
   };
 }
 function canWrite(target) {
-  let current = path7.resolve(target);
+  let current = path9.resolve(target);
   while (true) {
-    if (fs7.existsSync(current)) {
+    if (fs8.existsSync(current)) {
       try {
-        fs7.accessSync(current, fs7.constants.W_OK);
+        fs8.accessSync(current, fs8.constants.W_OK);
         return true;
       } catch {
         return false;
       }
     }
-    const parent = path7.dirname(current);
+    const parent = path9.dirname(current);
     if (parent === current) return false;
     current = parent;
   }
@@ -20857,7 +21178,7 @@ function openMailbox(options = {}) {
     if (bytes > MAX_EVENT_LINE_BYTES) {
       throw new Error(`Agent Link mailbox event is ${bytes} bytes; one event is limited to ${MAX_EVENT_LINE_BYTES} bytes (512 KiB). Shorten the message or its metadata.`);
     }
-    fs7.appendFileSync(mailboxPath2, line, { encoding: "utf8", mode: FILE_MODE2 });
+    fs8.appendFileSync(mailboxPath2, line, { encoding: "utf8", mode: FILE_MODE2 });
   }
   function insertMessage({
     fromSessionId,
@@ -20873,7 +21194,7 @@ function openMailbox(options = {}) {
   }) {
     const tooLarge = messageBodyTooLarge(body);
     if (tooLarge) throw new Error(tooLarge.message);
-    const id = ulid2();
+    const id2 = ulid2();
     const now = Number.isFinite(sentAt) ? (
       /** @type {number} */
       sentAt
@@ -20882,7 +21203,7 @@ function openMailbox(options = {}) {
       type: "message",
       at: now,
       message: {
-        id,
+        id: id2,
         from_session_id: fromSessionId,
         from_session_kind: fromSessionKind,
         to_session_id: toSessionId,
@@ -20902,7 +21223,7 @@ function openMailbox(options = {}) {
         reply_by: Number.isFinite(replyBy) ? replyBy : null
       }
     });
-    return id;
+    return id2;
   }
   function recordResolution({ messageId, kind, by, byAddress = null, late = false, replyMessageId = null, at = Date.now() }) {
     appendEvent({ type: "resolved", at, messageId, kind, by, byAddress, late: late === true, replyMessageId });
@@ -20916,13 +21237,13 @@ function openMailbox(options = {}) {
         assertTestSafeWrite(claimsDir);
         claimsDirChecked = true;
       }
-      fs7.mkdirSync(claimsDir, { recursive: true, mode: DIR_MODE2 });
+      fs8.mkdirSync(claimsDir, { recursive: true, mode: DIR_MODE2 });
       tightenMode(claimsDir, DIR_MODE2);
-      const fd = fs7.openSync(path7.join(claimsDir, claimName(key)), "wx", FILE_MODE2);
+      const fd = fs8.openSync(path9.join(claimsDir, claimName(key)), "wx", FILE_MODE2);
       try {
-        if (content) fs7.writeSync(fd, String(content).slice(0, 200));
+        if (content) fs8.writeSync(fd, String(content).slice(0, 200));
       } finally {
-        fs7.closeSync(fd);
+        fs8.closeSync(fd);
       }
       return true;
     } catch {
@@ -20931,14 +21252,14 @@ function openMailbox(options = {}) {
   }
   function claimTakenAt(key) {
     try {
-      return fs7.statSync(path7.join(claimsDir, claimName(key))).mtimeMs;
+      return fs8.statSync(path9.join(claimsDir, claimName(key))).mtimeMs;
     } catch {
       return null;
     }
   }
   function claimContent(key) {
     try {
-      return fs7.readFileSync(path7.join(claimsDir, claimName(key)), "utf8");
+      return fs8.readFileSync(path9.join(claimsDir, claimName(key)), "utf8");
     } catch {
       return null;
     }
@@ -20948,7 +21269,7 @@ function openMailbox(options = {}) {
   }
   function removeClaim(name) {
     try {
-      fs7.unlinkSync(path7.join(claimsDir, claimName(name)));
+      fs8.unlinkSync(path9.join(claimsDir, claimName(name)));
       return true;
     } catch {
       return false;
@@ -21053,8 +21374,8 @@ function openMailbox(options = {}) {
 function idSet(single, many) {
   const out2 = /* @__PURE__ */ new Set();
   if (typeof single === "string" && single) out2.add(single);
-  for (const id of Array.isArray(many) ? many : []) {
-    if (typeof id === "string" && id) out2.add(id);
+  for (const id2 of Array.isArray(many) ? many : []) {
+    if (typeof id2 === "string" && id2) out2.add(id2);
   }
   return out2;
 }
@@ -21063,7 +21384,7 @@ function claimName(key) {
 }
 function listClaimNames(dir) {
   try {
-    return fs7.readdirSync(dir);
+    return fs8.readdirSync(dir);
   } catch {
     return [];
   }
@@ -21075,8 +21396,8 @@ function mergedView(paths, claimsDir = null) {
   for (const file of paths) {
     for (const event of readEvents(file)) {
       if (event?.type === "message" && event.message?.id) {
-        const id = String(event.message.id);
-        if (!messages.has(id)) messages.set(id, normalizeMessage(event.message, event.at));
+        const id2 = String(event.message.id);
+        if (!messages.has(id2)) messages.set(id2, normalizeMessage(event.message, event.at));
       } else if (event && typeof event === "object") {
         stateEvents.push(event);
       }
@@ -21136,7 +21457,7 @@ function mergedView(paths, claimsDir = null) {
       if (n < 1 || message.reminders.some((r) => r.n === n)) continue;
       let at = null;
       try {
-        at = fs7.statSync(path7.join(claimsDir, name)).mtimeMs;
+        at = fs8.statSync(path9.join(claimsDir, name)).mtimeMs;
       } catch {
         continue;
       }
@@ -21146,8 +21467,8 @@ function mergedView(paths, claimsDir = null) {
   return [...messages.values()];
 }
 function readEvents(mailboxPath2) {
-  if (!fs7.existsSync(mailboxPath2)) return [];
-  const raw = fs7.readFileSync(mailboxPath2, "utf8");
+  if (!fs8.existsSync(mailboxPath2)) return [];
+  const raw = fs8.readFileSync(mailboxPath2, "utf8");
   if (!raw.trim()) return [];
   const events = [];
   for (const line of raw.split("\n")) {
@@ -21206,12 +21527,12 @@ function ulid2() {
 
 // src/codex/app-server-client.js
 import { spawn, spawnSync as spawnSync3 } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { randomBytes as randomBytes2 } from "node:crypto";
 import http from "node:http";
-import net from "node:net";
+import net2 from "node:net";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync as readFileSync2, readdirSync, rmSync, writeFileSync } from "node:fs";
 import os3 from "node:os";
-import path9 from "node:path";
+import path11 from "node:path";
 
 // node_modules/ws/wrapper.mjs
 var import_stream = __toESM(require_stream(), 1);
@@ -21228,7 +21549,7 @@ var wrapper_default = import_websocket.default;
 import { spawnSync as spawnSync2 } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import os2 from "node:os";
-import path8 from "node:path";
+import path10 from "node:path";
 var APP_BUNDLES = [
   {
     app: "ChatGPT.app",
@@ -21245,7 +21566,7 @@ var APP_BUNDLES = [
 function codexInstallLayout(options = {}) {
   const home = options.home ?? os2.homedir();
   const platform = options.platform ?? process.platform;
-  const applicationDirs = options.applicationDirs ?? (platform === "darwin" ? ["/Applications", path8.join(home, "Applications")] : []);
+  const applicationDirs = options.applicationDirs ?? (platform === "darwin" ? ["/Applications", path10.join(home, "Applications")] : []);
   const executable = platform === "win32" ? "codex.exe" : "codex";
   return {
     platform,
@@ -21253,11 +21574,11 @@ function codexInstallLayout(options = {}) {
     envVars: ["AGENT_LINK_CODEX_BIN", ...ENV_ALIASES.AGENT_LINK_CODEX_BIN],
     appBundles: applicationDirs.flatMap((dir) => APP_BUNDLES.map((bundle) => ({
       app: bundle.app,
-      appPath: path8.join(dir, bundle.app),
-      binaries: bundle.binaries.map((relative) => path8.join(dir, bundle.app, relative))
+      appPath: path10.join(dir, bundle.app),
+      binaries: bundle.binaries.map((relative) => path10.join(dir, bundle.app, relative))
     }))),
     pathDirs: options.pathDirs ?? splitPath(options.pathEnv ?? process.env.PATH ?? ""),
-    wellKnownDirs: options.wellKnownDirs ?? (platform === "win32" ? [] : [path8.join(home, ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin"])
+    wellKnownDirs: options.wellKnownDirs ?? (platform === "win32" ? [] : [path10.join(home, ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin"])
   };
 }
 function codexBinaryCandidateEntries(options = {}) {
@@ -21274,10 +21595,10 @@ function codexBinaryCandidateEntries(options = {}) {
     }
   }
   for (const dir of layout.pathDirs) {
-    entries.push({ path: path8.join(dir, layout.executable), source: "PATH" });
+    entries.push({ path: path10.join(dir, layout.executable), source: "PATH" });
   }
   for (const dir of layout.wellKnownDirs) {
-    entries.push({ path: path8.join(dir, layout.executable), source: "well-known" });
+    entries.push({ path: path10.join(dir, layout.executable), source: "well-known" });
   }
   const seen = /* @__PURE__ */ new Set();
   return entries.filter((entry) => {
@@ -21294,9 +21615,9 @@ function discoverCodexBinary(options = {}) {
   const searched = [];
   for (const entry of entries) {
     searched.push(entry.path);
-    if (entry.explicit && !entry.path.includes(path8.sep)) {
+    if (entry.explicit && !entry.path.includes(path10.sep)) {
       const layout = options.layout ?? codexInstallLayout(options);
-      const resolved = layout.pathDirs.map((dir) => path8.join(dir, entry.path)).find((candidate) => isExecutable(candidate));
+      const resolved = layout.pathDirs.map((dir) => path10.join(dir, entry.path)).find((candidate) => isExecutable(candidate));
       if (resolved) {
         return { found: true, path: resolved, source: entry.source, searched };
       }
@@ -21362,7 +21683,7 @@ function defaultIsExecutable(candidate) {
   }
 }
 function splitPath(value) {
-  return String(value).split(path8.delimiter).filter((dir) => dir && path8.isAbsolute(dir));
+  return String(value).split(path10.delimiter).filter((dir) => dir && path10.isAbsolute(dir));
 }
 
 // src/codex/app-server-watchdog.js
@@ -21549,19 +21870,19 @@ var CodexAppServerClient = class {
         reject(new AppServerError(`Codex app-server connection is not open for ${method}`, { method, code: "not-connected" }));
         return;
       }
-      const id = `agent-link-${this.nextId++}`;
+      const id2 = `agent-link-${this.nextId++}`;
       const timeout = setTimeout(() => {
-        this.pending.delete(id);
+        this.pending.delete(id2);
         reject(new AppServerError(`Timed out waiting for ${method}`, { method, code: "request-timeout" }));
       }, this.options.requestTimeoutMs);
       const fail = (error2) => {
         clearTimeout(timeout);
-        this.pending.delete(id);
+        this.pending.delete(id2);
         reject(new AppServerError(`Failed to send ${method}: ${error2.message}`, { method, code: "send-failed" }));
       };
-      this.pending.set(id, { resolve, reject, timeout, method });
+      this.pending.set(id2, { resolve, reject, timeout, method });
       try {
-        ws.send(JSON.stringify({ id, method, params }), (error2) => {
+        ws.send(JSON.stringify({ id: id2, method, params }), (error2) => {
           if (error2) {
             fail(error2);
           }
@@ -21598,7 +21919,7 @@ var CodexAppServerClient = class {
       previous.terminate();
     }
     this.emitConnection("connecting");
-    const ws = target.socketPath ? new wrapper_default("ws://localhost/", { createConnection: () => net.connect(target.socketPath) }) : new wrapper_default(target.url, target.headers ? { headers: target.headers } : void 0);
+    const ws = target.socketPath ? new wrapper_default("ws://localhost/", { createConnection: () => net2.connect(target.socketPath) }) : new wrapper_default(target.url, target.headers ? { headers: target.headers } : void 0);
     this.ws = ws;
     this.initialized = false;
     const { headers: _headers, ...publicTarget } = target;
@@ -21798,10 +22119,10 @@ var CodexAppServerClient = class {
     }
   }
   failAllPending(message, code = "connection-lost") {
-    for (const [id, pending] of this.pending.entries()) {
+    for (const [id2, pending] of this.pending.entries()) {
       clearTimeout(pending.timeout);
       pending.reject(new AppServerError(message, { method: pending.method, code }));
-      this.pending.delete(id);
+      this.pending.delete(id2);
     }
     this.initialized = false;
   }
@@ -21812,7 +22133,7 @@ var CodexAppServerClient = class {
     }
     const explicitSocket = envValue("AGENT_LINK_CODEX_SOCK");
     if (explicitSocket) {
-      return { kind: "socket", socketPath: path9.resolve(explicitSocket), managed: false };
+      return { kind: "socket", socketPath: path11.resolve(explicitSocket), managed: false };
     }
     if (!this.options.autoStart) {
       throw new AppServerError(
@@ -21837,34 +22158,34 @@ var CodexAppServerClient = class {
       }
       await this.managedStartPromise;
     }
-    const endpoint = this.managedEndpoint;
-    if (!endpoint) {
+    const endpoint2 = this.managedEndpoint;
+    if (!endpoint2) {
       throw new AppServerError("Managed Codex app-server was stopped during startup", { code: "stopped-during-startup" });
     }
     return {
       kind: "managed",
       managed: true,
-      transport: endpoint.transport,
-      url: endpoint.url ?? null,
-      socketPath: endpoint.socketPath ?? null,
-      headers: endpoint.headers
+      transport: endpoint2.transport,
+      url: endpoint2.url ?? null,
+      socketPath: endpoint2.socketPath ?? null,
+      headers: endpoint2.headers
     };
   }
   throwIfStartupFailureCached() {
-    const failure = this.lastStartupFailure;
-    if (!failure) {
+    const failure2 = this.lastStartupFailure;
+    if (!failure2) {
       return;
     }
-    const ageMs = Date.now() - failure.at;
+    const ageMs = Date.now() - failure2.at;
     const cacheMs = this.options.startupFailureCacheMs;
     if (!(cacheMs > 0) || ageMs >= cacheMs) {
       this.lastStartupFailure = null;
       return;
     }
-    throw new AppServerError(`${failure.error.message} (cached startup failure; not retrying for another ${Math.ceil((cacheMs - ageMs) / 1e3)} s)`, {
-      ...failure.error.details,
+    throw new AppServerError(`${failure2.error.message} (cached startup failure; not retrying for another ${Math.ceil((cacheMs - ageMs) / 1e3)} s)`, {
+      ...failure2.error.details,
       code: "startup-failure-cached",
-      cachedCode: failure.error.details?.code ?? null,
+      cachedCode: failure2.error.details?.code ?? null,
       retryAfterMs: cacheMs - ageMs
     });
   }
@@ -21880,14 +22201,14 @@ var CodexAppServerClient = class {
   // The name is fixed per Agent Link process (<pid>.sock): Codex keeps
   // per-socket lock files, so a fresh name per spawn would pile them up.
   allocateEndpoint() {
-    if (path9.resolve(path9.dirname(this.stateDir())) === path9.resolve(stateDir())) {
+    if (path11.resolve(path11.dirname(this.stateDir())) === path11.resolve(stateDir())) {
       ensureStateDir();
     }
     const stateDir2 = ensurePrivateDir(this.stateDir());
     const stem = `${process.pid}`;
     if (this.options.transport === "ws-token") {
-      const token = randomBytes(32).toString("hex");
-      const tokenFile = path9.join(stateDir2, `${stem}.token`);
+      const token = randomBytes2(32).toString("hex");
+      const tokenFile = path11.join(stateDir2, `${stem}.token`);
       assertTestSafeWrite(tokenFile);
       writeFileSync(tokenFile, token, { mode: 384 });
       chmodSync(tokenFile, 384);
@@ -21902,11 +22223,11 @@ var CodexAppServerClient = class {
       };
     }
     let socketDir = stateDir2;
-    if (Buffer.byteLength(path9.join(socketDir, `${stem}.sock`)) > MAX_UNIX_SOCKET_PATH_BYTES) {
+    if (Buffer.byteLength(path11.join(socketDir, `${stem}.sock`)) > MAX_UNIX_SOCKET_PATH_BYTES) {
       const base = process.platform === "darwin" ? os3.tmpdir() : "/tmp";
-      socketDir = ensurePrivateDir(path9.join(base, `agent-link-${process.getuid?.() ?? "user"}`));
+      socketDir = ensurePrivateDir(path11.join(base, `agent-link-${process.getuid?.() ?? "user"}`));
     }
-    const socketPath = path9.join(socketDir, `${stem}.sock`);
+    const socketPath = path11.join(socketDir, `${stem}.sock`);
     rmSync(socketPath, { force: true });
     return {
       transport: "unix",
@@ -21931,17 +22252,17 @@ var CodexAppServerClient = class {
     if (this.closed) {
       throw closedError();
     }
-    const endpoint = this.allocateEndpoint();
-    if (endpoint.pendingPort) {
+    const endpoint2 = this.allocateEndpoint();
+    if (endpoint2.pendingPort) {
       const port = await getFreePort();
-      endpoint.url = `ws://127.0.0.1:${port}`;
-      endpoint.listen = endpoint.url;
-      endpoint.readyUrl = `http://127.0.0.1:${port}/readyz`;
-      delete endpoint.pendingPort;
+      endpoint2.url = `ws://127.0.0.1:${port}`;
+      endpoint2.listen = endpoint2.url;
+      endpoint2.readyUrl = `http://127.0.0.1:${port}/readyz`;
+      delete endpoint2.pendingPort;
     }
-    const watched = watchdogCommand(launch, ["--listen", endpoint.listen, ...endpoint.args], {
+    const watched = watchdogCommand(launch, ["--listen", endpoint2.listen, ...endpoint2.args], {
       graceMs: this.options.killGraceMs,
-      files: [endpoint.socketPath, endpoint.tokenFile],
+      files: [endpoint2.socketPath, endpoint2.tokenFile],
       recordDir: this.stateDir()
     });
     const child = spawn(watched.command, watched.args, {
@@ -21954,7 +22275,7 @@ var CodexAppServerClient = class {
     });
     child.stdin.on("error", () => {
     });
-    child.__agentLinkEndpoint = endpoint;
+    child.__agentLinkEndpoint = endpoint2;
     this.managedSpawnCount += 1;
     this.managedLaunch = launch;
     this.managedProcess = child;
@@ -22009,10 +22330,10 @@ var CodexAppServerClient = class {
         ownerPid: process.pid,
         pid: child.pid,
         pgid: child.pid,
-        url: endpoint.listen,
-        transport: endpoint.transport,
-        socketPath: endpoint.socketPath ?? null,
-        tokenFile: endpoint.tokenFile ?? null,
+        url: endpoint2.listen,
+        transport: endpoint2.transport,
+        socketPath: endpoint2.socketPath ?? null,
+        tokenFile: endpoint2.tokenFile ?? null,
         command: launch.command,
         startedAt: (/* @__PURE__ */ new Date()).toISOString()
       });
@@ -22034,10 +22355,10 @@ var CodexAppServerClient = class {
       return null;
     };
     try {
-      if (endpoint.socketPath) {
-        await waitForSocket(endpoint.socketPath, this.options.startupTimeoutMs, checkAbort);
+      if (endpoint2.socketPath) {
+        await waitForSocket(endpoint2.socketPath, this.options.startupTimeoutMs, checkAbort);
       } else {
-        await waitForReady(endpoint.readyUrl, this.options.startupTimeoutMs, checkAbort);
+        await waitForReady(endpoint2.readyUrl, this.options.startupTimeoutMs, checkAbort);
       }
     } catch (error2) {
       await this.stopManagedAppServer(child);
@@ -22062,8 +22383,8 @@ var CodexAppServerClient = class {
       throw new AppServerError("Managed Codex app-server was stopped during startup", { code: "stopped-during-startup" });
     }
     this.lastStartupFailure = null;
-    this.managedEndpoint = endpoint;
-    return endpoint;
+    this.managedEndpoint = endpoint2;
+    return endpoint2;
   }
   // Stop the managed app-server's whole process group: SIGTERM, bounded wait,
   // then SIGKILL for the leader and any group members left behind.
@@ -22152,8 +22473,8 @@ var CodexAppServerClient = class {
     return this.ws?.readyState === wrapper_default.OPEN && this.initialized === true;
   }
   getConnectionSummary() {
-    const failure = this.lastStartupFailure;
-    const failureAgeMs = failure ? Date.now() - failure.at : null;
+    const failure2 = this.lastStartupFailure;
+    const failureAgeMs = failure2 ? Date.now() - failure2.at : null;
     return {
       connected: this.ws?.readyState === wrapper_default.OPEN && this.initialized,
       ...this.connectionInfo,
@@ -22166,9 +22487,9 @@ var CodexAppServerClient = class {
       idleTimeoutMs: this.options.idleTimeoutMs,
       idleShutdowns: this.idleShutdowns,
       startupTimeoutMs: this.options.startupTimeoutMs,
-      startupFailure: failure && failureAgeMs < this.options.startupFailureCacheMs ? {
-        code: failure.error.details?.code ?? null,
-        message: failure.error.message,
+      startupFailure: failure2 && failureAgeMs < this.options.startupFailureCacheMs ? {
+        code: failure2.error.details?.code ?? null,
+        message: failure2.error.message,
         retryAfterMs: this.options.startupFailureCacheMs - failureAgeMs
       } : null,
       notifications: {
@@ -22234,11 +22555,11 @@ function ensurePrivateDir(dir) {
   }
   return dir;
 }
-function removeEndpointFiles(endpoint) {
-  if (!endpoint) {
+function removeEndpointFiles(endpoint2) {
+  if (!endpoint2) {
     return;
   }
-  for (const file of [endpoint.socketPath, endpoint.tokenFile]) {
+  for (const file of [endpoint2.socketPath, endpoint2.tokenFile]) {
     if (file) {
       try {
         rmSync(file, { force: true });
@@ -22283,7 +22604,7 @@ function writeManagedRecord(stateDir2, record2) {
   try {
     assertTestSafeWrite(stateDir2);
     mkdirSync(stateDir2, { recursive: true, mode: 448 });
-    const file = path9.join(stateDir2, `${record2.pid}.json`);
+    const file = path11.join(stateDir2, `${record2.pid}.json`);
     writeFileSync(file, `${JSON.stringify(record2)}
 `, { mode: 384 });
     return file;
@@ -22312,7 +22633,7 @@ function reapOrphanedManagedAppServers({ stateDir: stateDir2 = managedAppServerS
     if (!name.endsWith(".json")) {
       continue;
     }
-    const file = path9.join(stateDir2, name);
+    const file = path11.join(stateDir2, name);
     let record2;
     try {
       record2 = JSON.parse(readFileSync2(file, "utf8"));
@@ -22362,8 +22683,8 @@ function reapOrphanedManagedAppServers({ stateDir: stateDir2 = managedAppServerS
   }
   return result;
 }
-function asUserTextInput(text2) {
-  return [{ type: "text", text: text2, text_elements: [] }];
+function asUserTextInput(text3) {
+  return [{ type: "text", text: text3, text_elements: [] }];
 }
 function describeCodexInstall(options = {}) {
   const probeVersion = options.probeVersion !== false;
@@ -22477,7 +22798,7 @@ async function waitForOpen(ws, timeoutMs2) {
 }
 async function getFreePort() {
   return await new Promise((resolve, reject) => {
-    const server = net.createServer();
+    const server = net2.createServer();
     server.listen(0, "127.0.0.1", () => {
       const address = (
         /** @type {import("node:net").AddressInfo} */
@@ -22520,7 +22841,7 @@ async function waitForSocket(socketPath, timeoutMs2, checkAbort = () => null) {
     }
     try {
       await new Promise((resolve, reject) => {
-        const socket = net.connect(socketPath);
+        const socket = net2.connect(socketPath);
         socket.setTimeout(1e3, () => socket.destroy(new Error("connect timed out")));
         socket.once("connect", () => {
           socket.destroy();
@@ -22580,11 +22901,11 @@ function managedAppServerEnv(source) {
 
 // src/shared/text.js
 function truncate(value, max) {
-  const text2 = String(value ?? "");
-  if (text2.length <= max) {
-    return text2;
+  const text3 = String(value ?? "");
+  if (text3.length <= max) {
+    return text3;
   }
-  return `${text2.slice(0, max - 3)}...`;
+  return `${text3.slice(0, max - 3)}...`;
 }
 function toIso(seconds) {
   if (!seconds) {
@@ -22645,32 +22966,32 @@ function normalizeArchiveScope(args = {}) {
   return args.archived === true ? "archived" : "active";
 }
 function inferArchiveState(threadOrPath) {
-  const path22 = typeof threadOrPath === "string" ? threadOrPath : threadOrPath?.path ?? null;
-  if (!path22) {
+  const path24 = typeof threadOrPath === "string" ? threadOrPath : threadOrPath?.path ?? null;
+  if (!path24) {
     return {
       scope: "unknown",
       inferredFrom: "missingPath",
       path: null
     };
   }
-  if (path22.includes("/archived_sessions/")) {
+  if (path24.includes("/archived_sessions/")) {
     return {
       scope: "archived",
       inferredFrom: "path",
-      path: path22
+      path: path24
     };
   }
-  if (path22.includes("/sessions/")) {
+  if (path24.includes("/sessions/")) {
     return {
       scope: "active",
       inferredFrom: "path",
-      path: path22
+      path: path24
     };
   }
   return {
     scope: "unknown",
     inferredFrom: "path",
-    path: path22
+    path: path24
   };
 }
 function desktopVisibilityContract(appServerSummary = {}) {
@@ -22748,21 +23069,21 @@ function normalizeSidebarStateResponse(response = null) {
   };
 }
 function classifySidebarMembership(threadId, sidebarState) {
-  const id = optionalStringValue(threadId);
-  if (!id || sidebarState?.authority !== "rendererSidebarModel" || !Array.isArray(sidebarState.localThreadIds)) {
+  const id2 = optionalStringValue(threadId);
+  if (!id2 || sidebarState?.authority !== "rendererSidebarModel" || !Array.isArray(sidebarState.localThreadIds)) {
     return "unknown";
   }
   const backgroundThreadIds = new Set(
     Array.isArray(sidebarState.backgroundThreadIds) ? sidebarState.backgroundThreadIds : extractBackgroundSidebarThreadIds(sidebarState)
   );
-  if (backgroundThreadIds.has(id)) {
+  if (backgroundThreadIds.has(id2)) {
     return "background_only";
   }
   const normalSidebarLocalThreadIds = Array.isArray(sidebarState.normalSidebarLocalThreadIds) ? sidebarState.normalSidebarLocalThreadIds : extractNormalSidebarLocalThreadIds(sidebarState);
   if (normalSidebarLocalThreadIds.length > 0) {
-    return normalSidebarLocalThreadIds.includes(id) ? "in_sidebar_model" : "background_only";
+    return normalSidebarLocalThreadIds.includes(id2) ? "in_sidebar_model" : "background_only";
   }
-  return sidebarState.localThreadIds.includes(id) ? "in_sidebar_model" : "background_only";
+  return sidebarState.localThreadIds.includes(id2) ? "in_sidebar_model" : "background_only";
 }
 function buildStateContract({ action, initialThread, beforeSendThread, turn, turnId, appServer }) {
   return {
@@ -22827,14 +23148,14 @@ function scoreThreadMatch(thread, query) {
   let score = 0;
   const reasons = [];
   for (const [field, value, weight] of fields) {
-    const text2 = String(value ?? "");
-    const normalizedText = normalizeSearch(text2);
+    const text3 = String(value ?? "");
+    const normalizedText = normalizeSearch(text3);
     if (!normalizedText) {
       continue;
     }
     let reasonScore = 0;
     let kind = null;
-    if (labeledLineMatches(text2, normalizedQuery)) {
+    if (labeledLineMatches(text3, normalizedQuery)) {
       reasonScore = weight * 4;
       kind = "labeled";
     } else if (normalizedText === normalizedQuery) {
@@ -22860,7 +23181,7 @@ function scoreThreadMatch(thread, query) {
         field,
         kind,
         score: reasonScore,
-        text: truncate(text2, MAX_REASON_TEXT)
+        text: truncate(text3, MAX_REASON_TEXT)
       });
     }
   }
@@ -23099,9 +23420,9 @@ function optionalStringValue(value) {
 function normalizeSearch(value) {
   return String(value ?? "").toLowerCase().replace(/\s+/g, " ").trim();
 }
-function allTokensPresent(text2, query) {
+function allTokensPresent(text3, query) {
   const tokens = query.split(" ").filter(Boolean);
-  return tokens.length > 1 && tokens.every((token) => text2.includes(token));
+  return tokens.length > 1 && tokens.every((token) => text3.includes(token));
 }
 function normalizeId(value) {
   return String(value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -23266,8 +23587,8 @@ function normalizeStringList(value) {
   if (Array.isArray(value)) {
     return value.map((item) => cleanString(item)).filter(Boolean);
   }
-  const text2 = cleanString(value);
-  return text2 ? [text2] : [];
+  const text3 = cleanString(value);
+  return text3 ? [text3] : [];
 }
 
 // src/codex/loaded-threads.js
@@ -23283,10 +23604,10 @@ function normalizeLoadedThreadEntries(response = {}, loadedThreadIds = []) {
       return { id: entry };
     }
     if (entry && typeof entry === "object") {
-      const id = entry.id ?? entry.threadId ?? entry.localThreadId ?? null;
+      const id2 = entry.id ?? entry.threadId ?? entry.localThreadId ?? null;
       return {
         ...entry,
-        id
+        id: id2
       };
     }
     return null;
@@ -23490,8 +23811,8 @@ function makeLoadedThreads({ appServer, collectAppServerThreadSummaries }) {
 }
 
 // src/codex/session-index.js
-import { promises as fs8 } from "node:fs";
-import path10 from "node:path";
+import { promises as fs9 } from "node:fs";
+import path12 from "node:path";
 var MAX_PREVIEW_CHARS = 500;
 var HEAD_WINDOW_BYTES = 64 * 1024;
 var MAX_HEAD_BYTES = 4 * 1024 * 1024;
@@ -23524,7 +23845,7 @@ async function listLocalThreads(options = {}) {
   }
   const withStats = (await Promise.all(files.map(async (file) => {
     try {
-      const stat = await fs8.stat(file);
+      const stat = await fs9.stat(file);
       return { file, mtimeMs: stat.mtimeMs, size: stat.size };
     } catch {
       return null;
@@ -23562,11 +23883,11 @@ async function listLocalThreads(options = {}) {
 async function listLocalThreadIds(options = {}) {
   const codexHome2 = resolveCodexHome(options);
   const out2 = [];
-  for (const root of [path10.join(codexHome2, "sessions"), path10.join(codexHome2, "archived_sessions")]) {
+  for (const root of [path12.join(codexHome2, "sessions"), path12.join(codexHome2, "archived_sessions")]) {
     for (const file of await collectJsonlFiles(root)) {
-      const id = threadIdFromFilename(path10.basename(file));
-      if (id) {
-        out2.push({ id, path: file });
+      const id2 = threadIdFromFilename(path12.basename(file));
+      if (id2) {
+        out2.push({ id: id2, path: file });
       }
     }
   }
@@ -23597,16 +23918,16 @@ async function readLocalThread(threadId, options = {}) {
 }
 async function findLocalThreadFile(threadId, options = {}) {
   const codexHome2 = resolveCodexHome(options);
-  const id = typeof threadId === "string" ? threadId.trim() : "";
-  if (!id || id.includes("/") || id.includes("\\") || id.includes("..")) {
+  const id2 = typeof threadId === "string" ? threadId.trim() : "";
+  if (!id2 || id2.includes("/") || id2.includes("\\") || id2.includes("..")) {
     return null;
   }
-  const roots = options.roots ?? [path10.join(codexHome2, "sessions"), path10.join(codexHome2, "archived_sessions")];
-  const suffix = `-${id}.jsonl`;
+  const roots = options.roots ?? [path12.join(codexHome2, "sessions"), path12.join(codexHome2, "archived_sessions")];
+  const suffix = `-${id2}.jsonl`;
   for (const root of roots) {
-    const file = await findNewestFirst(root, (name) => name.endsWith(suffix) || name === `${id}.jsonl`, async (candidate) => {
+    const file = await findNewestFirst(root, (name) => name.endsWith(suffix) || name === `${id2}.jsonl`, async (candidate) => {
       const meta2 = await readSessionMeta(candidate);
-      return meta2?.id === id;
+      return meta2?.id === id2;
     });
     if (file) {
       return { file, root, lookup: "filename", stat: await statInfo(file) };
@@ -23615,7 +23936,7 @@ async function findLocalThreadFile(threadId, options = {}) {
   for (const root of roots) {
     for (const file of await collectJsonlFiles(root)) {
       const meta2 = await readSessionMeta(file);
-      if (meta2?.id === id) {
+      if (meta2?.id === id2) {
         return { file, root, lookup: "scan", stat: await statInfo(file) };
       }
     }
@@ -23624,23 +23945,23 @@ async function findLocalThreadFile(threadId, options = {}) {
 }
 var CODEX_STATE_DB = /^state(_\d+)?\.sqlite$/;
 async function findCodexStateDb(codexHome2) {
-  for (const dir of [codexHome2, path10.join(codexHome2, "sqlite")]) {
+  for (const dir of [codexHome2, path12.join(codexHome2, "sqlite")]) {
     let names;
     try {
-      names = await fs8.readdir(dir);
+      names = await fs9.readdir(dir);
     } catch {
       continue;
     }
     const found = names.filter((name) => CODEX_STATE_DB.test(name)).sort();
-    if (found.length) return path10.join(dir, found[0]);
+    if (found.length) return path12.join(dir, found[0]);
   }
   return null;
 }
 async function archiveLocalThread(threadId, options = {}) {
   const codexHome2 = resolveCodexHome(options);
   const located = await findLocalThread(threadId, { codexHome: codexHome2 });
-  const activeRoot = path10.join(codexHome2, "sessions");
-  const archivedRoot = path10.join(codexHome2, "archived_sessions");
+  const activeRoot = path12.join(codexHome2, "sessions");
+  const archivedRoot = path12.join(codexHome2, "archived_sessions");
   const before = located.thread.archiveState ?? inferArchiveState(located.path);
   if (before.scope === "archived") {
     return {
@@ -23655,8 +23976,8 @@ async function archiveLocalThread(threadId, options = {}) {
       codexHome: codexHome2
     };
   }
-  const relative = path10.relative(activeRoot, located.path);
-  if (relative.startsWith("..") || path10.isAbsolute(relative)) {
+  const relative = path12.relative(activeRoot, located.path);
+  if (relative.startsWith("..") || path12.isAbsolute(relative)) {
     throw new AgentLinkError("permission_denied", `Thread ${threadId} is not under ${activeRoot}; refusing to archive ${located.path}`, { details: { reason: "outside active sessions root" } });
   }
   const rolloutCheck = options.rolloutCheck ? await strictRolloutCheck(options.rolloutCheck, located.path) : null;
@@ -23679,8 +24000,8 @@ async function archiveLocalThread(threadId, options = {}) {
       hint: "The check for another process holding the transcript (lsof) did not run or finish, so Agent Link cannot tell that nothing else is writing it. Retry; if it keeps failing, archive the thread through a Codex app-server. forceLoaded does not override this."
     });
   }
-  const destination = path10.join(archivedRoot, relative);
-  await fs8.mkdir(path10.dirname(destination), { recursive: true });
+  const destination = path12.join(archivedRoot, relative);
+  await fs9.mkdir(path12.dirname(destination), { recursive: true });
   await moveFileWithoutOverwrite(located.path, destination, threadId);
   const afterThread = {
     ...located.thread,
@@ -23711,7 +24032,7 @@ async function strictRolloutCheck(check, rolloutPath) {
 async function moveFileWithoutOverwrite(source, destination, threadId) {
   let placeholder;
   try {
-    placeholder = await fs8.open(destination, "wx");
+    placeholder = await fs9.open(destination, "wx");
   } catch (error2) {
     if (error2.code === "EEXIST") {
       throw new AgentLinkError("state_io_error", `Archive destination already exists for thread ${threadId}: ${destination}`, { details: { errno: "EEXIST" } });
@@ -23722,31 +24043,31 @@ async function moveFileWithoutOverwrite(source, destination, threadId) {
   try {
     await moveFileAcrossDevices(source, destination);
   } catch (error2) {
-    await fs8.rm(destination, { force: true }).catch(() => {
+    await fs9.rm(destination, { force: true }).catch(() => {
     });
     throw error2;
   }
 }
 async function moveFileAcrossDevices(source, destination) {
   try {
-    await fs8.rename(source, destination);
+    await fs9.rename(source, destination);
     return;
   } catch (error2) {
     if (error2.code !== "EXDEV") {
       throw error2;
     }
   }
-  const sourceStat = await fs8.stat(source);
+  const sourceStat = await fs9.stat(source);
   const staging = `${destination}.exdev-tmp-${process.pid}`;
   try {
-    await fs8.copyFile(source, staging);
-    await fs8.utimes(staging, sourceStat.atime, sourceStat.mtime);
-    await fs8.rename(staging, destination);
+    await fs9.copyFile(source, staging);
+    await fs9.utimes(staging, sourceStat.atime, sourceStat.mtime);
+    await fs9.rename(staging, destination);
   } catch (error2) {
-    await fs8.rm(staging, { force: true });
+    await fs9.rm(staging, { force: true });
     throw error2;
   }
-  await fs8.unlink(source);
+  await fs9.unlink(source);
 }
 async function findLocalThread(threadId, options = {}) {
   const codexHome2 = resolveCodexHome(options);
@@ -23760,14 +24081,14 @@ async function findLocalThread(threadId, options = {}) {
 async function findNewestFirst(root, nameMatches, confirm) {
   let entries;
   try {
-    entries = await fs8.readdir(root, { withFileTypes: true });
+    entries = await fs9.readdir(root, { withFileTypes: true });
   } catch {
     return null;
   }
   entries.sort((a, b) => a.name < b.name ? 1 : a.name > b.name ? -1 : 0);
   for (const entry of entries) {
     if (entry.isFile() && entry.name.endsWith(".jsonl") && nameMatches(entry.name)) {
-      const full = path10.join(root, entry.name);
+      const full = path12.join(root, entry.name);
       if (await confirm(full)) {
         return full;
       }
@@ -23775,7 +24096,7 @@ async function findNewestFirst(root, nameMatches, confirm) {
   }
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      const found = await findNewestFirst(path10.join(root, entry.name), nameMatches, confirm);
+      const found = await findNewestFirst(path12.join(root, entry.name), nameMatches, confirm);
       if (found) {
         return found;
       }
@@ -23785,7 +24106,7 @@ async function findNewestFirst(root, nameMatches, confirm) {
 }
 async function statInfo(file) {
   try {
-    const stat = await fs8.stat(file);
+    const stat = await fs9.stat(file);
     return { file, mtimeMs: stat.mtimeMs, size: stat.size };
   } catch {
     return { file };
@@ -23798,13 +24119,13 @@ function threadIdFromFilename(name) {
 async function collectJsonlFiles(root) {
   let entries;
   try {
-    entries = await fs8.readdir(root, { withFileTypes: true });
+    entries = await fs9.readdir(root, { withFileTypes: true });
   } catch {
     return [];
   }
   const out2 = [];
   for (const entry of entries) {
-    const fullPath = path10.join(root, entry.name);
+    const fullPath = path12.join(root, entry.name);
     if (entry.isDirectory()) {
       out2.push(...await collectJsonlFiles(fullPath));
     } else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
@@ -23814,10 +24135,10 @@ async function collectJsonlFiles(root) {
   return out2;
 }
 async function readSessionIndex(codexHome2) {
-  const indexPath = path10.join(codexHome2, "session_index.jsonl");
+  const indexPath = path12.join(codexHome2, "session_index.jsonl");
   let raw;
   try {
-    raw = await fs8.readFile(indexPath, "utf8");
+    raw = await fs9.readFile(indexPath, "utf8");
   } catch {
     return /* @__PURE__ */ new Map();
   }
@@ -23880,7 +24201,7 @@ function parseLine(line) {
 async function readSessionMeta(file) {
   let handle;
   try {
-    handle = await fs8.open(file, "r");
+    handle = await fs9.open(file, "r");
     const { size } = await handle.stat();
     let window = Math.min(HEAD_WINDOW_BYTES, size);
     while (window > 0) {
@@ -23950,7 +24271,7 @@ async function readLocalThreadSummary(file, fileInfo = {}, sessionIndex = /* @__
   }
   let handle;
   try {
-    handle = await fs8.open(file, "r");
+    handle = await fs9.open(file, "r");
     const stat = await handle.stat();
     const cacheKey = file;
     const cached2 = cachedSummary(file, stat.size, stat.mtimeMs);
@@ -24045,7 +24366,7 @@ async function readRecentTranscriptItems(file, limit2) {
   const wanted = clampInt(limit2, 1, 100);
   let handle;
   try {
-    handle = await fs8.open(file, "r");
+    handle = await fs9.open(file, "r");
     const { size } = await handle.stat();
     let end = size;
     let carry = Buffer.alloc(0);
@@ -24165,8 +24486,8 @@ function contentText(content) {
   return content.map((item) => item?.text ?? "").filter(Boolean).join("\n");
 }
 function lowerFirst(value) {
-  const text2 = String(value);
-  return text2.charAt(0).toLowerCase() + text2.slice(1);
+  const text3 = String(value);
+  return text3.charAt(0).toLowerCase() + text3.slice(1);
 }
 function parseDateSeconds(value) {
   if (!value) {
@@ -24180,15 +24501,15 @@ function threadMatches(thread, searchTerm) {
 }
 function rootsForArchiveScope(codexHome2, archiveScope2) {
   if (archiveScope2 === "archived") {
-    return [path10.join(codexHome2, "archived_sessions")];
+    return [path12.join(codexHome2, "archived_sessions")];
   }
   if (archiveScope2 === "all") {
     return [
-      path10.join(codexHome2, "sessions"),
-      path10.join(codexHome2, "archived_sessions")
+      path12.join(codexHome2, "sessions"),
+      path12.join(codexHome2, "archived_sessions")
     ];
   }
-  return [path10.join(codexHome2, "sessions")];
+  return [path12.join(codexHome2, "sessions")];
 }
 function normalizeCwdFilter(cwd) {
   if (!cwd) {
@@ -24274,18 +24595,18 @@ function safeIdList(value) {
 }
 function summarizeItem(item) {
   const type = safeId(item?.type) ?? "unknown";
-  const id = safeId(item?.id);
+  const id2 = safeId(item?.id);
   switch (type) {
     case "userMessage":
-      return { type, id, text: summarizeUserContent(item.content) };
+      return { type, id: id2, text: summarizeUserContent(item.content) };
     case "agentMessage":
-      return { type, id, text: truncate(item.text ?? "", 1e3), phase: safeId(item.phase) };
+      return { type, id: id2, text: truncate(item.text ?? "", 1e3), phase: safeId(item.phase) };
     case "reasoning":
-      return { type, id, summary: (Array.isArray(item.summary) ? item.summary : []).map((text2) => truncate(String(text2), 500)) };
+      return { type, id: id2, summary: (Array.isArray(item.summary) ? item.summary : []).map((text3) => truncate(String(text3), 500)) };
     case "commandExecution":
       return {
         type,
-        id,
+        id: id2,
         command: truncate(item.command ?? "", 500),
         status: safeId(item.status),
         exitCode: Number.isInteger(item.exitCode) ? item.exitCode : null,
@@ -24294,7 +24615,7 @@ function summarizeItem(item) {
     case "mcpToolCall":
       return {
         type,
-        id,
+        id: id2,
         server: safeId(item.server),
         tool: safeId(item.tool),
         status: safeId(item.status),
@@ -24303,14 +24624,14 @@ function summarizeItem(item) {
     case "collabAgentToolCall":
       return {
         type,
-        id,
+        id: id2,
         tool: safeId(item.tool),
         status: safeId(item.status),
         receiverThreadIds: safeIdList(item.receiverThreadIds),
         agentsStates: item.agentsStates && typeof item.agentsStates === "object" ? item.agentsStates : {}
       };
     default:
-      return { type, id };
+      return { type, id: id2 };
   }
 }
 function summarizeUserContent(content) {
@@ -24340,8 +24661,8 @@ var EXTERNAL_SENDER = "external";
 var UUID = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
 var KNOWN_SENDER_PATTERN = new RegExp(`^(?:external|(?:local_)?${UUID})$`);
 var MESSAGE_ID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/;
-function isValidSenderId(id) {
-  return typeof id === "string" && SENDER_ID_PATTERN.test(id);
+function isValidSenderId(id2) {
+  return typeof id2 === "string" && SENDER_ID_PATTERN.test(id2);
 }
 function canonicalClaudeSessionId(sessionOrId) {
   if (sessionOrId && typeof sessionOrId === "object") {
@@ -24350,9 +24671,9 @@ function canonicalClaudeSessionId(sessionOrId) {
     }
     return canonicalClaudeSessionId(sessionOrId.cliSessionId);
   }
-  const id = typeof sessionOrId === "string" ? sessionOrId.trim() : "";
-  if (!id) return null;
-  return id.startsWith("local_") ? id : `local_${id}`;
+  const id2 = typeof sessionOrId === "string" ? sessionOrId.trim() : "";
+  if (!id2) return null;
+  return id2.startsWith("local_") ? id2 : `local_${id2}`;
 }
 function claudeSessionAliases(sessionOrId) {
   const out2 = /* @__PURE__ */ new Set();
@@ -24384,9 +24705,9 @@ function claudeSessionAliases(sessionOrId) {
   }
   return [...out2];
 }
-function claudeSessionMatches(session, id) {
-  if (!session || typeof id !== "string" || !id.trim()) return false;
-  const value = id.trim().startsWith("claude:") ? id.trim().slice("claude:".length) : id.trim();
+function claudeSessionMatches(session, id2) {
+  if (!session || typeof id2 !== "string" || !id2.trim()) return false;
+  const value = id2.trim().startsWith("claude:") ? id2.trim().slice("claude:".length) : id2.trim();
   return Boolean(value) && claudeSessionAliases(session).includes(value);
 }
 function resolveCallerIdentity({ host, runtimeCallerContext = null, currentSession = null, env: env2 = process.env } = {}) {
@@ -24442,34 +24763,34 @@ var addressResolver = DEFAULT_ADDRESS_RESOLVER;
 function setEnvelopeAddressResolver(resolver) {
   addressResolver = resolver ?? DEFAULT_ADDRESS_RESOLVER;
 }
-function envelopeAddress(id, harness) {
-  if (typeof id !== "string") return INVALID_ID;
-  if (id === EXTERNAL_SENDER) return EXTERNAL_SENDER;
-  if (ADDRESS_PATTERN.test(id)) return safeResolve(id, null);
-  if (!KNOWN_SENDER_PATTERN.test(id)) return INVALID_ID;
-  const kind = id.startsWith("local_") ? "claude" : harness;
+function envelopeAddress(id2, harness) {
+  if (typeof id2 !== "string") return INVALID_ID;
+  if (id2 === EXTERNAL_SENDER) return EXTERNAL_SENDER;
+  if (ADDRESS_PATTERN.test(id2)) return safeResolve(id2, null);
+  if (!KNOWN_SENDER_PATTERN.test(id2)) return INVALID_ID;
+  const kind = id2.startsWith("local_") ? "claude" : harness;
   if (kind !== "claude" && kind !== "codex") return INVALID_ID;
-  return safeResolve(id, kind);
+  return safeResolve(id2, kind);
 }
-function safeResolve(id, kind) {
+function safeResolve(id2, kind) {
   let address;
   try {
     address = addressResolver(
-      id,
+      id2,
       /** @type {string} */
       kind
     );
   } catch {
     address = DEFAULT_ADDRESS_RESOLVER(
-      id,
+      id2,
       /** @type {string} */
       kind
     );
   }
   return typeof address === "string" && ADDRESS_PATTERN.test(address) ? address : INVALID_ID;
 }
-function envelopeMessageId(id) {
-  return typeof id === "string" && MESSAGE_ID_PATTERN.test(id) ? id : INVALID_ID;
+function envelopeMessageId(id2) {
+  return typeof id2 === "string" && MESSAGE_ID_PATTERN.test(id2) ? id2 : INVALID_ID;
 }
 var utf8Bytes = (value) => Buffer.byteLength(String(value ?? ""), "utf8");
 function assertPeerBodyWithinLimit(body, { supplied, reserveBytes = 0, what = "message" } = {}) {
@@ -24510,10 +24831,10 @@ function newPeerMessageId(now = Date.now()) {
   return timePart + randPart;
 }
 function escapeEnvelopeAttr(value) {
-  let text2 = String(value ?? "");
-  const chars = Array.from(text2);
-  if (chars.length > MAX_ATTRIBUTE_CHARS) text2 = `${chars.slice(0, MAX_ATTRIBUTE_CHARS - 1).join("")}\u2026`;
-  return escapeXmlText(text2).replace(/["']/g, (c) => c === '"' ? "&quot;" : "&#39;").replace(/\n/g, "&#10;").replace(/\t/g, "&#9;");
+  let text3 = String(value ?? "");
+  const chars = Array.from(text3);
+  if (chars.length > MAX_ATTRIBUTE_CHARS) text3 = `${chars.slice(0, MAX_ATTRIBUTE_CHARS - 1).join("")}\u2026`;
+  return escapeXmlText(text3).replace(/["']/g, (c) => c === '"' ? "&quot;" : "&#39;").replace(/\n/g, "&#10;").replace(/\t/g, "&#9;");
 }
 var MAX_ESCAPED_BODY_CHARS = 2 * MAX_PEER_BODY_BYTES;
 function capEscaped(escaped) {
@@ -24527,10 +24848,10 @@ function capEscaped(escaped) {
 [Agent Link: escaped body cut at ${MAX_ESCAPED_BODY_CHARS} characters; it was ${escaped.length}.]`;
 }
 function escapeEnvelopeBody(body) {
-  const text2 = String(body ?? "");
-  const bytes = Buffer.byteLength(text2, "utf8");
-  if (bytes <= MAX_PEER_BODY_BYTES) return capEscaped(escapeXmlText(text2));
-  const cut = new TextDecoder("utf-8").decode(Buffer.from(text2, "utf8").subarray(0, MAX_PEER_BODY_BYTES)).replace(/\uFFFD+$/, "");
+  const text3 = String(body ?? "");
+  const bytes = Buffer.byteLength(text3, "utf8");
+  if (bytes <= MAX_PEER_BODY_BYTES) return capEscaped(escapeXmlText(text3));
+  const cut = new TextDecoder("utf-8").decode(Buffer.from(text3, "utf8").subarray(0, MAX_PEER_BODY_BYTES)).replace(/\uFFFD+$/, "");
   return `${capEscaped(escapeXmlText(cut))}
 [Agent Link: body truncated; it was ${bytes} bytes and the limit is ${MAX_PEER_BODY_BYTES}.]`;
 }
@@ -24541,19 +24862,19 @@ function isoTime(value) {
     ms
   ).toISOString() : "";
 }
-function replyLine({ id, from, fromHarness, fromVerified, anticipation, replyBy, reply }) {
+function replyLine({ id: id2, from, fromHarness, fromVerified, anticipation, replyBy, reply }) {
   if (reply === "fork") {
     return FORK_TASK_REPLY;
   }
   if (reply !== "direct") {
     const by = replyBy ? ` by ${replyBy}` : "";
     if (anticipation === "reply") {
-      return `A reply is expected${by}. Call reply_agent_link_message with messageId="${id}" and resolution "reply", or "decline" with a reason.`;
+      return `A reply is expected${by}. Call reply_agent_link_message with messageId="${id2}" and resolution "reply", or "decline" with a reason.`;
     }
     if (anticipation === "action") {
-      return `Action requested${by}. When finished, call reply_agent_link_message with messageId="${id}" and resolution "done", or "decline" with a reason.`;
+      return `Action requested${by}. When finished, call reply_agent_link_message with messageId="${id2}" and resolution "done", or "decline" with a reason.`;
     }
-    return `No reply needed. To reply anyway, call reply_agent_link_message with messageId="${id}".`;
+    return `No reply needed. To reply anyway, call reply_agent_link_message with messageId="${id2}".`;
   }
   if (fromVerified && fromHarness === "codex") {
     return `To reply, call message_codex_thread with threadId="${from}".`;
@@ -24703,16 +25024,16 @@ function procedureAttribute(procedure) {
 }
 function renderProcedureElement(procedure) {
   const attribute = procedureAttribute(procedure);
-  const text2 = (
+  const text3 = (
     /** @type {{text?: unknown}} */
     (procedure ?? {}).text
   );
-  if (!attribute || typeof text2 !== "string" || !text2) return "";
+  if (!attribute || typeof text3 !== "string" || !text3) return "";
   const p = (
     /** @type {{name: string, version: number}} */
     procedure
   );
-  return `<procedure name="${escapeEnvelopeAttr(p.name)}" version="${p.version}">${escapeEnvelopeBody(text2)}</procedure>`;
+  return `<procedure name="${escapeEnvelopeAttr(p.name)}" version="${p.version}">${escapeEnvelopeBody(text3)}</procedure>`;
 }
 function roleFieldsOf(row) {
   if (typeof row.metadata_json !== "string" || !row.metadata_json.includes('"role"')) return {};
@@ -24802,9 +25123,9 @@ function reminderSettings(source = process.env) {
   }
   return { limit: limit2, intervalMs, warnings };
 }
-function invalid(path22, rule, expected, message) {
+function invalid(path24, rule, expected, message) {
   return new AgentLinkError("invalid_arguments", message, {
-    details: { errors: [{ path: path22, rule, expected }] }
+    details: { errors: [{ path: path24, rule, expected }] }
   });
 }
 function resolveLabels({ anticipation, replyBy, waitForReply = false, now = Date.now() } = {}) {
@@ -25284,13 +25605,13 @@ function isAlreadyArchivedError(error2) {
 }
 
 // src/codex/fork-jobs.js
-import fs10 from "node:fs";
-import path12 from "node:path";
+import fs11 from "node:fs";
+import path14 from "node:path";
 
 // src/shared/file-lock.js
 import crypto3 from "node:crypto";
-import fs9 from "node:fs";
-import path11 from "node:path";
+import fs10 from "node:fs";
+import path13 from "node:path";
 var LOCK_STALE_MS = 3e4;
 var LOCK_TIMEOUT_MS = 250;
 var LOCK_RETRY_MS = 5;
@@ -25312,8 +25633,8 @@ function processAlive(pid) {
 }
 function lockSnapshot(lockPath) {
   try {
-    const stat = fs9.statSync(lockPath);
-    return { raw: fs9.readFileSync(lockPath, "utf8"), ino: stat.ino, mtimeMs: stat.mtimeMs };
+    const stat = fs10.statSync(lockPath);
+    return { raw: fs10.readFileSync(lockPath, "utf8"), ino: stat.ino, mtimeMs: stat.mtimeMs };
   } catch {
     return null;
   }
@@ -25328,7 +25649,7 @@ function ownerPid(raw) {
 function breakStaleLock(lockPath, observed, token, now) {
   const breaker = `${lockPath}.break`;
   try {
-    fs9.writeFileSync(breaker, JSON.stringify({ pid: process.pid, token }), { flag: "wx", mode: FILE_MODE });
+    fs10.writeFileSync(breaker, JSON.stringify({ pid: process.pid, token }), { flag: "wx", mode: FILE_MODE });
   } catch (error2) {
     if (
       /** @type {NodeJS.ErrnoException} */
@@ -25336,17 +25657,17 @@ function breakStaleLock(lockPath, observed, token, now) {
     ) return false;
     const stale = lockSnapshot(breaker);
     if (stale && now() - stale.mtimeMs > BREAKER_STALE_MS && !processAlive(ownerPid(stale.raw))) {
-      fs9.rmSync(breaker, { force: true });
+      fs10.rmSync(breaker, { force: true });
     }
     return false;
   }
   try {
     const current = lockSnapshot(lockPath);
     if (!current || current.raw !== observed.raw || current.ino !== observed.ino || current.mtimeMs !== observed.mtimeMs) return false;
-    fs9.rmSync(lockPath, { force: true });
+    fs10.rmSync(lockPath, { force: true });
     return true;
   } finally {
-    fs9.rmSync(breaker, { force: true });
+    fs10.rmSync(breaker, { force: true });
   }
 }
 function withFileLockSync(lockPath, fn, { timeoutMs: timeoutMs2 = LOCK_TIMEOUT_MS, staleMs = LOCK_STALE_MS, now = () => Date.now(), label = "role table" } = {}) {
@@ -25355,7 +25676,7 @@ function withFileLockSync(lockPath, fn, { timeoutMs: timeoutMs2 = LOCK_TIMEOUT_M
   const token = `${process.pid}:${crypto3.randomUUID()}`;
   for (; ; ) {
     try {
-      fs9.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, token, at: new Date(now()).toISOString() }), { flag: "wx", mode: FILE_MODE });
+      fs10.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, token, at: new Date(now()).toISOString() }), { flag: "wx", mode: FILE_MODE });
       break;
     } catch (error2) {
       if (
@@ -25364,7 +25685,7 @@ function withFileLockSync(lockPath, fn, { timeoutMs: timeoutMs2 = LOCK_TIMEOUT_M
       ) {
         throw new AgentLinkError("state_io_error", `Could not create the ${label} lock. (${/** @type {NodeJS.ErrnoException} */
         error2.code ?? "error"})`, {
-          details: { path: path11.basename(lockPath), errno: (
+          details: { path: path13.basename(lockPath), errno: (
             /** @type {NodeJS.ErrnoException} */
             error2.code ?? null
           ) },
@@ -25378,8 +25699,8 @@ function withFileLockSync(lockPath, fn, { timeoutMs: timeoutMs2 = LOCK_TIMEOUT_M
     }
     if (now() >= deadline) {
       throw new AgentLinkError("state_io_error", `The ${label} is busy (another Agent Link server holds its lock).`, {
-        details: { path: path11.basename(lockPath), errno: "ETIMEDOUT" },
-        hint: `Retry the call. If this persists, check that no Agent Link process is stuck, then remove ${path11.basename(lockPath)} from the state directory.`
+        details: { path: path13.basename(lockPath), errno: "ETIMEDOUT" },
+        hint: `Retry the call. If this persists, check that no Agent Link process is stuck, then remove ${path13.basename(lockPath)} from the state directory.`
       });
     }
     sleepSync(LOCK_RETRY_MS);
@@ -25388,8 +25709,8 @@ function withFileLockSync(lockPath, fn, { timeoutMs: timeoutMs2 = LOCK_TIMEOUT_M
     return fn();
   } finally {
     try {
-      const current = JSON.parse(fs9.readFileSync(lockPath, "utf8"));
-      if (current?.token === token) fs9.rmSync(lockPath, { force: true });
+      const current = JSON.parse(fs10.readFileSync(lockPath, "utf8"));
+      if (current?.token === token) fs10.rmSync(lockPath, { force: true });
     } catch {
     }
   }
@@ -25430,8 +25751,8 @@ function forkJobStatus(job) {
   if (job.aborted) return "aborted";
   return job.outcome?.type ?? "running";
 }
-function createForkJobStore({ path: path22 = void 0, now = () => Date.now() } = {}) {
-  const file = () => path22 ?? forkJobsPath();
+function createForkJobStore({ path: path24 = void 0, now = () => Date.now() } = {}) {
+  const file = () => path24 ?? forkJobsPath();
   return {
     path: file,
     /**
@@ -25477,17 +25798,17 @@ function createForkJobStore({ path: path22 = void 0, now = () => Date.now() } = 
 }
 function withForkLogLock(file, fn) {
   assertTestSafeWrite(file);
-  fs10.mkdirSync(path12.dirname(file), { recursive: true, mode: DIR_MODE });
+  fs11.mkdirSync(path14.dirname(file), { recursive: true, mode: DIR_MODE });
   return withFileLockSync(`${file}.lock`, fn, { label: "fork job log", timeoutMs: 2e3 });
 }
 function compactForkJobs(file, { now = Date.now(), maxBytes = FORK_LOG_MAX_BYTES, retentionMs = FORK_LOG_RETENTION_MS } = {}) {
   try {
-    if (fs10.statSync(file).size <= maxBytes) return { compacted: false, dropped: 0 };
+    if (fs11.statSync(file).size <= maxBytes) return { compacted: false, dropped: 0 };
   } catch {
     return { compacted: false, dropped: 0 };
   }
   return withForkLogLock(file, () => {
-    const events = parseJsonlLines(fs10.readFileSync(file, "utf8"));
+    const events = parseJsonlLines(fs11.readFileSync(file, "utf8"));
     const finished = new Set(foldForkJobs(events).filter((job) => {
       const end = job.reconciled?.at ?? job.aborted?.at;
       return Number.isFinite(end) && now - end > retentionMs;
@@ -25496,20 +25817,20 @@ function compactForkJobs(file, { now = Date.now(), maxBytes = FORK_LOG_MAX_BYTES
     const kept = events.filter((event) => !finished.has(event?.jobId));
     const tmp = `${file}.compact-${process.pid}`;
     assertTestSafeWrite(tmp);
-    fs10.writeFileSync(tmp, toJsonl(kept), { encoding: "utf8", mode: FILE_MODE });
-    fs10.renameSync(tmp, file);
+    fs11.writeFileSync(tmp, toJsonl(kept), { encoding: "utf8", mode: FILE_MODE });
+    fs11.renameSync(tmp, file);
     return { compacted: true, dropped: finished.size };
   });
 }
 
 // src/delivery/override-policy.js
-import fs12 from "node:fs";
-import path14 from "node:path";
+import fs13 from "node:fs";
+import path16 from "node:path";
 
 // src/registry/roles.js
 import crypto4 from "node:crypto";
-import fs11 from "node:fs";
-import path13 from "node:path";
+import fs12 from "node:fs";
+import path15 from "node:path";
 var ROLE_NAME_PATTERN = /^[a-z0-9-]{1,40}$/;
 var ROLE_ADDRESS_PATTERN = /^role:([a-z0-9-]{1,40})$/;
 var ROLE_TABLE_VERSION = 1;
@@ -25600,11 +25921,11 @@ function validateRoleTable(raw) {
         problems.push({ path: `roles.${name}.projects`, rule: "type", message: "projects must map absolute project roots to addresses; ignored." });
       } else {
         for (const [root, holder] of Object.entries(entry.projects)) {
-          if (!path13.isAbsolute(root) || !isAddress(holder)) {
+          if (!path15.isAbsolute(root) || !isAddress(holder)) {
             problems.push({ path: `roles.${name}.projects`, rule: "format", message: "projects keys are absolute project roots and values claude:<id> or codex:<id> addresses; invalid entries were ignored." });
             continue;
           }
-          projects[path13.resolve(root)] = holder;
+          projects[path15.resolve(root)] = holder;
         }
       }
     }
@@ -25645,21 +25966,21 @@ function validateRoleTable(raw) {
   }
   return { table, problems };
 }
-function writeFileAtomicSync(filePath, text2) {
+function writeFileAtomicSync(filePath, text3) {
   assertTestSafeWrite(filePath);
-  fs11.mkdirSync(path13.dirname(filePath), { recursive: true, mode: DIR_MODE });
+  fs12.mkdirSync(path15.dirname(filePath), { recursive: true, mode: DIR_MODE });
   const temp = `${filePath}.${process.pid}.${crypto4.randomBytes(6).toString("hex")}.tmp`;
   try {
-    const fd = fs11.openSync(temp, "wx", FILE_MODE);
+    const fd = fs12.openSync(temp, "wx", FILE_MODE);
     try {
-      fs11.writeFileSync(fd, text2, "utf8");
-      fs11.fsyncSync(fd);
+      fs12.writeFileSync(fd, text3, "utf8");
+      fs12.fsyncSync(fd);
     } finally {
-      fs11.closeSync(fd);
+      fs12.closeSync(fd);
     }
-    fs11.renameSync(temp, filePath);
+    fs12.renameSync(temp, filePath);
   } catch (error2) {
-    fs11.rmSync(temp, { force: true });
+    fs12.rmSync(temp, { force: true });
     throw stateIoError(filePath, error2, "Could not write the role table.");
   }
   tightenMode(filePath, FILE_MODE);
@@ -25670,63 +25991,63 @@ function stateIoError(filePath, error2, message) {
     error2?.code ?? null
   );
   return new AgentLinkError("state_io_error", `${message} (${errno ?? "error"})`, {
-    details: { path: path13.basename(filePath), errno },
+    details: { path: path15.basename(filePath), errno },
     cause: error2
   });
 }
 function readProcedureFileSafe(dir, file) {
   try {
-    if (!fs11.lstatSync(dir).isDirectory()) return { error: "the roles directory is not a directory" };
+    if (!fs12.lstatSync(dir).isDirectory()) return { error: "the roles directory is not a directory" };
   } catch {
     return null;
   }
   let stat;
   try {
-    stat = fs11.lstatSync(file);
+    stat = fs12.lstatSync(file);
   } catch {
     return null;
   }
   if (!stat.isFile()) return { error: "the procedure file is not a regular file (symlinks, FIFOs, and devices are refused)" };
   let fd;
   try {
-    fd = fs11.openSync(file, fs11.constants.O_RDONLY | fs11.constants.O_NOFOLLOW | fs11.constants.O_NONBLOCK);
+    fd = fs12.openSync(file, fs12.constants.O_RDONLY | fs12.constants.O_NOFOLLOW | fs12.constants.O_NONBLOCK);
   } catch (error2) {
     return { error: `the procedure file could not be opened (${/** @type {NodeJS.ErrnoException} */
     error2.code ?? "error"})` };
   }
   try {
-    if (!fs11.fstatSync(fd).isFile()) return { error: "the procedure file is not a regular file" };
+    if (!fs12.fstatSync(fd).isFile()) return { error: "the procedure file is not a regular file" };
     const buffer = Buffer.alloc(MAX_PROCEDURE_BYTES + 1);
     let length = 0;
     for (; ; ) {
-      const read = fs11.readSync(fd, buffer, length, buffer.length - length, null);
+      const read = fs12.readSync(fd, buffer, length, buffer.length - length, null);
       if (read === 0) break;
       length += read;
       if (length > MAX_PROCEDURE_BYTES) {
         return { error: `the procedure file is larger than ${MAX_PROCEDURE_BYTES} bytes (64 KiB)` };
       }
     }
-    const text2 = buffer.subarray(0, length).toString("utf8");
-    return { text: text2, sha256: sha256(text2) };
+    const text3 = buffer.subarray(0, length).toString("utf8");
+    return { text: text3, sha256: sha256(text3) };
   } catch (error2) {
     return { error: `the procedure file could not be read (${/** @type {NodeJS.ErrnoException} */
     error2.code ?? "error"})` };
   } finally {
-    fs11.closeSync(fd);
+    fs12.closeSync(fd);
   }
 }
-function sha256(text2) {
-  return crypto4.createHash("sha256").update(text2, "utf8").digest("hex");
+function sha256(text3) {
+  return crypto4.createHash("sha256").update(text3, "utf8").digest("hex");
 }
 function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () => Date.now(), lockTimeoutMs = LOCK_TIMEOUT_MS } = {}) {
   const pathOptions = { env: env2, ...homedir3 ? { homedir: homedir3 } : {} };
   const tablePath = () => rolesPath(pathOptions);
   const proceduresDir = () => roleProceduresDir(pathOptions);
-  const statePath = () => path13.join(stateDir(pathOptions), STATE_FILE);
+  const statePath = () => path15.join(stateDir(pathOptions), STATE_FILE);
   const iso2 = () => new Date(now()).toISOString();
   const lockOptions = { now, timeoutMs: lockTimeoutMs };
   function procedureFile(name) {
-    return path13.join(proceduresDir(), `${name}.md`);
+    return path15.join(proceduresDir(), `${name}.md`);
   }
   function readProcedure(name) {
     return readProcedureFileSafe(proceduresDir(), procedureFile(name));
@@ -25734,9 +26055,9 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
   function read() {
     const file = tablePath();
     const base = { path: file, exists: true, writable: false, raw: null };
-    let text2;
+    let text3;
     try {
-      text2 = fs11.readFileSync(file, "utf8");
+      text3 = fs12.readFileSync(file, "utf8");
     } catch (error2) {
       if (
         /** @type {NodeJS.ErrnoException} */
@@ -25749,7 +26070,7 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
     }
     let parsed;
     try {
-      parsed = JSON.parse(text2);
+      parsed = JSON.parse(text3);
     } catch {
       return { ...base, table: emptyRoleTable(), problems: [], error: "roles.json is not valid JSON; roles and the override policy are unavailable until it is fixed." };
     }
@@ -25787,7 +26108,7 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
   }
   function readState() {
     try {
-      const parsed = JSON.parse(fs11.readFileSync(statePath(), "utf8"));
+      const parsed = JSON.parse(fs12.readFileSync(statePath(), "utf8"));
       if (isPlainObject3(parsed)) {
         return {
           version: STATE_VERSION,
@@ -25873,9 +26194,9 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
   function set({ role: name, address, procedureText = null, projectRoot = null }) {
     if (!ROLE_NAME_PATTERN.test(name)) throw new TypeError(`invalid role name ${name}`);
     if (!isAddress(address)) throw new TypeError(`invalid holder address ${address}`);
-    if (projectRoot !== null && !path13.isAbsolute(projectRoot)) throw new TypeError(`projectRoot must be absolute: ${projectRoot}`);
+    if (projectRoot !== null && !path15.isAbsolute(projectRoot)) throw new TypeError(`projectRoot must be absolute: ${projectRoot}`);
     if (projectRoot !== null && name !== "orchestrator") throw new TypeError("only the orchestrator role is scoped by project root");
-    const root = projectRoot === null ? null : path13.resolve(projectRoot);
+    const root = projectRoot === null ? null : path15.resolve(projectRoot);
     let previous = null;
     update((raw, table) => {
       const entry = isPlainObject3(raw.roles[name]) ? raw.roles[name] : {};
@@ -25894,9 +26215,9 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
     });
     if (typeof procedureText === "string") {
       assertTestSafeWrite(proceduresDir());
-      fs11.mkdirSync(proceduresDir(), { recursive: true, mode: DIR_MODE });
+      fs12.mkdirSync(proceduresDir(), { recursive: true, mode: DIR_MODE });
       tightenMode(proceduresDir(), DIR_MODE);
-      const existing = fs11.lstatSync(procedureFile(name), { throwIfNoEntry: false });
+      const existing = fs12.lstatSync(procedureFile(name), { throwIfNoEntry: false });
       if (existing && !existing.isFile()) {
         throw new AgentLinkError("state_io_error", `The procedure file for ${name} is not a regular file; Agent Link will not replace it.`, {
           details: { path: `roles/${name}.md`, errno: null }
@@ -25911,7 +26232,7 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
   function clear(name, { projectRoot = null } = {}) {
     let previous = null;
     let existed = false;
-    const root = projectRoot === null ? null : path13.resolve(projectRoot);
+    const root = projectRoot === null ? null : path15.resolve(projectRoot);
     update((raw, table) => {
       if (!table.roles[name] || !isPlainObject3(raw.roles[name])) return;
       existed = true;
@@ -25919,7 +26240,7 @@ function createRoleStore({ env: env2 = process.env, homedir: homedir3, now = () 
         previous = table.roles[name].projects?.[root] ?? null;
         if (isPlainObject3(raw.roles[name].projects)) {
           for (const key of Object.keys(raw.roles[name].projects)) {
-            if (path13.isAbsolute(key) && path13.resolve(key) === root) delete raw.roles[name].projects[key];
+            if (path15.isAbsolute(key) && path15.resolve(key) === root) delete raw.roles[name].projects[key];
           }
           if (Object.keys(raw.roles[name].projects).length === 0) delete raw.roles[name].projects;
         }
@@ -26088,15 +26409,15 @@ function policyAllows(policy, setting, { senderAddress, senderRoles, targetAddre
   return null;
 }
 function resolveRealPath(target) {
-  let current = path14.resolve(target);
+  let current = path16.resolve(target);
   const rest = [];
   for (; ; ) {
     try {
-      return path14.join(fs12.realpathSync(current), ...rest.reverse());
+      return path16.join(fs13.realpathSync(current), ...rest.reverse());
     } catch {
-      const parent = path14.dirname(current);
-      if (parent === current) return path14.resolve(target);
-      rest.push(path14.basename(current));
+      const parent = path16.dirname(current);
+      if (parent === current) return path16.resolve(target);
+      rest.push(path16.basename(current));
       current = parent;
     }
   }
@@ -26105,23 +26426,23 @@ function workspaceRoot(cwd) {
   const start = resolveRealPath(cwd);
   let dir = start;
   for (; ; ) {
-    if (fs12.existsSync(path14.join(dir, ".git"))) return dir;
-    const parent = path14.dirname(dir);
+    if (fs13.existsSync(path16.join(dir, ".git"))) return dir;
+    const parent = path16.dirname(dir);
     if (parent === dir) return start;
     dir = parent;
   }
 }
 function isWithinWorkspace(candidate, root) {
-  const relative = path14.relative(root, resolveRealPath(candidate));
-  return relative === "" || !relative.startsWith("..") && !path14.isAbsolute(relative);
+  const relative = path16.relative(root, resolveRealPath(candidate));
+  return relative === "" || !relative.startsWith("..") && !path16.isAbsolute(relative);
 }
 function sameDirectory(a, b) {
   return resolveRealPath(a) === resolveRealPath(b);
 }
-var text = (value) => typeof value === "string" ? value.trim() : "";
+var text2 = (value) => typeof value === "string" ? value.trim() : "";
 function ownValue(thread, field) {
-  if (field === "effort") return text(thread?.reasoningEffort ?? thread?.effort);
-  return text(thread?.[field]);
+  if (field === "effort") return text2(thread?.reasoningEffort ?? thread?.effort);
+  return text2(thread?.[field]);
 }
 function decideTargetOverrides({ thread, args, steering = false, parties, policy, launcher = null, expectedCost = { uncachedInputTokens: null, basis: "unknown" } }) {
   const forward = {};
@@ -26138,9 +26459,9 @@ function decideTargetOverrides({ thread, args, steering = false, parties, policy
     });
   }
   for (const field of FIELD_ORDER) {
-    const requested = text(args[field]);
+    const requested = text2(args[field]);
     if (!requested) continue;
-    if (field === "cwd" && !path14.isAbsolute(requested)) {
+    if (field === "cwd" && !path16.isAbsolute(requested)) {
       throw new AgentLinkError("invalid_arguments", "cwd must be an absolute path.", {
         details: { errors: [{ path: "cwd", rule: "absolute", expected: "an absolute directory path" }] }
       });
@@ -26242,7 +26563,7 @@ function overrideDeniedError(denied, threadId) {
   });
 }
 function assertNoClaudeOverrides(args, address) {
-  const given = FIELD_ORDER.filter((field) => text(args[field]));
+  const given = FIELD_ORDER.filter((field) => text2(args[field]));
   if (given.length === 0) return;
   throw new AgentLinkError("unsupported", `Claude sessions accept no turn overrides (${given.join(", ")}); ${address} is a Claude session.`, {
     details: { capability: "turn_overrides", fields: given, address },
@@ -26497,9 +26818,9 @@ function expectedCostFrom(usage) {
 }
 
 // src/shared/receipt-index.js
-import { randomUUID } from "node:crypto";
-import { promises as fs13 } from "node:fs";
-import path15 from "node:path";
+import { randomUUID as randomUUID2 } from "node:crypto";
+import { promises as fs14 } from "node:fs";
+import path17 from "node:path";
 
 // src/shared/caller-context.js
 var MAX_TEXT = 300;
@@ -26558,8 +26879,8 @@ function callerContextContract() {
     }
   };
 }
-function extractRuntimeCallerContext(request = {}, extra = {}) {
-  const requestMeta = request?.params?._meta;
+function extractRuntimeCallerContext(request2 = {}, extra = {}) {
+  const requestMeta = request2?.params?._meta;
   const extraMeta = extra?._meta;
   const metas = [
     [requestMeta, "request.params._meta"],
@@ -26654,14 +26975,14 @@ function cleanText(value, max) {
   if (value === null || value === void 0) {
     return null;
   }
-  const text2 = String(value).trim();
-  if (!text2) {
+  const text3 = String(value).trim();
+  if (!text3) {
     return null;
   }
-  if (text2.length <= max) {
-    return text2;
+  if (text3.length <= max) {
+    return text3;
   }
-  return `${text2.slice(0, max - 3)}...`;
+  return `${text3.slice(0, max - 3)}...`;
 }
 
 // src/shared/receipt-index.js
@@ -26775,7 +27096,7 @@ function buildReceipt({
   const createdAt = (/* @__PURE__ */ new Date()).toISOString();
   return {
     version: RECEIPT_VERSION,
-    id: `agent-link-receipt-${createdAt.replace(/[:.]/g, "-")}-${randomUUID()}`,
+    id: `agent-link-receipt-${createdAt.replace(/[:.]/g, "-")}-${randomUUID2()}`,
     createdAt,
     action,
     host: cleanText2(host, 40),
@@ -26830,16 +27151,16 @@ function summarizeResolution(resolution) {
 }
 async function tightenFileMode(target, mode) {
   try {
-    const stat = await fs13.stat(target);
+    const stat = await fs14.stat(target);
     const uid = typeof process.getuid === "function" ? process.getuid() : null;
     if (uid !== null && stat.uid !== uid) return;
-    if ((stat.mode & 511 & ~mode) !== 0) await fs13.chmod(target, mode);
+    if ((stat.mode & 511 & ~mode) !== 0) await fs14.chmod(target, mode);
   } catch {
   }
 }
 async function appendReceipt(receipt, options = {}) {
   const logPath = receiptWritePath(options);
-  if (path15.resolve(path15.dirname(logPath)) === path15.resolve(stateDir())) ensureStateDir();
+  if (path17.resolve(path17.dirname(logPath)) === path17.resolve(stateDir())) ensureStateDir();
   await appendJsonl(logPath, receipt);
   await tightenFileMode(logPath, 384);
   return {
@@ -26871,7 +27192,7 @@ function safeWritePath(options) {
 }
 async function readReceiptFile(file) {
   try {
-    return parseJsonlLines(await fs13.readFile(file, "utf8"));
+    return parseJsonlLines(await fs14.readFile(file, "utf8"));
   } catch (error2) {
     if (error2.code === "ENOENT") return [];
     throw error2;
@@ -26896,9 +27217,9 @@ async function listReceipts(options = {}) {
   const receipts = [];
   for (const file of readPaths) {
     for (const receipt of await readReceiptFile(file)) {
-      const id = typeof receipt?.id === "string" ? receipt.id : null;
-      if (id && seen.has(id)) continue;
-      if (id) seen.add(id);
+      const id2 = typeof receipt?.id === "string" ? receipt.id : null;
+      if (id2 && seen.has(id2)) continue;
+      if (id2) seen.add(id2);
       receipts.push(receipt);
     }
   }
@@ -26922,7 +27243,7 @@ function targetMatchesAddress(target, address) {
   if (!target) return false;
   if (addressResolver2.targetAddress(target) === address) return true;
   const aliases = new Set(addressResolver2.aliases(address));
-  return [target.address, target.sessionId, target.threadId].some((id) => typeof id === "string" && aliases.has(id));
+  return [target.address, target.sessionId, target.threadId].some((id2) => typeof id2 === "string" && aliases.has(id2));
 }
 function withTargetAddress(target) {
   const { address: _stored, ...rest } = target;
@@ -27053,8 +27374,8 @@ function summarizeAppServer(appServer = {}) {
   };
 }
 function normalizeCleanupRecommendation(value) {
-  const text2 = cleanText2(value, 80);
-  return text2 || "unspecified";
+  const text3 = cleanText2(value, 80);
+  return text3 || "unspecified";
 }
 function firstOriginValue(candidates) {
   for (const [source, value] of candidates) {
@@ -27084,14 +27405,14 @@ function cleanText2(value, max) {
   if (typeof value !== "string") {
     return null;
   }
-  const text2 = value.trim();
-  if (!text2) {
+  const text3 = value.trim();
+  if (!text3) {
     return null;
   }
-  if (text2.length <= max) {
-    return text2;
+  if (text3.length <= max) {
+    return text3;
   }
-  return `${text2.slice(0, max - 3)}...`;
+  return `${text3.slice(0, max - 3)}...`;
 }
 function normalizeSearch2(value) {
   return String(value ?? "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -27141,8 +27462,8 @@ function decideForkCompaction({ mode = "auto", usage = null, sameModel = true, f
   const over = inputTokens > fraction * modelContextWindow;
   return { ...base, compact: over, reason: over ? "over_threshold" : "under_threshold" };
 }
-function reconcileBody({ status, text: text2 = null, error: error2 = null, forkAddress }) {
-  const body = status === "completed" ? typeof text2 === "string" && text2.trim() ? text2 : `The fork's task completed without a final response. Read it with get_codex_thread threadId="${forkAddress}".` : `The fork's task ${status}${error2 ? `: ${error2}` : "."} The fork ${forkAddress} is kept for inspection (get_codex_thread).`;
+function reconcileBody({ status, text: text3 = null, error: error2 = null, forkAddress }) {
+  const body = status === "completed" ? typeof text3 === "string" && text3.trim() ? text3 : `The fork's task completed without a final response. Read it with get_codex_thread threadId="${forkAddress}".` : `The fork's task ${status}${error2 ? `: ${error2}` : "."} The fork ${forkAddress} is kept for inspection (get_codex_thread).`;
   if (Buffer.byteLength(body, "utf8") <= MAX_PEER_BODY_BYTES) return body;
   const note = `
 [Agent Link: the fork's response was cut at 64 KiB. Read the rest with get_codex_thread threadId="${forkAddress}".]`;
@@ -27524,10 +27845,10 @@ function makeForkJobs({
     if (!tokenUsage || !forkThreadId || !turnId) return null;
     const usage = await tokenUsage.awaitTurnUsage(forkThreadId, turnId, graceMs === void 0 ? {} : { graceMs });
     if (!usage) warnings.push(tokenUsageUnavailableWarning({ threadId: forkThreadId, turnId, purpose: "the fork's task" }));
-    const request = job.created?.request ?? {};
+    const request2 = job.created?.request ?? {};
     const mismatch = settingsMismatchWarning({
       threadId: forkThreadId,
-      requested: { model: request.model, effort: request.effort, cwd: request.cwd },
+      requested: { model: request2.model, effort: request2.effort, cwd: request2.cwd },
       applied: tokenUsage.settingsSince(forkThreadId, active.get(job.id)?.settingsMark ?? 0)
     });
     if (mismatch) warnings.push(mismatch);
@@ -27759,11 +28080,11 @@ function makeForkJobs({
     };
   }
   async function archiveForkThread(job, forkInfo, originalId, warnings) {
-    const refuse = (why) => {
+    const refuse2 = (why) => {
       warnings.push({ code: "fork_archive_refused", severity: "warning", message: `The fork ${forkInfo.address} was not archived: ${why}.` });
       return false;
     };
-    if (!forkInfo.threadId || forkInfo.threadId === originalId) return refuse("its id is the original's");
+    if (!forkInfo.threadId || forkInfo.threadId === originalId) return refuse2("its id is the original's");
     let thread;
     try {
       thread = (await appServer.request("thread/read", { threadId: forkInfo.threadId, includeTurns: false }))?.thread ?? {};
@@ -27775,9 +28096,9 @@ function makeForkJobs({
       warnings.push({ code: "fork_archive_failed", severity: "warning", message: `The fork ${forkInfo.address} was not archived: ${messageOf(error2)}` });
       return false;
     }
-    if (thread.forkedFromId !== originalId) return refuse(`it reports forkedFromId ${String(thread.forkedFromId ?? null)}, not ${originalId}`);
+    if (thread.forkedFromId !== originalId) return refuse2(`it reports forkedFromId ${String(thread.forkedFromId ?? null)}, not ${originalId}`);
     if (thread.threadSource !== FORK_THREAD_SOURCE) {
-      return refuse(`its threadSource is ${String(thread.threadSource ?? "missing")}, not ${FORK_THREAD_SOURCE}`);
+      return refuse2(`its threadSource is ${String(thread.threadSource ?? "missing")}, not ${FORK_THREAD_SOURCE}`);
     }
     try {
       await appServer.request("thread/archive", { threadId: forkInfo.threadId });
@@ -28183,13 +28504,13 @@ function statusType(status) {
   );
   return typeof type === "string" ? type : null;
 }
-function textInput(text2) {
-  return [{ type: "text", text: text2, text_elements: [] }];
+function textInput(text3) {
+  return [{ type: "text", text: text3, text_elements: [] }];
 }
 function codexTurnText(row, overrides = null) {
   return renderPeerEnvelope({ ...peerMessageFromMailbox(row), ...overrides ? { overrides } : {} });
 }
-async function pushCodexMessage({ appServer, mailbox, messageId, threadId, text: text2, plan, resume = null, startParams = {}, expectedTurnId = null, turnTrigger = CODEX_PUSH_TURN_TRIGGER, tracker = null, rolloutPath = null, rolloutCheck = null }) {
+async function pushCodexMessage({ appServer, mailbox, messageId, threadId, text: text3, plan, resume = null, startParams = {}, expectedTurnId = null, turnTrigger = CODEX_PUSH_TURN_TRIGGER, tracker = null, rolloutPath = null, rolloutCheck = null }) {
   const result = { delivery: "queued", deliveredVia: null, request: null, steered: false, resumed: false, response: null, warnings: [], error: null };
   if (plan === "held") {
     result.warnings.push(heldWarning(threadId));
@@ -28208,7 +28529,7 @@ async function pushCodexMessage({ appServer, mailbox, messageId, threadId, text:
     return result;
   }
   const activeTurnId = plan === "start" ? tracker?.activeTurnId(threadId) ?? null : null;
-  const input = textInput(text2);
+  const input = textInput(text3);
   let method = null;
   try {
     if (plan === "steer") {
@@ -28428,7 +28749,7 @@ async function sweepStalePushClaims({ appServer, mailbox, staleMs = 18e4, max = 
   }
   return results;
 }
-async function pushWhenIdle({ appServer, mailbox, messageId, threadId, policy = desktopPushPolicy(), tracker = null, rolloutCheck = null, text: text2 = null, turnTrigger = CODEX_PUSH_TURN_TRIGGER }) {
+async function pushWhenIdle({ appServer, mailbox, messageId, threadId, policy = desktopPushPolicy(), tracker = null, rolloutCheck = null, text: text3 = null, turnTrigger = CODEX_PUSH_TURN_TRIGGER }) {
   const row = mailbox.getMessage({ messageId });
   if (!row || row.resolution) return { delivery: "queued", deliveredVia: null, turnId: null, warnings: [] };
   if (row.delivered_at) return { delivery: "delivered", deliveredVia: row.delivered_via ?? null, turnId: null, warnings: [] };
@@ -28452,7 +28773,7 @@ async function pushWhenIdle({ appServer, mailbox, messageId, threadId, policy = 
     mailbox,
     messageId,
     threadId,
-    text: text2 ?? codexTurnText(row),
+    text: text3 ?? codexTurnText(row),
     plan: "start",
     resume: type === "notLoaded" ? { threadId, excludeTurns: true, persistExtendedHistory: true } : null,
     turnTrigger,
@@ -28464,22 +28785,22 @@ async function pushWhenIdle({ appServer, mailbox, messageId, threadId, policy = 
 }
 
 // src/codex/prompt-hook-health.js
-import fs14 from "node:fs";
-import path16 from "node:path";
+import fs15 from "node:fs";
+import path18 from "node:path";
 import { fileURLToPath } from "node:url";
 var PROMPT_HOOK_FILE = "hooks/codex-hooks.json";
 var PROMPT_HOOK_SCRIPT = "src/codex/prompt-hook.js";
 var CODEX_PLUGIN_NAME = "codex-agent-link";
 var TRUST_STATES = /* @__PURE__ */ new Set(["trusted", "untrusted", "modified", "managed"]);
-function findPluginRoot(from = path16.dirname(fileURLToPath(import.meta.url))) {
+function findPluginRoot(from = path18.dirname(fileURLToPath(import.meta.url))) {
   let dir = from;
   for (let i = 0; i < 4; i++) {
     try {
-      const manifest = JSON.parse(fs14.readFileSync(path16.join(dir, ".codex-plugin", "plugin.json"), "utf8"));
+      const manifest = JSON.parse(fs15.readFileSync(path18.join(dir, ".codex-plugin", "plugin.json"), "utf8"));
       if (manifest?.name === CODEX_PLUGIN_NAME) return dir;
     } catch {
     }
-    const parent = path16.dirname(dir);
+    const parent = path18.dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
@@ -28488,12 +28809,12 @@ function findPluginRoot(from = path16.dirname(fileURLToPath(import.meta.url))) {
 function promptHookDeclaration(root) {
   if (!root) return { declared: false, hooksFile: null, reason: "plugin root not found" };
   try {
-    const manifest = JSON.parse(fs14.readFileSync(path16.join(root, ".codex-plugin", "plugin.json"), "utf8"));
-    const file = typeof manifest.hooks === "string" ? path16.posix.normalize(manifest.hooks) : null;
+    const manifest = JSON.parse(fs15.readFileSync(path18.join(root, ".codex-plugin", "plugin.json"), "utf8"));
+    const file = typeof manifest.hooks === "string" ? path18.posix.normalize(manifest.hooks) : null;
     if (file !== PROMPT_HOOK_FILE) {
       return { declared: false, hooksFile: file, reason: `.codex-plugin/plugin.json hooks is not ./${PROMPT_HOOK_FILE}` };
     }
-    const hooks = JSON.parse(fs14.readFileSync(path16.join(root, PROMPT_HOOK_FILE), "utf8"));
+    const hooks = JSON.parse(fs15.readFileSync(path18.join(root, PROMPT_HOOK_FILE), "utf8"));
     const commands = (hooks?.hooks?.UserPromptSubmit ?? []).flatMap((group) => Array.isArray(group?.hooks) ? group.hooks : []).map((hook) => typeof hook?.command === "string" ? hook.command : "");
     const declared = commands.some((command) => command.includes(PROMPT_HOOK_SCRIPT));
     return { declared, hooksFile: file, reason: declared ? null : `${PROMPT_HOOK_FILE} has no UserPromptSubmit entry for ${PROMPT_HOOK_SCRIPT}` };
@@ -28552,11 +28873,11 @@ async function promptHookReport({ root = findPluginRoot(), listHooks = null } = 
 }
 
 // src/tools/health.js
-import fs16 from "node:fs";
+import fs17 from "node:fs";
 
 // src/shared/legacy-state.js
-import fs15 from "node:fs";
-import path17 from "node:path";
+import fs16 from "node:fs";
+import path19 from "node:path";
 var LEGACY_ACTIVE_WINDOW_MS = 24 * 60 * 60 * 1e3;
 var LEGACY_STILL_WRITTEN_WARNING = "A legacy Agent Link state file changed after the migration to ~/.agent-link: an older plugin copy is still running. Upgrade the plugin in every harness and restart its sessions.";
 function legacyQuietNote(at) {
@@ -28564,7 +28885,7 @@ function legacyQuietNote(at) {
 }
 function statOrNull(file) {
   try {
-    return fs15.statSync(file);
+    return fs16.statSync(file);
   } catch {
     return null;
   }
@@ -28572,14 +28893,14 @@ function statOrNull(file) {
 function newestRecordMtimeMs(dir) {
   let names = [];
   try {
-    names = fs15.readdirSync(dir);
+    names = fs16.readdirSync(dir);
   } catch {
     return null;
   }
   let newest = null;
   for (const name of names) {
     if (!name.endsWith(".json")) continue;
-    const stat = statOrNull(path17.join(dir, name));
+    const stat = statOrNull(path19.join(dir, name));
     if (stat?.isFile() && (newest === null || stat.mtimeMs > newest)) newest = stat.mtimeMs;
   }
   return newest;
@@ -28587,7 +28908,7 @@ function newestRecordMtimeMs(dir) {
 function readMigration(options) {
   const file = migrationRecordPath(options);
   try {
-    const record2 = JSON.parse(fs15.readFileSync(file, "utf8"));
+    const record2 = JSON.parse(fs16.readFileSync(file, "utf8"));
     return {
       path: file,
       at: typeof record2?.at === "string" ? record2.at : null,
@@ -28703,7 +29024,7 @@ function isPendingFor(row, table, ids) {
   return !row.delivered_at;
 }
 function recipientView({ aliases, address = null, table = null }) {
-  const ids = new Set([...aliases].filter((id) => typeof id === "string" && id));
+  const ids = new Set([...aliases].filter((id2) => typeof id2 === "string" && id2));
   if (typeof address === "string" && address) ids.add(address);
   const isRecipient = recipientMatcher({ aliases: ids, table });
   return {
@@ -28715,7 +29036,7 @@ function recipientView({ aliases, address = null, table = null }) {
   };
 }
 function recipientMatcher({ aliases, address = null, table = null }) {
-  const ids = new Set([...aliases].filter((id) => typeof id === "string" && id));
+  const ids = new Set([...aliases].filter((id2) => typeof id2 === "string" && id2));
   if (typeof address === "string" && address) ids.add(address);
   return (row) => {
     const holder = handedOverTo(row, table);
@@ -28894,7 +29215,7 @@ function redactValue(value, depth) {
 }
 function exists(file) {
   try {
-    return fs16.existsSync(file);
+    return fs17.existsSync(file);
   } catch {
     return false;
   }
@@ -29143,8 +29464,8 @@ function rolesHealth(roles, roleAdmin) {
 }
 
 // src/claude/channel-bridge.js
-import fs17 from "node:fs";
-import path18 from "node:path";
+import fs18 from "node:fs";
+import path20 from "node:path";
 
 // src/claude/active-waits.js
 var waits = /* @__PURE__ */ new Map();
@@ -29246,7 +29567,7 @@ function makeAgentLinkChannelBridge({
     const parts = [];
     for (const file of signaturePaths) {
       try {
-        const st = fs17.statSync(file);
+        const st = fs18.statSync(file);
         parts.push(`${st.ino}:${st.size}:${st.mtimeMs}`);
       } catch (error2) {
         if (error2?.code !== "ENOENT") return null;
@@ -29340,11 +29661,11 @@ function makeAgentLinkChannelBridge({
       targets.get(dir).add(name);
     };
     for (const file of signaturePaths) {
-      const dir = path18.dirname(file);
-      if (fs17.existsSync(dir)) {
-        add(dir, path18.basename(file));
-      } else if (fs17.existsSync(path18.dirname(dir))) {
-        add(path18.dirname(dir), path18.basename(dir));
+      const dir = path20.dirname(file);
+      if (fs18.existsSync(dir)) {
+        add(dir, path20.basename(file));
+      } else if (fs18.existsSync(path20.dirname(dir))) {
+        add(path20.dirname(dir), path20.basename(dir));
       }
     }
     return targets;
@@ -29358,11 +29679,11 @@ function makeAgentLinkChannelBridge({
     closeWatchers();
     for (const [dir, names] of watchTargets()) {
       try {
-        const w = fs17.watch(dir, { persistent: false }, (_event, filename) => {
+        const w = fs18.watch(dir, { persistent: false }, (_event, filename) => {
           if (stopped) return;
           const name = filename ? String(filename) : null;
           if (name && !names.has(name)) return;
-          if (name && fs17.existsSync(path18.join(dir, name)) && fs17.statSync(path18.join(dir, name)).isDirectory()) {
+          if (name && fs18.existsSync(path20.join(dir, name)) && fs18.statSync(path20.join(dir, name)).isDirectory()) {
             startWatcher();
           }
           wake();
@@ -30219,8 +30540,8 @@ function makeClaudeListingHandlers() {
     /** @param {Record<string, any>} [args] */
     get_claude_session: async ({ sessionId } = {}) => {
       const sessions = listClaudeSessions({ includeArchived: true });
-      const id = typeof sessionId === "string" ? sessionId.trim().replace(/^claude:/, "") : sessionId;
-      const found = sessions.find((s) => claudeSessionMatches(s, id));
+      const id2 = typeof sessionId === "string" ? sessionId.trim().replace(/^claude:/, "") : sessionId;
+      const found = sessions.find((s) => claudeSessionMatches(s, id2));
       if (!found) {
         throw new AgentLinkError("not_found", `No Claude session matches ${JSON.stringify(String(sessionId))}.`, {
           details: { query: sessionId, candidates: [] },
@@ -30289,12 +30610,12 @@ function resolveByAnswer(mb, original, { kind = "reply", byAddress, replyMessage
 
 // src/registry/addresses.js
 var cachedAddress = makeAddressCache({
-  lookupSession: (id) => findClaudeSessionById(id)
+  lookupSession: (id2) => findClaudeSessionById(id2)
 });
 var SESSION_TTL_MS = 3e4;
 var sessionCache = /* @__PURE__ */ new Map();
-function claudeSessionFor(id) {
-  const key = id.replace(/^claude:/, "");
+function claudeSessionFor(id2) {
+  const key = id2.replace(/^claude:/, "");
   const hit = sessionCache.get(key);
   if (hit && Date.now() - hit.at < SESSION_TTL_MS) return hit.session;
   let session = null;
@@ -30354,7 +30675,7 @@ function addressAliases(address) {
   if (parsed.harness === "codex") return [parsed.id, parsed.address];
   const session = claudeSessionFor(parsed.id);
   const ids = session ? claudeSessionAliases(session) : claudeSessionAliases(parsed.id);
-  return [.../* @__PURE__ */ new Set([...ids, ...ids.map((id) => `claude:${id}`), parsed.address])];
+  return [.../* @__PURE__ */ new Set([...ids, ...ids.map((id2) => `claude:${id2}`), parsed.address])];
 }
 var receiptAddressResolver = {
   targetAddress: receiptTargetAddress,
@@ -30405,7 +30726,7 @@ function checkMessageWait(mb, { messageId, fromIds, toIds, now = Date.now(), set
   const ownStatus = original && to.has(original.from_session_id) ? messageStatus(original, { now, settings }).status : null;
   return { outcome: "reply", messageStatus: ownStatus, replyRow: replies[0] };
 }
-function settleImplicitReply(mb, row, { fromIds, toIds, now = Date.now(), settings = reminderSettings(), write = true }) {
+function settleImplicitReply(mb, row, { fromIds, toIds, now = Date.now(), settings = reminderSettings(), write: write2 = true }) {
   if (!row || !isAnticipating(row) || row.resolution) return row;
   const reply = explicitReplies(mb, row.id, fromIds, toIds)[0];
   if (!reply) return row;
@@ -30416,7 +30737,7 @@ function settleImplicitReply(mb, row, { fromIds, toIds, now = Date.now(), settin
     late: isLateResolution(messageStatus(row, { now, settings })),
     replyMessageId: reply.id
   };
-  if (!write) {
+  if (!write2) {
     return { ...row, resolution: { ...resolution, by: resolution.byAddress, at: now } };
   }
   const claimed = claimResolution(mb, row.id);
@@ -31034,10 +31355,10 @@ function makeWaitHandler({
         });
       }
       const waited = () => Math.max(0, now() - waitStartedAt);
-      const currentStatus = (id) => {
+      const currentStatus = (id2) => {
         const mb = openMb();
         try {
-          const row = mb.getMessage({ messageId: id });
+          const row = mb.getMessage({ messageId: id2 });
           return row && caller.aliases.includes(row.from_session_id) ? messageStatus(row, { now: now(), settings: settingsFn() }).status : null;
         } finally {
           mb.close();
@@ -31591,9 +31912,9 @@ function alreadyResolved(messageId, view) {
     hint: "Send a new message with message_claude_session if there is more to say."
   });
 }
-function invalid2(path22, message) {
+function invalid2(path24, message) {
   return new AgentLinkError("invalid_arguments", message, {
-    details: { errors: [{ path: path22, rule: "required", expected: "non-empty string" }] }
+    details: { errors: [{ path: path24, rule: "required", expected: "non-empty string" }] }
   });
 }
 function replyAgentLinkMessageEntries(deps) {
@@ -31934,10 +32255,10 @@ function scoreAgent(session, query) {
   if (ids.includes(q)) {
     score += 1e3;
     reasons.push("id-exact");
-  } else if (q.length >= 4 && ids.some((id) => id.startsWith(q))) {
+  } else if (q.length >= 4 && ids.some((id2) => id2.startsWith(q))) {
     score += 300;
     reasons.push("id-prefix");
-  } else if (q.length >= 4 && ids.some((id) => id.includes(q))) {
+  } else if (q.length >= 4 && ids.some((id2) => id2.includes(q))) {
     score += 150;
     reasons.push("id-partial");
   }
@@ -32372,7 +32693,7 @@ function agentEntries(deps) {
 }
 
 // src/tools/roles.js
-import path19 from "node:path";
+import path21 from "node:path";
 var READ_ONLY4 = { readOnlyHint: true };
 var ADMIN_WRITE = { readOnlyHint: false, destructiveHint: true };
 var ADMIN_NOTE = "Requires AGENT_LINK_ROLE_ADMIN=1 in this Agent Link server's environment, set by the user; otherwise permission_denied (reason role_admin_disabled). A tool caller cannot enable it.";
@@ -32637,12 +32958,12 @@ function optionalProjectRoot(value, role) {
     });
   }
   const root = typeof value === "string" ? value.trim() : "";
-  if (!root || !path19.isAbsolute(root)) {
+  if (!root || !path21.isAbsolute(root)) {
     throw new AgentLinkError("invalid_arguments", "projectRoot must be an absolute path.", {
       details: { errors: [{ path: "projectRoot", rule: "format", expected: "an absolute path" }] }
     });
   }
-  return path19.resolve(root);
+  return path21.resolve(root);
 }
 function roleEntries(deps) {
   const handlers = makeRoleHandlers(deps);
@@ -32656,7 +32977,7 @@ function roleEntries(deps) {
 }
 
 // src/registry/claude.js
-import fs18 from "node:fs";
+import fs19 from "node:fs";
 function isoFromMs(ms) {
   return typeof ms === "number" && Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString() : null;
 }
@@ -32684,7 +33005,7 @@ function toClaudeAgent(session) {
 }
 function exists2(dir) {
   try {
-    return fs18.existsSync(dir);
+    return fs19.existsSync(dir);
   } catch {
     return false;
   }
@@ -32728,8 +33049,8 @@ function makeClaudeProvider({
       };
     }
   }
-  async function get(id) {
-    const raw = String(id ?? "").trim().replace(/^claude:/, "");
+  async function get(id2) {
+    const raw = String(id2 ?? "").trim().replace(/^claude:/, "");
     if (!raw) return null;
     let session = null;
     try {
@@ -32761,8 +33082,8 @@ function makeClaudeProvider({
 }
 
 // src/registry/codex.js
-import fs19 from "node:fs";
-import path20 from "node:path";
+import fs20 from "node:fs";
+import path22 from "node:path";
 var SURFACE_BY_SOURCE = Object.freeze({ vscode: "app", cli: "cli", exec: "cli" });
 var LOADED_STATUS = /* @__PURE__ */ new Set(["idle", "active", "systemError"]);
 function codexSurfaces(source) {
@@ -32809,7 +33130,7 @@ function codexInstallState() {
   }
   const hasSessions = Boolean(home) && ["sessions", "archived_sessions"].some((dir) => {
     try {
-      return fs19.existsSync(path20.join(
+      return fs20.existsSync(path22.join(
         /** @type {string} */
         home,
         dir
@@ -32864,8 +33185,8 @@ function makeCodexProvider({ appServer, listThreads, readLocal = readLocalThread
       };
     }
   }
-  async function get(id) {
-    const threadId = String(id ?? "").trim().replace(/^codex:/, "");
+  async function get(id2) {
+    const threadId = String(id2 ?? "").trim().replace(/^codex:/, "");
     if (!codexAddress(threadId)) return null;
     try {
       const response = await appServer.request("thread/read", { threadId, includeTurns: false });
@@ -33719,7 +34040,7 @@ function makeThreadQueries({ appServer, now = () => Date.now(), wait = sleep2 })
         searchTerm
       });
       const originalIds = new Set(data.map((thread) => thread.id));
-      const addedIds = localData.map((thread) => thread.id).filter((id) => !originalIds.has(id));
+      const addedIds = localData.map((thread) => thread.id).filter((id2) => !originalIds.has(id2));
       if (addedIds.length === 0) {
         return {
           source: "app-server",
@@ -33901,9 +34222,9 @@ function makeThreadQueries({ appServer, now = () => Date.now(), wait = sleep2 })
 }
 
 // src/codex/project-orchestrator.js
-import { promises as fs20 } from "node:fs";
-import path21 from "node:path";
-var PROJECT_ORCHESTRATOR_BINDING_PATH = path21.join(".codex", "project-orchestrator.json");
+import { promises as fs21 } from "node:fs";
+import path23 from "node:path";
+var PROJECT_ORCHESTRATOR_BINDING_PATH = path23.join(".codex", "project-orchestrator.json");
 var DEFAULT_POLICY_VERSION = "v0";
 var ALLOWED_RETURN_STATUSES = /* @__PURE__ */ new Set(["done", "done_with_concerns", "blocked"]);
 var ORCHESTRATOR_ROLE = "orchestrator";
@@ -33941,9 +34262,9 @@ async function resolveProjectOrchestrator(args = {}, deps = {}) {
       candidates: []
     };
   }
-  const scoped = projectRoot ? roleHolder(deps.roles, ORCHESTRATOR_ROLE, projectRoot, { scopes: ["project"] }) : null;
-  if (scoped) {
-    const resolved = await roleResolution(scoped, { projectRoot, args, deps });
+  const scoped2 = projectRoot ? roleHolder(deps.roles, ORCHESTRATOR_ROLE, projectRoot, { scopes: ["project"] }) : null;
+  if (scoped2) {
+    const resolved = await roleResolution(scoped2, { projectRoot, args, deps });
     if (resolved.verification.readable !== false) return resolved;
   }
   const binding = projectRoot ? await readProjectOrchestratorBinding(projectRoot) : null;
@@ -34140,10 +34461,10 @@ async function returnProjectWorkResult(args = {}, deps = {}, toolContext = {}) {
   };
 }
 async function readProjectOrchestratorBinding(projectRoot) {
-  const bindingPath = path21.join(requiredString(projectRoot, "projectRoot"), PROJECT_ORCHESTRATOR_BINDING_PATH);
+  const bindingPath = path23.join(requiredString(projectRoot, "projectRoot"), PROJECT_ORCHESTRATOR_BINDING_PATH);
   let raw;
   try {
-    raw = await fs20.readFile(bindingPath, "utf8");
+    raw = await fs21.readFile(bindingPath, "utf8");
   } catch (error2) {
     if (error2.code === "ENOENT") {
       return null;
@@ -34161,8 +34482,8 @@ async function readProjectOrchestratorBinding(projectRoot) {
   return validateBinding(parsed, { bindingPath, requestedProjectRoot: projectRoot });
 }
 function promptSafeIdentifier(value, fallback) {
-  const text2 = String(value ?? "").replace(/[\u0000-\u001f\u007f\u2028\u2029`]/g, " ").replace(/\s+/g, " ").trim().slice(0, 128);
-  return text2 || fallback;
+  const text3 = String(value ?? "").replace(/[\u0000-\u001f\u007f\u2028\u2029`]/g, " ").replace(/\s+/g, " ").trim().slice(0, 128);
+  return text3 || fallback;
 }
 function buildWorkerPrompt(args = {}) {
   const lines = [
@@ -34221,8 +34542,8 @@ function validateBinding(value, { bindingPath, requestedProjectRoot }) {
       throwBindingError(`Binding field ${field} is required`, { bindingPath, field });
     }
   }
-  const resolvedBindingRoot = path21.resolve(value.projectRoot);
-  const resolvedRequestedRoot = path21.resolve(requestedProjectRoot);
+  const resolvedBindingRoot = path23.resolve(value.projectRoot);
+  const resolvedRequestedRoot = path23.resolve(requestedProjectRoot);
   if (resolvedBindingRoot !== resolvedRequestedRoot) {
     throwBindingError("Binding projectRoot does not match the source root that contains it", {
       bindingPath,
@@ -34269,7 +34590,7 @@ function roleHolder(roles, name, projectRoot, { scopes }) {
   }
   const entry = table?.roles?.[name];
   if (!entry) return null;
-  const root = projectRoot && path21.isAbsolute(projectRoot) ? path21.resolve(projectRoot) : null;
+  const root = projectRoot && path23.isAbsolute(projectRoot) ? path23.resolve(projectRoot) : null;
   for (const scope of scopes) {
     const address = scope === "project" ? root ? entry.projects?.[root] : null : entry.address;
     if (typeof address === "string" && address.startsWith("codex:")) {
@@ -34342,7 +34663,7 @@ function buildFallbackQuery(args) {
     return `Project Orchestrator ${projectId}`;
   }
   if (args.projectRoot) {
-    return `${path21.basename(args.projectRoot)} Project Orchestrator`;
+    return `${path23.basename(args.projectRoot)} Project Orchestrator`;
   }
   return "";
 }
@@ -34617,9 +34938,9 @@ async function registerDependencyHandoff(args = {}, deps = {}, toolContext = {})
   };
 }
 async function checkCoordinationObligations(args = {}, deps = {}, toolContext = {}) {
-  const text2 = requiredString2(args.text || args.finalText || args.currentText, "text");
+  const text3 = requiredString2(args.text || args.finalText || args.currentText, "text");
   const originThreadId = cleanString2(args.originThreadId || args.threadId || toolContext.callerContext?.threadId);
-  const analysis = analyzeCoordinationText(text2, { originThreadId });
+  const analysis = analyzeCoordinationText(text3, { originThreadId });
   if (!analysis.hasObligation) {
     return {
       ok: true,
@@ -34670,10 +34991,10 @@ async function checkCoordinationObligations(args = {}, deps = {}, toolContext = 
     nextRequiredAction: status === "needs_handoff" ? scope.summary.rule === "unscoped" ? "The text names no thread id and no dependencyName, turn id, or since was available to match a receipt. Pass dependencyName (or since), or call register_dependency_handoff, or report callback not wired with a specific blocker before closing." : "Call register_dependency_handoff or report callback not wired with a specific blocker before closing." : null
   };
 }
-function analyzeCoordinationText(text2, options = {}) {
-  const source = String(text2 ?? "");
+function analyzeCoordinationText(text3, options = {}) {
+  const source = String(text3 ?? "");
   const originThreadId = cleanString2(options.originThreadId).toLowerCase();
-  const referencedThreadIds = [...new Set(source.match(THREAD_ID_RE)?.map((id) => id.toLowerCase()) ?? [])].filter((id) => id !== originThreadId);
+  const referencedThreadIds = [...new Set(source.match(THREAD_ID_RE)?.map((id2) => id2.toLowerCase()) ?? [])].filter((id2) => id2 !== originThreadId);
   const matches = [];
   const bestByCategory = /* @__PURE__ */ new Map();
   for (const pattern of COORDINATION_PATTERNS) {
@@ -34876,8 +35197,8 @@ function normalizeStringList2(value) {
   if (Array.isArray(value)) {
     return value.map((item) => cleanString2(item)).filter(Boolean);
   }
-  const text2 = cleanString2(value);
-  return text2 ? [text2] : [];
+  const text3 = cleanString2(value);
+  return text3 ? [text3] : [];
 }
 function requiredString2(value, name) {
   if (typeof value !== "string" || !value.trim()) {
@@ -35061,6 +35382,8 @@ function createAgentLinkServer({ config: config2 = loadConfig(), appServer, setF
     }
   }
   const claudeDeps = { host: hostInfo.host, resolveCurrentSession: currentClaudeSession };
+  const desktopClient = createDesktopClient(desktopDirectory);
+  lifecycle.onShutdown(desktopClient.close);
   const registry2 = createRegistry([
     { definition: healthTool, handler: health },
     ...codexThreadEntries({
@@ -35109,13 +35432,15 @@ function createAgentLinkServer({ config: config2 = loadConfig(), appServer, setF
       }
     }),
     // Roles and the override policy (B9). Writes need AGENT_LINK_ROLE_ADMIN=1.
-    ...roleEntries({ roles, registry: sessionRegistry, admin: config2.roleAdmin })
+    ...roleEntries({ roles, registry: sessionRegistry, admin: config2.roleAdmin }),
+    ...desktopEntries(desktopClient)
   ], { hintFor: appServerErrorHint });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: registry2.listTools() }));
-  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
-    const { name, arguments: args } = request.params;
+  server.setRequestHandler(CallToolRequestSchema, async (request2, extra) => {
+    const { name, arguments: args } = request2.params;
     return await registry2.callTool(name, args, {
-      callerContext: extractRuntimeCallerContext(request, extra)
+      callerContext: extractRuntimeCallerContext(request2, extra),
+      desktopSession: runtimeDesktopSession(request2)
     });
   });
   async function start(transport) {

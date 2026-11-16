@@ -11,6 +11,8 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { createRegistry } from "./registry.js";
+import { createDesktopClient, desktopDirectory } from "../desktop/transport.js";
+import { desktopEntries, runtimeDesktopSession } from "../desktop/tools.js";
 import { loadConfig } from "./config.js";
 import { appServerErrorHint, makeHealth } from "./health.js";
 import { createLifecycle, reapOrphanedAppServers, startChannelBridge } from "./lifecycle.js";
@@ -309,6 +311,8 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
   // this one list (src/server/registry.js); handlers return payloads or throw
   // AgentLinkError, and the registry builds the section 3.1 envelope.
   const claudeDeps = { host: hostInfo.host, resolveCurrentSession: currentClaudeSession };
+  const desktopClient = createDesktopClient(desktopDirectory);
+  lifecycle.onShutdown(desktopClient.close);
   const registry = createRegistry([
     { definition: healthTool, handler: health },
     ...codexThreadEntries({
@@ -357,7 +361,8 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
       }
     }),
     // Roles and the override policy (B9). Writes need AGENT_LINK_ROLE_ADMIN=1.
-    ...roleEntries({ roles, registry: sessionRegistry, admin: config.roleAdmin })
+    ...roleEntries({ roles, registry: sessionRegistry, admin: config.roleAdmin }),
+    ...desktopEntries(desktopClient)
   ], { hintFor: appServerErrorHint });
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: registry.listTools() }));
@@ -365,7 +370,8 @@ export function createAgentLinkServer({ config = loadConfig(), appServer, setFat
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const { name, arguments: args } = request.params;
     return await registry.callTool(name, args, {
-      callerContext: extractRuntimeCallerContext(request, extra)
+      callerContext: extractRuntimeCallerContext(request, extra),
+      desktopSession: runtimeDesktopSession(request)
     });
   });
 

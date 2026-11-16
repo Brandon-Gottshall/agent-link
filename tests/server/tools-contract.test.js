@@ -29,6 +29,10 @@ const READ_ONLY = new Set([
   "agent_link_health",
   "agent_link_mailbox_inspect",
   "check_coordination_obligations",
+  "desktop_capabilities",
+  "desktop_observe",
+  "desktop_status",
+  "desktop_verify",
   "get_agent_link_message_status",
   "get_claude_session",
   "get_codex_sidebar_state",
@@ -146,6 +150,13 @@ for (const host of ["claude", "codex"]) {
       assert.ok(result.structuredContent.error.details.errors.some((error) => error.path === "bogus" && error.rule === "additionalProperties"), tool.name);
       assert.deepEqual(JSON.parse(result.content[0].text), result.structuredContent);
     }
+
+    const desktop = await client.callTool({ name: "desktop_capabilities", arguments: { protocol_version: 1 } });
+    assert.equal(desktop.isError, true, "Unconfigured host refuses desktop capability use.");
+    assert.equal(desktop.structuredContent.protocol_version, 1);
+    assert.equal(desktop.structuredContent.error.details.desktop_code, "desktop_broker_unavailable");
+    const protocol = await client.callTool({ name: "desktop_capabilities", arguments: { protocol_version: "1" } });
+    assert.equal(protocol.structuredContent.error.code, "invalid_arguments");
 
     // Listed and callable agree; an unlisted name is unknown_tool.
     const unknown = await client.callTool({ name: "no_such_tool", arguments: {} });
